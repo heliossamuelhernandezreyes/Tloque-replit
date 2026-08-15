@@ -55,7 +55,7 @@ html.tloque-reduce-motion *::after {
 
   #root {
     width: 100%;
-    min-height: 100%;
+    min-height: 100dvh;
     margin: 0;
     padding: 0;
   }
@@ -86,6 +86,123 @@ html.tloque-reduce-motion *::after {
 }
 
 @layer components {
+  .tloque-boot {
+    position: fixed;
+    z-index: 300;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 2rem;
+    min-height: 100dvh;
+    overflow: hidden;
+    padding: 2rem;
+    background:
+      radial-gradient(circle at 50% 48%, rgba(118, 86, 190, .12), transparent 28rem),
+      #000;
+    color: white;
+    text-align: center;
+  }
+  .tloque-boot::before {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,.19) .55px, transparent .7px);
+    background-size: 37px 37px;
+    opacity: .13;
+    mask-image: radial-gradient(circle, black, transparent 72%);
+    content: "";
+  }
+  .tloque-boot__glow {
+    position: absolute;
+    width: min(86vw, 31rem);
+    aspect-ratio: 1;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(142, 108, 226, .13), rgba(69, 43, 115, .04) 42%, transparent 70%);
+    filter: blur(14px);
+    animation: tloque-boot-breathe 3.6s ease-in-out infinite;
+  }
+  .tloque-boot-mark {
+    position: relative;
+    width: 7.6rem;
+    height: 7.6rem;
+    animation: tloque-boot-float 4s ease-in-out infinite;
+  }
+  .tloque-boot-mark.is-compact { width: 3.6rem; height: 3.6rem; }
+  .tloque-boot-ring,
+  .tloque-boot-iris,
+  .tloque-boot-star { position: absolute; display: block; }
+  .tloque-boot-ring {
+    inset: 12%;
+    border: 1px solid rgba(207, 190, 255, .3);
+    border-radius: 50%;
+    box-shadow: 0 0 28px rgba(118, 80, 190, .12), inset 0 0 24px rgba(118, 80, 190, .06);
+  }
+  .tloque-boot-ring--outer {
+    border-left-color: transparent;
+    border-bottom-color: rgba(207, 190, 255, .08);
+    animation: tloque-boot-orbit 7s linear infinite;
+  }
+  .tloque-boot-ring--inner {
+    inset: 24%;
+    border-top-color: transparent;
+    border-right-color: rgba(255,255,255,.08);
+    animation: tloque-boot-orbit-reverse 4.8s linear infinite;
+  }
+  .tloque-boot-iris {
+    inset: 37%;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(221, 211, 255, .48);
+    border-radius: 50%;
+    background: rgba(10, 7, 18, .82);
+    box-shadow: 0 0 24px rgba(165, 127, 255, .25);
+  }
+  .tloque-boot-iris span {
+    width: 30%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: #d8caff;
+    box-shadow: 0 0 14px rgba(207, 188, 255, .8);
+    animation: tloque-boot-pulse 1.8s ease-in-out infinite;
+  }
+  .tloque-boot-star {
+    width: .22rem;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: rgba(236, 229, 255, .9);
+    box-shadow: 0 0 10px rgba(196, 174, 255, .8);
+    animation: tloque-boot-star 2.1s ease-in-out infinite;
+  }
+  .tloque-boot-star--one { top: 11%; left: 25%; }
+  .tloque-boot-star--two { right: 8%; bottom: 32%; animation-delay: -.7s; }
+  .tloque-boot-star--three { left: 15%; bottom: 13%; animation-delay: -1.4s; }
+  .tloque-boot__copy { position: relative; }
+  .tloque-boot__copy h1 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(1.35rem, 5vw, 1.85rem);
+    font-weight: 400;
+    letter-spacing: .48em;
+    text-indent: .48em;
+    color: rgba(255,255,255,.86);
+    text-shadow: 0 0 30px rgba(185, 159, 255, .25);
+  }
+  .tloque-boot__copy p {
+    margin: .75rem 0 0;
+    font-size: .56rem;
+    letter-spacing: .27em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,.28);
+  }
+  .tloque-route-loader {
+    position: relative;
+    z-index: 10;
+    display: grid;
+    min-height: calc(100dvh - 11rem);
+    place-items: center;
+    background: transparent;
+  }
+
   .tloque-app-header {
     position: fixed;
     z-index: 140;
@@ -100,16 +217,38 @@ html.tloque-reduce-motion *::after {
     padding: .38rem .45rem .38rem .8rem;
     border: 1px solid rgba(255,255,255,.075);
     border-radius: 1.1rem;
-    background: linear-gradient(180deg, rgba(13,13,18,.9), rgba(5,5,8,.78));
-    box-shadow: 0 14px 45px rgba(0,0,0,.35), inset 0 1px rgba(255,255,255,.035);
+    background: linear-gradient(180deg, rgba(13,12,18,.91), rgba(4,4,7,.82));
+    box-shadow: 0 14px 45px rgba(0,0,0,.35), inset 0 1px rgba(255,255,255,.035), 0 0 50px rgba(105,75,170,.035);
     backdrop-filter: blur(18px) saturate(125%);
   }
-  .tloque-brand { display:flex; align-items:center; gap:.48rem; color:rgba(255,255,255,.75); font-family:var(--font-display); font-size:.72rem; letter-spacing:.18em; }
+  .tloque-brand { display:flex; align-items:center; gap:.58rem; min-height:2.75rem; padding:0 .25rem; color:rgba(255,255,255,.76); font-family:var(--font-display); font-size:.69rem; letter-spacing:.2em; }
+  .tloque-brand-sigil { position:relative; display:grid; width:1.25rem; height:1.25rem; place-items:center; border:1px solid rgba(214,199,255,.25); border-radius:50%; transform:rotate(-12deg); }
+  .tloque-brand-sigil::after { position:absolute; inset:.22rem; border:1px solid rgba(214,199,255,.34); border-radius:50%; content:""; }
+  .tloque-brand-sigil i { width:.18rem; height:.18rem; border-radius:50%; background:rgba(222,211,255,.8); box-shadow:0 0 8px rgba(178,145,255,.8); }
   .tloque-header-nav { display:flex; align-items:center; gap:.22rem; }
   .tloque-header-action { position:relative; display:flex; min-width:2.75rem; min-height:2.75rem; align-items:center; justify-content:center; gap:.4rem; border:1px solid transparent; border-radius:.8rem; padding:.45rem .58rem; color:rgba(255,255,255,.38); font-size:.68rem; transition:background-color .18s, color .18s, border-color .18s, transform .18s; }
   .tloque-header-action:hover { color:rgba(255,255,255,.75); background:rgba(255,255,255,.04); }
   .tloque-header-action:active { transform:scale(.94); }
-  .tloque-header-badge { position:absolute; top:.1rem; right:.1rem; display:grid; min-width:.92rem; height:.92rem; place-items:center; border-radius:999px; background:#c4b5fd; color:#100c1b; font-size:.52rem; font-weight:700; }
+  .tloque-header-badge { position:absolute; top:.1rem; right:.1rem; display:grid; min-width:.92rem; height:.92rem; padding:0 .18rem; place-items:center; border:1px solid rgba(255,255,255,.28); border-radius:999px; background:#c4b5fd; color:#100c1b; font-size:.52rem; font-weight:700; }
+  .tloque-menu-trigger { position:relative; display:grid; width:2.75rem; height:2.75rem; place-items:center; overflow:visible; border-radius:50%; color:rgba(255,255,255,.58); }
+  .tloque-menu-trigger img { width:1.75rem; height:1.75rem; border-radius:50%; object-fit:cover; filter:saturate(.8); }
+  .tloque-menu-orbit { position:absolute; inset:.24rem; border:1px solid; border-left-color:transparent !important; border-radius:50%; transform:rotate(18deg); transition:transform .3s ease; }
+  .tloque-menu-trigger:hover .tloque-menu-orbit { transform:rotate(80deg); }
+  .tloque-menu-overlay { position:fixed; z-index:230; inset:0; background:rgba(0,0,0,.72); backdrop-filter:blur(8px); animation:tloque-menu-fade .24s ease-out; }
+  .tloque-menu-sheet { position:fixed; z-index:240; right:max(.7rem, env(safe-area-inset-right)); bottom:calc(.7rem + var(--tloque-safe-bottom)); left:max(.7rem, env(safe-area-inset-left)); max-height:calc(100dvh - 1.4rem - var(--tloque-safe-top) - var(--tloque-safe-bottom)); overflow:hidden auto; border:1px solid rgba(255,255,255,.09); border-radius:1.7rem; padding:1.35rem; background:linear-gradient(155deg, rgba(18,16,25,.98), rgba(5,5,8,.985) 60%); box-shadow:0 -22px 90px rgba(0,0,0,.7), inset 0 1px rgba(255,255,255,.045); color:white; animation:tloque-menu-enter .38s cubic-bezier(.22,.9,.24,1); }
+  .tloque-menu-aurora { position:absolute; top:-8rem; right:-5rem; width:18rem; height:18rem; border-radius:50%; opacity:.13; filter:blur(60px); pointer-events:none; }
+  .tloque-menu-heading { position:relative; display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; padding:.3rem .25rem 1.2rem; border-bottom:1px solid rgba(255,255,255,.065); }
+  .tloque-menu-heading h2 { margin:.35rem 0 0; max-width:18rem; overflow:hidden; color:rgba(255,255,255,.87); font-size:1.05rem; font-weight:400; letter-spacing:.06em; text-overflow:ellipsis; white-space:nowrap; }
+  .tloque-menu-description { margin:.32rem 0 0; color:rgba(255,255,255,.32); font-size:.66rem; }
+  .tloque-menu-close { display:grid; width:2.65rem; height:2.65rem; flex:none; place-items:center; border:1px solid rgba(255,255,255,.08); border-radius:50%; color:rgba(255,255,255,.45); }
+  .tloque-menu-navigation { position:relative; display:grid; gap:.38rem; padding:1rem 0 .4rem; }
+  .tloque-menu-item { position:relative; display:grid; grid-template-columns:1.75rem 1.4rem 1fr; min-height:3.55rem; align-items:center; gap:.55rem; width:100%; border:1px solid transparent; border-radius:1rem; padding:.55rem 1.1rem .55rem .8rem; color:rgba(255,255,255,.66); text-align:left; transition:background .18s, border-color .18s, transform .18s; }
+  .tloque-menu-item:active { transform:scale(.985); }
+  .tloque-menu-item > span:not(.tloque-menu-index):not(.tloque-header-badge) { font-family:var(--font-display); font-size:.72rem; letter-spacing:.1em; }
+  .tloque-menu-index { color:rgba(255,255,255,.18); font-size:.54rem; letter-spacing:.1em; }
+  .tloque-menu-item > i { position:absolute; right:1rem; width:.2rem; height:.2rem; border-radius:50%; background:rgba(255,255,255,.16); }
+  .tloque-menu-item .tloque-header-badge { top:50%; right:1.65rem; transform:translateY(-50%); }
+  .tloque-menu-footer { margin:.7rem 0 0; padding-top:1rem; border-top:1px solid rgba(255,255,255,.055); color:rgba(255,255,255,.16); font-size:.5rem; letter-spacing:.28em; text-align:center; }
   .tloque-surface { border:1px solid rgba(255,255,255,.07); border-radius:1.35rem; background:linear-gradient(145deg, rgba(255,255,255,.042), rgba(255,255,255,.014)); box-shadow:inset 0 1px rgba(255,255,255,.025), 0 20px 60px rgba(0,0,0,.22); }
   .tloque-eyebrow { font-size:.62rem; text-transform:uppercase; letter-spacing:.24em; color:rgba(255,255,255,.28); }
   .tloque-primary-button, .tloque-secondary-button { display:inline-flex; min-height:2.75rem; align-items:center; justify-content:center; gap:.45rem; border-radius:.8rem; padding:.55rem .8rem; font-size:.72rem; font-weight:600; transition:transform .16s, filter .16s, background-color .16s; }
@@ -130,11 +269,16 @@ html.tloque-reduce-motion *::after {
 
 @media (min-width: 640px) { .tloque-orb-dock { bottom:calc(2.25rem + var(--tloque-safe-bottom)); } }
 
-@media (max-width: 440px) {
-  .tloque-app-header { padding-left:.55rem; }
-  .tloque-brand span { display:none; }
-  .tloque-header-action { padding:.45rem; }
-}
+@media (max-width: 440px) { .tloque-app-header { padding-left:.65rem; } .tloque-header-action { padding:.45rem; } }
+
+@keyframes tloque-boot-orbit { to { transform:rotate(360deg); } }
+@keyframes tloque-boot-orbit-reverse { to { transform:rotate(-360deg); } }
+@keyframes tloque-boot-breathe { 50% { opacity:.65; transform:scale(1.06); } }
+@keyframes tloque-boot-float { 50% { transform:translateY(-.35rem); } }
+@keyframes tloque-boot-pulse { 50% { opacity:.45; transform:scale(.62); } }
+@keyframes tloque-boot-star { 50% { opacity:.25; transform:scale(.65); } }
+@keyframes tloque-menu-fade { from { opacity:0; } }
+@keyframes tloque-menu-enter { from { opacity:0; transform:translateY(2.2rem) scale(.985); } }
 
 @layer utilities {
   .text-glow {

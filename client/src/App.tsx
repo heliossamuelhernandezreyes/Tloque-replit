@@ -8,7 +8,8 @@ import { GenreProvider } from "@/context/GenreContext"
 import { SettingsProvider } from "@/context/SettingsContext"
 import { useSettings } from "@/context/SettingsContext"
 import { MotionConfig } from "framer-motion"
-import SplashScreen from "@/components/SplashScreen"
+import BootExperience, { type BootPhase } from "@/components/BootExperience"
+import ExperienceShell from "@/components/ExperienceShell"
 import Onboarding  from "@/components/Onboarding"
 import LoginScreen from "@/components/LoginScreen"
 import { useAuth } from "@/hooks/useAuth"
@@ -34,8 +35,39 @@ const Editions = lazy(() => import("@/pages/Editions"))
 const AdminHub = lazy(() => import("@/pages/AdminHub"))
 import { CardViewerProvider } from "@/components/CardViewer"
 import { MusicProvider } from "@/audio/MusicProvider"
+import {
+  BOOT_EXIT_MS,
+  SLOW_BOOT_MS,
+  minimumBootDuration,
+} from "@shared/experience-shell"
 
-const SESSION_KEY = "novareads_splash_shown"
+const BOOT_SESSION_KEY = "tloque_boot_seen_v1"
+const LEGACY_SPLASH_KEY = "novareads_splash_shown"
+
+function hasSessionValue(key: string): boolean {
+  try {
+    return sessionStorage.getItem(key) === "1"
+  } catch {
+    return false
+  }
+}
+
+function rememberBoot(): void {
+  try {
+    sessionStorage.setItem(BOOT_SESSION_KEY, "1")
+    sessionStorage.setItem(LEGACY_SPLASH_KEY, "1")
+  } catch {
+    // La app también debe abrir si el navegador bloquea el almacenamiento.
+  }
+}
+
+function needsOnboarding(): boolean {
+  try {
+    return !localStorage.getItem("novareads_onboarding_done")
+  } catch {
+    return true
+  }
+}
 
 function Router() {
   const adminPage = (Page: ComponentType<any>) => () => <AdminOnly><Page /></AdminOnly>
@@ -75,12 +107,7 @@ function AdminOnly({ children }: { children: ReactNode }) {
 }
 
 function RouteFallback() {
-  return (
-    <div className="fixed inset-0 bg-black flex flex-col items-center justify-center gap-4 px-6 text-center" role="status" aria-live="polite">
-      <div className="w-2 h-2 rounded-full animate-pulse bg-violet-300/60" />
-      <p className="text-xs tracking-[0.22em] uppercase text-white/45">Iniciando Tloque</p>
-    </div>
-  )
+  return <BootExperience compact />
 }
 
 function AuthUnavailable({ onRetry }: { onRetry: () => void }) {
@@ -115,6 +142,39 @@ function MotionPreferences({ children }: { children: ReactNode }) {
 
 function AppContent() {
   const { isLoading, isLoggedIn, authError, retryAuth } = useAuth()
+  const [hasBootedThisSession] = useState(
+    () => hasSessionValue(BOOT_SESSION_KEY) || hasSessionValue(LEGACY_SPLASH_KEY),
+  )
+  const [bootPhase, setBootPhase] = useState<BootPhase>("loading")
+  const [bootComplete, setBootComplete] = useState(false)
+
+  useEffect(() => {
+    if (bootComplete) return
+
+    let slowTimer: ReturnType<typeof setTimeout> | undefined
+    let readyTimer: ReturnType<typeof setTimeout> | undefined
+    let exitTimer: ReturnType<typeof setTimeout> | undefined
+
+    if (isLoading) {
+      slowTimer = setTimeout(() => setBootPhase("slow"), SLOW_BOOT_MS)
+    } else {
+      const elapsed = typeof performance === "undefined" ? 0 : performance.now()
+      const wait = Math.max(0, minimumBootDuration(hasBootedThisSession) - elapsed)
+      readyTimer = setTimeout(() => {
+        setBootPhase("ready")
+        exitTimer = setTimeout(() => {
+          rememberBoot()
+          setBootComplete(true)
+        }, BOOT_EXIT_MS)
+      }, wait)
+    }
+
+    return () => {
+      if (slowTimer) clearTimeout(slowTimer)
+      if (readyTimer) clearTimeout(readyTimer)
+      if (exitTimer) clearTimeout(exitTimer)
+    }
+  }, [bootComplete, hasBootedThisSession, isLoading])
 
   // Al abrir la app logueado: juntar racha y progreso con la nube (una vez)
   useEffect(() => {
@@ -125,13 +185,11 @@ function AppContent() {
     }
   }, [isLoggedIn])
 
-  const [showSplash,     setShowSplash]     = useState(
-    () => !sessionStorage.getItem(SESSION_KEY)
-  )
   const [showOnboarding, setShowOnboarding] = useState(
-    () => !localStorage.getItem("novareads_onboarding_done")
+    needsOnboarding
   )
 
+  if (!bootComplete) return <BootExperience phase={bootPhase} />
   if (isLoading) return <RouteFallback />
   if (authError) return <AuthUnavailable onRetry={() => { void retryAuth() }} />
 
@@ -140,16 +198,12 @@ function AppContent() {
 
   return (
     <>
-      {showSplash && (
-        <SplashScreen onComplete={() => {
-          sessionStorage.setItem(SESSION_KEY, "1")
-          setShowSplash(false)
-        }} />
-      )}
-      {!showSplash && showOnboarding && (
+      {showOnboarding && (
         <Onboarding onComplete={() => setShowOnboarding(false)} />
       )}
-      <Router />
+      <ExperienceShell>
+        <Router />
+      </ExperienceShell>
     </>
   )
 }
