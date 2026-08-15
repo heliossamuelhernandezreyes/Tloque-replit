@@ -1,0 +1,36 @@
+{
+  "release_id": "tloque-replit-2026-08-09-d936238a",
+  "created_at": "2026-08-09T00:00:00Z",
+  "repository": "heliossamuelhernandezreyes/Tloque",
+  "branch": "agent/experience-v2",
+  "commit": "d936238a4d270d98b8e47bdf3551bb28be9caadc",
+  "pull_request_chain": [2, 3, 4],
+  "input_zip": {
+    "name": "tloque_codigo (14).zip",
+    "sha256": "19aa9101f5782f2f95a747e7de3db84fe3eb32695ba308269da6d0d3a9663db4",
+    "files": 172
+  },
+  "github_files_added": 32,
+  "github_source_files_verified": 204,
+  "release_additions": [
+    "migrations/0007_catalog_indexes.sql",
+    "instalar.sh",
+    "scripts/db-common.mjs",
+    "scripts/preflight.mjs",
+    "scripts/migrate.mjs",
+    "scripts/migrar.sh",
+    "scripts/restaurar_codigo.sh",
+    "INSTRUCCIONES_REPLIT.md",
+    "AUDITORIA_RELEASE.md",
+    "RELEASE_SOURCE.json",
+    "MANIFEST_SHA256.txt"
+  ],
+  "verification": {
+    "typescript": "passed",
+    "tests": { "passed": 50, "failed": 0 },
+    "production_build": "passed",
+    "production_dependency_vulnerabilities": 0,
+    "github_ci_node_20": "passed",
+    "migration_rehearsals": 2
+  }
+}

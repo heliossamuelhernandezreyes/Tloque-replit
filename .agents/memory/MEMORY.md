@@ -1,0 +1,2 @@
+- [Brand rename and data compatibility](brand-rename-data-compatibility.md) — keep storage namespaces unchanged during visible rebranding.
+- [Experience v2 migration prerequisite](experience-v2-migration-prerequisite.md) — verify the base audio schema exists before applying the packaged SQL sequence.
