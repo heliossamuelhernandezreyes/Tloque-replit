@@ -65,7 +65,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     profileBanner: "Portada", uploadBanner: "Subir portada", changeBanner: "Cambiar portada", removeBanner: "Quitar portada",
     // ── i18n: textos rescatados del español fijo ──
     classicsOf: "Clásicos de", synopsisPlaceholder: "¿De qué trata tu historia...", chapterTitlePlaceholder: "Título del capítulo...", chapterContentPlaceholder: "Escribe aquí tu historia...", cardSubtitlePlaceholder: "Epíteto (ej. El empático)", cardPreviewHint: "Vista previa · inclina el teléfono", importClassicGutenberg: "Importar clásico de Gutenberg", textSize: "Tamaño de texto", galleryOrFiles: "Galería o archivos",
-    domainPublicShort: "Dominio público",
+    domainPublicShort: "Dominio público", toolsMenu: "Herramientas", signOut: "Cerrar sesión", profileWorkCounts: "{published} publicadas · {drafts} borradores", downloads: "descargas", gutenbergPersonalHint: "Guarda una copia en tu biblioteca privada", gutenbergAdminHint: "Revisa, guarda o publica en el catálogo", gutenbergSource: "Ver la fuente en Project Gutenberg", gutenbergRightsNotice: "Project Gutenberg verifica el dominio público en Estados Unidos. Revisa la legislación de tu país antes de redistribuir.",
     // ── i18n: colección de tarjetas ──
     cardsTab: "Tarjetas", collectionTitle: "Mi colección", collectionTotal: "{n} en total", collectionEmptyTitle: "Tu colección te espera", collectionEmptyBody: "Apoya obras o consigue tarjetas con Tinta para empezar a coleccionar los personajes de tus historias favoritas.", cardZoomHint: "Inclina el teléfono para verla cobrar vida",
     // ── i18n: tarjetas coleccionables ──
@@ -115,7 +115,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     profileBanner: "Banner", uploadBanner: "Upload banner", changeBanner: "Change banner", removeBanner: "Remove banner",
     // ── i18n: textos rescatados del español fijo ──
     classicsOf: "Classics of", synopsisPlaceholder: "What is your story about...", chapterTitlePlaceholder: "Chapter title...", chapterContentPlaceholder: "Write your story here...", cardSubtitlePlaceholder: "Epithet (e.g. The empath)", cardPreviewHint: "Preview · tilt your phone", importClassicGutenberg: "Import Gutenberg classic", textSize: "Text size", galleryOrFiles: "Gallery or files",
-    domainPublicShort: "Public domain",
+    domainPublicShort: "Public domain", toolsMenu: "Tools", signOut: "Sign out", profileWorkCounts: "{published} published · {drafts} drafts", downloads: "downloads", gutenbergPersonalHint: "Save a copy to your private library", gutenbergAdminHint: "Review, save, or publish to the catalog", gutenbergSource: "View the source on Project Gutenberg", gutenbergRightsNotice: "Project Gutenberg verifies public-domain status in the United States. Check your country's law before redistributing.",
     // ── i18n: colección de tarjetas ──
     cardsTab: "Cards", collectionTitle: "My collection", collectionTotal: "{n} total", collectionEmptyTitle: "Your collection awaits", collectionEmptyBody: "Support works or get cards with Ink to start collecting the characters from your favorite stories.", cardZoomHint: "Tilt your phone to see it come alive",
     // ── i18n: tarjetas coleccionables ──
@@ -154,7 +154,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     profileBanner: "Bannière", uploadBanner: "Ajouter une bannière", changeBanner: "Changer la bannière", removeBanner: "Retirer la bannière",
     // ── i18n: textos rescatados del español fijo ──
     classicsOf: "Classiques de", synopsisPlaceholder: "De quoi parle votre histoire...", chapterTitlePlaceholder: "Titre du chapitre...", chapterContentPlaceholder: "Écrivez votre histoire ici...", cardSubtitlePlaceholder: "Épithète (ex. L'empathe)", cardPreviewHint: "Aperçu · inclinez le téléphone", importClassicGutenberg: "Importer un classique Gutenberg", textSize: "Taille du texte", galleryOrFiles: "Galerie ou fichiers",
-    domainPublicShort: "Domaine public",
+    domainPublicShort: "Domaine public", toolsMenu: "Outils", signOut: "Se déconnecter", profileWorkCounts: "{published} publiées · {drafts} brouillons", downloads: "téléchargements", gutenbergPersonalHint: "Enregistrer une copie dans votre bibliothèque privée", gutenbergAdminHint: "Vérifier, enregistrer ou publier au catalogue", gutenbergSource: "Voir la source sur Project Gutenberg", gutenbergRightsNotice: "Project Gutenberg vérifie le domaine public aux États-Unis. Consultez la loi de votre pays avant toute redistribution.",
     // ── i18n: colección de tarjetas ──
     cardsTab: "Cartes", collectionTitle: "Ma collection", collectionTotal: "{n} au total", collectionEmptyTitle: "Votre collection vous attend", collectionEmptyBody: "Soutenez des œuvres ou obtenez des cartes avec de l'Encre pour collectionner les personnages de vos histoires préférées.", cardZoomHint: "Inclinez votre téléphone pour la voir s'animer",
     // ── i18n: tarjetas coleccionables ──
@@ -191,7 +191,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     profileBanner: "Banner", uploadBanner: "Banner hochladen", changeBanner: "Banner ändern", removeBanner: "Banner entfernen",
     // ── i18n: textos rescatados del español fijo ──
     classicsOf: "Klassiker der", synopsisPlaceholder: "Worum geht es in deiner Geschichte...", chapterTitlePlaceholder: "Kapiteltitel...", chapterContentPlaceholder: "Schreibe hier deine Geschichte...", cardSubtitlePlaceholder: "Beiname (z.B. Der Empath)", cardPreviewHint: "Vorschau · Handy neigen", importClassicGutenberg: "Gutenberg-Klassiker importieren", textSize: "Textgröße", galleryOrFiles: "Galerie oder Dateien",
-    domainPublicShort: "Gemeinfrei",
+    domainPublicShort: "Gemeinfrei", toolsMenu: "Werkzeuge", signOut: "Abmelden", profileWorkCounts: "{published} veröffentlicht · {drafts} Entwürfe", downloads: "Downloads", gutenbergPersonalHint: "Eine Kopie in deiner privaten Bibliothek speichern", gutenbergAdminHint: "Prüfen, speichern oder im Katalog veröffentlichen", gutenbergSource: "Quelle bei Project Gutenberg öffnen", gutenbergRightsNotice: "Project Gutenberg prüft den Gemeinfreiheitsstatus in den USA. Prüfe vor der Weitergabe das Recht deines Landes.",
     // ── i18n: colección de tarjetas ──
     cardsTab: "Karten", collectionTitle: "Meine Sammlung", collectionTotal: "{n} insgesamt", collectionEmptyTitle: "Deine Sammlung wartet", collectionEmptyBody: "Unterstütze Werke oder hole Karten mit Tinte, um die Figuren deiner Lieblingsgeschichten zu sammeln.", cardZoomHint: "Neige dein Handy, um sie lebendig zu sehen",
     // ── i18n: tarjetas coleccionables ──
@@ -228,7 +228,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     profileBanner: "Copertina", uploadBanner: "Carica copertina", changeBanner: "Cambia copertina", removeBanner: "Rimuovi copertina",
     // ── i18n: textos rescatados del español fijo ──
     classicsOf: "Classici di", synopsisPlaceholder: "Di cosa parla la tua storia...", chapterTitlePlaceholder: "Titolo del capitolo...", chapterContentPlaceholder: "Scrivi qui la tua storia...", cardSubtitlePlaceholder: "Epiteto (es. L'empatico)", cardPreviewHint: "Anteprima · inclina il telefono", importClassicGutenberg: "Importa classico Gutenberg", textSize: "Dimensione testo", galleryOrFiles: "Galleria o file",
-    domainPublicShort: "Dominio pubblico",
+    domainPublicShort: "Dominio pubblico", toolsMenu: "Strumenti", signOut: "Esci", profileWorkCounts: "{published} pubblicate · {drafts} bozze", downloads: "download", gutenbergPersonalHint: "Salva una copia nella tua biblioteca privata", gutenbergAdminHint: "Controlla, salva o pubblica nel catalogo", gutenbergSource: "Vedi la fonte su Project Gutenberg", gutenbergRightsNotice: "Project Gutenberg verifica il pubblico dominio negli Stati Uniti. Controlla la legge del tuo paese prima di ridistribuire.",
     // ── i18n: colección de tarjetas ──
     cardsTab: "Carte", collectionTitle: "La mia collezione", collectionTotal: "{n} in totale", collectionEmptyTitle: "La tua collezione ti aspetta", collectionEmptyBody: "Sostieni opere o ottieni carte con Inchiostro per collezionare i personaggi delle tue storie preferite.", cardZoomHint: "Inclina il telefono per vederla prendere vita",
     // ── i18n: tarjetas coleccionables ──
@@ -265,7 +265,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     profileBanner: "Capa", uploadBanner: "Enviar capa", changeBanner: "Trocar capa", removeBanner: "Remover capa",
     // ── i18n: textos rescatados del español fijo ──
     classicsOf: "Clássicos de", synopsisPlaceholder: "Sobre o que é sua história...", chapterTitlePlaceholder: "Título do capítulo...", chapterContentPlaceholder: "Escreva sua história aqui...", cardSubtitlePlaceholder: "Epíteto (ex. O empático)", cardPreviewHint: "Prévia · incline o celular", importClassicGutenberg: "Importar clássico Gutenberg", textSize: "Tamanho do texto", galleryOrFiles: "Galeria ou arquivos",
-    domainPublicShort: "Domínio público",
+    domainPublicShort: "Domínio público", toolsMenu: "Ferramentas", signOut: "Sair", profileWorkCounts: "{published} publicadas · {drafts} rascunhos", downloads: "downloads", gutenbergPersonalHint: "Guarda uma cópia na tua biblioteca privada", gutenbergAdminHint: "Revê, guarda ou publica no catálogo", gutenbergSource: "Ver a fonte no Project Gutenberg", gutenbergRightsNotice: "O Project Gutenberg verifica o domínio público nos Estados Unidos. Consulta a lei do teu país antes de redistribuir.",
     // ── i18n: colección de tarjetas ──
     cardsTab: "Cartas", collectionTitle: "Minha coleção", collectionTotal: "{n} no total", collectionEmptyTitle: "Sua coleção espera", collectionEmptyBody: "Apoie obras ou obtenha cartas com Tinta para colecionar os personagens das suas histórias favoritas.", cardZoomHint: "Incline o celular para vê-la ganhar vida",
     // ── i18n: tarjetas coleccionables ──
@@ -302,7 +302,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     profileBanner: "バナー", uploadBanner: "バナーをアップロード", changeBanner: "バナーを変更", removeBanner: "バナーを削除",
     // ── i18n: textos rescatados del español fijo ──
     classicsOf: "クラシック", synopsisPlaceholder: "あなたの物語について...", chapterTitlePlaceholder: "章のタイトル...", chapterContentPlaceholder: "ここに物語を書いてください...", cardSubtitlePlaceholder: "異名（例：共感者）", cardPreviewHint: "プレビュー · スマホを傾けて", importClassicGutenberg: "Gutenbergの古典をインポート", textSize: "文字サイズ", galleryOrFiles: "ギャラリーまたはファイル",
-    domainPublicShort: "パブリックドメイン",
+    domainPublicShort: "パブリックドメイン", toolsMenu: "ツール", signOut: "ログアウト", profileWorkCounts: "公開 {published} · 下書き {drafts}", downloads: "ダウンロード", gutenbergPersonalHint: "非公開ライブラリに保存", gutenbergAdminHint: "確認、保存、またはカタログへ公開", gutenbergSource: "Project Gutenbergで出典を見る", gutenbergRightsNotice: "Project Gutenbergは米国でのパブリックドメインを確認しています。再配布前にお住まいの国の法律をご確認ください。",
     // ── i18n: colección de tarjetas ──
     cardsTab: "カード", collectionTitle: "マイコレクション", collectionTotal: "合計 {n}", collectionEmptyTitle: "コレクションを待っています", collectionEmptyBody: "作品を応援したりインクでカードを入手して、お気に入りの物語のキャラクターを集めましょう。", cardZoomHint: "スマホを傾けて動きを見よう",
     // ── i18n: tarjetas coleccionables ──
@@ -339,7 +339,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     profileBanner: "横幅", uploadBanner: "上传横幅", changeBanner: "更换横幅", removeBanner: "移除横幅",
     // ── i18n: textos rescatados del español fijo ──
     classicsOf: "经典", synopsisPlaceholder: "你的故事讲的是...", chapterTitlePlaceholder: "章节标题...", chapterContentPlaceholder: "在这里写你的故事...", cardSubtitlePlaceholder: "称号（如：共情者）", cardPreviewHint: "预览 · 倾斜手机", importClassicGutenberg: "导入Gutenberg经典", textSize: "文字大小", galleryOrFiles: "相册或文件",
-    domainPublicShort: "公有领域",
+    domainPublicShort: "公有领域", toolsMenu: "工具", signOut: "退出登录", profileWorkCounts: "已发布 {published} · 草稿 {drafts}", downloads: "次下载", gutenbergPersonalHint: "保存到你的私人书库", gutenbergAdminHint: "审核、保存或发布到目录", gutenbergSource: "在 Project Gutenberg 查看来源", gutenbergRightsNotice: "Project Gutenberg 按美国法律确认公有领域状态。重新分发前请查阅你所在国家的法律。",
     // ── i18n: colección de tarjetas ──
     cardsTab: "卡牌", collectionTitle: "我的收藏", collectionTotal: "共 {n} 张", collectionEmptyTitle: "你的收藏在等待", collectionEmptyBody: "支持作品或用墨水获取卡牌，开始收集你最爱故事中的角色。", cardZoomHint: "倾斜手机看它动起来",
     // ── i18n: tarjetas coleccionables ──
@@ -376,7 +376,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     profileBanner: "الغلاف", uploadBanner: "رفع الغلاف", changeBanner: "تغيير الغلاف", removeBanner: "إزالة الغلاف",
     // ── i18n: textos rescatados del español fijo ──
     classicsOf: "كلاسيكيات", synopsisPlaceholder: "عن ماذا تدور قصتك...", chapterTitlePlaceholder: "عنوان الفصل...", chapterContentPlaceholder: "اكتب قصتك هنا...", cardSubtitlePlaceholder: "لقب (مثل: المتعاطف)", cardPreviewHint: "معاينة · أمِل هاتفك", importClassicGutenberg: "استيراد كلاسيكية Gutenberg", textSize: "حجم النص", galleryOrFiles: "المعرض أو الملفات",
-    domainPublicShort: "ملكية عامة",
+    domainPublicShort: "ملكية عامة", toolsMenu: "الأدوات", signOut: "تسجيل الخروج", profileWorkCounts: "{published} منشورة · {drafts} مسودات", downloads: "تنزيلات", gutenbergPersonalHint: "احفظ نسخة في مكتبتك الخاصة", gutenbergAdminHint: "راجع أو احفظ أو انشر في الفهرس", gutenbergSource: "عرض المصدر على Project Gutenberg", gutenbergRightsNotice: "يتحقق Project Gutenberg من الملكية العامة في الولايات المتحدة. راجع قانون بلدك قبل إعادة التوزيع.",
     // ── i18n: colección de tarjetas ──
     cardsTab: "بطاقات", collectionTitle: "مجموعتي", collectionTotal: "{n} إجمالاً", collectionEmptyTitle: "مجموعتك بانتظارك", collectionEmptyBody: "ادعم الأعمال أو احصل على بطاقات بالحبر لتبدأ بجمع شخصيات قصصك المفضلة.", cardZoomHint: "أمِل هاتفك لتراها تنبض بالحياة",
     // ── i18n: tarjetas coleccionables ──

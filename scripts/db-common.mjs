@@ -2,7 +2,7 @@ import pg from "pg"
 
 const { Pool } = pg
 
-export const RELEASE_ID = "tloque-replit-2026-08-09-d936238a"
+export const RELEASE_ID = "tloque-replit-2026-08-15-gutenberg-integrity"
 
 export const BASE_TABLES = [
   "users",
@@ -72,6 +72,7 @@ export const EXPECTED_INDEXES = [
   "books_is_classic_idx",
   "books_author_id_idx",
   "books_gutenberg_id_idx",
+  "books_gutenberg_id_unique_idx",
 ]
 
 export function databaseUrl() {
@@ -228,6 +229,22 @@ export async function inspectDatabase(client) {
     `)
     details.duplicateNotificationKeys = notificationDuplicates
     if (notificationDuplicates) errors.push("Hay claves de deduplicación repetidas en notifications.")
+  }
+
+  if (await columnExists(client, "books", "gutenberg_id")) {
+    const duplicateGutenbergIds = await count(client, `
+      SELECT count(*) FROM (
+        SELECT gutenberg_id
+        FROM books
+        WHERE gutenberg_id IS NOT NULL
+        GROUP BY gutenberg_id
+        HAVING count(*) > 1
+      ) duplicate_ids
+    `)
+    details.duplicateGutenbergIds = duplicateGutenbergIds
+    if (duplicateGutenbergIds) {
+      errors.push("Hay IDs de Project Gutenberg repetidos en books; deben revisarse antes de crear el índice único.")
+    }
   }
 
   if (await tableExists(client, "tloque_schema_migrations")) {
