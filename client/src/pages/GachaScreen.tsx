@@ -10,15 +10,15 @@ import { useSettings } from "@/context/SettingsContext"
 
 // El color de cada rareza. Es lo que revela la suerte ANTES que la carta:
 // el brillo sube de temperatura mientras el sobre se abre.
-const RARITY_COLOR: Record<string, { c: string; glow: string; label: string }> = {
-  common:    { c: "#8a8f98", glow: "#8a8f98", label: "Común" },
-  rare:      { c: "#6bd08a", glow: "#6bd08a", label: "Rara" },
-  very_rare: { c: "#5b9dd9", glow: "#5b9dd9", label: "Muy rara" },
-  unusual:   { c: "#a77fd0", glow: "#a77fd0", label: "Insólita" },
-  golden:    { c: "#d4af37", glow: "#e6cd82", label: "Dorada" },
-  legendary: { c: "#e8833a", glow: "#ffb066", label: "Legendaria" },
-  mythic:    { c: "#e0509a", glow: "#ff8cc4", label: "Mítica" },
-  absolute:  { c: "#ffffff", glow: "#e6d7ff", label: "Absoluta" },
+const RARITY_COLOR: Record<string, { c: string; glow: string; labelKey: string }> = {
+  common:    { c: "#8a8f98", glow: "#8a8f98", labelKey: "rarityCommon" },
+  rare:      { c: "#6bd08a", glow: "#6bd08a", labelKey: "rarityRare" },
+  very_rare: { c: "#5b9dd9", glow: "#5b9dd9", labelKey: "rarityVeryRare" },
+  unusual:   { c: "#a77fd0", glow: "#a77fd0", labelKey: "rarityUnusual" },
+  golden:    { c: "#d4af37", glow: "#e6cd82", labelKey: "rarityGolden" },
+  legendary: { c: "#e8833a", glow: "#ffb066", labelKey: "rarityLegendary" },
+  mythic:    { c: "#e0509a", glow: "#ff8cc4", labelKey: "rarityMythic" },
+  absolute:  { c: "#ffffff", glow: "#e6d7ff", labelKey: "rarityAbsolute" },
 }
 const RARITY_ORDER = ["common","rare","very_rare","unusual","golden","legendary","mythic","absolute"]
 
@@ -41,7 +41,7 @@ interface DrawResult {
   drawId: number
   rarity: string
   pityApplied: boolean
-  card: { id: number; name: string; subtitle: string; fx: any }
+  card: { id: number; name: string; subtitle: string; fx: any; rarity: string; inGachaPool: boolean }
   book: { id: number; title: string; author: string; coverUrl: string }
   isDuplicate: boolean
   bookGranted: boolean
@@ -235,7 +235,7 @@ export default function GachaScreen() {
                 {isBig && <Sparkles className="w-3 h-3" style={{ color: rar.glow }} />}
                 <span className="text-[11px] font-display font-bold tracking-wide"
                   style={{ color: rar.c, fontVariant: "small-caps" }}>
-                  {rar.label}
+                  {t(rar.labelKey)}
                 </span>
                 {result.pityApplied && (
                   <span className="text-[8px] font-sans px-1 rounded" style={{ color: rar.glow, opacity: 0.8 }}>
@@ -251,7 +251,11 @@ export default function GachaScreen() {
                     id: result.card.id, name: result.card.name,
                     subtitle: result.card.subtitle, description: "",
                     fx: result.card.fx, unlock: "tinta",
-                  } as any}
+                    rarity: result.card.rarity || result.rarity,
+                    inGachaPool: true,
+                    priceTinta: 0,
+                    owned: true,
+                  }}
                   accentColor={rar.c} accentGlow={rar.glow}
                 />
               </div>
@@ -362,7 +366,7 @@ export default function GachaScreen() {
                           style={{ background: rc.c, boxShadow: `0 0 6px ${rc.glow}` }} />
                         <span className="text-[11.5px] font-display flex-1"
                           style={{ color: tier.poolUnlocked ? "#e4e4e7" : "#52525b" }}>
-                          {tier.name}
+                          {t(RARITY_COLOR[tier.key]?.labelKey || "rarityCommon")}
                         </span>
                         {/* El jackpot progresivo: si el pozo no la banca, se ve */}
                         {!tier.poolUnlocked ? (

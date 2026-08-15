@@ -267,6 +267,42 @@ html.tloque-reduce-motion *::after {
   .tloque-orb-dock { bottom:calc(1.35rem + var(--tloque-safe-bottom)); contain:layout style; }
 }
 
+/* Núcleo gravitacional del dock. Capas CSS aceleradas por GPU: no requiere
+   texturas ni un motor 3D y mantiene un centro negro nítido en móvil. */
+.tq-black-hole { position:absolute; inset:0; pointer-events:none; contain:paint; transform:translateZ(0); }
+.tq-black-hole__ambient { position:absolute; inset:-15%; border-radius:50%; opacity:calc(.22 + var(--tq-orb-energy) * .58); background:radial-gradient(circle, color-mix(in srgb, var(--tq-orb-glow) 46%, transparent) 0 22%, transparent 68%); filter:blur(8px); transition:opacity .22s ease, filter .22s ease; }
+.tq-black-hole__shell { position:absolute; inset:5px; overflow:hidden; border:1px solid rgba(255,255,255,.18); border-radius:50%; background:radial-gradient(circle at 34% 23%, rgba(255,255,255,.2), transparent 19%), radial-gradient(circle at 55% 67%, rgba(255,255,255,.025), transparent 55%), rgba(8,8,11,.76); box-shadow:inset 0 1px rgba(255,255,255,.22), inset 0 -8px 16px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.035), 0 8px 22px rgba(0,0,0,.56); backdrop-filter:blur(5px) saturate(130%); }
+.tq-black-hole__disk { position:absolute; border-radius:50%; opacity:calc(.22 + var(--tq-orb-energy) * .78); transition:opacity .2s ease, filter .2s ease; transform:translateZ(0); }
+.tq-black-hole__disk--wide { inset:4px; background:conic-gradient(from 18deg, transparent 0 7%, color-mix(in srgb, var(--tq-orb-color) 72%, white) 13%, #fff8dc 18%, var(--tq-orb-color) 23%, transparent 31% 48%, color-mix(in srgb, var(--tq-orb-glow) 80%, white) 57%, transparent 66% 78%, var(--tq-orb-color) 88%, transparent 96%); filter:blur(1.8px) brightness(calc(.72 + var(--tq-orb-energy) * .75)); -webkit-mask:radial-gradient(circle, transparent 0 52%, #000 58% 67%, transparent 73%); mask:radial-gradient(circle, transparent 0 52%, #000 58% 67%, transparent 73%); }
+.tq-black-hole__disk--tight { inset:8px; background:conic-gradient(from 210deg, transparent 0 20%, #fff7d4 28%, var(--tq-orb-color) 36%, transparent 45% 65%, color-mix(in srgb, var(--tq-orb-glow) 70%, white) 75%, transparent 86%); filter:blur(.45px) brightness(calc(.8 + var(--tq-orb-energy) * .9)); -webkit-mask:radial-gradient(circle, transparent 0 58%, #000 62% 73%, transparent 77%); mask:radial-gradient(circle, transparent 0 58%, #000 62% 73%, transparent 77%); }
+.tq-black-hole__photon { position:absolute; inset:13px; border:1.4px solid color-mix(in srgb, var(--tq-orb-color) 78%, white); border-radius:50%; opacity:calc(.36 + var(--tq-orb-energy) * .64); box-shadow:0 0 3px #fff, 0 0 8px var(--tq-orb-color), 0 0 15px color-mix(in srgb, var(--tq-orb-glow) 60%, transparent), inset 0 0 6px var(--tq-orb-color); transition:opacity .2s ease, box-shadow .2s ease; }
+.tq-black-hole__abyss { position:absolute; inset:16px; border-radius:50%; background:radial-gradient(circle at 42% 34%, #08080a 0, #010102 54%, #000 100%); box-shadow:inset 0 0 10px #000, 0 0 8px rgba(0,0,0,.96); }
+.tq-black-hole__lens { position:absolute; inset:8px; border-radius:50%; background:radial-gradient(ellipse at 32% 17%, rgba(255,255,255,.2), transparent 14%), radial-gradient(ellipse at 67% 86%, rgba(255,255,255,.05), transparent 22%); mix-blend-mode:screen; }
+.tq-black-hole__caustic { position:absolute; inset:1px; border-radius:50%; border-top:1px solid rgba(255,255,255,.42); border-right:1px solid rgba(255,255,255,.08); opacity:.62; }
+.tq-black-hole__sparks { position:absolute; inset:0; opacity:calc(.12 + var(--tq-orb-energy) * .58); transition:opacity .2s ease; }
+.tq-black-hole__sparks i { position:absolute; top:50%; left:50%; width:2px; height:2px; border-radius:50%; background:#fff9df; box-shadow:0 0 5px var(--tq-orb-color); transform-origin:0 0; }
+.tq-black-hole__sparks i:nth-child(1){ transform:rotate(12deg) translateX(28px); }
+.tq-black-hole__sparks i:nth-child(2){ transform:rotate(58deg) translateX(31px) scale(.7); }
+.tq-black-hole__sparks i:nth-child(3){ transform:rotate(111deg) translateX(29px) scale(.55); }
+.tq-black-hole__sparks i:nth-child(4){ transform:rotate(173deg) translateX(31px) scale(.8); }
+.tq-black-hole__sparks i:nth-child(5){ transform:rotate(226deg) translateX(28px) scale(.6); }
+.tq-black-hole__sparks i:nth-child(6){ transform:rotate(284deg) translateX(30px) scale(.75); }
+.tq-black-hole__sparks i:nth-child(7){ transform:rotate(333deg) translateX(27px) scale(.5); }
+.tq-black-hole__progress { position:absolute; inset:0; width:100%; height:100%; filter:drop-shadow(0 0 4px var(--tq-orb-color)); }
+.tq-black-hole__pulse { position:absolute; inset:5px; border:1.5px solid color-mix(in srgb, var(--tq-orb-color) 72%, white); border-radius:50%; box-shadow:0 0 16px var(--tq-orb-glow); }
+.tq-black-hole--pressed .tq-black-hole__ambient { filter:blur(6px) brightness(1.35); }
+.tq-black-hole--pressed .tq-black-hole__photon { box-shadow:0 0 4px #fff, 0 0 12px var(--tq-orb-color), 0 0 22px var(--tq-orb-glow), inset 0 0 8px var(--tq-orb-color); }
+.tq-black-hole--search .tq-black-hole__disk--wide { background:conic-gradient(from 18deg, transparent 0 8%, #9de7ff 15%, #e3c2ff 23%, transparent 33% 48%, #8ff5e5 57%, transparent 68% 80%, #bd9dff 89%, transparent 97%); }
+.tq-black-hole--search .tq-black-hole__photon { border-color:#d6eeff; box-shadow:0 0 4px white, 0 0 12px #8edcff, 0 0 22px #aa85ff, inset 0 0 7px #8edcff; }
+.tq-black-hole--live .tq-black-hole__disk--wide { animation:tq-gravity-spin 7.5s linear infinite; will-change:transform; }
+.tq-black-hole--live .tq-black-hole__disk--tight { animation:tq-gravity-spin-reverse 5.2s linear infinite; will-change:transform; }
+.tq-black-hole--live .tq-black-hole__ambient { animation:tq-gravity-breathe 3.8s ease-in-out infinite; }
+.tq-black-hole--live .tq-black-hole__sparks { animation:tq-gravity-spin 12s linear infinite; }
+
+@keyframes tq-gravity-spin { to { transform:rotate(360deg); } }
+@keyframes tq-gravity-spin-reverse { to { transform:rotate(-360deg); } }
+@keyframes tq-gravity-breathe { 50% { opacity:calc(.36 + var(--tq-orb-energy) * .64); transform:scale(1.07); } }
+
 @media (min-width: 640px) { .tloque-orb-dock { bottom:calc(2.25rem + var(--tloque-safe-bottom)); } }
 
 @media (max-width: 440px) { .tloque-app-header { padding-left:.65rem; } .tloque-header-action { padding:.45rem; } }
@@ -279,6 +315,10 @@ html.tloque-reduce-motion *::after {
 @keyframes tloque-boot-star { 50% { opacity:.25; transform:scale(.65); } }
 @keyframes tloque-menu-fade { from { opacity:0; } }
 @keyframes tloque-menu-enter { from { opacity:0; transform:translateY(2.2rem) scale(.985); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .tq-black-hole *, .tq-black-hole--live * { animation:none !important; transition-duration:.01ms !important; }
+}
 
 @layer utilities {
   .text-glow {

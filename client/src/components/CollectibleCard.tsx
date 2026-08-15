@@ -6,7 +6,7 @@ import FrameRenderer from "@/components/FrameRenderer"
 import { useFrames } from "@/hooks/useFrames"
 import { useCardViewer } from "@/components/CardViewer"
 import CardParticles, { type ParticleEffect } from "@/components/CardParticles"
-import { materialFor, frameGradient } from "@/lib/rarities"
+import { collectionMaterialFor, collectionTier, frameGradient } from "@/lib/rarities"
 import { useSettings } from "@/context/SettingsContext"
 
 export interface CardData {
@@ -20,6 +20,8 @@ export interface CardData {
   unlock:      "support" | "tinta"
   priceTinta:  number
   owned:       boolean
+  rarity?:     string
+  inGachaPool?: boolean
 }
 
 interface Props {
@@ -44,10 +46,15 @@ function tintFor(effect: ParticleEffect, accent: string): string {
 // Tarjeta coleccionable de Tloque. Viva (parallax 3D + clima por capa)
 // cuando es tuya o en previsualización; silueta con candado si falta.
 function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview , zoomable = true, onTap }: Props) {
-  const { t } = useSettings()
+  const { t, settings } = useSettings()
   const backArt = card.fx?.layers?.back || ""
-  const rarity = card.fx?.rarity || "silver"
-  const mat = materialFor(rarity)
+  const authoredMaterial = card.fx?.rarity || "silver"
+  const mat = collectionMaterialFor(card.rarity, card.inGachaPool, authoredMaterial)
+  const tier = card.inGachaPool ? collectionTier(card.rarity) : 0
+  const collectionRarity = card.inGachaPool && card.rarity ? card.rarity : ""
+  const serial = `TQ-${String(card.id).padStart(6, "0")}`
+  const premiumFoil = tier >= 2
+  const absolute = collectionRarity === "absolute"
 
   // Marco de la galería (si el autor eligió uno). Si no, el anillo de rareza.
   const { byId } = useFrames()
@@ -114,8 +121,16 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
   }
 
   return (
-    <div className="relative select-none"
+    <div className="relative select-none rounded-[22px] outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
       onClick={handleTap}
+      onKeyDown={event => {
+        if (!handleTap || (event.key !== "Enter" && event.key !== " ")) return
+        event.preventDefault()
+        handleTap()
+      }}
+      role={handleTap ? "button" : undefined}
+      tabIndex={handleTap ? 0 : undefined}
+      aria-label={handleTap ? card.name : undefined}
       style={{ cursor: handleTap ? "pointer" : undefined }}>
       {/* Halo exterior (no rota: es la luz ambiental, no la carta) */}
       <div className="rounded-[22px] relative"
@@ -132,6 +147,23 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
             frameOverlay={
               /* TODO el chrome rota pegado a la carta: marco, textos, sello */
               <div className="absolute inset-0 pointer-events-none">
+                {/* Foil coleccionable: material ligado a la rareza realmente adquirida. */}
+                {premiumFoil && (
+                  <motion.div
+                    className="absolute inset-[2px] rounded-[20px]"
+                    style={{
+                      background: absolute
+                        ? "linear-gradient(118deg, transparent 15%, rgba(137,220,255,.18) 31%, rgba(255,255,255,.28) 42%, rgba(242,153,255,.2) 55%, transparent 72%)"
+                        : `linear-gradient(118deg, transparent 18%, ${mat.glow}10 30%, ${mat.light}34 46%, ${mat.glow}12 61%, transparent 76%)`,
+                      backgroundSize: "240% 240%",
+                      mixBlendMode: "screen",
+                      opacity: 0.25 + tier * 0.075,
+                    }}
+                    animate={settings.reduceMotion ? undefined : { backgroundPosition: ["120% 0%", "-80% 100%", "120% 0%"] }}
+                    transition={{ duration: Math.max(4.5, 9 - tier * 0.55), repeat: Infinity, ease: "linear" }}
+                  />
+                )}
+
                 {/* El marco: el de la galería si lo eligieron; si no, el anillo de rareza */}
                 {galleryFrame ? (
                   <FrameRenderer preset={galleryFrame.pkg} shape="card" asOverlay
@@ -150,7 +182,7 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
                       <motion.div
                         className="absolute inset-0"
                         style={{ background: `linear-gradient(115deg, transparent 30%, ${mat.light}cc 50%, transparent 70%)` }}
-                        animate={{ x: ["-120%", "120%"] }}
+                        animate={settings.reduceMotion ? { x: "10%" } : { x: ["-120%", "120%"] }}
                         transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut", repeatDelay: 1.5 }}
                       />
                     )}
@@ -195,6 +227,28 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
                     ? <Droplets className="w-2.5 h-2.5" style={{ color: mat.light }} />
                     : <Heart className="w-2.5 h-2.5" style={{ color: mat.light }} />}
                 </div>
+
+                {/* Número de pieza y jerarquía visibles sin depender del idioma. */}
+                <div className={`absolute top-2.5 ${galleryFrame ? "left-2.5" : "right-2.5"} flex items-center gap-1.5 rounded-full px-2 py-0.5`}
+                  style={{
+                    background: "rgba(3,3,6,.78)",
+                    border: `1px solid ${mat.light}38`,
+                    boxShadow: tier >= 5 ? `0 0 12px ${mat.glow}36` : undefined,
+                  }}>
+                  {collectionRarity && (
+                    <span className="text-[7px] tracking-[-0.08em]" style={{ color: mat.light }}>
+                      {"◆".repeat(Math.min(3, Math.max(1, Math.ceil((tier + 1) / 3))))}
+                    </span>
+                  )}
+                  <span className="font-mono text-[7px] tracking-[0.08em] text-white/45">{serial}</span>
+                </div>
+
+                {collectionRarity && (
+                  <div className="absolute bottom-2.5 right-2.5 font-mono text-[6px] uppercase tracking-[0.2em]"
+                    style={{ color: `${mat.light}80`, writingMode: "vertical-rl" }}>
+                    {collectionRarity.replace("_", "-")}
+                  </div>
+                )}
               </div>
             }
           >

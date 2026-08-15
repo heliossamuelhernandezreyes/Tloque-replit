@@ -1,12 +1,6 @@
-import { useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } from "react"
+import { useState, useRef, useEffect, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
-import {
-  motion,
-  AnimatePresence,
-  useMotionValue,
-  useSpring,
-  type MotionValue,
-} from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import { useLocation } from "wouter"
 import { Search, X } from "lucide-react"
 import useOrbGestures from "../hooks/useOrbGestures"
@@ -38,10 +32,10 @@ type BookSuggestion = {
 }
 
 // ─────────────────────────────────────────────────────────
-// OJO CÓSMICO — orbe central (sin íconos, puro ojo)
+// NÚCLEO GRAVITACIONAL — orbe central
 // ─────────────────────────────────────────────────────────
-function CosmicEye({
-  color, glow, pulse, pressed, searchMode, animated, blinkSignal, gazeX, gazeY,
+function GravitationalCore({
+  color, glow, pulse, pressed, searchMode, animated,
 }: {
   color: string
   glow: string
@@ -49,232 +43,75 @@ function CosmicEye({
   pressed: boolean
   searchMode: boolean
   animated: boolean
-  blinkSignal: number
-  gazeX: MotionValue<number>
-  gazeY: MotionValue<number>
 }) {
-  const cx = 38; const cy = 38
-
-  const pupilPath = `
-    M ${cx} ${cy - 13}
-    C ${cx + 9} ${cy - 5}, ${cx + 9} ${cy + 5}, ${cx} ${cy + 13}
-    C ${cx - 9} ${cy + 5}, ${cx - 9} ${cy - 5}, ${cx} ${cy - 13}
-    Z
-  `
+  const energy = searchMode ? 1 : pressed ? 0.9 : pulse ? 0.82 : 0.54
+  const style = {
+    "--tq-orb-color": color,
+    "--tq-orb-glow": glow,
+    "--tq-orb-energy": energy,
+  } as CSSProperties
 
   return (
-    <svg
-      width="76" height="76" viewBox="0 0 76 76"
-      className="absolute inset-0 pointer-events-none"
-      style={{ overflow: "visible" }}
+    <div
+      className={[
+        "tq-black-hole",
+        animated ? "tq-black-hole--live" : "",
+        pressed ? "tq-black-hole--pressed" : "",
+        searchMode ? "tq-black-hole--search" : "",
+      ].filter(Boolean).join(" ")}
+      style={style}
+      aria-hidden="true"
     >
-      <defs>
-        <radialGradient id="iris-grad" cx="50%" cy="50%" r="50%">
-          <stop offset="0%"   stopColor={color} stopOpacity="0.04" />
-          <stop offset="40%"  stopColor={color} stopOpacity="0.28" />
-          <stop offset="72%"  stopColor={glow}  stopOpacity="0.50" />
-          <stop offset="100%" stopColor={glow}  stopOpacity="0.10" />
-        </radialGradient>
-        {/* Gradiente tornasol para modo búsqueda */}
-        <radialGradient id="iris-search" cx="50%" cy="50%" r="50%">
-          <stop offset="0%"   stopColor="#88ccff" stopOpacity="0.08" />
-          <stop offset="35%"  stopColor="#bb88ff" stopOpacity="0.45" />
-          <stop offset="70%"  stopColor="#66dddd" stopOpacity="0.60" />
-          <stop offset="100%" stopColor="#aabbff" stopOpacity="0.15" />
-        </radialGradient>
-        <radialGradient id="eye-halo" cx="50%" cy="50%" r="50%">
-          <stop offset="0%"   stopColor={glow} stopOpacity="0.0"  />
-          <stop offset="55%"  stopColor={glow} stopOpacity="0.10" />
-          <stop offset="100%" stopColor={glow} stopOpacity="0.0"  />
-        </radialGradient>
-        <radialGradient id="pupil-grad" cx="38%" cy="32%" r="58%">
-          <stop offset="0%"   stopColor="rgba(8,4,16,0.75)"  />
-          <stop offset="100%" stopColor="rgba(0,0,0,0.97)"   />
-        </radialGradient>
-        <radialGradient id="iris-light" cx="32%" cy="28%" r="52%">
-          <stop offset="0%"   stopColor={color} stopOpacity="0.50" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.0"  />
-        </radialGradient>
-        <filter id="eye-glow">   <feGaussianBlur stdDeviation="2.2" /></filter>
-        <filter id="iris-blur">  <feGaussianBlur stdDeviation="0.7" /></filter>
-        <filter id="pupil-glow"> <feGaussianBlur stdDeviation="1.0" /></filter>
-        <clipPath id="iris-clip"><circle cx={cx} cy={cy} r="26.5" /></clipPath>
-      </defs>
+      <div className="tq-black-hole__ambient" />
+      <div className="tq-black-hole__shell">
+        <div className="tq-black-hole__disk tq-black-hole__disk--wide" />
+        <div className="tq-black-hole__disk tq-black-hole__disk--tight" />
+        <div className="tq-black-hole__photon" />
+        <div className="tq-black-hole__abyss" />
+        <div className="tq-black-hole__lens" />
+        <div className="tq-black-hole__caustic" />
+      </div>
 
-      {/* Halo pulsante exterior */}
-      <motion.circle cx={cx} cy={cy} r="44"
-        fill="url(#eye-halo)"
-        animate={animated ? { opacity: [0.45, 0.95, 0.45] } : { opacity: 0.62 }}
-        transition={{ duration: 4.5, repeat: animated ? Infinity : 0, ease: "easeInOut" }}
-      />
+      <div className="tq-black-hole__sparks">
+        {Array.from({ length: 7 }, (_, index) => <i key={index} />)}
+      </div>
 
-      {/* Progreso visible del gesto largo: vuelve comprensible la interacción. */}
       <AnimatePresence>
         {pressed && (
-          <motion.circle
-            cx={cx} cy={cy} r="33"
-            fill="none"
-            stroke={searchMode ? "#a9dfff" : color}
-            strokeWidth="1.15"
-            strokeLinecap="round"
-            transform={`rotate(-90 ${cx} ${cy})`}
-            initial={{ pathLength: 0, strokeOpacity: 0.15 }}
-            animate={{ pathLength: 1, strokeOpacity: 0.72 }}
-            exit={{ strokeOpacity: 0 }}
-            transition={animated
-              ? { pathLength: { duration: 1.4, ease: "linear" }, strokeOpacity: { duration: 0.16 } }
-              : { duration: 0 }}
-          />
+          <motion.svg
+            className="tq-black-hole__progress"
+            viewBox="0 0 76 76"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.circle
+              cx="38" cy="38" r="35"
+              fill="none"
+              stroke={searchMode ? "#bfe7ff" : color}
+              strokeWidth="1.25"
+              strokeLinecap="round"
+              transform="rotate(-90 38 38)"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={animated ? { duration: 1.4, ease: "linear" } : { duration: 0 }}
+            />
+          </motion.svg>
         )}
       </AnimatePresence>
 
-      {/* Halo adicional tornasol en modo búsqueda */}
-      {searchMode && (
-        <motion.circle cx={cx} cy={cy} r="36"
-          fill="none"
-          strokeWidth="1.5"
-          initial={{ r: 30, strokeOpacity: 0 }}
-          animate={animated ? {
-            r: [30, 40, 30],
-            strokeOpacity: [0.0, 0.5, 0.0],
-            stroke: ["#88ccff", "#bb88ff", "#66dddd", "#88ccff"],
-          } : { r: 34, strokeOpacity: 0.35, stroke: "#88ccff" }}
-          transition={{ duration: 2.2, repeat: animated ? Infinity : 0, ease: "easeInOut" }}
-        />
-      )}
-
-      {/* Iris base — tornasol en modo búsqueda */}
-      <motion.circle cx={cx} cy={cy} r="28"
-        fill={searchMode ? "url(#iris-search)" : "url(#iris-grad)"}
-        stroke={searchMode ? "#bb88ff" : color}
-        strokeOpacity={searchMode ? 0.7 : 0.35} strokeWidth="0.8"
-        animate={searchMode && animated ? { strokeOpacity: [0.5, 0.9, 0.5] } : { strokeOpacity: searchMode ? 0.7 : 0.35 }}
-        transition={{ duration: 1.8, repeat: animated ? Infinity : 0, ease: "easeInOut" }}
-      />
-
-      {/* Iris borde luminoso — más brillante en búsqueda */}
-      <motion.circle cx={cx} cy={cy} r="28"
-        fill="none"
-        stroke={searchMode ? "#88ccff" : color}
-        strokeOpacity={searchMode ? 0.50 : 0.20}
-        strokeWidth={searchMode ? 5 : 3.5}
-        filter="url(#eye-glow)"
-        animate={searchMode && animated ? {
-          stroke: ["#88ccff", "#bb88ff", "#66dddd", "#aabbff", "#88ccff"],
-          strokeOpacity: [0.4, 0.7, 0.5, 0.8, 0.4],
-        } : { stroke: searchMode ? "#88ccff" : color, strokeOpacity: searchMode ? 0.55 : 0.2 }}
-        transition={{ duration: 3, repeat: animated ? Infinity : 0, ease: "easeInOut" }}
-      />
-
-      {/* Líneas del iris — rotación lenta */}
-      <motion.g
-        animate={{ rotate: animated ? 360 : 0 }}
-        transition={{ duration: 45, repeat: animated ? Infinity : 0, ease: "linear" }}
-        style={{ transformOrigin: `${cx}px ${cy}px` }}
-        clipPath="url(#iris-clip)"
-      >
-        {Array.from({ length: 14 }, (_, i) => {
-          const a = (i * (360 / 14) * Math.PI) / 180
-          return (
-            <line key={i}
-              x1={cx + 8 * Math.cos(a)}  y1={cy + 8 * Math.sin(a)}
-              x2={cx + 27 * Math.cos(a)} y2={cy + 27 * Math.sin(a)}
-              stroke={color} strokeOpacity="0.15" strokeWidth="0.5"
-            />
-          )
-        })}
-      </motion.g>
-
-      {/* Contra-rotación — capa interior */}
-      <motion.g
-        animate={{ rotate: animated ? -360 : 0 }}
-        transition={{ duration: 32, repeat: animated ? Infinity : 0, ease: "linear" }}
-        style={{ transformOrigin: `${cx}px ${cy}px` }}
-        clipPath="url(#iris-clip)"
-      >
-        {Array.from({ length: 8 }, (_, i) => {
-          const a = (i * 45 * Math.PI) / 180
-          return (
-            <line key={i}
-              x1={cx + 14 * Math.cos(a)} y1={cy + 14 * Math.sin(a)}
-              x2={cx + 27 * Math.cos(a)} y2={cy + 27 * Math.sin(a)}
-              stroke={color} strokeOpacity="0.10" strokeWidth="0.4"
-            />
-          )
-        })}
-      </motion.g>
-
-      {/* Luz interna del iris */}
-      <motion.ellipse cx={cx - 7} cy={cy - 9} rx="11" ry="15"
-        fill="url(#iris-light)"
-        filter="url(#iris-blur)"
-        clipPath="url(#iris-clip)"
-        style={{ x: gazeX, y: gazeY }}
-      />
-
-      {/* Pupila vertical — se dilata suavemente */}
-      <motion.path
-        d={pupilPath}
-        fill="url(#pupil-grad)"
-        animate={animated ? { scaleY: [1, 1.10, 0.90, 1.05, 1] } : { scaleY: 1 }}
-        transition={{
-          duration: 6,
-          repeat: animated ? Infinity : 0,
-          ease: "easeInOut",
-          times: [0, 0.25, 0.6, 0.8, 1]
-        }}
-        style={{ x: gazeX, y: gazeY, transformOrigin: `${cx}px ${cy}px` }}
-      />
-
-      {/* Borde de la pupila */}
-      <motion.path d={pupilPath}
-        fill="none"
-        stroke={color} strokeOpacity="0.25" strokeWidth="0.7"
-        filter="url(#pupil-glow)"
-        style={{ x: gazeX, y: gazeY }}
-      />
-
-      {/* Reflejo en la pupila */}
-      <motion.ellipse
-        cx={cx - 3.5} cy={cy - 5} rx="2.2" ry="3.2"
-        fill="rgba(255,255,255,0.50)"
-        filter="url(#iris-blur)"
-        animate={animated ? { opacity: [0.35, 0.65, 0.35] } : { opacity: 0.48 }}
-        transition={{ duration: 3.5, repeat: animated ? Infinity : 0, ease: "easeInOut" }}
-        style={{ x: gazeX, y: gazeY }}
-      />
-
-      {/* Destello al tocar */}
       <AnimatePresence>
         {pulse && (
-          <motion.circle cx={cx} cy={cy} r="28"
-            fill="none"
-            stroke={color} strokeWidth="2.5"
-            initial={{ r: 28, strokeOpacity: 0.9 }}
-            animate={{ r: 56,  strokeOpacity: 0   }}
-            exit={{ strokeOpacity: 0 }}
-            transition={{ duration: animated ? 0.42 : 0, ease: "easeOut" }}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Parpadeo orgánico: eventos espaciados de forma irregular, no un bucle mecánico. */}
-      <AnimatePresence>
-        {animated && blinkSignal > 0 && (
-          <motion.ellipse
-            key={blinkSignal}
-            cx={cx} cy={cy} rx="27" ry="27"
-            fill="rgba(2,2,8,0.97)"
-            clipPath="url(#iris-clip)"
-            initial={{ scaleY: 0, opacity: 0 }}
-            animate={{ scaleY: [0, 1, 0], opacity: [0, 1, 0] }}
+          <motion.div
+            className="tq-black-hole__pulse"
+            initial={{ opacity: 0.9, scale: 0.72 }}
+            animate={{ opacity: 0, scale: 1.45 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut", times: [0, 0.5, 1] }}
-            style={{ transformOrigin: `${cx}px ${cy}px` }}
+            transition={{ duration: animated ? 0.5 : 0, ease: "easeOut" }}
           />
         )}
       </AnimatePresence>
-    </svg>
+    </div>
   )
 }
 
@@ -494,7 +331,6 @@ export default function OrbSystem() {
   const [showLabel,       setShowLabel]       = useState(false)
   const [orbPulse,        setOrbPulse]        = useState(false)
   const [centralPressed,  setCentralPressed]  = useState(false)
-  const [blinkSignal,     setBlinkSignal]     = useState(0)
   const [showConfig,      setShowConfig]      = useState(false)
   const [showPulso,       setShowPulso]       = useState(false)
   const [documentVisible, setDocumentVisible] = useState(
@@ -510,10 +346,6 @@ export default function OrbSystem() {
   // rastreamos un press prolongado directamente
   const searchHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchPressStart = useRef<number>(0)
-  const gazeXRaw = useMotionValue(0)
-  const gazeYRaw = useMotionValue(0)
-  const gazeX = useSpring(gazeXRaw, { stiffness: 260, damping: 26, mass: 0.28 })
-  const gazeY = useSpring(gazeYRaw, { stiffness: 260, damping: 26, mass: 0.28 })
 
   useEffect(() => {
     setSearchMode(false)
@@ -521,9 +353,7 @@ export default function OrbSystem() {
     setSuggestions([])
     setShowSuggestions(false)
     setCentralPressed(false)
-    gazeXRaw.set(0)
-    gazeYRaw.set(0)
-  }, [location, gazeXRaw, gazeYRaw])
+  }, [location])
 
   useEffect(() => () => {
     if (labelTimer.current) clearTimeout(labelTimer.current)
@@ -723,36 +553,6 @@ export default function OrbSystem() {
   const filterActive = lobbyFilter === "short"
   const animated = documentVisible && !settings.reduceMotion
 
-  useEffect(() => {
-    gazeXRaw.set(0)
-    gazeYRaw.set(0)
-    if (!animated) return
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const scheduleBlink = () => {
-      const delay = 3_800 + Math.round(Math.random() * 5_200)
-      timer = setTimeout(() => {
-        setBlinkSignal(value => value + 1)
-        scheduleBlink()
-      }, delay)
-    }
-    scheduleBlink()
-    return () => { if (timer) clearTimeout(timer) }
-  }, [animated, gazeXRaw, gazeYRaw])
-
-  function updateGaze(event: ReactPointerEvent) {
-    if (!animated) return
-    const rect = event.currentTarget.getBoundingClientRect()
-    const x = ((event.clientX - rect.left) / Math.max(rect.width, 1) - 0.5) * 7
-    const y = ((event.clientY - rect.top) / Math.max(rect.height, 1) - 0.5) * 5
-    gazeXRaw.set(Math.max(-3.5, Math.min(3.5, x)))
-    gazeYRaw.set(Math.max(-2.5, Math.min(2.5, y)))
-  }
-
-  function resetGaze() {
-    gazeXRaw.set(0)
-    gazeYRaw.set(0)
-  }
-
   const dockTransition = animated
     ? { type: "spring" as const, stiffness: 240, damping: 25, mass: 0.75 }
     : { duration: 0 }
@@ -762,18 +562,13 @@ export default function OrbSystem() {
     ...central,
     onPointerDown: (e: ReactPointerEvent) => {
       setCentralPressed(true)
-      updateGaze(e)
       central.onPointerDown(e)
       onCentralDown()
     },
-    onPointerMove: (e: ReactPointerEvent) => {
-      updateGaze(e)
-      central.onPointerMove(e)
-    },
+    onPointerMove: central.onPointerMove,
     onPointerUp: (e: ReactPointerEvent) => {
       central.onPointerUp(e)
       setCentralPressed(false)
-      resetGaze()
       onCentralUp()
     },
     onPointerLeave: (e: ReactPointerEvent) => {
@@ -781,14 +576,12 @@ export default function OrbSystem() {
       central.onPointerLeave(e)
       if (!captured) {
         setCentralPressed(false)
-        resetGaze()
         if (searchHoldTimer.current) { clearTimeout(searchHoldTimer.current); searchHoldTimer.current = null }
       }
     },
     onPointerCancel: (e: ReactPointerEvent) => {
       central.onPointerCancel(e)
       setCentralPressed(false)
-      resetGaze()
       if (searchHoldTimer.current) { clearTimeout(searchHoldTimer.current); searchHoldTimer.current = null }
     },
   }
@@ -884,7 +677,7 @@ export default function OrbSystem() {
           />
         </motion.button>
 
-        {/* ── ORBE CENTRAL — OJO CÓSMICO ── */}
+        {/* ── ORBE CENTRAL — NÚCLEO GRAVITACIONAL ── */}
         <motion.button
           {...centralProps}
           animate={{ y: searchMode ? "-38dvh" : 0, scale: searchMode ? 1.1 : 1 }}
@@ -897,16 +690,13 @@ export default function OrbSystem() {
           aria-label={location === "/" ? t("library") : t("lobby")}
           aria-expanded={searchMode}
         >
-          <CosmicEye
+          <GravitationalCore
             color={cfg.color}
             glow={cfg.glow}
             pulse={orbPulse}
             pressed={centralPressed}
             searchMode={searchMode}
             animated={animated}
-            blinkSignal={blinkSignal}
-            gazeX={gazeX}
-            gazeY={gazeY}
           />
         </motion.button>
 

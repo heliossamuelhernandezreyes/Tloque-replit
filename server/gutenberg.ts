@@ -47,6 +47,8 @@ export interface GutenbergBook {
   subjects:      string[]
   formats:       Record<string, string>
   download_count: number
+  requestedLanguage?: string
+  languageMatch?: "exact" | "multilingual" | "alternative"
 }
 
 interface GutenbergSearchResult {
@@ -115,48 +117,78 @@ function normalizeQuery(q: string): string {
     .toLowerCase().trim()
 }
 
+export function normalizeGutenbergLanguage(lang: string): string {
+  const base = String(lang || "").trim().toLowerCase().split(/[-_]/)[0]
+  return Object.prototype.hasOwnProperty.call(SUPPORTED_LANGUAGES, base) ? base : "es"
+}
+
+function plainTextUrl(book: GutenbergBook): string | undefined {
+  return Object.entries(book.formats).find(([mime, value]) =>
+    mime.toLowerCase().startsWith("text/plain") && typeof value === "string" && value.length > 0
+  )?.[1]
+}
+
+function classifyLanguage(book: GutenbergBook, requestedLanguage: string): GutenbergBook["languageMatch"] {
+  const languages = book.languages.map(language =>
+    String(language || "").trim().toLowerCase().split(/[-_]/)[0]
+  ).filter(Boolean)
+  if (!languages.includes(requestedLanguage)) return "alternative"
+  return languages.length > 1 ? "multilingual" : "exact"
+}
+
 // ── BÚSQUEDA EN GUTENDEX — con fuzzy fallback ────────────
 export async function searchGutenberg(
   query: string,
   lang = "es"
 ): Promise<GutenbergBook[]> {
-  const normalized = normalizeQuery(query)
+  const cleanQuery = String(query || "").trim().slice(0, 120)
+  if (!cleanQuery) return []
+  const normalized = normalizeQuery(cleanQuery)
+  const requestedLanguage = normalizeGutenbergLanguage(lang)
   const seen       = new Set<number>()
   const results:   GutenbergBook[] = []
 
   // Función de búsqueda individual
   async function fetchBooks(q: string, language?: string): Promise<GutenbergBook[]> {
-    const langParam = language ? `&languages=${language}` : ""
-    const url = `https://gutendex.com/books/?search=${encodeURIComponent(q)}&mime_type=text${langParam}`
+    const url = new URL("https://gutendex.com/books/")
+    url.searchParams.set("search", q)
+    // Gutendex compara el inicio del MIME. "text/" excluye imágenes y EPUB
+    // sin depender de la presencia accidental de la palabra "text".
+    url.searchParams.set("mime_type", "text/")
+    if (language) url.searchParams.set("languages", language)
     try {
-      const res = await fetchWithTimeout(url, 9000, { redirect: "error" })
+      const res = await fetchWithTimeout(url.toString(), 9000, { redirect: "error" })
       if (!res.ok) return []
       const raw = new TextDecoder().decode(await readBodyWithLimit(res, 1_500_000))
       const data = JSON.parse(raw) as Partial<GutenbergSearchResult>
-      return Array.isArray(data.results) ? data.results.filter(isGutenbergBook).slice(0, 24) : []
+      return Array.isArray(data.results)
+        ? data.results.filter(isGutenbergBook).filter(book => !!plainTextUrl(book)).slice(0, 24)
+        : []
     } catch { return [] }
   }
 
-  // Búsqueda 1: query original con idioma
-  const r1 = await fetchBooks(query, lang)
-  for (const b of r1) {
-    if (!seen.has(b.id)) { seen.add(b.id); results.push(b) }
+  const addBooks = (books: GutenbergBook[], allowAlternatives: boolean) => {
+    for (const book of books) {
+      if (seen.has(book.id)) continue
+      const languageMatch = classifyLanguage(book, requestedLanguage)
+      if (!allowAlternatives && languageMatch === "alternative") continue
+      seen.add(book.id)
+      results.push({ ...book, requestedLanguage, languageMatch })
+    }
   }
+
+  // Búsqueda 1: query original con idioma
+  addBooks(await fetchBooks(cleanQuery, requestedLanguage), false)
 
   // Búsqueda 2: query normalizado (sin tildes) con idioma
-  if (normalized !== query.toLowerCase().trim() || results.length < 3) {
-    const r2 = await fetchBooks(normalized, lang)
-    for (const b of r2) {
-      if (!seen.has(b.id)) { seen.add(b.id); results.push(b) }
-    }
+  if (normalized && normalized !== cleanQuery.toLowerCase()) {
+    addBooks(await fetchBooks(normalized, requestedLanguage), false)
   }
 
-  // Búsqueda 3: sin filtro de idioma si hay pocos resultados
-  if (results.length < 3) {
-    const r3 = await fetchBooks(normalized)
-    for (const b of r3) {
-      if (!seen.has(b.id)) { seen.add(b.id); results.push(b) }
-    }
+  // Solo si no existe ninguna edición en el idioma solicitado, mostrar otras
+  // ediciones. Nunca se mezclan silenciosamente con coincidencias exactas.
+  if (results.length === 0) {
+    addBooks(await fetchBooks(normalized || cleanQuery), true)
   }
 
   return results.slice(0, 12)
@@ -333,6 +365,17 @@ export function detectChapters(
     // Italiano / Portugués
     /^(CAPITOLO\s+[IVXLCDM\d]+[^\n]{0,60})$/m,
     /^(Capitolo\s+[IVXLCDM\d]+[^\n]{0,60})$/m,
+    // Ruso, árabe, neerlandés, polaco, finés, sueco, latín y griego
+    /^(ГЛАВА\s+[\p{L}\p{N}]+[^\n]{0,60})$/imu,
+    /^(الفصل\s+[\p{L}\p{N}]+[^\n]{0,60})$/imu,
+    /^(HOOFDSTUK\s+[\p{L}\p{N}]+[^\n]{0,60})$/imu,
+    /^(ROZDZIAŁ\s+[\p{L}\p{N}]+[^\n]{0,60})$/imu,
+    /^(LUKU\s+[\p{L}\p{N}]+[^\n]{0,60})$/imu,
+    /^(KAPITEL\s+[\p{L}\p{N}]+[^\n]{0,60})$/imu,
+    /^(CAPUT\s+[\p{L}\p{N}]+[^\n]{0,60})$/imu,
+    /^(ΚΕΦΑΛΑΙΟ\s+[\p{L}\p{N}]+[^\n]{0,60})$/imu,
+    // Japonés y chino: 第1章, 第一章, 第1节
+    /^(第\s*[一二三四五六七八九十百千\d]+\s*[章节][^\n]{0,60})$/mu,
     // Numerales
     /^([IVXLCDM]{1,6}\.?\s*)$/m,
     /^([IVXLCDM]{1,6}\s*[-–—]\s*[^\n]{2,50})$/m,

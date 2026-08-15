@@ -80,6 +80,7 @@ export default function ParallaxCover({
   // No cambia con el movimiento, así que no re-renderiza nunca durante la interacción.
   const [imgBroken, setImgBroken] = useState(false)
   const [gyroReady, setGyroReady] = useState(false)
+  const [inViewport, setInViewport] = useState(true)
 
   // ── TODO EL MOVIMIENTO VIVE EN REFS. React no se entera. ──
   const root    = useRef<HTMLDivElement>(null)
@@ -102,10 +103,24 @@ export default function ParallaxCover({
 
   const hasImage = !!coverUrl && !imgBroken
 
+  useEffect(() => {
+    const node = root.current
+    if (!node || typeof IntersectionObserver === "undefined") return
+    const observer = new IntersectionObserver(([entry]) => {
+      setInViewport(entry.isIntersecting)
+      if (!entry.isIntersecting) {
+        dragging.current = false
+        target.current = { x: 0, y: 0 }
+      }
+    }, { rootMargin: "120px 0px", threshold: 0.01 })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+
   // ── EL BUCLE: escribe los transforms DIRECTO al DOM, 60 veces por segundo,
   //    sin pasar por React ni una sola vez. ──
   useEffect(() => {
-    if (settings.reduceMotion) {
+    if (settings.reduceMotion || !inViewport) {
       if (rotator.current) rotator.current.style.transform = "none"
       return
     }
@@ -184,7 +199,7 @@ export default function ParallaxCover({
       document.removeEventListener("visibilitychange", onVisibility)
       wakeRef.current = () => {}
     }
-  }, [settings.reduceMotion])
+  }, [settings.reduceMotion, inViewport])
 
   // ── PUNTERO: solo escribe en una ref. Cero re-renders. ──
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
@@ -197,7 +212,11 @@ export default function ParallaxCover({
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (settings.reduceMotion) return
     dragging.current = true
-    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* noop */ }
+    // En móvil dejamos que el navegador gane el gesto vertical para que una
+    // galería siempre pueda desplazarse aunque el dedo empiece sobre la carta.
+    if (e.pointerType !== "touch") {
+      try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* noop */ }
+    }
     onPointerMove(e)
   }
   function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
@@ -226,7 +245,7 @@ export default function ParallaxCover({
     let base = { g: 0, b: 0 }
     let calibrado = false
     function onOrient(e: DeviceOrientationEvent) {
-      if (!gyroOn.current || dragging.current) return
+      if (!inViewport || !gyroOn.current || dragging.current) return
       const g = e.gamma ?? 0, b = e.beta ?? 0
       if (!calibrado) { base = { g, b }; calibrado = true }
       target.current.x = Math.max(-1, Math.min(1, (g - base.g) / 25))
@@ -235,7 +254,7 @@ export default function ParallaxCover({
     }
     window.addEventListener("deviceorientation", onOrient, { passive: true })
     return () => window.removeEventListener("deviceorientation", onOrient)
-  }, [settings.reduceMotion])
+  }, [settings.reduceMotion, inViewport])
 
   async function pedirGyro() {
     if (settings.reduceMotion) return
@@ -256,19 +275,19 @@ export default function ParallaxCover({
     <div
       ref={root}
       className={cn("relative w-full h-full rounded-[28px] overflow-hidden select-none", className)}
-      style={{ perspective: "1400px", touchAction: settings.reduceMotion ? "auto" : "none" }}
+      style={{ perspective: "1400px", touchAction: settings.reduceMotion ? "auto" : "pan-y pinch-zoom" }}
       onPointerMove={onPointerMove}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
       {/* Glow de fondo — fuera del 3D */}
-      <div ref={glowRef} className="absolute -inset-6 pointer-events-none tqp-breathe"
+      <div ref={glowRef} className={`absolute -inset-6 pointer-events-none ${inViewport && !settings.reduceMotion ? "tqp-breathe" : ""}`}
         style={{ background: `radial-gradient(circle at 50% 35%, ${accentGlow}55, transparent 72%)` }} />
 
       {/* ── EL FLOTAR: CSS puro, en su PROPIO elemento, sin JS. ──
           Antes vivía en el mismo nodo que la rotación y peleaban. */}
-      <div className={`absolute inset-0 ${settings.reduceMotion ? "" : "tqp-float"}`} style={{ borderRadius: "inherit" }}>
+      <div className={`absolute inset-0 ${inViewport && !settings.reduceMotion ? "tqp-float" : ""}`} style={{ borderRadius: "inherit" }}>
 
         {/* ── EL ROTADOR: solo lo toca el bucle, nunca React. ── */}
         <div
@@ -358,7 +377,7 @@ export default function ParallaxCover({
             {/* Motas suspendidas */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden">
               {motes.map(m => (
-                <span key={m.id} className="absolute rounded-full tqp-mote"
+                <span key={m.id} className={`absolute rounded-full ${inViewport && !settings.reduceMotion ? "tqp-mote" : ""}`}
                   style={{
                     left: `${m.left}%`, top: `${m.top}%`,
                     width: m.size, height: m.size,
