@@ -1,4 +1,9 @@
-import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react"
+import {
+  useEffect,
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react"
 
 interface OrbGestureOptions {
   tap?:       () => void
@@ -19,7 +24,7 @@ export default function useOrbGestures({
   const timerShort     = useRef<ReturnType<typeof setTimeout> | null>(null)
   const timerLong      = useRef<ReturnType<typeof setTimeout> | null>(null)
   const didHold        = useRef(false)
-  const firedShort     = useRef(false)  // saber si holdShort ya se ejecutó
+  const cancelled      = useRef(false)
   const startPoint     = useRef({ x: 0, y: 0 })
 
   function clearTimers() {
@@ -28,18 +33,19 @@ export default function useOrbGestures({
   }
 
   function onDown(event?: ReactPointerEvent) {
+    clearTimers()
     startTime.current = Date.now()
     didHold.current   = false
-    firedShort.current = false
+    cancelled.current = false
     startPoint.current = { x: event?.clientX ?? 0, y: event?.clientY ?? 0 }
+    try { event?.currentTarget.setPointerCapture(event.pointerId) } catch { /* no disponible */ }
 
     // 650 ms se siente deliberado sin convertir cada acceso en una espera.
     timerShort.current = setTimeout(() => {
       didHold.current    = true
-      firedShort.current = true
       timerShort.current = null
       holdShort?.()
-      // El timer largo sigue corriendo para los 3s
+      // El timer largo sigue corriendo hasta completar el gesto largo.
     }, 650)
 
     // El gesto largo sigue siendo distinto, pero cabe en una interacción ágil.
@@ -53,13 +59,21 @@ export default function useOrbGestures({
   function onMove(event: ReactPointerEvent) {
     const dx = event.clientX - startPoint.current.x
     const dy = event.clientY - startPoint.current.y
-    if (Math.hypot(dx, dy) > 12 && !didHold.current) clearTimers()
+    if (Math.hypot(dx, dy) > 14) {
+      cancelled.current = true
+      clearTimers()
+    }
   }
 
-  function onUp() {
+  function onUp(event?: ReactPointerEvent) {
     clearTimers()
+    try {
+      if (event?.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    } catch { /* no disponible */ }
 
-    if (didHold.current) return
+    if (didHold.current || cancelled.current) return
 
     const duration = Date.now() - startTime.current
     if (duration >= 300) return
@@ -75,10 +89,28 @@ export default function useOrbGestures({
     tap?.()
   }
 
-  function onCancel() {
+  function onCancel(event?: ReactPointerEvent) {
     clearTimers()
     didHold.current    = false
-    firedShort.current = false
+    cancelled.current  = true
+    try {
+      if (event?.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    } catch { /* no disponible */ }
+  }
+
+  function onLeave(event: ReactPointerEvent) {
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) return
+    } catch { /* continuar con cancelación segura */ }
+    onCancel(event)
+  }
+
+  function onKeyDown(event: ReactKeyboardEvent) {
+    if (event.repeat || (event.key !== "Enter" && event.key !== " ")) return
+    event.preventDefault()
+    tap?.()
   }
 
   useEffect(() => clearTimers, [])
@@ -87,7 +119,8 @@ export default function useOrbGestures({
     onPointerDown:   onDown,
     onPointerMove:   onMove,
     onPointerUp:     onUp,
-    onPointerLeave:  onCancel,
+    onPointerLeave:  onLeave,
     onPointerCancel: onCancel,
+    onKeyDown,
   }
 }

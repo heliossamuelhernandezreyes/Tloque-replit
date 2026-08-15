@@ -1,6 +1,12 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
-import { motion, AnimatePresence } from "framer-motion"
+import {
+  motion,
+  AnimatePresence,
+  useMotionValue,
+  useSpring,
+  type MotionValue,
+} from "framer-motion"
 import { useLocation } from "wouter"
 import { Search, X } from "lucide-react"
 import useOrbGestures from "../hooks/useOrbGestures"
@@ -35,9 +41,17 @@ type BookSuggestion = {
 // OJO CÓSMICO — orbe central (sin íconos, puro ojo)
 // ─────────────────────────────────────────────────────────
 function CosmicEye({
-  color, glow, pulse, searchMode, animated,
+  color, glow, pulse, pressed, searchMode, animated, blinkSignal, gazeX, gazeY,
 }: {
-  color: string; glow: string; pulse: boolean; searchMode: boolean; animated: boolean
+  color: string
+  glow: string
+  pulse: boolean
+  pressed: boolean
+  searchMode: boolean
+  animated: boolean
+  blinkSignal: number
+  gazeX: MotionValue<number>
+  gazeY: MotionValue<number>
 }) {
   const cx = 38; const cy = 38
 
@@ -93,6 +107,26 @@ function CosmicEye({
         animate={animated ? { opacity: [0.45, 0.95, 0.45] } : { opacity: 0.62 }}
         transition={{ duration: 4.5, repeat: animated ? Infinity : 0, ease: "easeInOut" }}
       />
+
+      {/* Progreso visible del gesto largo: vuelve comprensible la interacción. */}
+      <AnimatePresence>
+        {pressed && (
+          <motion.circle
+            cx={cx} cy={cy} r="33"
+            fill="none"
+            stroke={searchMode ? "#a9dfff" : color}
+            strokeWidth="1.15"
+            strokeLinecap="round"
+            transform={`rotate(-90 ${cx} ${cy})`}
+            initial={{ pathLength: 0, strokeOpacity: 0.15 }}
+            animate={{ pathLength: 1, strokeOpacity: 0.72 }}
+            exit={{ strokeOpacity: 0 }}
+            transition={animated
+              ? { pathLength: { duration: 1.4, ease: "linear" }, strokeOpacity: { duration: 0.16 } }
+              : { duration: 0 }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Halo adicional tornasol en modo búsqueda */}
       {searchMode && (
@@ -171,10 +205,11 @@ function CosmicEye({
       </motion.g>
 
       {/* Luz interna del iris */}
-      <ellipse cx={cx - 7} cy={cy - 9} rx="11" ry="15"
+      <motion.ellipse cx={cx - 7} cy={cy - 9} rx="11" ry="15"
         fill="url(#iris-light)"
         filter="url(#iris-blur)"
         clipPath="url(#iris-clip)"
+        style={{ x: gazeX, y: gazeY }}
       />
 
       {/* Pupila vertical — se dilata suavemente */}
@@ -188,14 +223,15 @@ function CosmicEye({
           ease: "easeInOut",
           times: [0, 0.25, 0.6, 0.8, 1]
         }}
-        style={{ transformOrigin: `${cx}px ${cy}px` }}
+        style={{ x: gazeX, y: gazeY, transformOrigin: `${cx}px ${cy}px` }}
       />
 
       {/* Borde de la pupila */}
-      <path d={pupilPath}
+      <motion.path d={pupilPath}
         fill="none"
         stroke={color} strokeOpacity="0.25" strokeWidth="0.7"
         filter="url(#pupil-glow)"
+        style={{ x: gazeX, y: gazeY }}
       />
 
       {/* Reflejo en la pupila */}
@@ -205,6 +241,7 @@ function CosmicEye({
         filter="url(#iris-blur)"
         animate={animated ? { opacity: [0.35, 0.65, 0.35] } : { opacity: 0.48 }}
         transition={{ duration: 3.5, repeat: animated ? Infinity : 0, ease: "easeInOut" }}
+        style={{ x: gazeX, y: gazeY }}
       />
 
       {/* Destello al tocar */}
@@ -216,20 +253,27 @@ function CosmicEye({
             initial={{ r: 28, strokeOpacity: 0.9 }}
             animate={{ r: 56,  strokeOpacity: 0   }}
             exit={{ strokeOpacity: 0 }}
-            transition={{ duration: 0.42, ease: "easeOut" }}
+            transition={{ duration: animated ? 0.42 : 0, ease: "easeOut" }}
           />
         )}
       </AnimatePresence>
 
-      {/* Parpadeo — breve y ocasional */}
-      <motion.ellipse
-        cx={cx} cy={cy} rx="27" ry="27"
-        fill="rgba(2,2,8,0.97)"
-        clipPath="url(#iris-clip)"
-        animate={animated ? { scaleY: [0, 0, 1, 0, 0] } : { scaleY: 0 }}
-        transition={{ duration: 7, repeat: animated ? Infinity : 0, ease: "easeInOut", times: [0, 0.90, 0.945, 0.99, 1] }}
-        style={{ transformOrigin: `${cx}px ${cy}px` }}
-      />
+      {/* Parpadeo orgánico: eventos espaciados de forma irregular, no un bucle mecánico. */}
+      <AnimatePresence>
+        {animated && blinkSignal > 0 && (
+          <motion.ellipse
+            key={blinkSignal}
+            cx={cx} cy={cy} rx="27" ry="27"
+            fill="rgba(2,2,8,0.97)"
+            clipPath="url(#iris-clip)"
+            initial={{ scaleY: 0, opacity: 0 }}
+            animate={{ scaleY: [0, 1, 0], opacity: [0, 1, 0] }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeInOut", times: [0, 0.5, 1] }}
+            style={{ transformOrigin: `${cx}px ${cy}px` }}
+          />
+        )}
+      </AnimatePresence>
     </svg>
   )
 }
@@ -312,7 +356,7 @@ function RunicSeal({ color, glow, active, genre = "todos", animated }: { color: 
         stroke={color} strokeOpacity={active ? 0.4 : 0.1} strokeWidth="2.5"
         filter="url(#runeblur)" />
       <motion.g
-        animate={{ rotate: active ? 360 : 0 }}
+        animate={{ rotate: active && animated ? 360 : 0 }}
         transition={{ duration: 12, repeat: active && animated ? Infinity : 0, ease: "linear" }}
         style={{ transformOrigin: "17px 17px" }}>
         <polygon points={tri1(10)} fill="none"
@@ -333,7 +377,9 @@ function RunicSeal({ color, glow, active, genre = "todos", animated }: { color: 
           {genre === "todos" ? (
             <motion.circle cx="17" cy="17" r="2" fill={color}
               fillOpacity={active ? 0.9 : 0.5}
-              animate={{ r: [1.5, 2.5, 1.5], fillOpacity: active ? [0.7, 1, 0.7] : [0.3, 0.5, 0.3] }}
+              animate={animated
+                ? { r: [1.5, 2.5, 1.5], fillOpacity: active ? [0.7, 1, 0.7] : [0.3, 0.5, 0.3] }
+                : { r: active ? 2.2 : 1.7, fillOpacity: active ? 0.85 : 0.4 }}
               transition={{ duration: 2.5, repeat: animated ? Infinity : 0, ease: "easeInOut" }} />
           ) : (
             <GenreSigil genre={genre} color={color} active={active} />
@@ -346,7 +392,9 @@ function RunicSeal({ color, glow, active, genre = "todos", animated }: { color: 
           <motion.circle key={i}
             cx={17 + 15 * Math.cos(a)} cy={17 + 15 * Math.sin(a)} r="1.2"
             fill={color} fillOpacity={active ? 0.8 : 0.3}
-            animate={{ fillOpacity: active ? [0.4, 0.9, 0.4] : [0.2, 0.4, 0.2] }}
+            animate={animated
+              ? { fillOpacity: active ? [0.4, 0.9, 0.4] : [0.2, 0.4, 0.2] }
+              : { fillOpacity: active ? 0.75 : 0.3 }}
             transition={{ duration: 2 + i * 0.3, repeat: animated ? Infinity : 0, ease: "easeInOut", delay: i * 0.15 }} />
         )
       })}
@@ -396,18 +444,24 @@ function PrismOrb({ color, glow, active, animated }: { color: string; glow: stri
         <motion.line key={i} x1={cx} y1={cy+1} x2={vtx.x} y2={vtx.y}
           stroke={color} strokeOpacity={active ? 0.35 : 0.1}
           strokeWidth="0.6" strokeDasharray="1.5 2"
-          animate={{ strokeOpacity: active ? [0.2, 0.45, 0.2] : [0.05, 0.15, 0.05] }}
+          animate={animated
+            ? { strokeOpacity: active ? [0.2, 0.45, 0.2] : [0.05, 0.15, 0.05] }
+            : { strokeOpacity: active ? 0.35 : 0.1 }}
           transition={{ duration: 2 + i * 0.4, repeat: animated ? Infinity : 0, ease: "easeInOut", delay: i * 0.3 }} />
       ))}
       <motion.circle cx={cx} cy={cy+1} r={active ? 2.5 : 1.8}
         fill={color} fillOpacity={active ? 0.95 : 0.45}
-        animate={{ r: active ? [2, 3.2, 2] : [1.5, 2, 1.5],
-                   fillOpacity: active ? [0.7, 1, 0.7] : [0.3, 0.5, 0.3] }}
+        animate={animated
+          ? { r: active ? [2, 3.2, 2] : [1.5, 2, 1.5],
+              fillOpacity: active ? [0.7, 1, 0.7] : [0.3, 0.5, 0.3] }
+          : { r: active ? 2.6 : 1.8, fillOpacity: active ? 0.85 : 0.4 }}
         transition={{ duration: 2, repeat: animated ? Infinity : 0, ease: "easeInOut" }} />
       {v.map((vtx, i) => (
         <motion.circle key={i} cx={vtx.x} cy={vtx.y} r="1.3"
           fill={color} fillOpacity={active ? 0.8 : 0.3}
-          animate={{ fillOpacity: active ? [0.5, 0.9, 0.5] : [0.15, 0.35, 0.15] }}
+          animate={animated
+            ? { fillOpacity: active ? [0.5, 0.9, 0.5] : [0.15, 0.35, 0.15] }
+            : { fillOpacity: active ? 0.75 : 0.28 }}
           transition={{ duration: 1.8 + i * 0.35, repeat: animated ? Infinity : 0, ease: "easeInOut", delay: i * 0.2 }} />
       ))}
       <AnimatePresence>
@@ -415,7 +469,7 @@ function PrismOrb({ color, glow, active, animated }: { color: string; glow: stri
           <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <motion.line x1={cx} y1={cy+1} x2={cx} y2={cy+22}
               stroke={color} strokeWidth="1"
-              animate={{ strokeOpacity: [0.0, 0.4, 0.0] }}
+              animate={animated ? { strokeOpacity: [0.0, 0.4, 0.0] } : { strokeOpacity: 0.25 }}
               transition={{ duration: 2.5, repeat: animated ? Infinity : 0, ease: "easeInOut" }} />
           </motion.g>
         )}
@@ -439,6 +493,8 @@ export default function OrbSystem() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [showLabel,       setShowLabel]       = useState(false)
   const [orbPulse,        setOrbPulse]        = useState(false)
+  const [centralPressed,  setCentralPressed]  = useState(false)
+  const [blinkSignal,     setBlinkSignal]     = useState(0)
   const [showConfig,      setShowConfig]      = useState(false)
   const [showPulso,       setShowPulso]       = useState(false)
   const [documentVisible, setDocumentVisible] = useState(
@@ -454,10 +510,20 @@ export default function OrbSystem() {
   // rastreamos un press prolongado directamente
   const searchHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchPressStart = useRef<number>(0)
+  const gazeXRaw = useMotionValue(0)
+  const gazeYRaw = useMotionValue(0)
+  const gazeX = useSpring(gazeXRaw, { stiffness: 260, damping: 26, mass: 0.28 })
+  const gazeY = useSpring(gazeYRaw, { stiffness: 260, damping: 26, mass: 0.28 })
 
   useEffect(() => {
-    setSearchMode(false); setQuery(""); setSuggestions([]); setShowSuggestions(false)
-  }, [location])
+    setSearchMode(false)
+    setQuery("")
+    setSuggestions([])
+    setShowSuggestions(false)
+    setCentralPressed(false)
+    gazeXRaw.set(0)
+    gazeYRaw.set(0)
+  }, [location, gazeXRaw, gazeYRaw])
 
   useEffect(() => () => {
     if (labelTimer.current) clearTimeout(labelTimer.current)
@@ -657,26 +723,72 @@ export default function OrbSystem() {
   const filterActive = lobbyFilter === "short"
   const animated = documentVisible && !settings.reduceMotion
 
+  useEffect(() => {
+    gazeXRaw.set(0)
+    gazeYRaw.set(0)
+    if (!animated) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const scheduleBlink = () => {
+      const delay = 3_800 + Math.round(Math.random() * 5_200)
+      timer = setTimeout(() => {
+        setBlinkSignal(value => value + 1)
+        scheduleBlink()
+      }, delay)
+    }
+    scheduleBlink()
+    return () => { if (timer) clearTimeout(timer) }
+  }, [animated, gazeXRaw, gazeYRaw])
+
+  function updateGaze(event: ReactPointerEvent) {
+    if (!animated) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = ((event.clientX - rect.left) / Math.max(rect.width, 1) - 0.5) * 7
+    const y = ((event.clientY - rect.top) / Math.max(rect.height, 1) - 0.5) * 5
+    gazeXRaw.set(Math.max(-3.5, Math.min(3.5, x)))
+    gazeYRaw.set(Math.max(-2.5, Math.min(2.5, y)))
+  }
+
+  function resetGaze() {
+    gazeXRaw.set(0)
+    gazeYRaw.set(0)
+  }
+
+  const dockTransition = animated
+    ? { type: "spring" as const, stiffness: 240, damping: 25, mass: 0.75 }
+    : { duration: 0 }
+
   // ── Merge gestures del orbe central con handlers de searchMode ──
   const centralProps = {
     ...central,
-    onPointerDown: (e: React.PointerEvent) => {
+    onPointerDown: (e: ReactPointerEvent) => {
+      setCentralPressed(true)
+      updateGaze(e)
       central.onPointerDown(e)
       onCentralDown()
     },
-    onPointerMove: (e: React.PointerEvent) => {
+    onPointerMove: (e: ReactPointerEvent) => {
+      updateGaze(e)
       central.onPointerMove(e)
     },
-    onPointerUp: () => {
-      central.onPointerUp()
+    onPointerUp: (e: ReactPointerEvent) => {
+      central.onPointerUp(e)
+      setCentralPressed(false)
+      resetGaze()
       onCentralUp()
     },
-    onPointerLeave: () => {
-      central.onPointerLeave()
-      if (searchHoldTimer.current) { clearTimeout(searchHoldTimer.current); searchHoldTimer.current = null }
+    onPointerLeave: (e: ReactPointerEvent) => {
+      const captured = e.currentTarget.hasPointerCapture?.(e.pointerId) || false
+      central.onPointerLeave(e)
+      if (!captured) {
+        setCentralPressed(false)
+        resetGaze()
+        if (searchHoldTimer.current) { clearTimeout(searchHoldTimer.current); searchHoldTimer.current = null }
+      }
     },
-    onPointerCancel: () => {
-      central.onPointerCancel()
+    onPointerCancel: (e: ReactPointerEvent) => {
+      central.onPointerCancel(e)
+      setCentralPressed(false)
+      resetGaze()
       if (searchHoldTimer.current) { clearTimeout(searchHoldTimer.current); searchHoldTimer.current = null }
     },
   }
@@ -733,7 +845,7 @@ export default function OrbSystem() {
         <motion.button
           {...diamond}
           animate={{ x: -72, y: searchMode ? -85 : 0 }}
-          transition={{ type: "spring", stiffness: 260, damping: 26 }}
+          transition={dockTransition}
           whileHover={{ scale: 1.05 }}
           whileFocus={{ scale: 1.05 }}
           whileTap={{ scale: 0.78 }}
@@ -742,14 +854,20 @@ export default function OrbSystem() {
           aria-label={t("genre")}
           aria-pressed={activeGenre !== "todos"}
         >
-          <RunicSeal color={cfg.color} glow={cfg.glow} active={activeGenre !== "todos"} genre={activeGenre} animated={animated} />
+          <RunicSeal
+            color={cfg.color}
+            glow={cfg.glow}
+            active={activeGenre !== "todos"}
+            genre={activeGenre}
+            animated={animated && activeGenre !== "todos"}
+          />
         </motion.button>
 
         {/* ── ORBE DERECHO — PRISMA ── */}
         <motion.button
           {...triangle}
           animate={{ x: 72, y: searchMode ? -85 : 0 }}
-          transition={{ type: "spring", stiffness: 260, damping: 26 }}
+          transition={dockTransition}
           whileHover={{ scale: 1.05 }}
           whileFocus={{ scale: 1.05 }}
           whileTap={{ scale: 0.78 }}
@@ -758,14 +876,19 @@ export default function OrbSystem() {
           aria-label={t("onlyStories")}
           aria-pressed={filterActive}
         >
-          <PrismOrb color={cfg.color} glow={cfg.glow} active={filterActive} animated={animated} />
+          <PrismOrb
+            color={cfg.color}
+            glow={cfg.glow}
+            active={filterActive}
+            animated={animated && filterActive}
+          />
         </motion.button>
 
         {/* ── ORBE CENTRAL — OJO CÓSMICO ── */}
         <motion.button
           {...centralProps}
-          animate={{ y: searchMode ? "-38vh" : 0, scale: searchMode ? 1.1 : 1 }}
-          transition={{ type: "spring", stiffness: 220, damping: 24 }}
+          animate={{ y: searchMode ? "-38dvh" : 0, scale: searchMode ? 1.1 : 1 }}
+          transition={dockTransition}
           whileHover={{ scale: searchMode ? 1.12 : 1.04 }}
           whileFocus={{ scale: searchMode ? 1.12 : 1.04 }}
           whileTap={{ scale: searchMode ? 1.02 : 0.94 }}
@@ -774,7 +897,17 @@ export default function OrbSystem() {
           aria-label={location === "/" ? t("library") : t("lobby")}
           aria-expanded={searchMode}
         >
-          <CosmicEye color={cfg.color} glow={cfg.glow} pulse={orbPulse} searchMode={searchMode} animated={animated} />
+          <CosmicEye
+            color={cfg.color}
+            glow={cfg.glow}
+            pulse={orbPulse}
+            pressed={centralPressed}
+            searchMode={searchMode}
+            animated={animated}
+            blinkSignal={blinkSignal}
+            gazeX={gazeX}
+            gazeY={gazeY}
+          />
         </motion.button>
 
         {/* ── BUSCADOR — portal al body, centrado con margin auto ── */}
@@ -817,7 +950,7 @@ export default function OrbSystem() {
                       if (e.key === "Escape") closeSearch()
                     }}
                     placeholder={t("search")}
-                    className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-zinc-600 font-sans"
+                    className="min-w-0 flex-1 bg-transparent text-white text-sm outline-none placeholder:text-zinc-600 font-sans"
                   />
                   <AnimatePresence>
                     {query.trim() ? (
@@ -826,7 +959,7 @@ export default function OrbSystem() {
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.7 }}
                         onClick={doSearch}
-                        className="shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full font-sans"
+                        className="min-h-11 shrink-0 rounded-full px-3 text-[11px] font-semibold font-sans"
                         style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}40` }}
                       >
                         {t("searchAction")}
@@ -837,8 +970,9 @@ export default function OrbSystem() {
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.7 }}
                         onClick={closeSearch}
-                        className="shrink-0 p-1 rounded-full"
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
                         style={{ color: "rgba(255,255,255,0.25)" }}
+                        aria-label={t("closeAction")}
                       >
                         <X className="w-3 h-3" />
                       </motion.button>
@@ -854,7 +988,7 @@ export default function OrbSystem() {
                       animate={{ opacity: 1, y: 0,  scaleY: 1    }}
                       exit={{    opacity: 0, y: -4,  scaleY: 0.92 }}
                       transition={{ duration: 0.15 }}
-                      className="mt-1.5 rounded-xl overflow-hidden"
+                      className="mt-1.5 max-h-[40dvh] overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl"
                       style={{
                         background:      "rgba(6,6,10,0.95)",
                         border:          `1px solid ${cfg.color}25`,
@@ -869,7 +1003,7 @@ export default function OrbSystem() {
                           animate={{ opacity: 1, x: 0  }}
                           transition={{ delay: i * 0.04 }}
                           onClick={() => goToBook(book.id)}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-white/5"
+                          className="flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-white/5"
                           style={{ borderBottom: i < suggestions.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}
                         >
                           <div className="shrink-0 w-7 h-10 rounded overflow-hidden"
@@ -895,7 +1029,7 @@ export default function OrbSystem() {
                         </motion.button>
                       ))}
                       <button onClick={doSearch}
-                        className="w-full px-4 py-2.5 text-center text-[11px] font-sans transition-colors"
+                        className="min-h-11 w-full px-4 py-2.5 text-center text-[11px] font-sans transition-colors"
                         style={{ color: cfg.color + "88", borderTop: `1px solid ${cfg.color}15` }}
                       >
                         {t("seeAllResults")} →

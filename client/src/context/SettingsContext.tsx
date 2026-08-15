@@ -524,6 +524,12 @@ for (const language of Object.keys(SEARCH_ACTIONS) as AppLanguage[]) {
   Object.assign(UI_STRINGS[language], { searchAction, seeAllResults })
 }
 
+// Conserva el nombre de la herramienta en la escritura propia de cada idioma.
+// Estas tres cadenas antiguas estaban transliteradas a ASCII o pinyin.
+Object.assign(UI_STRINGS.de, { dictionary: "Wörterbuch" })
+Object.assign(UI_STRINGS.pt, { dictionary: "Dicionário" })
+Object.assign(UI_STRINGS.zh, { dictionary: "词典" })
+
 export const LANGUAGE_LABELS: Record<AppLanguage, string> = {
   es: "Español", en: "English", fr: "Français", de: "Deutsch", it: "Italiano", pt: "Português", ja: "日本語", zh: "中文", ar: "العربية",
 }

@@ -8,16 +8,36 @@ export interface DictionaryResult {
   word: string
   sourceLanguage: string
   targetLanguage: string
+  definitionLanguage: string
   senses: DictionarySense[]
   translation: string
   source: string
+  sourceUrl: string
 }
 
 type Translate = (text: string, from: string, to: string) => Promise<string>
 
 const CACHE_TTL = 6 * 60 * 60 * 1_000
+const EMPTY_CACHE_TTL = 10 * 60 * 1_000
 const CACHE_MAX = 600
+const MAX_RESPONSE_BYTES = 1_000_000
 const cache = new Map<string, { expires: number; value: DictionaryResult }>()
+
+export const DICTIONARY_LANGUAGES = new Set([
+  "ar", "de", "el", "en", "es", "fi", "fr", "it",
+  "ja", "la", "nl", "pl", "pt", "ru", "sv", "zh",
+])
+
+function baseLanguage(raw: unknown): string {
+  return String(raw || "").trim().toLowerCase().replace(/_/g, "-").split("-", 1)[0]
+}
+
+export function normalizeDictionaryLanguage(raw: unknown, fallback = "es"): string {
+  const normalizedFallback = baseLanguage(fallback || "es")
+  const safeFallback = DICTIONARY_LANGUAGES.has(normalizedFallback) ? normalizedFallback : "es"
+  const code = baseLanguage(raw)
+  return DICTIONARY_LANGUAGES.has(code) ? code : safeFallback
+}
 
 export function cleanDictionaryText(raw: unknown, max = 700): string {
   if (typeof raw !== "string") return ""
@@ -38,12 +58,11 @@ export function cleanDictionaryText(raw: unknown, max = 700): string {
 export function extractWiktionarySenses(data: unknown, sourceLanguage: string): DictionarySense[] {
   if (!data || typeof data !== "object") return []
   const record = data as Record<string, unknown>
-  // Una misma grafía puede existir en muchos idiomas. Tomar el primer valor
-  // del objeto mezclaría homónimos (por ejemplo, una voz latina con una
-  // inglesa); aceptamos únicamente la entrada correspondiente a la lengua de
-  // la obra, incluyendo variantes regionales del mismo código.
+  const source = normalizeDictionaryLanguage(sourceLanguage)
+  // Una misma grafía puede existir en muchos idiomas. Nunca se toma el primer
+  // valor del objeto: sólo se acepta la entrada de la lengua de la obra.
   const prioritized = Object.entries(record)
-    .filter(([language]) => language === sourceLanguage || language.startsWith(`${sourceLanguage}-`))
+    .filter(([language]) => baseLanguage(language) === source)
     .map(([, entries]) => entries)
   const senses: DictionarySense[] = []
   const seen = new Set<string>()
@@ -55,7 +74,8 @@ export function extractWiktionarySenses(data: unknown, sourceLanguage: string): 
       if (!Array.isArray(item?.definitions)) continue
       for (const rawSense of item.definitions) {
         const definition = cleanDictionaryText(rawSense?.definition)
-        if (definition.length < 3 || seen.has(definition.toLocaleLowerCase())) continue
+        const fingerprint = definition.toLocaleLowerCase()
+        if (definition.length < 3 || seen.has(fingerprint)) continue
         const parsedExample = Array.isArray(rawSense?.parsedExamples)
           ? rawSense.parsedExamples.find((example: any) => example?.example || example?.definition)
           : null
@@ -68,7 +88,7 @@ export function extractWiktionarySenses(data: unknown, sourceLanguage: string): 
           definition,
           example,
         })
-        seen.add(definition.toLocaleLowerCase())
+        seen.add(fingerprint)
         if (senses.length >= 4) return senses
       }
     }
@@ -78,40 +98,70 @@ export function extractWiktionarySenses(data: unknown, sourceLanguage: string): 
 
 function cacheSet(key: string, value: DictionaryResult) {
   if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value as string)
-  cache.set(key, { expires: Date.now() + CACHE_TTL, value })
+  const ttl = value.senses.length || value.translation ? CACHE_TTL : EMPTY_CACHE_TTL
+  cache.set(key, { expires: Date.now() + ttl, value })
 }
 
-async function fetchWiktionary(
+async function readJsonWithLimit(response: Response): Promise<unknown> {
+  const declared = Number(response.headers.get("content-length") || 0)
+  if (declared > MAX_RESPONSE_BYTES) throw new Error("Dictionary response is too large")
+  if (!response.body) return null
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      total += value.byteLength
+      if (total > MAX_RESPONSE_BYTES) throw new Error("Dictionary response is too large")
+      chunks.push(value)
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined)
+    throw error
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+  return JSON.parse(new TextDecoder().decode(bytes))
+}
+
+async function fetchWiktionaryEdition(
   word: string,
   sourceLanguage: string,
-  targetLanguage: string,
-): Promise<{ senses: DictionarySense[]; source: string; definitionLanguage: string }> {
-  // El sitio de destino explica la voz en el idioma elegido por el lector.
-  // El sitio del libro y el inglés quedan como respaldos, nunca como mezcla oculta.
-  const sites = [...new Set([targetLanguage, sourceLanguage, "en"])].slice(0, 3)
-  for (const site of sites) {
-    try {
-      const url = `https://${site}.wiktionary.org/api/rest_v1/page/definition/${encodeURIComponent(word)}`
-      const response = await fetch(url, {
-        headers: { "User-Agent": "Tloque/1.1 dictionary-proxy" },
-        signal: AbortSignal.timeout(5_500),
-      })
-      if (!response.ok) continue
-      const senses = extractWiktionarySenses(await response.json(), sourceLanguage)
-      if (senses.length) return { senses, source: `wiktionary-${site}`, definitionLanguage: site }
-    } catch { /* probar la siguiente fuente */ }
+  site: string,
+): Promise<DictionarySense[]> {
+  try {
+    const url = `https://${site}.wiktionary.org/api/rest_v1/page/definition/${encodeURIComponent(word)}`
+    const response = await fetch(url, {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "Tloque/1.2 dictionary-proxy",
+      },
+      redirect: "error",
+      signal: AbortSignal.timeout(5_500),
+    })
+    if (!response.ok) return []
+    return extractWiktionarySenses(await readJsonWithLimit(response), sourceLanguage)
+  } catch {
+    return []
   }
-  return { senses: [], source: "", definitionLanguage: targetLanguage }
 }
 
 async function fetchEnglishFallback(word: string): Promise<DictionarySense[]> {
   try {
     const response = await fetch(
       `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`,
-      { signal: AbortSignal.timeout(4_500) },
+      {
+        headers: { "Accept": "application/json" },
+        redirect: "error",
+        signal: AbortSignal.timeout(4_500),
+      },
     )
     if (!response.ok) return []
-    const data = await response.json()
+    const data = await readJsonWithLimit(response) as any
     const senses: DictionarySense[] = []
     for (const meaning of data?.[0]?.meanings || []) {
       for (const item of meaning?.definitions || []) {
@@ -131,78 +181,131 @@ async function fetchEnglishFallback(word: string): Promise<DictionarySense[]> {
   }
 }
 
+function sameText(a: string, b: string): boolean {
+  const normalize = (value: string) => value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[\p{P}\p{S}\s]+/gu, " ")
+    .trim()
+  return normalize(a) === normalize(b)
+}
+
+function isPlausibleTargetScript(text: string, language: string): boolean {
+  if (!/\p{L}/u.test(text)) return false
+  if (language === "ar") return /\p{Script=Arabic}/u.test(text)
+  if (language === "el") return /\p{Script=Greek}/u.test(text)
+  if (language === "ru") return /\p{Script=Cyrillic}/u.test(text)
+  if (language === "zh") return /\p{Script=Han}/u.test(text)
+  if (language === "ja") {
+    return /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(text)
+  }
+  return /\p{Script=Latin}/u.test(text)
+}
+
+async function strictTranslation(
+  text: string,
+  from: string,
+  to: string,
+  translate: Translate,
+  max = 700,
+): Promise<string> {
+  const clean = cleanDictionaryText(text, max)
+  if (!clean) return ""
+  if (from === to) return clean
+  try {
+    const translated = cleanDictionaryText(await translate(clean, from, to), max)
+    // Los proveedores usados por Tloque devuelven el original cuando fallan.
+    // Aceptarlo filtraría precisamente el idioma que el lector no eligió.
+    if (!translated || sameText(translated, clean) || !isPlausibleTargetScript(translated, to)) return ""
+    return translated
+  } catch {
+    return ""
+  }
+}
+
+export async function localizeDictionarySenses(
+  senses: DictionarySense[],
+  definitionLanguage: string,
+  targetLanguage: string,
+  translate: Translate,
+): Promise<DictionarySense[]> {
+  const from = normalizeDictionaryLanguage(definitionLanguage)
+  const to = normalizeDictionaryLanguage(targetLanguage)
+  if (from === to) return senses.map(sense => ({
+    partOfSpeech: cleanDictionaryText(sense.partOfSpeech, 80),
+    definition: cleanDictionaryText(sense.definition),
+    example: cleanDictionaryText(sense.example, 320),
+  })).filter(sense => sense.definition.length >= 3)
+
+  const localized = await Promise.all(senses.slice(0, 4).map(async sense => {
+    const [definition, partOfSpeech] = await Promise.all([
+      strictTranslation(sense.definition, from, to, translate),
+      strictTranslation(sense.partOfSpeech, from, to, translate, 80),
+    ])
+    if (!definition) return null
+    // El ejemplo pertenece a la lengua original de la obra. Para no mezclarlo
+    // de forma engañosa con la definición localizada se omite en el respaldo.
+    return { definition, partOfSpeech, example: "" }
+  }))
+  return localized.filter((sense): sense is DictionarySense => sense !== null)
+}
+
 export async function lookupDictionary(
   rawWord: string,
-  sourceLanguage: string,
-  targetLanguage: string,
+  rawSourceLanguage: string,
+  rawTargetLanguage: string,
   translate: Translate,
 ): Promise<DictionaryResult> {
   const word = rawWord.normalize("NFKC").trim().slice(0, 80)
+  const sourceLanguage = normalizeDictionaryLanguage(rawSourceLanguage)
+  const targetLanguage = normalizeDictionaryLanguage(rawTargetLanguage, sourceLanguage)
   const key = `${sourceLanguage}:${targetLanguage}:${word.toLocaleLowerCase()}`
   const cached = cache.get(key)
   if (cached && cached.expires > Date.now()) return cached.value
   if (cached) cache.delete(key)
 
-  const wiki = await fetchWiktionary(word, sourceLanguage, targetLanguage)
-  let senses = wiki.senses
-  let source = wiki.source
-  let definitionLanguage = wiki.definitionLanguage
-  if (!senses.length && sourceLanguage === "en") {
-    senses = await fetchEnglishFallback(word)
-    if (senses.length) {
-      source = "free-dictionary"
-      definitionLanguage = "en"
-    }
+  let senses: DictionarySense[] = []
+  let source = ""
+  let sourceUrl = ""
+  // La edición del lector es la única que puede usarse sin traducción. Las
+  // otras ediciones son respaldos y sólo se publican si la traducción resulta.
+  const sites = [...new Set([targetLanguage, sourceLanguage, "en"])].slice(0, 3)
+  for (const site of sites) {
+    const candidate = await fetchWiktionaryEdition(word, sourceLanguage, site)
+    if (!candidate.length) continue
+    const localized = await localizeDictionarySenses(candidate, site, targetLanguage, translate)
+    if (!localized.length) continue
+    senses = localized
+    source = `wiktionary-${site}`
+    sourceUrl = `https://${site}.wiktionary.org/wiki/${encodeURIComponent(word)}`
+    break
   }
 
-  // La primera consulta intenta la edición elegida por el lector. Si solo hay
-  // definición en otra edición, normalizamos su texto al idioma de interfaz;
-  // el ejemplo se conserva en la lengua de la obra como contexto de uso.
-  if (senses.length && definitionLanguage !== targetLanguage) {
-    const partsOfSpeech = [...new Set(senses.map(sense => sense.partOfSpeech).filter(Boolean))]
-    const [definitions, translatedParts] = await Promise.all([
-      Promise.all(senses.map(async sense => {
-        try {
-          return cleanDictionaryText(
-            await translate(sense.definition, definitionLanguage, targetLanguage),
-          ) || sense.definition
-        } catch {
-          return sense.definition
-        }
-      })),
-      Promise.all(partsOfSpeech.map(async part => {
-        try {
-          return cleanDictionaryText(
-            await translate(part, definitionLanguage, targetLanguage),
-            80,
-          ) || part
-        } catch {
-          return part
-        }
-      })),
-    ])
-    const partMap = new Map(partsOfSpeech.map((part, index) => [part, translatedParts[index]]))
-    senses = senses.map((sense, index) => ({
-      ...sense,
-      definition: definitions[index],
-      partOfSpeech: partMap.get(sense.partOfSpeech) || sense.partOfSpeech,
-    }))
+  if (!senses.length && sourceLanguage === "en") {
+    const candidate = await fetchEnglishFallback(word)
+    const localized = await localizeDictionarySenses(candidate, "en", targetLanguage, translate)
+    if (localized.length) {
+      senses = localized
+      source = "free-dictionary"
+      sourceUrl = "https://dictionaryapi.dev/"
+    }
   }
 
   let translation = ""
   if (sourceLanguage !== targetLanguage) {
-    try {
-      const translated = cleanDictionaryText(
-        await translate(word, sourceLanguage, targetLanguage),
-        160,
-      )
-      if (translated && translated.toLocaleLowerCase() !== word.toLocaleLowerCase()) {
-        translation = translated
-      }
-    } catch { /* una definición sigue siendo útil sin traducción */ }
+    translation = await strictTranslation(word, sourceLanguage, targetLanguage, translate, 160)
   }
 
-  const result = { word, sourceLanguage, targetLanguage, senses, translation, source }
+  const result: DictionaryResult = {
+    word,
+    sourceLanguage,
+    targetLanguage,
+    definitionLanguage: targetLanguage,
+    senses,
+    translation,
+    source,
+    sourceUrl,
+  }
   cacheSet(key, result)
   return result
 }

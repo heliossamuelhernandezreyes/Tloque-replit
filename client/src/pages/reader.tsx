@@ -20,6 +20,7 @@ import { narrativeParagraphsFor, resolveNarrativeRegion, type ExperienceProfileV
 import { FREE_SAVE_LIMIT, countsTowardLimit, countLimitedSaved } from "@/lib/library"
 import {
   useSettings,
+  LANGUAGE_META,
   READING_MODE_BG,
   READING_MODE_TEXT,
   READING_MODE_HEADER_BG,
@@ -38,9 +39,19 @@ interface DictionaryResult {
   word: string
   sourceLanguage: string
   targetLanguage: string
+  definitionLanguage: string
   senses: DictionarySense[]
   translation: string
   source: string
+  sourceUrl: string
+}
+
+function baseLanguage(value: string): string {
+  return String(value || "es").trim().toLowerCase().replace(/_/g, "-").split("-", 1)[0]
+}
+
+function languageDirection(value: string): "ltr" | "rtl" {
+  return baseLanguage(value) === "ar" ? "rtl" : "ltr"
 }
 
 export default function Reader() {
@@ -68,6 +79,7 @@ export default function Reader() {
   const [dictWord,    setDictWord]    = useState<string | null>(null)
   const [dictResult,  setDictResult]  = useState<DictionaryResult | null>(null)
   const [dictLoading, setDictLoading] = useState(false)
+  const dictRequestRef = useRef<AbortController | null>(null)
   const [headerVisible, setHeaderVisible] = useState(true)
   const [readProgress,  setReadProgress]  = useState(0)
   const [transitioning, setTransitioning] = useState(false)
@@ -252,6 +264,16 @@ export default function Reader() {
   }, [activeChapter, bookId])
 
   // ── BUSQUEDA EN WIKTIONARY ───────────────────────────
+  const closeDictionary = useCallback(() => {
+    dictRequestRef.current?.abort()
+    dictRequestRef.current = null
+    setDictWord(null)
+    setDictResult(null)
+    setDictLoading(false)
+  }, [])
+
+  useEffect(() => () => dictRequestRef.current?.abort(), [])
+
   const lookupWord = useCallback(async (word: string) => {
     // Solo letras — elimina signos de puntuación y números
     const cleaned = word.normalize("NFKC").replace(/[^\p{L}\p{M}'’-]/gu, "").trim()
@@ -259,21 +281,39 @@ export default function Reader() {
     setDictWord(word.trim())
     setDictResult(null)
     setDictLoading(true)
+    dictRequestRef.current?.abort()
+    const controller = new AbortController()
+    dictRequestRef.current = controller
     try {
       // Proxy del servidor — busca en el idioma del LIBRO (no el de la interfaz)
       const lang   = bookLangRef.current || "es"
       const target = settings.language || "es"
-      const res  = await fetch(`/api/dictionary/${encodeURIComponent(cleaned)}?lang=${lang}&target=${target}`)
+      const params = new URLSearchParams({ lang, target })
+      const res = await fetch(`/api/dictionary/${encodeURIComponent(cleaned)}?${params}`, {
+        headers: { "Accept": "application/json" },
+        signal: controller.signal,
+      })
       if (res.ok) {
-        setDictResult(await res.json())
+        const result = await res.json() as DictionaryResult
+        const expected = baseLanguage(target)
+        // Defensa adicional: una respuesta de otro idioma nunca llega a la UI.
+        if (baseLanguage(result.targetLanguage) !== expected
+            || baseLanguage(result.definitionLanguage) !== expected) {
+          setDictResult({ ...result, senses: [], translation: "" })
+        } else {
+          setDictResult(result)
+        }
         return
       }
-    } catch {
-      setDictResult(null)
+    } catch (error) {
+      if ((error as DOMException)?.name !== "AbortError") setDictResult(null)
     } finally {
-      setDictLoading(false)
+      if (dictRequestRef.current === controller) {
+        dictRequestRef.current = null
+        setDictLoading(false)
+      }
     }
-  }, [t, settings.language])
+  }, [settings.language])
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
@@ -1071,14 +1111,14 @@ export default function Reader() {
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-[500]"
-            onClick={() => { setDictWord(null); setDictResult(null) }}
+            onClick={closeDictionary}
           />
           <motion.div
             initial={{ y: "100%", opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: "100%", opacity: 0 }}
             transition={{ type: "spring", stiffness: 320, damping: 30 }}
-            className="fixed bottom-0 left-0 right-0 z-[501] max-w-md mx-auto"
+            className="fixed bottom-0 left-0 right-0 z-[501] mx-auto max-h-[calc(100dvh-var(--tloque-safe-top))] max-w-md overflow-hidden"
             role="dialog"
             aria-modal="true"
             aria-label={`${t("dictionary")}: ${dictWord}`}
@@ -1095,15 +1135,18 @@ export default function Reader() {
             </div>
             <div className="px-6 pb-6 pt-2">
               <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="font-display text-lg font-semibold text-white leading-tight">{dictWord}</h3>
+                <div className="min-w-0 flex-1 pe-3">
+                  <h3
+                    className="break-words font-display text-lg font-semibold text-white leading-tight"
+                    dir={languageDirection(dictResult?.sourceLanguage || bookLangRef.current)}
+                  >{dictWord}</h3>
                   <p className="text-[10px] uppercase tracking-widest font-sans mt-0.5" style={{ color: gc.color + "66" }}>
                     {t("dictionary")}
                   </p>
                 </div>
                 <button
-                  onClick={() => { setDictWord(null); setDictResult(null) }}
-                  className="p-1.5 rounded-full mt-0.5"
+                  onClick={closeDictionary}
+                  className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
                   style={{ background: "rgba(255,255,255,0.06)" }}
                   aria-label={t("closeAction")}
                 >
@@ -1111,7 +1154,8 @@ export default function Reader() {
                 </button>
               </div>
               <div
-                className="rounded-2xl px-4 py-3 min-h-[64px] max-h-[48vh] overflow-y-auto"
+                className="min-h-[64px] max-h-[48dvh] overflow-y-auto overscroll-contain rounded-2xl px-4 py-3"
+                aria-live="polite"
                 style={{ background: `linear-gradient(135deg, ${gc.bg}, rgba(0,0,0,0.4))`, border: `1px solid ${gc.color}18` }}
               >
                 {dictLoading ? (
@@ -1120,7 +1164,7 @@ export default function Reader() {
                     <span className="text-zinc-500 text-sm font-sans">{t("searching")}...</span>
                   </div>
                 ) : dictResult && (dictResult.senses.length > 0 || dictResult.translation) ? (
-                  <div className="space-y-3">
+                  <div className="space-y-3" dir={LANGUAGE_META[settings.language].dir}>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-[9px] uppercase tracking-wider px-2 py-1 rounded-full font-sans"
                         style={{ color: gc.color, background: `${gc.color}12`, border: `1px solid ${gc.color}24` }}>
@@ -1163,7 +1207,16 @@ export default function Reader() {
                 )}
               </div>
               <p className="text-[9px] text-zinc-700 font-sans text-center mt-2.5 tracking-wide">
-                {dictResult?.source ? `${t("dictionarySource")}: ${dictResult.source.replace("wiktionary-", "Wiktionary · ")}` : t("dictionarySourceHint")}
+                {dictResult?.source && dictResult.sourceUrl ? (
+                  <a
+                    href={dictResult.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-11 items-center justify-center underline decoration-white/10 underline-offset-2 hover:text-zinc-500"
+                  >
+                    {t("dictionarySource")}: {dictResult.source.replace("wiktionary-", "Wiktionary · ")}
+                  </a>
+                ) : t("dictionarySourceHint")}
               </p>
             </div>
           </motion.div>

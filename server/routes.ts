@@ -24,7 +24,7 @@ import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { isSafeHttpsUrl, isSafeImageSource } from "@shared/media";
 import { PAPER_PLANS, PAPER_RATES } from "@shared/paper";
 import { publicOriginForRequest } from "./security";
-import { lookupDictionary } from "./dictionary";
+import { lookupDictionary, normalizeDictionaryLanguage } from "./dictionary";
 import {
   searchGutenberg,
   fetchGutenbergBookById,
@@ -123,7 +123,7 @@ export async function registerRoutes(
 
   const EXTERNAL_LANGS = new Set(Object.keys(SUPPORTED_LANGUAGES))
   function externalLanguage(value: unknown, fallback = "es"): string {
-    const code = String(value || "").trim().toLowerCase().slice(0, 5)
+    const code = String(value || "").trim().toLowerCase().replace(/_/g, "-").split("-", 1)[0]
     return EXTERNAL_LANGS.has(code) ? code : fallback
   }
 
@@ -679,12 +679,12 @@ export async function registerRoutes(
   // ── PROXY DICCIONARIO ────────────────────────────────────
   app.get("/api/dictionary/:word", rateLimit(60_000, 30), async (req, res) => {
     const word     = String(req.params.word || "").normalize("NFKC").trim().slice(0, 80)
-    const userLang = externalLanguage(req.query.lang)
-    const target   = externalLanguage(req.query.target, userLang)
+    const userLang = normalizeDictionaryLanguage(externalLanguage(req.query.lang))
+    const target   = normalizeDictionaryLanguage(externalLanguage(req.query.target, userLang), userLang)
     if (!word || word.length < 2 || !/^[\p{L}\p{M}'’-]+$/u.test(word)) {
       return res.status(400).json({
         word, sourceLanguage: userLang, targetLanguage: target,
-        senses: [], translation: "", source: "",
+        definitionLanguage: target, senses: [], translation: "", source: "", sourceUrl: "",
       })
     }
     try {
@@ -692,7 +692,7 @@ export async function registerRoutes(
     } catch {
       res.json({
         word, sourceLanguage: userLang, targetLanguage: target,
-        senses: [], translation: "", source: "",
+        definitionLanguage: target, senses: [], translation: "", source: "", sourceUrl: "",
       })
     }
   })
