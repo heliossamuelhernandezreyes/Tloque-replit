@@ -2,7 +2,7 @@ import pg from "pg"
 
 const { Pool } = pg
 
-export const RELEASE_ID = "tloque-replit-2026-08-15-direction-agent-v2"
+export const RELEASE_ID = "tloque-replit-2026-08-15-hybrid-fonoteca"
 
 export const BASE_TABLES = [
   "users",
@@ -78,6 +78,7 @@ export const EXPECTED_INDEXES = [
   "advanced_direction_projects_book_idx",
   "direction_agent_runs_user_idx",
   "direction_agent_one_active_request_idx",
+  "audio_assets_source_type_idx",
 ]
 
 export function databaseUrl() {

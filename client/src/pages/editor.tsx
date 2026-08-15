@@ -1104,6 +1104,7 @@ export default function Editor() {
                   chapterIndex={activeChapter}
                   content={form.chapters[activeChapter]?.content || ""}
                   accent={gc.color}
+                  saveSignal={saveStatus}
                 />
               )}
 

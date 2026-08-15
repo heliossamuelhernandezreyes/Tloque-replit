@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react"
-import { MusicEngine, type MusicCue, type MusicState } from "./MusicEngine"
+import { type MusicCue, type MusicState } from "./MusicEngine"
+import { HybridMusicEngine } from "./HybridMusicEngine"
 import { useSettings } from "@/context/SettingsContext"
 
 interface MusicContextValue {
@@ -18,9 +19,9 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const { settings } = useSettings()
   const [state, setState] = useState<MusicState>("idle")
   const [cue, setCue] = useState<MusicCue | null>(null)
-  const engineRef = useRef<MusicEngine | null>(null)
+  const engineRef = useRef<HybridMusicEngine | null>(null)
   if (!engineRef.current && typeof window !== "undefined") {
-    engineRef.current = new MusicEngine((nextState, nextCue) => {
+    engineRef.current = new HybridMusicEngine((nextState, nextCue) => {
       setState(nextState)
       setCue(nextCue)
     })
@@ -31,12 +32,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, [settings.musicVolume])
 
   useEffect(() => {
-    if (!settings.musicEnabled) {
-      engineRef.current?.pause()
-    } else if (cue) {
-      void engineRef.current?.play(cue)
-    }
-  }, [cue?.id, cue?.url, cue?.loop, cue?.volume, cue?.crossfadeSeconds, settings.musicEnabled])
+    if (!settings.musicEnabled) engineRef.current?.pause()
+  }, [settings.musicEnabled])
 
   useEffect(() => () => engineRef.current?.dispose(), [])
 
@@ -45,7 +42,9 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       engineRef.current?.stop()
       return
     }
-    setCue(next)
+    // Se invoca desde un gesto real del usuario en el lector/editor. Llamar al
+    // motor aquí conserva ese gesto para desbloquear Web Audio en móvil.
+    void engineRef.current?.play(next)
   }, [])
 
   const toggle = useCallback(() => {

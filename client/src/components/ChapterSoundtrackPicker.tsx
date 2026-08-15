@@ -1,29 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Heart, Loader2, Music2, Play, Square } from "lucide-react"
 import { LANGUAGE_META, useSettings } from "@/context/SettingsContext"
-
-interface Asset {
-  id: number
-  title: string
-  artist: string
-  kind: "music" | "ambience" | "system"
-  url: string
-  emotion: string
-  bpm: number | null
-  energy: number
-  loop: boolean
-  favorite: boolean
-}
-
-interface Assignment {
-  chapterIndex: number
-  assetId: number
-  volume: number
-  loop: boolean
-  crossfadeSeconds: number
-  asset: Asset
-}
+import { useMusic } from "@/audio/MusicProvider"
+import { musicCueFor, type CatalogAudioAsset as Asset, type ChapterAudioAssignment as Assignment } from "@/audio/catalog"
 
 export default function ChapterSoundtrackPicker({ bookId, chapterIndex, accent }: {
   bookId: number
@@ -32,8 +12,8 @@ export default function ChapterSoundtrackPicker({ bookId, chapterIndex, accent }
 }) {
   const queryClient = useQueryClient()
   const { t, settings } = useSettings()
-  const previewRef = useRef<HTMLAudioElement | null>(null)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const music = useMusic()
+  const [previewId, setPreviewId] = useState<number | null>(null)
   const { data: catalog } = useQuery<{ assets: Asset[] }>({
     queryKey: ["/api/audio/assets"],
     queryFn: async () => {
@@ -57,11 +37,7 @@ export default function ChapterSoundtrackPicker({ bookId, chapterIndex, accent }
   const current = bookAudio?.assignments.find(item => item.chapterIndex === chapterIndex)
   const currentAsset = assets.find(asset => asset.id === current?.assetId) || current?.asset
 
-  useEffect(() => () => {
-    previewRef.current?.pause()
-    previewRef.current?.removeAttribute("src")
-    previewRef.current = null
-  }, [])
+  useEffect(() => () => music.stop(), [music.stop])
 
   const assign = useMutation({
     mutationFn: async (asset: Asset | null) => {
@@ -88,19 +64,12 @@ export default function ChapterSoundtrackPicker({ bookId, chapterIndex, accent }
   })
 
   function togglePreview(asset: Asset) {
-    previewRef.current?.pause()
-    previewRef.current?.removeAttribute("src")
-    if (previewUrl === asset.url) {
-      previewRef.current = null
-      return setPreviewUrl(null)
+    if (previewId === asset.id) {
+      music.stop()
+      return setPreviewId(null)
     }
-    const audio = new Audio(asset.url)
-    audio.volume = 0.3
-    audio.onended = () => { previewRef.current = null; setPreviewUrl(null) }
-    void audio.play().then(() => {
-      previewRef.current = audio
-      setPreviewUrl(asset.url)
-    }).catch(() => setPreviewUrl(null))
+    music.playCue(musicCueFor(asset, { volume: 0.3, crossfadeSeconds: 0.4 }))
+    setPreviewId(asset.id)
   }
 
   return (
@@ -116,12 +85,12 @@ export default function ChapterSoundtrackPicker({ bookId, chapterIndex, accent }
         className="w-full rounded-lg bg-zinc-900 border border-white/10 px-2.5 py-2 text-xs text-white outline-none"
       >
         <option value="">{t("noMusic")}</option>
-        {assets.map(asset => <option key={asset.id} value={asset.id}>{asset.favorite ? "♥ " : ""}{asset.title}{asset.artist ? ` · ${asset.artist}` : ""}</option>)}
+        {assets.map(asset => <option key={asset.id} value={asset.id}>{asset.favorite ? "♥ " : ""}{asset.title}{asset.artist ? ` · ${asset.artist}` : ""}{asset.sourceType !== "stream" ? " · sintetizado" : ""}</option>)}
       </select>
       {current && currentAsset && (
         <div className="flex items-center gap-2 mt-2 text-[10px] font-sans text-zinc-500">
           <button onClick={() => togglePreview(currentAsset)} className="p-1 rounded-md bg-white/5" title={t("previewAction")} aria-label={t("previewAction")}>
-            {previewUrl === currentAsset.url ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+            {previewId === currentAsset.id ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
           </button>
           <span>{currentAsset.emotion}{currentAsset.bpm ? ` · ${currentAsset.bpm} BPM` : ""} · {t("crossfadeSeconds").replace("{n}", "6")}</span>
           <button onClick={() => favorite.mutate(currentAsset)} className="ml-auto p-1" title={t("favoriteAction")} aria-label={t("favoriteAction")}>

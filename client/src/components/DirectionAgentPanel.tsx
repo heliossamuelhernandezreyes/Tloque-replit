@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Bot, Check, ChevronDown, ChevronUp, FileLock2, Loader2, Lock, Music2, Sparkles, Unlock, Volume2 } from "lucide-react"
+import { Bot, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FileLock2, Loader2, Lock, Music2, Sparkles, Unlock, Volume2 } from "lucide-react"
 import { apiRequest } from "@/lib/queryClient"
 import { useSettings } from "@/context/SettingsContext"
 import { narrativeParagraphsFor } from "@shared/narrative"
@@ -55,11 +55,13 @@ export default function DirectionAgentPanel({
   chapterIndex,
   content,
   accent,
+  saveSignal,
 }: {
   bookId: number
   chapterIndex: number
   content: string
   accent: string
+  saveSignal?: string | number
 }) {
   const { settings } = useSettings()
   const language = settings.language as keyof typeof ui
@@ -71,32 +73,40 @@ export default function DirectionAgentPanel({
   const [quote, setQuote] = useState<QuoteResponse | null>(null)
   const [mode, setMode] = useState<DirectionAgentMode>("replace_unlocked")
   const [agent, setAgent] = useState({ configured: false, paperBalance: 0, promptVersion: "" })
-  const [loadedContent, setLoadedContent] = useState(content)
+  const [stale, setStale] = useState(false)
+  const [voicePage, setVoicePage] = useState(0)
   const [notice, setNotice] = useState("")
   const paragraphs = useMemo(() => narrativeParagraphsFor(content), [content])
-  const stale = loadedContent !== content
 
   useEffect(() => {
     let cancelled = false
-    setBusy("load")
-    fetch(`/api/books/${bookId}/direction/${chapterIndex}`, { credentials: "include" })
+    const timer = window.setTimeout(() => {
+      setBusy("load")
+      Promise.all([
+        fetch(`/api/books/${bookId}/direction/${chapterIndex}`, { credentials: "include" }),
+        crypto.subtle.digest("SHA-256", new TextEncoder().encode(content))
+          .then(buffer => [...new Uint8Array(buffer)].map(value => value.toString(16).padStart(2, "0")).join("")),
+      ])
       .then(async response => {
-        if (!response.ok) throw new Error(await response.text())
-        return response.json() as Promise<DirectionResponse>
+        if (!response[0].ok) throw new Error(await response[0].text())
+        return [await response[0].json() as DirectionResponse, response[1]] as const
       })
-      .then(data => {
+      .then(([data, localHash]) => {
         if (cancelled) return
         setProject(data.project)
         setAgent(data.agent)
-        setLoadedContent(content)
+        const textIsStale = data.stale || data.contentHash !== localHash
+        setStale(textIsStale)
+        setVoicePage(0)
         setQuote(null)
         setProposal(null)
-        setNotice(data.stale ? copy.stale : "")
+        setNotice(textIsStale ? copy.stale : "")
       })
       .catch(error => !cancelled && setNotice(messageFor(error, copy.error)))
       .finally(() => !cancelled && setBusy(null))
-    return () => { cancelled = true }
-  }, [bookId, chapterIndex])
+    }, 500)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [bookId, chapterIndex, content, saveSignal, copy.error, copy.stale])
 
   async function requestQuote() {
     setBusy("quote")
@@ -145,7 +155,8 @@ export default function DirectionAgentPanel({
       setProject(data.project)
       setProposal(null)
       setQuote(null)
-      setLoadedContent(content)
+      setStale(false)
+      setVoicePage(0)
       setNotice(copy.applied)
     } catch (error) {
       setNotice(messageFor(error, copy.error))
@@ -177,6 +188,9 @@ export default function DirectionAgentPanel({
   }
 
   const visible = proposal ?? project
+  const voicePageSize = proposal ? 24 : 8
+  const voicePages = Math.max(1, Math.ceil((visible?.voiceNotes.length ?? 0) / voicePageSize))
+  const visibleVoiceNotes = visible?.voiceNotes.slice(voicePage * voicePageSize, (voicePage + 1) * voicePageSize) ?? []
   const expiresSoon = quote ? new Date(quote.expiresAt).getTime() <= Date.now() : false
 
   return (
@@ -242,7 +256,7 @@ export default function DirectionAgentPanel({
 
               <div className="space-y-2">
                 <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-white/30"><Volume2 className="h-3.5 w-3.5" />{copy.voice} · {visible.voiceNotes.length} {copy.cues}</p>
-                {visible.voiceNotes.slice(0, proposal ? 80 : 8).map(note => {
+                {visibleVoiceNotes.map(note => {
                   const span = visible.voiceProject.spans.find(candidate => candidate.id === note.spanId)
                   const excerpt = span ? paragraphs[span.paragraphIndex]?.slice(span.startOffset, span.endOffset) : ""
                   return (
@@ -262,6 +276,13 @@ export default function DirectionAgentPanel({
                     </div>
                   )
                 })}
+                {voicePages > 1 && (
+                  <div className="flex items-center justify-center gap-3 pt-1 text-[10px] text-white/35">
+                    <button type="button" disabled={voicePage === 0} onClick={() => setVoicePage(page => Math.max(0, page - 1))} className="rounded-lg border border-white/[.07] p-1.5 disabled:opacity-25" aria-label="Anterior"><ChevronLeft className="h-3.5 w-3.5" /></button>
+                    <span>{voicePage + 1} / {voicePages}</span>
+                    <button type="button" disabled={voicePage >= voicePages - 1} onClick={() => setVoicePage(page => Math.min(voicePages - 1, page + 1))} className="rounded-lg border border-white/[.07] p-1.5 disabled:opacity-25" aria-label="Siguiente"><ChevronRight className="h-3.5 w-3.5" /></button>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">

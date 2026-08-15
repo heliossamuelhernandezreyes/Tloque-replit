@@ -14,6 +14,16 @@ type SoundType =
 
 let audioCtx: AudioContext | null = null
 let masterGain: GainNode | null = null
+const lastPlayedAt = new Map<SoundType, number>()
+const COOLDOWN_MS: Partial<Record<SoundType, number>> = {
+  orb_tap: 55,
+  genre_cycle: 90,
+  navigate: 100,
+  page_turn: 140,
+  save_book: 350,
+  book_complete: 1_500,
+  streak_milestone: 1_500,
+}
 
 function connectToOutput(ctx: AudioContext, node: AudioNode) {
   if (!masterGain || masterGain.context !== ctx) {
@@ -26,11 +36,18 @@ function connectToOutput(ctx: AudioContext, node: AudioNode) {
 
 function getCtx(): AudioContext | null {
   try {
+    const activation = navigator.userActivation
     if (!audioCtx) {
+      // Crear el contexto sólo durante un gesto real evita estados bloqueados
+      // en Chrome/Android y Safari. Si el navegador no expone la API, Web
+      // Audio conserva su comportamiento tradicional.
+      if (activation && !activation.isActive) return null
       audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
     }
-    // Reanudar si está suspendido (política de autoplay)
-    if (audioCtx.state === "suspended") audioCtx.resume()
+    if (audioCtx.state === "suspended") {
+      if (activation && !activation.isActive) return null
+      void audioCtx.resume()
+    }
     return audioCtx
   } catch {
     return null
@@ -349,6 +366,10 @@ export function useSoundFX() {
     // Movimiento reducido y audio son preferencias independientes.
     const { enabled } = getAudioSettings()
     if (!enabled) return
+    const now = performance.now()
+    const cooldown = COOLDOWN_MS[type] ?? 70
+    if (now - (lastPlayedAt.get(type) ?? -Infinity) < cooldown) return
+    lastPlayedAt.set(type, now)
 
     try {
       switch (type) {

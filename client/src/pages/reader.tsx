@@ -1,7 +1,7 @@
 import { useParams, useLocation } from "wouter"
 import { useBook, useBooks } from "@/hooks/use-books"
 import { Loader2, ArrowLeft, Bookmark, BookmarkCheck, Pencil,
-         ChevronLeft, ChevronRight, Volume2, VolumeX, BookOpen, Music2 } from "lucide-react"
+         ChevronLeft, ChevronRight, Volume2, VolumeX, BookOpen } from "lucide-react"
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useToast } from "@/hooks/use-toast"
@@ -15,6 +15,8 @@ import { pushStreak, pushProgress, pushSaveBook, pushUnsaveBook } from "@/lib/sy
 import { slimBook, saveOfflineContent, removeOfflineContent, getOfflineContent } from "@/lib/offline"
 import { useAuth } from "@/hooks/useAuth"
 import { useMusic } from "@/audio/MusicProvider"
+import ReaderAudioMenu from "@/components/ReaderAudioMenu"
+import type { ChapterAudioAssignment } from "@/audio/catalog"
 import { useReadingAttention } from "@/narrative/useReadingAttention"
 import { narrativeParagraphsFor, resolveNarrativeRegion, type ExperienceProfileV1, type NarrativeRuntimeState } from "@shared/narrative"
 import { FREE_SAVE_LIMIT, countsTowardLimit, countLimitedSaved } from "@/lib/library"
@@ -84,7 +86,7 @@ export default function Reader() {
   const [readProgress,  setReadProgress]  = useState(0)
   const [transitioning, setTransitioning] = useState(false)
 
-  const { data: soundtrackData } = useQuery<{ assignments: any[] }>({
+  const { data: soundtrackData } = useQuery<{ assignments: ChapterAudioAssignment[] }>({
     queryKey: ["/api/books/audio", numericBookId],
     queryFn: async () => {
       const res = await fetch(`/api/books/${numericBookId}/audio`, { credentials: "include" })
@@ -134,31 +136,6 @@ export default function Reader() {
     attention.progress,
     attention.confidence,
     music.direct,
-  ])
-
-  useEffect(() => {
-    if (!soundtrack) {
-      music.playCue(null)
-      return
-    }
-    music.playCue({
-      id: soundtrack.asset.id,
-      title: soundtrack.asset.title,
-      artist: soundtrack.asset.artist,
-      url: soundtrack.asset.url,
-      loop: soundtrack.loop,
-      volume: soundtrack.volume,
-      crossfadeSeconds: soundtrack.crossfadeSeconds || 6,
-    })
-  }, [
-    activeChapter,
-    soundtrack?.assetId,
-    soundtrack?.asset?.url,
-    soundtrack?.loop,
-    soundtrack?.volume,
-    soundtrack?.crossfadeSeconds,
-    soundtrack?.updatedAt,
-    music.playCue,
   ])
 
   useEffect(() => () => {
@@ -593,17 +570,7 @@ export default function Reader() {
         </div>
 
         <div className="flex items-center gap-1">
-          {soundtrack && settings.musicEnabled && (
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={music.toggle}
-              className="p-2 transition-colors"
-              style={{ color: music.state === "playing" || music.state === "crossfading" ? gc.color : headerText }}
-              title={`${soundtrack.asset.title}${soundtrack.asset.artist ? ` · ${soundtrack.asset.artist}` : ""}`}
-            >
-              <Music2 className="w-4 h-4" />
-            </motion.button>
-          )}
+          {(soundtrack || book?.spotifyLink) && <ReaderAudioMenu bookId={bookId || "book"} soundtrack={soundtrack} spotifyLink={book?.spotifyLink || ""} accent={gc.color} iconColor={headerText} />}
           {/* Botón de lectura en voz alta */}
           {ttsSupported && (
             <motion.button
@@ -657,34 +624,6 @@ export default function Reader() {
           )}
         </div>
       </motion.div>
-
-      {/* ── ORBE SPOTIFY — flotante — solo si el autor configuró un link ── */}
-      {book?.spotifyLink && (
-        <motion.button
-          initial={{ opacity: 0, scale: 0.8, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ delay: 0.5, type: "spring", stiffness: 280, damping: 22 }}
-          whileTap={{ scale: 0.88 }}
-          onClick={() => window.open((book as any).spotifyLink, "_blank", "noopener")}
-          className="fixed bottom-24 right-4 z-[140] flex items-center justify-center rounded-full"
-          style={{
-            width:      44,
-            height:     44,
-            background: `radial-gradient(circle at 40% 35%, ${gc.glow}55, rgba(0,0,0,0.88))`,
-            border:     `1px solid ${gc.color}45`,
-            boxShadow:  `0 0 20px ${gc.glow}30, 0 3px 10px rgba(0,0,0,0.6)`,
-          }}
-          title={t("spotifyTitle")}
-        >
-          <motion.div
-            className="absolute inset-0 rounded-full pointer-events-none"
-            animate={{ scale: [1, 1.3, 1], opacity: [0.25, 0, 0.25] }}
-            transition={{ duration: 3.5, repeat: Infinity }}
-            style={{ border: `1px solid ${gc.color}55` }}
-          />
-          <Music2 className="w-4 h-4" style={{ color: gc.color }} />
-        </motion.button>
-      )}
 
       {/* ── CONTENIDO ── */}
       <div className="max-w-[660px] mx-auto px-5 sm:px-10 pt-20 pb-40">

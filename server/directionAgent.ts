@@ -33,9 +33,12 @@ import { narrativeProjectSchema, type NarrativeProjectV1 } from "@shared/narrati
 import { speechProjectSchema, type SpeechProjectV1 } from "@shared/speech"
 import { db } from "./db"
 import { isAdmin } from "./auth"
+import { hasActiveSubscription } from "./subscription"
 import { rateLimit } from "./rateLimit"
 import { directChapterWithOracle, oracleConfig, type OracleScoreSummary } from "./oracle"
 import { analyzeSpeechWithGroq, speechOracleConfigured } from "./speechOracle"
+
+const ABANDONED_RUN_MS = 15 * 60_000
 
 const quoteBodySchema = z.object({
   requestKey: z.string().uuid(),
@@ -209,7 +212,12 @@ async function currentProject(
     eq(advancedDirectionProjects.bookId, book.id),
     eq(advancedDirectionProjects.chapterIndex, index),
   ))
-  if (stored) return advancedDirectionProjectSchema.parse(stored.data)
+  if (stored) {
+    const parsed = advancedDirectionProjectSchema.parse(stored.data)
+    // Los offsets de voz y las regiones musicales pertenecen exactamente al
+    // texto cuyo hash guardaron. Nunca se mezclan con un manuscrito distinto.
+    return parsed.contentHash === hash ? parsed : null
+  }
 
   const [[voice], [music]] = await Promise.all([
     db.select().from(speechProjects).where(and(eq(speechProjects.bookId, book.id), eq(speechProjects.chapterIndex, index))),
@@ -239,10 +247,25 @@ async function currentProject(
   })
 }
 
-async function assertPublishedMusicNodes(project: AdvancedDirectionProjectV2): Promise<void> {
+async function assertPublishedMusicNodes(
+  project: AdvancedDirectionProjectV2,
+  executor: Pick<typeof db, "select"> = db,
+): Promise<void> {
+  const scoreIds = [...new Set(project.musicNodes
+    .map(node => node.scoreId)
+    .filter((id): id is number => typeof id === "number"))]
+  if (scoreIds.length > 0) {
+    const scores = await executor.select({ id: adaptiveScores.id, status: adaptiveScores.status })
+      .from(adaptiveScores).where(inArray(adaptiveScores.id, scoreIds))
+    const published = new Set(scores.filter(score => score.status === "published").map(score => score.id))
+    if (scoreIds.some(id => !published.has(id))) {
+      throw new Error("La propuesta contiene una partitura no publicada")
+    }
+  }
+
   const ids = [...new Set(project.musicNodes.flatMap(node => node.layerIds))]
   if (ids.length === 0) return
-  const rows = await db.select({
+  const rows = await executor.select({
     id: adaptiveScoreLayers.id,
     scoreId: adaptiveScoreLayers.scoreId,
     scoreStatus: adaptiveScores.status,
@@ -260,6 +283,42 @@ async function assertPublishedMusicNodes(project: AdvancedDirectionProjectV2): P
       }
     }
   }
+}
+
+async function recoverAbandonedRuns(userId: number): Promise<number> {
+  const candidates = await db.select({ id: directionAgentRuns.id })
+    .from(directionAgentRuns)
+    .where(and(
+      eq(directionAgentRuns.userId, userId),
+      eq(directionAgentRuns.status, "processing"),
+      sql`${directionAgentRuns.startedAt} < ${new Date(Date.now() - ABANDONED_RUN_MS)}`,
+    ))
+  let recovered = 0
+  for (const candidate of candidates) {
+    await db.transaction(async tx => {
+      await tx.execute(sql`select pg_advisory_xact_lock(81733423, ${candidate.id})`)
+      const [run] = await tx.select().from(directionAgentRuns).where(eq(directionAgentRuns.id, candidate.id))
+      const abandoned = run?.status === "processing"
+        && run.startedAt
+        && run.startedAt.getTime() < Date.now() - ABANDONED_RUN_MS
+      if (!run || !abandoned) return
+      await tx.update(directionAgentRuns).set({
+        status: "failed",
+        errorCode: "ABANDONED_PROCESS_RECOVERED",
+        finishedAt: new Date(),
+      }).where(eq(directionAgentRuns.id, run.id))
+      if (run.reservedPaper > 0) await tx.insert(walletLedger).values({
+        userId: run.userId,
+        currency: "papel",
+        delta: run.reservedPaper,
+        reason: "refund_ai",
+        refType: "direction_agent_run",
+        refId: run.id,
+      })
+      recovered += 1
+    })
+  }
+  return recovered
 }
 
 async function refundFailedRun(runId: number, errorCode: string): Promise<void> {
@@ -319,12 +378,15 @@ export function registerDirectionAgentRoutes(app: Express) {
     const index = chapterIndex(req.params.chapterIndex)
     const parsed = quoteBodySchema.safeParse(req.body)
     if (!bookId || index === null || !parsed.success) return res.status(400).json({ message: "Cotización inválida" })
+    if (!hasActiveSubscription(req.user as any, "oracle")) return res.status(403).json({ message: "El Director Artificial requiere un plan con Oráculo activo" })
     if (!directionConfigured()) return res.status(503).json({ message: "El Director Artificial todavía no está configurado" })
     const userId = (req.user as any).id as number
     try {
+      await recoverAbandonedRuns(userId)
       const [prior] = await db.select().from(directionAgentRuns).where(eq(directionAgentRuns.requestKey, parsed.data.requestKey))
       if (prior) {
         if (prior.userId !== userId || prior.bookId !== bookId || prior.chapterIndex !== index) return res.status(409).json({ message: "La solicitud ya fue utilizada" })
+        if (prior.status !== "quoted") return res.status(409).json({ message: "Esta clave de solicitud ya terminó; solicita una cotización nueva" })
         return res.json({
           requestKey: prior.requestKey,
           estimatedPaper: prior.estimatedPaper,
@@ -377,9 +439,12 @@ export function registerDirectionAgentRoutes(app: Express) {
     const index = chapterIndex(req.params.chapterIndex)
     const parsed = runBodySchema.safeParse(req.body)
     if (!bookId || index === null || !parsed.success) return res.status(400).json({ message: "Solicitud inválida" })
+    if (!hasActiveSubscription(req.user as any, "oracle")) return res.status(403).json({ message: "El Director Artificial requiere un plan con Oráculo activo" })
+    if (!directionConfigured()) return res.status(503).json({ message: "El Director Artificial todavía no está configurado" })
     const userId = (req.user as any).id as number
     let runId = 0
     try {
+      await recoverAbandonedRuns(userId)
       const [book] = await db.select().from(books).where(eq(books.id, bookId))
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
       if (!canEdit(book, req.user)) return res.status(403).json({ message: "Sólo el autor puede ejecutar la dirección" })
@@ -563,7 +628,9 @@ export function registerDirectionAgentRoutes(app: Express) {
             revision,
           },
         })
-        await assertPublishedMusicNodes(project)
+        // Usa la misma transacción. Con DB_POOL_MAX=1, consultar por la conexión
+        // global desde aquí bloquearía la única conexión disponible.
+        await assertPublishedMusicNodes(project, tx as any)
         const [saved] = await tx.insert(advancedDirectionProjects).values({
           bookId,
           chapterIndex: index,
