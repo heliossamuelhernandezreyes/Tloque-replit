@@ -854,7 +854,13 @@ export default function OrbSystem() {
           aria-label={t("genre")}
           aria-pressed={activeGenre !== "todos"}
         >
-          <RunicSeal color={cfg.color} glow={cfg.glow} active={activeGenre !== "todos"} genre={activeGenre} animated={animated} />
+          <RunicSeal
+            color={cfg.color}
+            glow={cfg.glow}
+            active={activeGenre !== "todos"}
+            genre={activeGenre}
+            animated={animated && activeGenre !== "todos"}
+          />
         </motion.button>
 
         {/* ── ORBE DERECHO — PRISMA ── */}
@@ -870,13 +876,18 @@ export default function OrbSystem() {
           aria-label={t("onlyStories")}
           aria-pressed={filterActive}
         >
-          <PrismOrb color={cfg.color} glow={cfg.glow} active={filterActive} animated={animated} />
+          <PrismOrb
+            color={cfg.color}
+            glow={cfg.glow}
+            active={filterActive}
+            animated={animated && filterActive}
+          />
         </motion.button>
 
         {/* ── ORBE CENTRAL — OJO CÓSMICO ── */}
         <motion.button
           {...centralProps}
-          animate={{ y: searchMode ? "-38vh" : 0, scale: searchMode ? 1.1 : 1 }}
+          animate={{ y: searchMode ? "-38dvh" : 0, scale: searchMode ? 1.1 : 1 }}
           transition={dockTransition}
           whileHover={{ scale: searchMode ? 1.12 : 1.04 }}
           whileFocus={{ scale: searchMode ? 1.12 : 1.04 }}
@@ -939,7 +950,7 @@ export default function OrbSystem() {
                       if (e.key === "Escape") closeSearch()
                     }}
                     placeholder={t("search")}
-                    className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-zinc-600 font-sans"
+                    className="min-w-0 flex-1 bg-transparent text-white text-sm outline-none placeholder:text-zinc-600 font-sans"
                   />
                   <AnimatePresence>
                     {query.trim() ? (
@@ -948,7 +959,7 @@ export default function OrbSystem() {
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.7 }}
                         onClick={doSearch}
-                        className="shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full font-sans"
+                        className="min-h-11 shrink-0 rounded-full px-3 text-[11px] font-semibold font-sans"
                         style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}40` }}
                       >
                         {t("searchAction")}
@@ -959,8 +970,9 @@ export default function OrbSystem() {
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.7 }}
                         onClick={closeSearch}
-                        className="shrink-0 p-1 rounded-full"
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
                         style={{ color: "rgba(255,255,255,0.25)" }}
+                        aria-label={t("closeAction")}
                       >
                         <X className="w-3 h-3" />
                       </motion.button>
@@ -976,7 +988,7 @@ export default function OrbSystem() {
                       animate={{ opacity: 1, y: 0,  scaleY: 1    }}
                       exit={{    opacity: 0, y: -4,  scaleY: 0.92 }}
                       transition={{ duration: 0.15 }}
-                      className="mt-1.5 rounded-xl overflow-hidden"
+                      className="mt-1.5 max-h-[40dvh] overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl"
                       style={{
                         background:      "rgba(6,6,10,0.95)",
                         border:          `1px solid ${cfg.color}25`,
@@ -991,7 +1003,7 @@ export default function OrbSystem() {
                           animate={{ opacity: 1, x: 0  }}
                           transition={{ delay: i * 0.04 }}
                           onClick={() => goToBook(book.id)}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-white/5"
+                          className="flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-white/5"
                           style={{ borderBottom: i < suggestions.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}
                         >
                           <div className="shrink-0 w-7 h-10 rounded overflow-hidden"
@@ -1017,7 +1029,7 @@ export default function OrbSystem() {
                         </motion.button>
                       ))}
                       <button onClick={doSearch}
-                        className="w-full px-4 py-2.5 text-center text-[11px] font-sans transition-colors"
+                        className="min-h-11 w-full px-4 py-2.5 text-center text-[11px] font-sans transition-colors"
                         style={{ color: cfg.color + "88", borderTop: `1px solid ${cfg.color}15` }}
                       >
                         {t("seeAllResults")} →

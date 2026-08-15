@@ -1118,7 +1118,7 @@ export default function Reader() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: "100%", opacity: 0 }}
             transition={{ type: "spring", stiffness: 320, damping: 30 }}
-            className="fixed bottom-0 left-0 right-0 z-[501] max-w-md mx-auto"
+            className="fixed bottom-0 left-0 right-0 z-[501] mx-auto max-h-[calc(100dvh-var(--tloque-safe-top))] max-w-md overflow-hidden"
             role="dialog"
             aria-modal="true"
             aria-label={`${t("dictionary")}: ${dictWord}`}
@@ -1135,9 +1135,9 @@ export default function Reader() {
             </div>
             <div className="px-6 pb-6 pt-2">
               <div className="flex items-start justify-between mb-3">
-                <div>
+                <div className="min-w-0 flex-1 pe-3">
                   <h3
-                    className="font-display text-lg font-semibold text-white leading-tight"
+                    className="break-words font-display text-lg font-semibold text-white leading-tight"
                     dir={languageDirection(dictResult?.sourceLanguage || bookLangRef.current)}
                   >{dictWord}</h3>
                   <p className="text-[10px] uppercase tracking-widest font-sans mt-0.5" style={{ color: gc.color + "66" }}>
@@ -1146,7 +1146,7 @@ export default function Reader() {
                 </div>
                 <button
                   onClick={closeDictionary}
-                  className="p-1.5 rounded-full mt-0.5"
+                  className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
                   style={{ background: "rgba(255,255,255,0.06)" }}
                   aria-label={t("closeAction")}
                 >
@@ -1154,7 +1154,8 @@ export default function Reader() {
                 </button>
               </div>
               <div
-                className="rounded-2xl px-4 py-3 min-h-[64px] max-h-[48vh] overflow-y-auto"
+                className="min-h-[64px] max-h-[48dvh] overflow-y-auto overscroll-contain rounded-2xl px-4 py-3"
+                aria-live="polite"
                 style={{ background: `linear-gradient(135deg, ${gc.bg}, rgba(0,0,0,0.4))`, border: `1px solid ${gc.color}18` }}
               >
                 {dictLoading ? (
@@ -1211,7 +1212,7 @@ export default function Reader() {
                     href={dictResult.sourceUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline decoration-white/10 underline-offset-2 hover:text-zinc-500"
+                    className="inline-flex min-h-11 items-center justify-center underline decoration-white/10 underline-offset-2 hover:text-zinc-500"
                   >
                     {t("dictionarySource")}: {dictResult.source.replace("wiktionary-", "Wiktionary · ")}
                   </a>
