@@ -79,7 +79,13 @@ app.use((req, res, next) => {
     return res.status(status).json({ message })
   })
 
-  if (process.env.NODE_ENV === "production") {
+  // El Preview de Replit corre sobre una conexión móvil y la gráfica de
+  // módulos de Vite supera los dos mil módulos. Servir el bundle ya compilado
+  // evita miles de solicitudes individuales sin relajar las validaciones de
+  // producción durante el desarrollo.
+  const serveBuiltClient = process.env.NODE_ENV === "production"
+    || process.env.SERVE_STATIC === "true"
+  if (serveBuiltClient) {
     serveStatic(app)
   } else {
     const { setupVite } = await import("./vite")

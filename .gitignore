@@ -1,7 +1,20 @@
-node_modules
-dist
+node_modules/
+dist/
+server/public/
 .DS_Store
-server/public
 vite.config.ts.*
+
+.env
+.env.*
+!.env.example
+
+.tloque_cache/
+.tloque_backups/
+.migration-backups/
+.agents/
+*.zip
 *.tar.gz
+
+# La conexión OAuth de Replit no dispone del scope workflow. La integración
+# continua puede añadirse después directamente desde GitHub.
 .github/workflows/

@@ -5,6 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "NODE_ENV=development node --import tsx server/index.ts",
+    "replit": "npm run build && NODE_ENV=development SERVE_STATIC=true node dist/index.cjs",
     "build": "node --import tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
