@@ -22,34 +22,67 @@
         overflow-x: hidden;
       }
       .boot-state {
+        position: relative;
         box-sizing: border-box;
-        min-height: 100%;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 16px;
+        min-height: 100dvh;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 28px;
+        overflow: hidden;
         padding: 24px;
-        color: rgba(255,255,255,.52);
-        font: 500 11px/1.5 Inter, system-ui, sans-serif;
-        letter-spacing: .22em;
-        text-transform: uppercase;
+        background: radial-gradient(circle at 50% 48%, rgba(118,86,190,.12), transparent 28rem), #000;
+        color: white;
         text-align: center;
       }
-      .boot-state__light {
-        width: 8px;
-        height: 8px;
-        border-radius: 999px;
-        background: rgba(196,181,253,.72);
-        box-shadow: 0 0 22px rgba(139,92,246,.45);
+      .boot-state::before {
+        position: absolute;
+        inset: 0;
+        background-image: radial-gradient(rgba(255,255,255,.19) .55px, transparent .7px);
+        background-size: 37px 37px;
+        opacity: .13;
+        -webkit-mask-image: radial-gradient(circle, black, transparent 72%);
+        mask-image: radial-gradient(circle, black, transparent 72%);
+        content: "";
+      }
+      .boot-state__mark { position: relative; width: 122px; height: 122px; animation: boot-float 4s ease-in-out infinite; }
+      .boot-state__ring, .boot-state__iris, .boot-state__star { position: absolute; display: block; }
+      .boot-state__ring { inset: 12%; border: 1px solid rgba(207,190,255,.3); border-radius: 50%; box-shadow: 0 0 28px rgba(118,80,190,.12); }
+      .boot-state__ring--outer { border-left-color: transparent; border-bottom-color: rgba(207,190,255,.08); animation: boot-orbit 7s linear infinite; }
+      .boot-state__ring--inner { inset: 24%; border-top-color: transparent; border-right-color: rgba(255,255,255,.08); animation: boot-reverse 4.8s linear infinite; }
+      .boot-state__iris { inset: 37%; display: grid; place-items: center; border: 1px solid rgba(221,211,255,.48); border-radius: 50%; background: rgba(10,7,18,.82); box-shadow: 0 0 24px rgba(165,127,255,.25); }
+      .boot-state__iris::after { width: 30%; aspect-ratio: 1; border-radius: 50%; background: #d8caff; box-shadow: 0 0 14px rgba(207,188,255,.8); animation: boot-pulse 1.8s ease-in-out infinite; content: ""; }
+      .boot-state__star { width: 3px; aspect-ratio: 1; border-radius: 50%; background: rgba(236,229,255,.9); box-shadow: 0 0 10px rgba(196,174,255,.8); animation: boot-star 2.1s ease-in-out infinite; }
+      .boot-state__star--one { top: 11%; left: 25%; }
+      .boot-state__star--two { right: 8%; bottom: 32%; animation-delay: -.7s; }
+      .boot-state__star--three { left: 15%; bottom: 13%; animation-delay: -1.4s; }
+      .boot-state__copy strong { display: block; font: 400 clamp(22px, 5vw, 30px)/1.2 Cinzel, Georgia, serif; letter-spacing: .48em; text-indent: .48em; color: rgba(255,255,255,.86); text-shadow: 0 0 30px rgba(185,159,255,.25); }
+      .boot-state__copy span { display: block; margin-top: 12px; font: 500 9px/1.5 Inter, system-ui, sans-serif; letter-spacing: .27em; text-transform: uppercase; color: rgba(255,255,255,.28); }
+      @keyframes boot-orbit { to { transform: rotate(360deg); } }
+      @keyframes boot-reverse { to { transform: rotate(-360deg); } }
+      @keyframes boot-float { 50% { transform: translateY(-6px); } }
+      @keyframes boot-pulse { 50% { opacity: .45; transform: scale(.62); } }
+      @keyframes boot-star { 50% { opacity: .25; transform: scale(.65); } }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-state * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
       }
     </style>
   </head>
   <body>
     <div id="root">
       <div class="boot-state" role="status" aria-live="polite">
-        <span class="boot-state__light" aria-hidden="true"></span>
-        <span>Iniciando Tloque</span>
+        <div class="boot-state__mark" aria-hidden="true">
+          <span class="boot-state__ring boot-state__ring--outer"></span>
+          <span class="boot-state__ring boot-state__ring--inner"></span>
+          <span class="boot-state__iris"></span>
+          <i class="boot-state__star boot-state__star--one"></i>
+          <i class="boot-state__star boot-state__star--two"></i>
+          <i class="boot-state__star boot-state__star--three"></i>
+        </div>
+        <div class="boot-state__copy">
+          <strong>Tloque</strong>
+          <span>Narrativas que permanecen</span>
+        </div>
         <noscript>Tloque necesita JavaScript para funcionar.</noscript>
       </div>
     </div>

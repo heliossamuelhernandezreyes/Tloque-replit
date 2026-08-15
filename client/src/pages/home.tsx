@@ -5,10 +5,11 @@ import { Layout } from "../components/layout"
 import { BookCard } from "../components/book-card"
 import useEmblaCarousel from "embla-carousel-react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Loader2, Edit3, Trash2, BookOpen } from "lucide-react"
+import { Edit3, Trash2, BookOpen } from "lucide-react"
 import { coverFor } from "@/lib/covers"
 import { useGenre, GENRE_CONFIG, type Genre } from "@/context/GenreContext"
 import { useSettings, LITERARY_QUOTES_I18N } from "@/context/SettingsContext"
+import BootExperience from "@/components/BootExperience"
 
 type Book = {
   id:              string | number
@@ -254,9 +255,7 @@ export default function Home() {
   if (isLoading && allBooks.length === 0) {
     return (
       <Layout>
-        <div className="flex justify-center items-center h-screen">
-          <Loader2 className="w-7 h-7 animate-spin text-white/30" />
-        </div>
+        <BootExperience compact />
       </Layout>
     )
   }
@@ -283,7 +282,7 @@ export default function Home() {
         />
       </div>
 
-      <div className="pt-14 sm:pt-20 pb-36 space-y-6 sm:space-y-10">
+      <div className="pt-4 sm:pt-8 pb-36 space-y-6 sm:space-y-10">
 
         {/* ── INDICADOR DE FILTRO ACTIVO ── */}
         <AnimatePresence>
