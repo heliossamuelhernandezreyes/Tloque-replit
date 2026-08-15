@@ -4,6 +4,8 @@ import {
   detectChapters,
   detectPublicationYear,
   downloadBookText,
+  normalizeGutenbergLanguage,
+  searchGutenberg,
   type GutenbergBook,
 } from "../server/gutenberg"
 
@@ -20,6 +22,60 @@ function stubBook(textUrl: string): GutenbergBook {
     copyright: false,
   }
 }
+
+function searchBook(id: number, language: string, formats: Record<string, string> = {
+  "text/plain; charset=utf-8": `https://www.gutenberg.org/files/${id}/${id}-0.txt`,
+}): GutenbergBook {
+  return {
+    ...stubBook(formats["text/plain; charset=utf-8"] || "https://www.gutenberg.org/files/1/1.txt"),
+    id,
+    title: `Libro ${id}`,
+    languages: [language],
+    formats,
+  }
+}
+
+test("Gutenberg conserva solo ediciones del idioma pedido y exige texto plano", async () => {
+  const originalFetch = globalThis.fetch
+  const requested: URL[] = []
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    requested.push(new URL(String(input)))
+    return Response.json({ results: [
+      searchBook(1, "es"),
+      searchBook(2, "en"),
+      searchBook(3, "es", { "application/epub+zip": "https://www.gutenberg.org/ebooks/3.epub3.images" }),
+      searchBook(4, "xx"),
+    ] })
+  }) as typeof fetch
+  try {
+    const books = await searchGutenberg("Quijote", "es-MX")
+    assert.deepEqual(books.map(book => book.id), [1])
+    assert.equal(books[0].languageMatch, "exact")
+    assert.equal(books[0].requestedLanguage, "es")
+    assert.equal(requested[0].searchParams.get("languages"), "es")
+    assert.equal(requested[0].searchParams.get("mime_type"), "text/")
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("Gutenberg identifica alternativas sin mezclarlas con coincidencias exactas", async () => {
+  const originalFetch = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = (async () => {
+    calls++
+    return Response.json({ results: calls === 1 ? [] : [searchBook(7, "en")] })
+  }) as typeof fetch
+  try {
+    const books = await searchGutenberg("Hamlet", "pt-BR")
+    assert.equal(calls, 2)
+    assert.equal(books[0].languageMatch, "alternative")
+    assert.equal(books[0].requestedLanguage, "pt")
+    assert.equal(normalizeGutenbergLanguage("xx"), "es")
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
 
 test("el importador rechaza fuentes ajenas a Project Gutenberg antes de pedirlas", async () => {
   const originalFetch = globalThis.fetch
@@ -75,6 +131,13 @@ test("conserva encabezados repetidos que pertenecen a actos distintos", () => {
   const chapters = detectChapters(`ACT I\n${body}\nACT I\n${body}\nACT I\n${body}`)
   assert.equal(chapters.length, 3)
   assert.deepEqual(chapters.map(chapter => chapter.title), ["ACT I", "ACT I", "ACT I"])
+})
+
+test("detecta capítulos en escrituras no latinas", () => {
+  const body = "نص طويل من الرواية. ".repeat(30)
+  const chapters = detectChapters(`الفصل الأول\n${body}\nالفصل الثاني\n${body}`)
+  assert.equal(chapters.length, 2)
+  assert.deepEqual(chapters.map(chapter => chapter.title), ["الفصل الأول", "الفصل الثاني"])
 })
 
 test("no inventa el año de publicación a partir de la vida del autor", () => {

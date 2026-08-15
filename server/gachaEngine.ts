@@ -30,7 +30,7 @@ export interface DrawPayload {
   rolledRarity: RarityKey
   reason:       string
   pityApplied:  boolean
-  card:         { id: number; name: string; subtitle: string; fx: any }
+  card:         { id: number; name: string; subtitle: string; fx: any; rarity: RarityKey; inGachaPool: true }
   book:         { id: number; title: string; author: string; coverUrl: string }
   isDuplicate:  boolean
   bookGranted:  boolean       // ¿se sumó el libro a su biblioteca?
@@ -269,7 +269,14 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
         rolledRarity: draw.rolled,
         reason: draw.reason,
         pityApplied: draw.pityApplied,
-        card: { id: cardId, name: card?.name ?? "", subtitle: card?.subtitle ?? "", fx: card?.fx ?? {} },
+        card: {
+          id: cardId,
+          name: card?.name ?? "",
+          subtitle: card?.subtitle ?? "",
+          fx: card?.fx ?? {},
+          rarity: draw.rarity,
+          inGachaPool: true,
+        },
         book: { id: bookId, title: book?.title ?? "", author: book?.author ?? "", coverUrl: book?.coverUrl ?? "" },
         isDuplicate,
         bookGranted,

@@ -440,6 +440,36 @@ for (const language of Object.keys(UI_STRINGS_QUALITY) as AppLanguage[]) {
   Object.assign(UI_STRINGS[language], UI_STRINGS_QUALITY[language])
 }
 
+const UI_STRINGS_GUTENBERG: Record<AppLanguage, Record<string, string>> = {
+  es: { gutenbergAlternativeHint: "No encontramos una edición en {language}. Mostramos otras ediciones disponibles, con su idioma visible." },
+  en: { gutenbergAlternativeHint: "No edition was found in {language}. Other available editions are shown with their language clearly marked." },
+  fr: { gutenbergAlternativeHint: "Aucune édition n’a été trouvée en {language}. Les autres éditions disponibles sont affichées avec leur langue." },
+  de: { gutenbergAlternativeHint: "Keine Ausgabe in {language} gefunden. Andere verfügbare Ausgaben werden mit ihrer Sprache angezeigt." },
+  it: { gutenbergAlternativeHint: "Nessuna edizione trovata in {language}. Mostriamo le altre edizioni disponibili indicando la lingua." },
+  pt: { gutenbergAlternativeHint: "Nenhuma edição encontrada em {language}. Mostramos outras edições disponíveis com o idioma indicado." },
+  ja: { gutenbergAlternativeHint: "{language}版が見つからないため、利用可能な他言語版を言語表示付きで案内しています。" },
+  zh: { gutenbergAlternativeHint: "未找到{language}版本。以下显示其他可用版本，并明确标注其语言。" },
+  ar: { gutenbergAlternativeHint: "لم نعثر على نسخة باللغة {language}. نعرض النسخ المتاحة بلغات أخرى مع توضيح لغتها." },
+}
+for (const language of Object.keys(UI_STRINGS_GUTENBERG) as AppLanguage[]) {
+  Object.assign(UI_STRINGS[language], UI_STRINGS_GUTENBERG[language])
+}
+
+const UI_STRINGS_RARITIES: Record<AppLanguage, Record<string, string>> = {
+  es: { rarityCommon: "Común", rarityRare: "Rara", rarityVeryRare: "Muy rara", rarityUnusual: "Insólita", rarityGolden: "Dorada", rarityLegendary: "Legendaria", rarityMythic: "Mítica", rarityAbsolute: "Absoluta" },
+  en: { rarityCommon: "Common", rarityRare: "Rare", rarityVeryRare: "Very rare", rarityUnusual: "Unusual", rarityGolden: "Golden", rarityLegendary: "Legendary", rarityMythic: "Mythic", rarityAbsolute: "Absolute" },
+  fr: { rarityCommon: "Commune", rarityRare: "Rare", rarityVeryRare: "Très rare", rarityUnusual: "Insolite", rarityGolden: "Dorée", rarityLegendary: "Légendaire", rarityMythic: "Mythique", rarityAbsolute: "Absolue" },
+  de: { rarityCommon: "Gewöhnlich", rarityRare: "Selten", rarityVeryRare: "Sehr selten", rarityUnusual: "Ungewöhnlich", rarityGolden: "Golden", rarityLegendary: "Legendär", rarityMythic: "Mythisch", rarityAbsolute: "Absolut" },
+  it: { rarityCommon: "Comune", rarityRare: "Rara", rarityVeryRare: "Molto rara", rarityUnusual: "Insolita", rarityGolden: "Dorata", rarityLegendary: "Leggendaria", rarityMythic: "Mitica", rarityAbsolute: "Assoluta" },
+  pt: { rarityCommon: "Comum", rarityRare: "Rara", rarityVeryRare: "Muito rara", rarityUnusual: "Insólita", rarityGolden: "Dourada", rarityLegendary: "Lendária", rarityMythic: "Mítica", rarityAbsolute: "Absoluta" },
+  ja: { rarityCommon: "コモン", rarityRare: "レア", rarityVeryRare: "ベリーレア", rarityUnusual: "アンユージュアル", rarityGolden: "ゴールデン", rarityLegendary: "レジェンダリー", rarityMythic: "ミシック", rarityAbsolute: "アブソリュート" },
+  zh: { rarityCommon: "普通", rarityRare: "稀有", rarityVeryRare: "极稀有", rarityUnusual: "非凡", rarityGolden: "金色", rarityLegendary: "传奇", rarityMythic: "神话", rarityAbsolute: "绝对" },
+  ar: { rarityCommon: "شائعة", rarityRare: "نادرة", rarityVeryRare: "نادرة جدًا", rarityUnusual: "غير مألوفة", rarityGolden: "ذهبية", rarityLegendary: "أسطورية", rarityMythic: "خرافية", rarityAbsolute: "مطلقة" },
+}
+for (const language of Object.keys(UI_STRINGS_RARITIES) as AppLanguage[]) {
+  Object.assign(UI_STRINGS[language], UI_STRINGS_RARITIES[language])
+}
+
 const UI_STRINGS_ECONOMY: Record<AppLanguage, Record<string, string>> = {
   es: { recommended: "Recomendado", bestValue: "Mejor valor", oneTimePayment: "Pago único", tintaNeverExpires: "La Tinta no caduca. Siempre ves el precio final antes de confirmar.", comingSoon: "Próximamente", paperUsageTitle: "Capacidad de IA", paperPerMonth: "Papel por ciclo", paperRateOracle: "Oráculo: 1 Papel por cada 1,000 tokens", paperRateVoice: "Voz IA: 1 Papel por cada 1,000 caracteres", paperBeta: "Cuotas preliminares; se calibrarán antes de activar suscripciones.", gachaDuplicate: "Carta repetida · registrada en tu historial" },
   en: { recommended: "Recommended", bestValue: "Best value", oneTimePayment: "One-time payment", tintaNeverExpires: "Ink does not expire. You always see the final price before confirming.", comingSoon: "Coming soon", paperUsageTitle: "AI capacity", paperPerMonth: "Paper per cycle", paperRateOracle: "Oracle: 1 Paper per 1,000 tokens", paperRateVoice: "AI voice: 1 Paper per 1,000 characters", paperBeta: "Preliminary allowances; they will be calibrated before subscriptions go live.", gachaDuplicate: "Duplicate card · recorded in your history" },

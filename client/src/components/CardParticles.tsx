@@ -24,6 +24,7 @@ export default function CardParticles({ effect, intensity, className, tint = "#f
     if (!ctx) return
     const canvasEl = canvas
     const context = ctx
+    let visible = true
 
     let W = 0, H = 0
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
@@ -87,6 +88,8 @@ export default function CardParticles({ effect, intensity, className, tint = "#f
     parts = Array.from({ length: count }, () => spawn(effect, true))
 
     function frame() {
+      rafRef.current = 0
+      if (!visible) return
       context.clearRect(0, 0, W, H)
       t += 0.016
 
@@ -178,13 +181,37 @@ export default function CardParticles({ effect, intensity, className, tint = "#f
       }
       rafRef.current = requestAnimationFrame(frame)
     }
-    rafRef.current = requestAnimationFrame(frame)
+
+    const start = () => {
+      if (!visible || rafRef.current) return
+      rafRef.current = requestAnimationFrame(frame)
+    }
+    start()
+
+    // Una colección puede tener decenas de lienzos. Los que están fuera de la
+    // pantalla no conservan un RAF ni consumen batería; al volver se reanudan.
+    const visibilityObserver = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting
+      if (visible) {
+        resize()
+        start()
+      } else {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = 0
+        context.clearRect(0, 0, W, H)
+      }
+    }, { rootMargin: "100px 0px", threshold: 0.01 })
+    visibilityObserver?.observe(canvasEl)
 
     const onResize = () => resize()
     window.addEventListener("resize", onResize)
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize)
+    resizeObserver?.observe(canvasEl)
     return () => {
       cancelAnimationFrame(rafRef.current)
       window.removeEventListener("resize", onResize)
+      visibilityObserver?.disconnect()
+      resizeObserver?.disconnect()
     }
   }, [effect, intensity, tint, settings.reduceMotion])
 

@@ -26,6 +26,8 @@ type SearchResult = {
   download_count: number
   existingBookId?: number | null
   alreadyImported?: boolean
+  requestedLanguage?: string
+  languageMatch?: "exact" | "multilingual" | "alternative"
 }
 
 type PreviewResult = {
@@ -145,6 +147,10 @@ export default function ImportPanel({ open, onClose }: Props) {
       )
     ) || null
   }, [catalogBooks, query])
+
+  const selectedLanguageName = LANGUAGE_OPTIONS.find(option => option.value === lang)?.label || lang.toUpperCase()
+  const onlyAlternativeEditions = results.length > 0
+    && results.every(result => result.languageMatch === "alternative")
 
   async function runSearch(overrideQuery?: string) {
     const trimmed = (overrideQuery ?? query).trim()
@@ -344,7 +350,11 @@ export default function ImportPanel({ open, onClose }: Props) {
                       </div>
                       <select
                         value={lang}
-                        onChange={e => setLang(e.target.value)}
+                        onChange={e => {
+                          setLang(e.target.value)
+                          setResults([])
+                          setSelected(null)
+                        }}
                         className="min-w-0 rounded-2xl px-3 py-3 text-sm text-white outline-none"
                         style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${cfg.color}20` }}
                       >
@@ -384,6 +394,12 @@ export default function ImportPanel({ open, onClose }: Props) {
 
                     {/* Resultados */}
                     <div className="space-y-2">
+                      {onlyAlternativeEditions && (
+                        <div className="rounded-2xl px-4 py-3 text-[11px] leading-relaxed text-amber-100/60"
+                          style={{ background: "rgba(217,164,65,0.08)", border: "1px solid rgba(217,164,65,0.2)" }}>
+                          {t("gutenbergAlternativeHint").replace("{language}", selectedLanguageName)}
+                        </div>
+                      )}
                       {results.map(result => (
                         <motion.button
                           key={result.id}
@@ -413,7 +429,9 @@ export default function ImportPanel({ open, onClose }: Props) {
                                 {result.authors[0]?.name || ""}
                               </p>
                               <div className="mt-1.5 flex gap-3 text-[11px] text-zinc-600">
-                                <span>{result.languages?.[0] || "en"}</span>
+                                <span className={result.languageMatch === "alternative" ? "text-amber-200/55" : ""}>
+                                  {(result.languages || []).map(code => code.toUpperCase()).join(" · ") || "—"}
+                                </span>
                                 <span>{(result.download_count || 0).toLocaleString()} {t("downloads")}</span>
                               </div>
                             </div>

@@ -4,6 +4,7 @@ import {
   CARD_PRICE_MAX, CARD_PRICE_MIN, MAX_CARDS_PER_BOOK, MAX_LOOSE_CARDS,
   sanitizeCardFx, validateCard,
 } from "../server/cards"
+import { collectionMaterialFor, collectionTier } from "../client/src/lib/rarities"
 
 const art = "data:image/png;base64,AAAA"
 
@@ -51,4 +52,11 @@ test("rechaza arte inseguro, ausente, sobredimensionado y precios fuera de rango
   assert.equal(validateCard({ name: "Grande", fx: { layers: { back: "https://x.test/" + "a".repeat(400_001) } } }).ok, false)
   assert.equal(validateCard({ name: "Barata", unlock: "tinta", priceTinta: 0, fx: { layers: { back: art } } }).ok, false)
   assert.equal(validateCard({ name: "Cara", unlock: "tinta", priceTinta: 101, fx: { layers: { back: art } } }).ok, false)
+})
+
+test("la rareza coleccionable gobierna el material solo dentro del sorteo", () => {
+  assert.equal(collectionMaterialFor("mythic", true, "copper").id, "diamond")
+  assert.equal(collectionMaterialFor("golden", true, "silver").id, "gold")
+  assert.equal(collectionMaterialFor("mythic", false, "copper").id, "copper")
+  assert.ok(collectionTier("absolute") > collectionTier("legendary"))
 })

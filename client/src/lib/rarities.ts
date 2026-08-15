@@ -1,6 +1,7 @@
 // Materiales de rareza para el marco de las tarjetas.
 // El marco comunica la rareza sin números: cobre (común) → diamante (mítico).
 export type Rarity = "copper" | "silver" | "gold" | "emerald" | "sapphire" | "ruby" | "diamond"
+export type CollectionRarity = "common" | "rare" | "very_rare" | "unusual" | "golden" | "legendary" | "mythic" | "absolute"
 
 export interface Material {
   id:        Rarity
@@ -24,9 +25,41 @@ export const MATERIALS: Record<Rarity, Material> = {
 }
 
 export const RARITY_ORDER: Rarity[] = ["copper", "silver", "gold", "emerald", "sapphire", "ruby", "diamond"]
+export const COLLECTION_RARITY_ORDER: CollectionRarity[] = [
+  "common", "rare", "very_rare", "unusual", "golden", "legendary", "mythic", "absolute",
+]
+
+// La rareza del sorteo es económica; el material es su traducción visual.
+// Solo se aplica a cartas del pozo para no pisar la dirección artística del autor.
+export const COLLECTION_MATERIAL: Record<CollectionRarity, Rarity> = {
+  common: "copper",
+  rare: "silver",
+  very_rare: "emerald",
+  unusual: "sapphire",
+  golden: "gold",
+  legendary: "ruby",
+  mythic: "diamond",
+  absolute: "diamond",
+}
 
 export function materialFor(rarity?: string): Material {
   return MATERIALS[(rarity as Rarity)] || MATERIALS.silver
+}
+
+export function collectionMaterialFor(
+  rarity: string | undefined,
+  inGachaPool: boolean | undefined,
+  authoredMaterial?: string,
+): Material {
+  if (inGachaPool && COLLECTION_RARITY_ORDER.includes(rarity as CollectionRarity)) {
+    return MATERIALS[COLLECTION_MATERIAL[rarity as CollectionRarity]]
+  }
+  return materialFor(authoredMaterial)
+}
+
+export function collectionTier(rarity?: string): number {
+  const index = COLLECTION_RARITY_ORDER.indexOf(rarity as CollectionRarity)
+  return index < 0 ? 0 : index
 }
 
 // Gradiente del marco metálico (para el borde de la tarjeta)
