@@ -1,10 +1,18 @@
+import { cachedObjectUrl } from "./AudioResourceCache"
+
 export type MusicState = "idle" | "loading" | "playing" | "paused" | "crossfading" | "blocked" | "error"
 
 export interface MusicCue {
   id: number
   title: string
   artist?: string
-  url: string
+  sourceType?: "stream" | "procedural" | "soundfont"
+  url?: string
+  recipe?: unknown
+  packUrl?: string
+  packSha256?: string
+  packBytes?: number | null
+  instrumentProgram?: number | null
   loop: boolean
   volume: number
   crossfadeSeconds: number
@@ -23,6 +31,7 @@ export class MusicEngine {
   private token = 0
   private raf = 0
   private gainRaf = 0
+  private readonly objectUrls: [string | null, string | null] = [null, null]
 
   constructor(private readonly listener: Listener) {
     const create = () => {
@@ -64,6 +73,11 @@ export class MusicEngine {
   }
 
   async play(cue: MusicCue) {
+    if (!cue.url) {
+      this.cue = cue
+      this.setState("error")
+      return
+    }
     const same = this.cue?.id === cue.id && this.cue?.url === cue.url && this.active >= 0
     const previousCue = this.cue
     const previousActive = this.active
@@ -89,7 +103,10 @@ export class MusicEngine {
     this.setState("loading")
 
     incoming.pause()
-    incoming.src = cue.url
+    if (this.objectUrls[incomingIndex]) URL.revokeObjectURL(this.objectUrls[incomingIndex]!)
+    const localUrl = await cachedObjectUrl(cue.url)
+    this.objectUrls[incomingIndex] = localUrl
+    incoming.src = localUrl || cue.url
     incoming.loop = cue.loop
     incoming.currentTime = 0
     incoming.volume = 0
@@ -139,6 +156,10 @@ export class MusicEngine {
           outgoing.currentTime = 0
           outgoing.removeAttribute("src")
           outgoing.load()
+          if (previousActive >= 0 && this.objectUrls[previousActive]) {
+            URL.revokeObjectURL(this.objectUrls[previousActive]!)
+            this.objectUrls[previousActive] = null
+          }
         }
         this.setState("playing")
       }
@@ -167,12 +188,15 @@ export class MusicEngine {
     ++this.token
     cancelAnimationFrame(this.raf)
     cancelAnimationFrame(this.gainRaf)
-    for (const deck of this.decks) {
+    for (let index = 0; index < this.decks.length; index += 1) {
+      const deck = this.decks[index]
       deck.pause()
       deck.currentTime = 0
       deck.volume = 0
       deck.removeAttribute("src")
       deck.load()
+      if (this.objectUrls[index]) URL.revokeObjectURL(this.objectUrls[index]!)
+      this.objectUrls[index] = null
     }
     this.active = -1
     this.cue = null

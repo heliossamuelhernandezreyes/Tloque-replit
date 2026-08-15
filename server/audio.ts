@@ -5,15 +5,37 @@ import {
   audioAssets, audioFavorites, books, chapterAudioAssignments,
 } from "@shared/schema"
 import { isSafeAudioSource, isSafeHttpsUrl } from "@shared/media"
+import { audioSourceTypeSchema, proceduralRecipeSchema } from "@shared/audio"
 import { db } from "./db"
 import { isAdmin, requireAdmin } from "./auth"
 import { rateLimit } from "./rateLimit"
+
+function isSafeSoundBankSource(value: string): boolean {
+  if (!isSafeHttpsUrl(value, 2_000)) return false
+  try {
+    const path = new URL(value).pathname.toLowerCase()
+    return [".sf2", ".sf3", ".dls"].some(extension => path.endsWith(extension))
+  } catch {
+    return false
+  }
+}
 
 export const audioAssetInputSchema = z.object({
   title: z.string().trim().min(1).max(160),
   artist: z.string().trim().max(160).default(""),
   kind: z.enum(["music", "ambience", "system"]).default("music"),
-  url: z.string().trim().refine(isSafeAudioSource, "La URL debe ser HTTPS y apuntar a un archivo de audio permitido"),
+  sourceType: audioSourceTypeSchema.default("stream"),
+  url: z.string().trim().max(2_000).default(""),
+  recipe: proceduralRecipeSchema.nullable().default(null),
+  musicalKey: z.string().trim().max(16).default(""),
+  musicalMode: z.string().trim().max(32).default(""),
+  brightness: z.number().min(0).max(1).default(0.5),
+  texture: z.string().trim().max(80).default(""),
+  tags: z.array(z.string().trim().min(1).max(40)).max(24).default([]),
+  packUrl: z.string().trim().max(2_000).default(""),
+  packBytes: z.number().int().positive().max(500_000_000).nullable().default(null),
+  packSha256: z.string().trim().toLowerCase().regex(/^$|^[a-f0-9]{64}$/, "Huella SHA-256 inválida").default(""),
+  instrumentProgram: z.number().int().min(0).max(127).nullable().default(null),
   emotion: z.string().trim().min(1).max(60).default("neutral"),
   bpm: z.number().int().min(20).max(300).nullable().default(null),
   energy: z.number().min(0).max(1).default(0.5),
@@ -25,6 +47,19 @@ export const audioAssetInputSchema = z.object({
     .refine(v => v === "" || isSafeHttpsUrl(v), "La procedencia debe usar HTTPS")
     .default(""),
   status: z.enum(["draft", "published", "archived"]).default("draft"),
+}).superRefine((value, ctx) => {
+  if (value.sourceType === "stream" && !isSafeAudioSource(value.url)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["url"], message: "La URL debe ser HTTPS y apuntar a un archivo de audio permitido" })
+  }
+  if (value.sourceType !== "stream" && value.url && !isSafeAudioSource(value.url)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["url"], message: "La pista de respaldo debe ser audio HTTPS permitido" })
+  }
+  if (value.sourceType !== "stream" && !value.recipe) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La síntesis necesita una receta musical" })
+  }
+  if (value.sourceType === "soundfont" && !isSafeSoundBankSource(value.packUrl)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["packUrl"], message: "El banco debe ser una URL HTTPS .sf2, .sf3 o .dls" })
+  }
 })
 
 const assignmentInputSchema = z.object({
@@ -33,6 +68,29 @@ const assignmentInputSchema = z.object({
   loop: z.boolean().default(true),
   crossfadeSeconds: z.number().min(0.25).max(20).default(6),
 })
+
+const MIDI_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const
+
+function normalizedAudioAsset(data: z.infer<typeof audioAssetInputSchema>) {
+  if (data.sourceType === "stream" || !data.recipe) return data
+  const presetEmotion = {
+    quiet_observatory: "contemplative",
+    warm_memory: "nostalgic",
+    cold_suspense: "suspense",
+    deep_focus: "focused",
+  }[data.recipe.preset]
+  const automaticTags = [data.recipe.preset, data.recipe.scale, data.sourceType]
+  return {
+    ...data,
+    bpm: data.recipe.bpm,
+    musicalKey: `${MIDI_NAMES[data.recipe.rootMidi % 12]}${Math.floor(data.recipe.rootMidi / 12) - 1}`,
+    musicalMode: data.recipe.scale,
+    brightness: data.recipe.brightness,
+    texture: data.texture || data.recipe.preset.replaceAll("_", " "),
+    emotion: data.emotion === "neutral" ? presetEmotion : data.emotion,
+    tags: [...new Set([...data.tags, ...automaticTags])].slice(0, 24),
+  }
+}
 
 function parsePositiveInt(value: unknown): number | null {
   const n = Number(value)
@@ -79,7 +137,7 @@ export function registerAudioRoutes(app: Express) {
     if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0]?.message || "Activo inválido" })
     try {
       const [created] = await db.insert(audioAssets).values({
-        ...parsed.data,
+        ...normalizedAudioAsset(parsed.data),
         createdBy: (req.user as any).id,
       }).returning()
       res.status(201).json({ asset: created })
@@ -96,7 +154,7 @@ export function registerAudioRoutes(app: Express) {
     if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0]?.message || "Activo inválido" })
     try {
       const [updated] = await db.update(audioAssets)
-        .set({ ...parsed.data, updatedAt: new Date() })
+        .set({ ...normalizedAudioAsset(parsed.data), updatedAt: new Date() })
         .where(eq(audioAssets.id, id)).returning()
       if (!updated) return res.status(404).json({ message: "Activo no encontrado" })
       res.json({ asset: updated })
