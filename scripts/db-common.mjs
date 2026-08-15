@@ -2,7 +2,7 @@ import pg from "pg"
 
 const { Pool } = pg
 
-export const RELEASE_ID = "tloque-replit-2026-08-15-gutenberg-integrity"
+export const RELEASE_ID = "tloque-replit-2026-08-15-direction-agent-v2"
 
 export const BASE_TABLES = [
   "users",
@@ -32,11 +32,13 @@ export const BASE_COLUMNS = {
 export const EXPECTED_TABLES = [
   "adaptive_score_layers",
   "adaptive_scores",
+  "advanced_direction_projects",
   "audio_assets",
   "audio_favorites",
   "audiobook_cache",
   "audiobook_jobs",
   "chapter_audio_assignments",
+  "direction_agent_runs",
   "experience_profiles",
   "narrative_projects",
   "notifications",
@@ -73,6 +75,9 @@ export const EXPECTED_INDEXES = [
   "books_author_id_idx",
   "books_gutenberg_id_idx",
   "books_gutenberg_id_unique_idx",
+  "advanced_direction_projects_book_idx",
+  "direction_agent_runs_user_idx",
+  "direction_agent_one_active_request_idx",
 ]
 
 export function databaseUrl() {
@@ -284,6 +289,8 @@ export async function validateExpectedSchema(client) {
     audiobook_cache: ["cache_key", "storage_key", "status", "content_hash"],
     audiobook_jobs: ["request_key", "reserved_paper", "status", "content_hash"],
     notifications: ["user_id", "kind", "title", "body", "destination", "dedupe_key", "read_at"],
+    advanced_direction_projects: ["book_id", "chapter_index", "revision", "content_hash", "data"],
+    direction_agent_runs: ["request_key", "status", "maximum_paper", "reserved_paper", "proposal", "expires_at"],
   }
   for (const [table, columns] of Object.entries(requiredColumns)) {
     for (const column of columns) {

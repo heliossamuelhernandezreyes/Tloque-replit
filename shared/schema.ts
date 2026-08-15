@@ -4,6 +4,7 @@ import { z } from "zod"
 import { isSafeHttpsUrl, isSafeImageSource } from "./media"
 import type { ExperienceProfileV1, NarrativeProjectV1 } from "./narrative"
 import type { SpeechProfileV1, SpeechProjectV1 } from "./speech"
+import type { AdvancedDirectionProjectV2 } from "./direction"
 
 // ── USUARIOS ─────────────────────────────────────────────
 export const users = pgTable("users", {
@@ -543,6 +544,51 @@ export const speechProjects = pgTable("speech_projects", {
   uniqSpeechProjectChapter: unique("uniq_speech_project_chapter").on(t.bookId, t.chapterIndex),
 }))
 
+// ── PARTITURA AVANZADA Y DIRECTOR ARTIFICIAL ──────────
+// El manuscrito canónico nunca se almacena aquí: sólo su hash y una capa
+// lateral de dirección. Una propuesta del DA se revisa antes de convertirse
+// en proyecto; request_key hace idempotente el cobro y los reintentos.
+export const advancedDirectionProjects = pgTable("advanced_direction_projects", {
+  id: serial("id").primaryKey(),
+  bookId: integer("book_id").references(() => books.id, { onDelete: "cascade" }).notNull(),
+  chapterIndex: integer("chapter_index").notNull(),
+  revision: integer("revision").notNull().default(1),
+  contentHash: text("content_hash").notNull(),
+  data: jsonb("data").$type<AdvancedDirectionProjectV2>().notNull(),
+  createdBy: integer("created_by").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  uniqAdvancedDirectionChapter: unique("uniq_advanced_direction_chapter").on(t.bookId, t.chapterIndex),
+}))
+
+export const directionAgentRuns = pgTable("direction_agent_runs", {
+  id: serial("id").primaryKey(),
+  requestKey: text("request_key").notNull().unique(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  bookId: integer("book_id").references(() => books.id, { onDelete: "cascade" }).notNull(),
+  chapterIndex: integer("chapter_index").notNull(),
+  contentHash: text("content_hash").notNull(),
+  mode: text("mode").notNull().default("replace_unlocked"),
+  status: text("status").notNull().default("quoted"),
+  promptVersion: text("prompt_version").notNull(),
+  provider: text("provider").notNull().default(""),
+  model: text("model").notNull().default(""),
+  estimatedInputUnits: integer("estimated_input_units").notNull(),
+  estimatedOutputUnits: integer("estimated_output_units").notNull(),
+  estimatedPaper: integer("estimated_paper").notNull(),
+  maximumPaper: integer("maximum_paper").notNull(),
+  reservedPaper: integer("reserved_paper").notNull().default(0),
+  actualInputUnits: integer("actual_input_units").notNull().default(0),
+  actualOutputUnits: integer("actual_output_units").notNull().default(0),
+  chargedPaper: integer("charged_paper").notNull().default(0),
+  proposal: jsonb("proposal").$type<AdvancedDirectionProjectV2>(),
+  errorCode: text("error_code").notNull().default(""),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  startedAt: timestamp("started_at"),
+  finishedAt: timestamp("finished_at"),
+})
+
 export const speechProfiles = pgTable("speech_profiles", {
   id: serial("id").primaryKey(),
   bookId: integer("book_id").references(() => books.id, { onDelete: "cascade" }).notNull(),
@@ -602,6 +648,8 @@ export const audiobookJobs = pgTable("audiobook_jobs", {
 export type VoiceProfile = typeof voiceProfiles.$inferSelect
 export type SpeechProject = typeof speechProjects.$inferSelect
 export type SpeechProfile = typeof speechProfiles.$inferSelect
+export type AdvancedDirectionProject = typeof advancedDirectionProjects.$inferSelect
+export type DirectionAgentRun = typeof directionAgentRuns.$inferSelect
 export type AudiobookCache = typeof audiobookCache.$inferSelect
 export type AudiobookJob = typeof audiobookJobs.$inferSelect
 

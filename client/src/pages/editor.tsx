@@ -10,6 +10,7 @@ import {
   Upload, Save, Globe, EyeOff, ChevronDown, ChevronUp,
   Check, AlertCircle, Layers, Music2, Mic2,
   ListChecks, Maximize2, Minimize2, PenLine,
+  Bot,
 } from "lucide-react"
 import ParallaxCover from "@/components/ParallaxCover"
 import { type CoverFxConfig } from "@/lib/cover-effects"
@@ -17,6 +18,7 @@ import { LayerUpload } from "@/components/LayerUpload"
 import ChapterSoundtrackPicker from "@/components/ChapterSoundtrackPicker"
 import NarrativeStudioPanel from "@/components/NarrativeStudioPanel"
 import SpeechStudioPanel from "@/components/SpeechStudioPanel"
+import DirectionAgentPanel from "@/components/DirectionAgentPanel"
 
 // ── TIPOS ────────────────────────────────────────────────
 type Chapter  = { title: string; content: string }
@@ -293,7 +295,7 @@ export default function Editor() {
   const [coverTab,      setCoverTab]      = useState<"cover" | "meta">("meta")
   const [coverMode,     setCoverMode]     = useState<CoverMode>("simple")
   const [saveStatus,    setSaveStatus]    = useState<SaveStatus>("idle")
-  const [studioMode,    setStudioMode]    = useState<"write" | "music" | "voice">("write")
+  const [studioMode,    setStudioMode]    = useState<"write" | "music" | "voice" | "direction">("write")
   const [focusMode,     setFocusMode]     = useState(false)
   const [showChecklist, setShowChecklist] = useState(false)
   // Metadata del libro de servidor que se está editando (admin/clásicos).
@@ -1066,6 +1068,7 @@ export default function Editor() {
                   { key: "write", label: t("chapter"), Icon: PenLine },
                   { key: "music", label: t("narrativeMusicLabel"), Icon: Music2 },
                   { key: "voice", label: t("startVoice"), Icon: Mic2 },
+                  { key: "direction", label: "DA", Icon: Bot },
                 ] as const).map(item => (
                   <button key={item.key} role="tab" aria-selected={studioMode === item.key} onClick={() => setStudioMode(item.key)} className="flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-[11px] font-sans transition-colors" style={studioMode === item.key ? { color: gc.color, background: `${gc.glow}18`, border: `1px solid ${gc.color}30` } : { color: "rgba(255,255,255,.28)", border: "1px solid transparent" }}>
                     <item.Icon className="h-3.5 w-3.5" />{item.label}
@@ -1088,6 +1091,15 @@ export default function Editor() {
 
               {studioMode === "voice" && typeof form.id === "number" && form.id < 1_000_000_000_000 && (
                 <SpeechStudioPanel
+                  bookId={form.id}
+                  chapterIndex={activeChapter}
+                  content={form.chapters[activeChapter]?.content || ""}
+                  accent={gc.color}
+                />
+              )}
+
+              {studioMode === "direction" && typeof form.id === "number" && form.id < 1_000_000_000_000 && (
+                <DirectionAgentPanel
                   bookId={form.id}
                   chapterIndex={activeChapter}
                   content={form.chapters[activeChapter]?.content || ""}
