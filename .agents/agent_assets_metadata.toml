@@ -1,9 +1,0 @@
-uploads = []
-generated = []
-
-[[outputs]]
-id = "B4C9L4w5edlS4C1impf-c"
-uri = "file://tloque_codigo.zip"
-type = "unspecified"
-title = "tloque_codigo.zip"
-description = "Código actualizado de la app, sin node_modules, dist, .git, ZIPs ni archivos pesados."

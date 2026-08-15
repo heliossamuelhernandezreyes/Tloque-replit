@@ -12,8 +12,11 @@ async function main() {
     format: "cjs",
     outfile: "dist/index.cjs",
     packages: "external",
+    // El servidor compilado siempre sirve el cliente ya construido. Mantener
+    // Vite fuera del bundle evita incluir su configuración con top-level await
+    // y conserva el arranque CJS compatible con Replit.
+    external: ["./vite"],
     sourcemap: true,
-    define: { "process.env.NODE_ENV": JSON.stringify("production") },
     logLevel: "info",
   })
 }

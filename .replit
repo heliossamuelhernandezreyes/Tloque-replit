@@ -1,6 +1,6 @@
 modules = ["nodejs-20", "web", "postgresql-16"]
-run = "npm run dev"
-hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
+run = "npm run replit"
+hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist", ".tloque_cache", ".tloque_backups", ".migration-backups"]
 
 [nix]
 channel = "stable-24_05"
@@ -14,7 +14,7 @@ PORT = "5000"
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["node", "./dist/index.cjs"]
+run = ["npm", "run", "start"]
 build = ["npm", "run", "build"]
 
 [workflows]
@@ -35,7 +35,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npm run dev"
+args = "npm run replit"
 waitForPort = 5000
 
 [workflows.workflow.metadata]
