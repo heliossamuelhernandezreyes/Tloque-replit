@@ -85,7 +85,8 @@ export interface SpeechOracleResult {
 }
 
 export function speechOracleConfigured(): boolean {
-  return Boolean(String(process.env.GROQ_API_KEY || process.env.ORACLE_API_KEY || "").trim())
+  const oracleProvider = String(process.env.ORACLE_PROVIDER || "groq").toLowerCase()
+  return Boolean(String(process.env.GROQ_API_KEY || (oracleProvider === "groq" ? process.env.ORACLE_API_KEY : "") || "").trim())
 }
 
 export function speechOraclePrompt(): string {
@@ -118,9 +119,14 @@ export async function analyzeSpeechWithGroq(input: {
   contentHash: string
   signal?: AbortSignal
 }): Promise<SpeechOracleResult> {
-  const apiKey = String(process.env.GROQ_API_KEY || process.env.ORACLE_API_KEY || "").trim()
+  const oracleProvider = String(process.env.ORACLE_PROVIDER || "groq").toLowerCase()
+  const apiKey = String(process.env.GROQ_API_KEY || (oracleProvider === "groq" ? process.env.ORACLE_API_KEY : "") || "").trim()
   if (!apiKey) throw new Error("El análisis de voz con Groq no está configurado")
-  const model = String(process.env.GROQ_SPEECH_MODEL || process.env.ORACLE_MODEL || "openai/gpt-oss-120b")
+  const model = String(
+    process.env.GROQ_SPEECH_MODEL
+    || (oracleProvider === "groq" ? process.env.ORACLE_MODEL : "")
+    || "openai/gpt-oss-120b",
+  )
   const paragraphs = narrativeParagraphsFor(input.content)
   const numbered = paragraphs.map((paragraph, index) => `[PÁRRAFO ${index}]\n${paragraph}`).join("\n\n")
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {

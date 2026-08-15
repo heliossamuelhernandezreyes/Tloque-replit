@@ -26,6 +26,7 @@ const migrations = [
   "0006_experience_roles_editions_inbox.sql",
   "0007_catalog_indexes.sql",
   "0008_gutenberg_integrity.sql",
+  "0009_direction_agent_v2.sql",
 ]
 
 const pool = createPool()
