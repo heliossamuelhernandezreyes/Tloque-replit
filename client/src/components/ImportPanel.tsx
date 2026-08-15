@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import {
   BookOpen, Download, ExternalLink,
@@ -37,11 +37,14 @@ type PreviewResult = {
   originalLanguage: string
   publicationYear:  number | null
   detectedGenre:    string
+  genre?:           string
   type:             "book" | "story"
   existingBookId?:  number | null
   alreadyImported?: boolean
   chapterCount:     number
   previewText:      string
+  chapters?:        { title: string; content: string }[]
+  content?:         string
 }
 
 const LANGUAGE_OPTIONS = [
@@ -69,14 +72,20 @@ function normalizeText(v: string) {
     .replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim()
 }
 
-function savePrivateClassic(book: any) {
-  const current = JSON.parse(localStorage.getItem("novareads_saved") || "[]")
+async function savePrivateClassic(book: any) {
+  let current: any[] = []
+  try {
+    const parsed = JSON.parse(localStorage.getItem("novareads_saved") || "[]")
+    current = Array.isArray(parsed) ? parsed : []
+  } catch {
+    current = []
+  }
   const slim = { ...slimBook(book), isSaved: true }
   const next = current.some((i: any) => String(i.id) === String(book.id))
     ? current.map((i: any) => String(i.id) === String(book.id) ? slim : i)
     : [slim, ...current]
   localStorage.setItem("novareads_saved", JSON.stringify(next))
-  saveOfflineContent(book.id, book)   // contenido pesado → IndexedDB
+  await saveOfflineContent(book.id, book)   // contenido pesado → IndexedDB
 }
 
 export default function ImportPanel({ open, onClose }: Props) {
@@ -101,6 +110,8 @@ export default function ImportPanel({ open, onClose }: Props) {
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [downloading,    setDownloading]    = useState(false)
   const [importing,      setImporting]      = useState(false)
+  const searchRequest = useRef<AbortController | null>(null)
+  const previewRequest = useRef<AbortController | null>(null)
 
   // Detectar idioma preferido al abrir
   useEffect(() => {
@@ -113,9 +124,16 @@ export default function ImportPanel({ open, onClose }: Props) {
   // Limpiar al cerrar
   useEffect(() => {
     if (open) return
+    searchRequest.current?.abort()
+    previewRequest.current?.abort()
     setQuery(""); setResults([]); setSelected(null)
     setAdminTitle(""); setAdminSynopsis(""); setAdminGenre("")
   }, [open])
+
+  useEffect(() => () => {
+    searchRequest.current?.abort()
+    previewRequest.current?.abort()
+  }, [])
 
   const exactCatalogMatch = useMemo(() => {
     const nq = normalizeText(query)
@@ -139,18 +157,27 @@ export default function ImportPanel({ open, onClose }: Props) {
       onClose(); return
     }
 
+    searchRequest.current?.abort()
+    const controller = new AbortController()
+    searchRequest.current = controller
     setSearching(true); setSelected(null)
     try {
       const res = await fetch(
         `/api/gutenberg/search?q=${encodeURIComponent(trimmed)}&lang=${lang}`,
-        { credentials: "include" }
+        { credentials: "include", signal: controller.signal }
       )
       if (!res.ok) throw new Error(t("noResults"))
       const data = await res.json()
       setResults(Array.isArray(data) ? data : [])
     } catch (err: any) {
+      if (err?.name === "AbortError") return
       toast({ title: err.message || t("noResults"), variant: "destructive" })
-    } finally { setSearching(false) }
+    } finally {
+      if (searchRequest.current === controller) {
+        searchRequest.current = null
+        setSearching(false)
+      }
+    }
   }
 
   async function openResult(result: SearchResult) {
@@ -158,11 +185,14 @@ export default function ImportPanel({ open, onClose }: Props) {
       setLocation(`/book/${result.existingBookId}`)
       onClose(); return
     }
+    previewRequest.current?.abort()
+    const controller = new AbortController()
+    previewRequest.current = controller
     setLoadingPreview(true)
     try {
       const res = await fetch(
         `/api/gutenberg/preview/${result.id}?lang=${lang}`,
-        { credentials: "include" }
+        { credentials: "include", signal: controller.signal }
       )
       if (!res.ok) throw new Error(t("noResults"))
       const data = await res.json()
@@ -171,8 +201,14 @@ export default function ImportPanel({ open, onClose }: Props) {
       setAdminSynopsis(data.synopsis || "")
       setAdminGenre(data.detectedGenre || "")
     } catch (err: any) {
+      if (err?.name === "AbortError") return
       toast({ title: err.message, variant: "destructive" })
-    } finally { setLoadingPreview(false) }
+    } finally {
+      if (previewRequest.current === controller) {
+        previewRequest.current = null
+        setLoadingPreview(false)
+      }
+    }
   }
 
   async function downloadForMe() {
@@ -183,14 +219,19 @@ export default function ImportPanel({ open, onClose }: Props) {
     }
     setDownloading(true)
     try {
-      const res = await fetch(
-        `/api/gutenberg/preview/${selected.gutenbergId}?lang=${lang}`,
-        { credentials: "include" }
-      )
-      if (!res.ok) throw new Error(t("noResults"))
-      const data = await res.json()
+      // La vista pública ya contiene el texto completo. Reutilizarla evita una
+      // segunda descarga externa del mismo libro y hace el guardado inmediato.
+      let data: PreviewResult = selected
+      if (!Array.isArray(selected.chapters)) {
+        const res = await fetch(
+          `/api/gutenberg/preview/${selected.gutenbergId}?lang=${lang}`,
+          { credentials: "include" }
+        )
+        if (!res.ok) throw new Error(t("noResults"))
+        data = await res.json()
+      }
       const localId = `gutenberg-${data.gutenbergId}-${lang}`
-      savePrivateClassic({
+      await savePrivateClassic({
         ...data,
         id:        localId,
         genre:     data.genre || data.detectedGenre || "",  // tema visual correcto
@@ -273,7 +314,7 @@ export default function ImportPanel({ open, onClose }: Props) {
                     {canPublish ? t("importTitle") : t("importTitle")}
                   </h2>
                 </div>
-                <button onClick={onClose}
+                <button onClick={onClose} aria-label={t("cancel")}
                   className="rounded-full p-2 transition-colors"
                   style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.4)" }}>
                   <X className="w-4 h-4" />
@@ -288,13 +329,14 @@ export default function ImportPanel({ open, onClose }: Props) {
                   <div className="p-5 space-y-4">
 
                     {/* Barra de búsqueda */}
-                    <div className="flex gap-2">
-                      <div className="relative flex-1">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                      <div className="relative col-span-2 sm:col-span-1">
                         <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-zinc-500" />
                         <input
                           value={query}
                           onChange={e => setQuery(e.target.value)}
                           onKeyDown={e => e.key === "Enter" && runSearch()}
+                          maxLength={120}
                           placeholder={t("searchGutenberg")}
                           className="w-full rounded-2xl py-3 pl-10 pr-4 text-sm text-white outline-none"
                           style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${cfg.color}20` }}
@@ -303,7 +345,7 @@ export default function ImportPanel({ open, onClose }: Props) {
                       <select
                         value={lang}
                         onChange={e => setLang(e.target.value)}
-                        className="rounded-2xl px-3 text-sm text-white outline-none"
+                        className="min-w-0 rounded-2xl px-3 py-3 text-sm text-white outline-none"
                         style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${cfg.color}20` }}
                       >
                         {LANGUAGE_OPTIONS.map(o => (
@@ -314,10 +356,12 @@ export default function ImportPanel({ open, onClose }: Props) {
                         whileTap={{ scale: 0.95 }}
                         onClick={() => runSearch()}
                         disabled={searching || !query.trim()}
-                        className="rounded-2xl px-4 text-sm font-semibold text-black disabled:opacity-40"
+                        aria-label={t("preview")}
+                        title={t("preview")}
+                        className="flex min-w-12 items-center justify-center rounded-2xl px-4 text-sm font-semibold text-black disabled:opacity-40"
                         style={{ background: cfg.color }}
                       >
-                        {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : t("preview").slice(0,6)}
+                        {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="h-4 w-4" />}
                       </motion.button>
                     </div>
 
@@ -370,7 +414,7 @@ export default function ImportPanel({ open, onClose }: Props) {
                               </p>
                               <div className="mt-1.5 flex gap-3 text-[11px] text-zinc-600">
                                 <span>{result.languages?.[0] || "en"}</span>
-                                <span>{(result.download_count || 0).toLocaleString()} descargas</span>
+                                <span>{(result.download_count || 0).toLocaleString()} {t("downloads")}</span>
                               </div>
                             </div>
                             <ExternalLink className="w-4 h-4 shrink-0 text-zinc-700" />
@@ -400,9 +444,7 @@ export default function ImportPanel({ open, onClose }: Props) {
                           {t("searchGutenberg").split("...")[0]}...
                         </p>
                         <p className="mt-2 text-xs text-zinc-600">
-                          {canPublish
-                            ? "Publica al catálogo o guarda para ti"
-                            : "Descarga a tu biblioteca privada"}
+                          {canPublish ? t("gutenbergAdminHint") : t("gutenbergPersonalHint")}
                         </p>
                       </div>
                     )}
@@ -459,9 +501,22 @@ export default function ImportPanel({ open, onClose }: Props) {
                                 <span>{selected.chapterCount} {t("chapters")}</span>
                                 {selected.publicationYear && <span>{selected.publicationYear}</span>}
                               </div>
+                              <a
+                                href={`https://www.gutenberg.org/ebooks/${selected.gutenbergId}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 text-[11px] text-white/35 transition-colors hover:text-white/60"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                {t("gutenbergSource")}
+                              </a>
                             </div>
                           </div>
                         </div>
+
+                        <p className="rounded-2xl border border-white/[.06] bg-white/[.02] px-4 py-3 text-[11px] leading-relaxed text-white/30">
+                          {t("gutenbergRightsNotice")}
+                        </p>
 
                         {/* Curación — solo admin */}
                         {canPublish && !selected.alreadyImported && (

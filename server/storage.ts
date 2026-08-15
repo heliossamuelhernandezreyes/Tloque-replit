@@ -5,6 +5,7 @@ import { eq, and, desc, getTableColumns, sql } from "drizzle-orm";
 export interface IStorage {
   getBooks(): Promise<any[]>;
   getBook(id: number): Promise<BookResponse | undefined>;
+  findBookByGutenbergId(gutenbergId: number): Promise<BookResponse | undefined>;
   createBook(book: CreateBookRequest): Promise<BookResponse>;
   updateBook(id: number, updates: UpdateBookRequest): Promise<BookResponse>;
   deleteBook(id: number): Promise<void>;
@@ -27,6 +28,11 @@ export class DatabaseStorage implements IStorage {
 
   async getBook(id: number): Promise<BookResponse | undefined> {
     const [book] = await db.select().from(books).where(eq(books.id, id));
+    return book;
+  }
+
+  async findBookByGutenbergId(gutenbergId: number): Promise<BookResponse | undefined> {
+    const [book] = await db.select().from(books).where(eq(books.gutenbergId, gutenbergId)).limit(1);
     return book;
   }
 

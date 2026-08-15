@@ -18,6 +18,19 @@ function storedList(key: string): any[] {
   } catch { return [] }
 }
 
+function storedValue(key: string): string | null {
+  try { return localStorage.getItem(key) }
+  catch { return null }
+}
+
+type BookSuggestion = {
+  id: string | number
+  title?: string
+  author?: string
+  genre?: string
+  coverUrl?: string
+}
+
 // ─────────────────────────────────────────────────────────
 // OJO CÓSMICO — orbe central (sin íconos, puro ojo)
 // ─────────────────────────────────────────────────────────
@@ -77,7 +90,7 @@ function CosmicEye({
       {/* Halo pulsante exterior */}
       <motion.circle cx={cx} cy={cy} r="44"
         fill="url(#eye-halo)"
-        animate={{ opacity: [0.45, 0.95, 0.45] }}
+        animate={animated ? { opacity: [0.45, 0.95, 0.45] } : { opacity: 0.62 }}
         transition={{ duration: 4.5, repeat: animated ? Infinity : 0, ease: "easeInOut" }}
       />
 
@@ -87,11 +100,11 @@ function CosmicEye({
           fill="none"
           strokeWidth="1.5"
           initial={{ r: 30, strokeOpacity: 0 }}
-          animate={{
+          animate={animated ? {
             r: [30, 40, 30],
             strokeOpacity: [0.0, 0.5, 0.0],
             stroke: ["#88ccff", "#bb88ff", "#66dddd", "#88ccff"],
-          }}
+          } : { r: 34, strokeOpacity: 0.35, stroke: "#88ccff" }}
           transition={{ duration: 2.2, repeat: animated ? Infinity : 0, ease: "easeInOut" }}
         />
       )}
@@ -101,7 +114,7 @@ function CosmicEye({
         fill={searchMode ? "url(#iris-search)" : "url(#iris-grad)"}
         stroke={searchMode ? "#bb88ff" : color}
         strokeOpacity={searchMode ? 0.7 : 0.35} strokeWidth="0.8"
-        animate={searchMode ? { strokeOpacity: [0.5, 0.9, 0.5] } : {}}
+        animate={searchMode && animated ? { strokeOpacity: [0.5, 0.9, 0.5] } : { strokeOpacity: searchMode ? 0.7 : 0.35 }}
         transition={{ duration: 1.8, repeat: animated ? Infinity : 0, ease: "easeInOut" }}
       />
 
@@ -112,10 +125,10 @@ function CosmicEye({
         strokeOpacity={searchMode ? 0.50 : 0.20}
         strokeWidth={searchMode ? 5 : 3.5}
         filter="url(#eye-glow)"
-        animate={searchMode ? {
+        animate={searchMode && animated ? {
           stroke: ["#88ccff", "#bb88ff", "#66dddd", "#aabbff", "#88ccff"],
           strokeOpacity: [0.4, 0.7, 0.5, 0.8, 0.4],
-        } : {}}
+        } : { stroke: searchMode ? "#88ccff" : color, strokeOpacity: searchMode ? 0.55 : 0.2 }}
         transition={{ duration: 3, repeat: animated ? Infinity : 0, ease: "easeInOut" }}
       />
 
@@ -168,7 +181,7 @@ function CosmicEye({
       <motion.path
         d={pupilPath}
         fill="url(#pupil-grad)"
-        animate={{ scaleY: [1, 1.10, 0.90, 1.05, 1] }}
+        animate={animated ? { scaleY: [1, 1.10, 0.90, 1.05, 1] } : { scaleY: 1 }}
         transition={{
           duration: 6,
           repeat: animated ? Infinity : 0,
@@ -190,7 +203,7 @@ function CosmicEye({
         cx={cx - 3.5} cy={cy - 5} rx="2.2" ry="3.2"
         fill="rgba(255,255,255,0.50)"
         filter="url(#iris-blur)"
-        animate={{ opacity: [0.35, 0.65, 0.35] }}
+        animate={animated ? { opacity: [0.35, 0.65, 0.35] } : { opacity: 0.48 }}
         transition={{ duration: 3.5, repeat: animated ? Infinity : 0, ease: "easeInOut" }}
       />
 
@@ -213,7 +226,7 @@ function CosmicEye({
         cx={cx} cy={cy} rx="27" ry="27"
         fill="rgba(2,2,8,0.97)"
         clipPath="url(#iris-clip)"
-        animate={{ scaleY: [0, 0, 1, 0, 0] }}
+        animate={animated ? { scaleY: [0, 0, 1, 0, 0] } : { scaleY: 0 }}
         transition={{ duration: 7, repeat: animated ? Infinity : 0, ease: "easeInOut", times: [0, 0.90, 0.945, 0.99, 1] }}
         style={{ transformOrigin: `${cx}px ${cy}px` }}
       />
@@ -422,7 +435,7 @@ export default function OrbSystem() {
 
   const [searchMode,      setSearchMode]      = useState(false)
   const [query,           setQuery]           = useState("")
-  const [suggestions,     setSuggestions]     = useState<any[]>([])
+  const [suggestions,     setSuggestions]     = useState<BookSuggestion[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [showLabel,       setShowLabel]       = useState(false)
   const [orbPulse,        setOrbPulse]        = useState(false)
@@ -433,6 +446,8 @@ export default function OrbSystem() {
   )
 
   const labelTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pulseTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const focusTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef      = useRef<HTMLInputElement>(null)
 
   // Para el hold largo del buscador: cuando searchMode está activo,
@@ -441,8 +456,15 @@ export default function OrbSystem() {
   const searchPressStart = useRef<number>(0)
 
   useEffect(() => {
-    setSearchMode(false); setQuery(""); setSuggestions([])
+    setSearchMode(false); setQuery(""); setSuggestions([]); setShowSuggestions(false)
   }, [location])
+
+  useEffect(() => () => {
+    if (labelTimer.current) clearTimeout(labelTimer.current)
+    if (pulseTimer.current) clearTimeout(pulseTimer.current)
+    if (focusTimer.current) clearTimeout(focusTimer.current)
+    if (searchHoldTimer.current) clearTimeout(searchHoldTimer.current)
+  }, [])
 
   useEffect(() => {
     const onVisibility = () => setDocumentVisible(document.visibilityState !== "hidden")
@@ -480,8 +502,12 @@ export default function OrbSystem() {
   }
 
   function flashOrb() {
+    if (pulseTimer.current) clearTimeout(pulseTimer.current)
     setOrbPulse(true)
-    setTimeout(() => setOrbPulse(false), 420)
+    pulseTimer.current = setTimeout(() => {
+      setOrbPulse(false)
+      pulseTimer.current = null
+    }, 420)
   }
 
   function vibrate(pattern: number | number[]) {
@@ -537,13 +563,13 @@ export default function OrbSystem() {
   }
 
   // ── Gestos del orbe central ──────────────────────────────
-  // Cuando el buscador ESTÁ arriba: presionar >1.2s = historia aleatoria
+  // Cuando el buscador ESTÁ arriba: presionar 1.4s = historia aleatoria.
   function onCentralDown() {
     if (!searchMode) return
     searchPressStart.current = Date.now()
     searchHoldTimer.current = setTimeout(() => {
       goToRandomBook()
-    }, 800)
+    }, 1400)
   }
 
   function onCentralUp() {
@@ -573,7 +599,11 @@ export default function OrbSystem() {
       play("orb_hold")
       vibrate([15, 10, 15])
       setSearchMode(true)
-      setTimeout(() => inputRef.current?.focus(), 120)
+      if (focusTimer.current) clearTimeout(focusTimer.current)
+      focusTimer.current = setTimeout(() => {
+        inputRef.current?.focus()
+        focusTimer.current = null
+      }, 120)
     },
     holdLong: () => {
       // Historia aleatoria cuando el buscador NO está activo
@@ -602,7 +632,7 @@ export default function OrbSystem() {
       if (location !== "/") setLocation("/")
     },
     doubleTap: () => {
-      const last = localStorage.getItem("lastReading")
+      const last = storedValue("lastReading")
       if (last) { play("navigate"); setLocation(last) }
     },
     holdShort: () => {
@@ -620,7 +650,7 @@ export default function OrbSystem() {
     closeSearch()
   }
 
-  function goToBook(id: any) {
+  function goToBook(id: string | number) {
     play("navigate"); setLocation(`/book/${id}`); closeSearch()
   }
 
@@ -704,10 +734,13 @@ export default function OrbSystem() {
           {...diamond}
           animate={{ x: -72, y: searchMode ? -85 : 0 }}
           transition={{ type: "spring", stiffness: 260, damping: 26 }}
+          whileHover={{ scale: 1.05 }}
+          whileFocus={{ scale: 1.05 }}
           whileTap={{ scale: 0.78 }}
-          className="absolute flex items-center justify-center"
+          className="absolute flex items-center justify-center rounded-full outline-none focus-visible:ring-1 focus-visible:ring-white/35"
           style={{ width: 48, height: 48, touchAction: "none", willChange: searchMode ? "transform" : "auto" }}
           aria-label={t("genre")}
+          aria-pressed={activeGenre !== "todos"}
         >
           <RunicSeal color={cfg.color} glow={cfg.glow} active={activeGenre !== "todos"} genre={activeGenre} animated={animated} />
         </motion.button>
@@ -717,10 +750,13 @@ export default function OrbSystem() {
           {...triangle}
           animate={{ x: 72, y: searchMode ? -85 : 0 }}
           transition={{ type: "spring", stiffness: 260, damping: 26 }}
+          whileHover={{ scale: 1.05 }}
+          whileFocus={{ scale: 1.05 }}
           whileTap={{ scale: 0.78 }}
-          className="absolute flex items-center justify-center"
+          className="absolute flex items-center justify-center rounded-full outline-none focus-visible:ring-1 focus-visible:ring-white/35"
           style={{ width: 48, height: 48, touchAction: "none", willChange: searchMode ? "transform" : "auto" }}
           aria-label={t("onlyStories")}
+          aria-pressed={filterActive}
         >
           <PrismOrb color={cfg.color} glow={cfg.glow} active={filterActive} animated={animated} />
         </motion.button>
@@ -730,9 +766,13 @@ export default function OrbSystem() {
           {...centralProps}
           animate={{ y: searchMode ? "-38vh" : 0, scale: searchMode ? 1.1 : 1 }}
           transition={{ type: "spring", stiffness: 220, damping: 24 }}
-          className="relative flex items-center justify-center"
+          whileHover={{ scale: searchMode ? 1.12 : 1.04 }}
+          whileFocus={{ scale: searchMode ? 1.12 : 1.04 }}
+          whileTap={{ scale: searchMode ? 1.02 : 0.94 }}
+          className="relative flex items-center justify-center rounded-full outline-none focus-visible:ring-1 focus-visible:ring-white/35"
           style={{ width: 76, height: 76, touchAction: "none", willChange: searchMode ? "transform" : "auto" }}
           aria-label={location === "/" ? t("library") : t("lobby")}
+          aria-expanded={searchMode}
         >
           <CosmicEye color={cfg.color} glow={cfg.glow} pulse={orbPulse} searchMode={searchMode} animated={animated} />
         </motion.button>

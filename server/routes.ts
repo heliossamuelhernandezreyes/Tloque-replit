@@ -33,6 +33,14 @@ import {
   SUPPORTED_LANGUAGES,
 } from "./gutenberg";
 
+const gutenbergImportSchema = z.object({
+  gutenbergId: z.coerce.number().int().positive(),
+  genre: z.string().trim().max(60).optional().default(""),
+  overrideTitle: z.string().trim().max(200).optional().default(""),
+  overrideSynopsis: z.string().trim().max(8_000).optional().default(""),
+  lang: z.string().trim().toLowerCase().max(12).optional().default("es"),
+}).strict()
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -508,18 +516,19 @@ export async function registerRoutes(
   // ── ADMIN: IMPORTAR UN LIBRO ──────────────────────────────
   app.post("/api/admin/gutenberg/import", requireAdmin, rateLimit(60_000, 6), async (req, res) => {
     try {
-      const { genre, overrideTitle, overrideSynopsis, lang: importLang } = req.body
-      const gutenbergId = Number(req.body?.gutenbergId)
+      const parsed = gutenbergImportSchema.safeParse(req.body)
+      if (!parsed.success) return res.status(400).json({ message: "Datos de importación inválidos" })
+      const { gutenbergId, genre, overrideTitle, overrideSynopsis, lang: importLang } = parsed.data
 
-      if (!Number.isInteger(gutenbergId) || gutenbergId <= 0) {
-        return res.status(400).json({ message: "gutenbergId inválido" })
-      }
-
-      // Verificar que no existe ya
-      const existing = await storage.getBooks()
-      const alreadyExists = existing.some((b: any) => b.gutenbergId === gutenbergId)
-      if (alreadyExists) {
-        return res.status(409).json({ message: "Este libro ya está importado" })
+      // Incluye borradores, revisión y retiros lógicos; getBooks() solo ve
+      // publicados y permitía volver a importar el mismo Gutenberg ID.
+      const existing = await storage.findBookByGutenbergId(gutenbergId)
+      if (existing) {
+        return res.status(409).json({
+          message: "Este libro ya está importado",
+          existingBookId: existing.id,
+          existingStatus: existing.status,
+        })
       }
 
       // Descargar y procesar
@@ -539,6 +548,7 @@ export async function registerRoutes(
         isClassic:       true,
         publicationYear: processed.publicationYear,
         originalLanguage: processed.originalLanguage,
+        gutenbergId,
         chapters:        processed.chapters,
         content:         "",
         isSaved:         false,
@@ -555,6 +565,9 @@ export async function registerRoutes(
       })
     } catch (err: any) {
       console.error("IMPORT ERROR:", err?.message, err?.stack)
+      if (err?.code === "23505" && String(err?.constraint || "").includes("gutenberg")) {
+        return res.status(409).json({ message: "Este libro ya está importado" })
+      }
       res.status(500).json({ message: err.message || "Error importando libro" })
     }
   })

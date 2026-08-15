@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { useLocation } from "wouter"
 import { Layout } from "@/components/layout"
 import { BookCard } from "@/components/book-card"
-import { Plus, User, Camera, BookOpen, FileText, Edit3, Trash2, Archive, Eye, EyeOff, Star, Sparkles, UserCircle, Frame, Hammer, WalletCards, Ticket } from "lucide-react"
+import { Plus, User, Camera, BookOpen, FileText, Edit3, Trash2, Archive, Eye, EyeOff, Star, Sparkles, UserCircle, Frame, Hammer, WalletCards, Ticket, MoreHorizontal, Shield } from "lucide-react"
 import CardCollection from "@/components/CardCollection"
 import { useToast } from "@/hooks/use-toast"
 import { motion, AnimatePresence } from "framer-motion"
@@ -11,6 +11,14 @@ import { useAuth } from "@/hooks/useAuth"
 import { useSettings } from "@/context/SettingsContext"
 import { useBooks } from "@/hooks/use-books"
 import ImportPanel from "@/components/ImportPanel"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 const STORAGE_DRAFTS    = "novareads_drafts"
 const STORAGE_PUBLISHED = "novareads_authored"
@@ -241,8 +249,8 @@ export default function Library() {
         </div>
 
         {/* NOMBRE + BOTONES */}
-        <div className="mt-14 sm:mt-16 px-4 sm:px-6 flex items-end justify-between">
-          <div>
+        <div className="mt-14 flex items-end justify-between gap-3 px-4 sm:mt-16 sm:px-6">
+          <div className="min-w-0">
             {editingName ? (
               <div className="flex items-center gap-2">
                 <input
@@ -264,7 +272,7 @@ export default function Library() {
               </button>
             )}
             <p className="text-xs text-zinc-600 mt-0.5 font-sans">
-              {published.length} publicadas · {drafts.length} borradores
+              {t("profileWorkCounts").replace("{published}", String(published.length)).replace("{drafts}", String(drafts.length))}
             </p>
             <div className="flex items-center gap-3 mt-1.5">
               {(profileName || user?.name) && (
@@ -279,89 +287,69 @@ export default function Library() {
               )}
               <button onClick={logout}
                 className="text-[10px] text-zinc-700 hover:text-zinc-500 transition-colors font-sans">
-                Cerrar sesión
+                {t("signOut")}
               </button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {isAdminActive && (
-              <motion.button
-                whileTap={{ scale: 0.9 }}
-                onClick={() => setShowImport(true)}
-                title={t("importClassicGutenberg")}
-                className="flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold"
-                style={{
-                  background: "rgba(255,210,100,0.1)",
-                  border:     "1px solid rgba(255,210,100,0.3)",
-                  color:      "rgba(255,210,100,0.85)",
-                }}
+          <div className="flex shrink-0 items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  aria-label={t("toolsMenu")}
+                  title={t("toolsMenu")}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[.04] text-white/65 transition-colors hover:bg-white/[.08] hover:text-white"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </motion.button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                sideOffset={8}
+                className="w-64 rounded-2xl border-white/10 bg-zinc-950/95 p-2 text-white shadow-2xl backdrop-blur-xl"
               >
-                <Archive className="w-3.5 h-3.5" />
-                <span className="hidden sm:block">{t("importClassics")}</span>
-              </motion.button>
-            )}
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setLocation("/sorteo")}
-              title={t("gachaTitle")}
-              className="flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold"
-              style={{
-                background: "linear-gradient(135deg, rgba(230,205,130,0.18), rgba(201,168,76,0.12))",
-                border:     "1px solid rgba(201,168,76,0.45)",
-                color:      "rgba(230,205,130,0.95)",
-              }}
-            >
-              <Ticket className="w-3.5 h-3.5" />
-              <span className="hidden sm:block">{t("gachaTitle")}</span>
-            </motion.button>
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setLocation("/tarjetas")}
-              title={t("cardsStudio")}
-              className="flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold"
-              style={{
-                background: "rgba(201,168,76,0.12)",
-                border:     "1px solid rgba(201,168,76,0.35)",
-                color:      "rgba(201,168,76,0.9)",
-              }}
-            >
-              <WalletCards className="w-3.5 h-3.5" />
-              <span className="hidden sm:block">{t("cardsStudio")}</span>
-            </motion.button>
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setLocation("/marcos")}
-              title={t("frameGallery")}
-              className="flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold"
-              style={{
-                background: "rgba(201,168,76,0.12)",
-                border:     "1px solid rgba(201,168,76,0.35)",
-                color:      "rgba(201,168,76,0.9)",
-              }}
-            >
-              <Frame className="w-3.5 h-3.5" />
-              <span className="hidden sm:block">{t("frames")}</span>
-            </motion.button>
-            {isAdminActive && (
-              <motion.button
-                whileTap={{ scale: 0.9 }}
-                onClick={() => setLocation("/admin/marcos")}
-                title={t("frameWorkshop")}
-                className="flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold"
-                style={{
-                  background: "rgba(201,168,76,0.12)",
-                  border:     "1px solid rgba(201,168,76,0.35)",
-                  color:      "rgba(201,168,76,0.9)",
-                }}
-              >
-                <Hammer className="w-3.5 h-3.5" />
-                <span className="hidden sm:block">{t("frameWorkshop")}</span>
-              </motion.button>
-            )}
+                <DropdownMenuLabel className="px-3 text-[10px] uppercase tracking-[0.2em] text-white/35">
+                  Tloque
+                </DropdownMenuLabel>
+                <DropdownMenuItem onSelect={() => setLocation("/sorteo")} className="rounded-xl px-3 py-2.5 focus:bg-white/[.07] focus:text-white">
+                  <Ticket className="text-amber-200/80" />
+                  {t("gachaTitle")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setLocation("/tarjetas")} className="rounded-xl px-3 py-2.5 focus:bg-white/[.07] focus:text-white">
+                  <WalletCards className="text-amber-200/70" />
+                  {t("cardsStudio")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setLocation("/marcos")} className="rounded-xl px-3 py-2.5 focus:bg-white/[.07] focus:text-white">
+                  <Frame className="text-amber-200/70" />
+                  {t("frames")}
+                </DropdownMenuItem>
+                {isAdminActive && (
+                  <>
+                    <DropdownMenuSeparator className="my-2 bg-white/[.07]" />
+                    <DropdownMenuLabel className="flex items-center gap-2 px-3 text-[10px] uppercase tracking-[0.2em] text-violet-200/45">
+                      <Shield className="h-3 w-3" />
+                      Admin
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem onSelect={() => setShowImport(true)} className="rounded-xl px-3 py-2.5 focus:bg-white/[.07] focus:text-white">
+                      <Archive className="text-violet-200/70" />
+                      {t("importClassics")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setLocation("/admin/marcos")} className="rounded-xl px-3 py-2.5 focus:bg-white/[.07] focus:text-white">
+                      <Hammer className="text-violet-200/70" />
+                      {t("frameWorkshop")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setLocation("/admin")} className="rounded-xl px-3 py-2.5 focus:bg-white/[.07] focus:text-white">
+                      <Shield className="text-violet-200/70" />
+                      Admin
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <motion.button
               whileTap={{ scale: 0.93 }}
               onClick={() => setLocation("/editor")}
-              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-black text-xs sm:text-sm font-semibold bg-white shadow-lg"
+              className="flex h-10 items-center gap-1.5 rounded-xl bg-white px-3 text-xs font-semibold text-black shadow-lg sm:px-4 sm:text-sm"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>{t("newStory")}</span>

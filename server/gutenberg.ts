@@ -54,6 +54,21 @@ interface GutenbergSearchResult {
   results: GutenbergBook[]
 }
 
+function isGutenbergBook(value: unknown): value is GutenbergBook {
+  if (!value || typeof value !== "object") return false
+  const book = value as Partial<GutenbergBook>
+  return Number.isInteger(book.id)
+    && (book.id as number) > 0
+    && typeof book.title === "string"
+    && book.title.length > 0
+    && book.title.length <= 1_000
+    && Array.isArray(book.languages)
+    && Array.isArray(book.authors)
+    && Array.isArray(book.subjects)
+    && !!book.formats
+    && typeof book.formats === "object"
+}
+
 export async function fetchGutenbergBookById(id: number): Promise<GutenbergBook | null> {
   if (!Number.isInteger(id) || id <= 0) return null
   const response = await fetchWithTimeout(`https://gutendex.com/books/${id}`, 9_000, { redirect: "error" })
@@ -114,10 +129,11 @@ export async function searchGutenberg(
     const langParam = language ? `&languages=${language}` : ""
     const url = `https://gutendex.com/books/?search=${encodeURIComponent(q)}&mime_type=text${langParam}`
     try {
-      const res = await fetchWithTimeout(url, 9000)
+      const res = await fetchWithTimeout(url, 9000, { redirect: "error" })
       if (!res.ok) return []
-      const data: GutenbergSearchResult = await res.json()
-      return data.results || []
+      const raw = new TextDecoder().decode(await readBodyWithLimit(res, 1_500_000))
+      const data = JSON.parse(raw) as Partial<GutenbergSearchResult>
+      return Array.isArray(data.results) ? data.results.filter(isGutenbergBook).slice(0, 24) : []
     } catch { return [] }
   }
 
@@ -175,9 +191,11 @@ export async function downloadBookText(book: GutenbergBook): Promise<string> {
 
   const buffer = await readBodyWithLimit(res, 12_000_000)
   try {
-    return new TextDecoder("utf-8").decode(buffer)
+    // TextDecoder sin fatal=true reemplaza bytes inválidos silenciosamente,
+    // por lo que el respaldo para libros antiguos nunca llegaba a ejecutarse.
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer)
   } catch {
-    return new TextDecoder("iso-8859-1").decode(buffer)
+    return new TextDecoder("windows-1252").decode(buffer)
   }
 }
 
@@ -324,17 +342,15 @@ export function detectChapters(
 
   const lines = text.split("\n")
   const chapterStarts: { index: number; title: string }[] = []
-  const seen = new Set<string>()
 
   lines.forEach((line, i) => {
     const trimmed = line.trim()
     if (!trimmed || trimmed.length > 80) return
-    if (seen.has(trimmed)) return
+    if (chapterStarts.length >= 500) return
 
     for (const pattern of chapterPatterns) {
       if (pattern.test(trimmed)) {
         chapterStarts.push({ index: i, title: trimmed })
-        seen.add(trimmed)
         break
       }
     }
@@ -555,9 +571,8 @@ export function detectPublicationYear(book: GutenbergBook): number | null {
       if (year >= 1400 && year <= 1928) return year
     }
   }
-  const author = book.authors[0]
-  if (author?.death_year && author.death_year <= 1928) return author.death_year
-  if (author?.birth_year) return author.birth_year + 35
+  // La fecha de muerte o "nacimiento + 35" no es una fecha de publicación.
+  // Es preferible mostrar el dato como desconocido que inventar metadatos.
   return null
 }
 
