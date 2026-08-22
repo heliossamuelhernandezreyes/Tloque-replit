@@ -4,7 +4,7 @@ import { fetchAudioResource } from "./AudioResourceCache"
 import type { MusicCue, MusicState } from "./MusicEngine"
 import {
   articulationDurationFactor, midiNotesToFrequencies, scoreTrackEnvelope,
-  scoreRenderProfile, scoreTrackTimbre, scoreVelocityGain,
+  scoreMonitorVolume, scoreRenderProfile, scoreTrackTimbre, scoreVelocityGain,
 } from "./ScoreAudioMath"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
@@ -42,7 +42,13 @@ export class LinearScoreEngine {
       const render = scoreRenderProfile(recipe.version === 2 ? recipe.plan.quality : "studio")
       const output = new Tone.Gain(0).toDestination()
       const limiter = new Tone.Limiter(-1)
-      const compressor = new Tone.Compressor({ threshold: -20, ratio: 2.6, knee: 14, attack: 0.015, release: 0.24 })
+      const compressor = new Tone.MultibandCompressor({
+        lowFrequency: 180,
+        highFrequency: 3_800,
+        low: { threshold: -18, ratio: 2.2, knee: 12, attack: 0.025, release: 0.3 },
+        mid: { threshold: -20, ratio: 2.5, knee: 14, attack: 0.012, release: 0.22 },
+        high: { threshold: -22, ratio: 2, knee: 10, attack: 0.006, release: 0.16 },
+      })
       const makeup = new Tone.Gain(render.makeup)
       const eq = new Tone.EQ3({ low: -1, mid: 0.6, high: 1.2, lowFrequency: 240, highFrequency: 3_600 })
       const widener = new Tone.StereoWidener(render.stereoWidth)
@@ -54,7 +60,7 @@ export class LinearScoreEngine {
       this.nodes = [chorus, reverb, widener, eq, makeup, compressor, limiter, output]
       this.cue = cue
 
-      const maxPolyphony = Math.max(4, Math.min(16, Math.floor(render.polyphonyBudget / recipe.plan.tracks.length)))
+      const maxPolyphony = Math.max(4, Math.min(32, Math.floor(render.polyphonyBudget / recipe.plan.tracks.length)))
       for (const track of recipe.plan.tracks) {
         const synth = this.createSynth(Tone, track, maxPolyphony)
         const timbre = scoreTrackTimbre(track)
@@ -173,7 +179,13 @@ export class LinearScoreEngine {
   }
 
   private targetVolume() {
-    return Math.max(0, Math.min(1, this.master * (this.cue?.volume ?? 1) * this.duckFactor * this.narrativeGain))
+    return scoreMonitorVolume(
+      this.master,
+      this.cue?.volume ?? 1,
+      this.duckFactor,
+      this.narrativeGain,
+      this.cue?.monitoring === "reference",
+    )
   }
   private applyVolume() {
     if (this.context && this.output) {
