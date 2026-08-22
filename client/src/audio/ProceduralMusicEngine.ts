@@ -1,6 +1,8 @@
 import { proceduralRecipeFor, type ProceduralRecipe } from "@shared/audio"
 import {
   compileMusicBrainScore,
+  musicBrainDwellPhaseForCycle,
+  musicBrainNoteForDwellCycle,
   musicBrainScoreForProceduralRecipe,
   notesForMusicBrainRegion,
   type MusicBrainCompilationV1,
@@ -18,6 +20,14 @@ function transportPosition(beat: number, beatsPerBar: number): string {
   const quarter = Math.floor(insideBar)
   const sixteenth = Math.round((insideBar - quarter) * 4 * 1_000) / 1_000
   return `${bar}:${quarter}:${sixteenth}`
+}
+
+function nextBarPosition(transport: any): string {
+  const signature = transport.timeSignature
+  const beatsPerBar = Array.isArray(signature) ? signature[0] * 4 / signature[1] : signature
+  const ticksPerBar = Math.max(1, Math.round(transport.PPQ * beatsPerBar))
+  const nextTicks = Math.ceil((Math.max(0, transport.ticks) + 1) / ticksPerBar) * ticksPerBar
+  return `${nextTicks}i`
 }
 
 export class ProceduralMusicEngine {
@@ -130,7 +140,7 @@ export class ProceduralMusicEngine {
     const region = this.compilation.plan.regions.find(candidate => candidate.regionId === regionId)
     if (!region) return
     const transport = this.tone.getTransport()
-    const when = immediate ? 0 : transport.nextSubdivision("1m")
+    const when = immediate ? 0 : nextBarPosition(transport)
     if (this.loop) {
       this.loop.stop(when)
       this.retiredParts.push(this.loop)
@@ -145,10 +155,19 @@ export class ProceduralMusicEngine {
       transportPosition(event.beat - region.startBeat, region.meter[0]),
       event,
     ])
+    let firstLoopStartTick: number | null = null
     const part = new this.tone.Part<[string, MusicBrainNoteEventV1]>((time: number, event) => {
-      const instrument = event.voice === "foundation" ? this.synth : this.bell
-      const durationSeconds = event.durationBeats * 60 / region.bpm
-      instrument?.triggerAttackRelease(event.midi, durationSeconds, time, event.velocity)
+      const relativeBeat = event.beat - region.startBeat
+      const loopStartTick = transport.getTicksAtTime(time) - relativeBeat * transport.PPQ
+      if (firstLoopStartTick === null) firstLoopStartTick = loopStartTick
+      const loopTicks = Math.max(1, region.durationBeats * transport.PPQ)
+      const dwellCycle = Math.max(0, Math.round((loopStartTick - firstLoopStartTick) / loopTicks))
+      const phase = musicBrainDwellPhaseForCycle(region, dwellCycle)
+      const adapted = musicBrainNoteForDwellCycle(event, phase, dwellCycle)
+      if (!adapted) return
+      const instrument = adapted.voice === "foundation" ? this.synth : this.bell
+      const durationSeconds = adapted.durationBeats * 60 / region.bpm
+      instrument?.triggerAttackRelease(adapted.midi, durationSeconds, time, adapted.velocity)
     }, relativeEvents)
     part.loop = true
     part.loopEnd = transportPosition(region.durationBeats, region.meter[0])

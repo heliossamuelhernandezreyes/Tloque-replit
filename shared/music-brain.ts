@@ -5,8 +5,9 @@ import type { ExperienceProfileV1, NarrativeMood } from "./narrative"
 export const MUSIC_BRAIN_SCORE_VERSION = 1 as const
 export const MUSIC_BRAIN_PLAN_VERSION = 1 as const
 export const MUSIC_BRAIN_TIMELINE_VERSION = 1 as const
-export const MUSIC_BRAIN_RULE_VERSION = "tloque-music-brain-2026-08-v1" as const
+export const MUSIC_BRAIN_RULE_VERSION = "tloque-music-brain-2026-08-v1.1" as const
 export const MUSIC_BRAIN_KNOWLEDGE_VERSION = "tloque-music-knowledge-2026-08-v1" as const
+export const MUSIC_BRAIN_CONTENT_MODE = "instrumental_only" as const
 
 const unitSchema = z.number().finite().min(0).max(1)
 const readingIntensitySchema = z.number().finite().min(0).max(0.65)
@@ -62,6 +63,7 @@ export const musicBrainScoreSchema = z.object({
   version: z.literal(MUSIC_BRAIN_SCORE_VERSION),
   ruleVersion: z.literal(MUSIC_BRAIN_RULE_VERSION),
   knowledgeVersion: z.literal(MUSIC_BRAIN_KNOWLEDGE_VERSION),
+  contentMode: z.literal(MUSIC_BRAIN_CONTENT_MODE),
   bookId: z.number().int().positive(),
   chapterIndex: z.number().int().min(0),
   sourceRevision: z.number().int().min(1),
@@ -79,6 +81,19 @@ export const musicBrainScoreSchema = z.object({
 export type MusicBrainLeitmotifV1 = z.infer<typeof musicBrainLeitmotifSchema>
 export type MusicBrainRegionIntentV1 = z.infer<typeof musicBrainRegionIntentSchema>
 export type MusicBrainScoreV1 = z.infer<typeof musicBrainScoreSchema>
+
+export const musicBrainDwellPhaseSchema = z.object({
+  id: z.enum(["establish", "vary", "fragment", "ambient"]),
+  startsAtCycle: z.number().int().min(0).max(64),
+  variationPeriod: z.number().int().min(1).max(8),
+  foundationStride: z.number().int().min(0).max(4),
+  motionStride: z.number().int().min(0).max(8),
+  leitmotifStride: z.number().int().min(0).max(8),
+  velocityScale: z.number().finite().min(0.4).max(1),
+  motionTransposeSemitones: z.number().int().min(-12).max(12),
+}).strict()
+
+export type MusicBrainDwellPhaseV1 = z.infer<typeof musicBrainDwellPhaseSchema>
 
 export const musicBrainRegionPlanSchema = z.object({
   regionId: identifierSchema,
@@ -102,9 +117,18 @@ export const musicBrainRegionPlanSchema = z.object({
   maxPolyphony: z.number().int().min(0).max(6),
   silence: z.boolean(),
   characterIds: z.array(identifierSchema).max(12),
+  dwellPhases: z.array(musicBrainDwellPhaseSchema).length(4),
 }).strict().superRefine((region, ctx) => {
   if (region.musicEndBeat < region.musicStartBeat) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["musicEndBeat"], message: "La música termina antes de comenzar" })
+  }
+  if (region.dwellPhases[0]?.startsAtCycle !== 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["dwellPhases", 0, "startsAtCycle"], message: "La evolución debe comenzar en el ciclo cero" })
+  }
+  for (let index = 1; index < region.dwellPhases.length; index += 1) {
+    if (region.dwellPhases[index].startsAtCycle <= region.dwellPhases[index - 1].startsAtCycle) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["dwellPhases", index, "startsAtCycle"], message: "Las fases deben avanzar en orden" })
+    }
   }
 })
 
@@ -113,6 +137,7 @@ export const musicBrainCompositionPlanSchema = z.object({
   scoreVersion: z.literal(MUSIC_BRAIN_SCORE_VERSION),
   ruleVersion: z.literal(MUSIC_BRAIN_RULE_VERSION),
   knowledgeVersion: z.literal(MUSIC_BRAIN_KNOWLEDGE_VERSION),
+  contentMode: z.literal(MUSIC_BRAIN_CONTENT_MODE),
   seed: z.number().int().min(0).max(2_147_483_647),
   rootMidi: z.number().int().min(36).max(60),
   regions: z.array(musicBrainRegionPlanSchema).min(1).max(120),
@@ -155,6 +180,7 @@ export const musicBrainTimelineSchema = z.object({
   version: z.literal(MUSIC_BRAIN_TIMELINE_VERSION),
   planVersion: z.literal(MUSIC_BRAIN_PLAN_VERSION),
   ruleVersion: z.literal(MUSIC_BRAIN_RULE_VERSION),
+  contentMode: z.literal(MUSIC_BRAIN_CONTENT_MODE),
   seed: z.number().int().min(0).max(2_147_483_647),
   totalBeats: z.number().finite().positive(),
   events: z.array(musicBrainEventSchema).max(20_000),
@@ -225,6 +251,41 @@ export function stableMusicBrainHash(value: string): number {
     hash = Math.imul(hash, 0x01000193)
   }
   return hash >>> 0
+}
+
+function dwellPhasesFor(score: MusicBrainScoreV1, region: MusicBrainRegionIntentV1): MusicBrainDwellPhaseV1[] {
+  const lowerMotion = deterministicUnit(score.seed, `${region.id}:dwell:register`) > 0.5 ? -12 : 0
+  return z.array(musicBrainDwellPhaseSchema).length(4).parse([
+    { id: "establish", startsAtCycle: 0, variationPeriod: 1, foundationStride: 1, motionStride: 1, leitmotifStride: 1, velocityScale: 1, motionTransposeSemitones: 0 },
+    { id: "vary", startsAtCycle: 1, variationPeriod: 1, foundationStride: 1, motionStride: 2, leitmotifStride: 1, velocityScale: 0.94, motionTransposeSemitones: lowerMotion },
+    { id: "fragment", startsAtCycle: 2, variationPeriod: 2, foundationStride: 1, motionStride: 3, leitmotifStride: 2, velocityScale: 0.82, motionTransposeSemitones: 0 },
+    { id: "ambient", startsAtCycle: 4, variationPeriod: 4, foundationStride: region.texture === "minimal" ? 1 : 2, motionStride: 0, leitmotifStride: 0, velocityScale: 0.68, motionTransposeSemitones: 0 },
+  ])
+}
+
+export function musicBrainDwellPhaseForCycle(region: MusicBrainRegionPlanV1, cycle: number): MusicBrainDwellPhaseV1 {
+  const safeCycle = Math.max(0, Math.floor(cycle))
+  return [...region.dwellPhases]
+    .reverse()
+    .find(phase => safeCycle >= phase.startsAtCycle) ?? region.dwellPhases[0]
+}
+
+export function musicBrainNoteForDwellCycle(
+  event: MusicBrainNoteEventV1,
+  phase: MusicBrainDwellPhaseV1,
+  cycle: number,
+): MusicBrainNoteEventV1 | null {
+  const stride = event.voice === "foundation" ? phase.foundationStride
+    : event.voice === "motion" ? phase.motionStride : phase.leitmotifStride
+  if (stride === 0) return null
+  const variation = Math.max(0, Math.floor(cycle) - phase.startsAtCycle) % phase.variationPeriod
+  if (stride > 1 && stableMusicBrainHash(`${phase.id}:${variation}:${event.id}`) % stride !== 0) return null
+  const transpose = event.voice === "motion" ? phase.motionTransposeSemitones : 0
+  return musicBrainNoteEventSchema.parse({
+    ...event,
+    midi: clamp(event.midi + transpose, 24, 96),
+    velocity: clamp(event.velocity * phase.velocityScale, 0.04, 0.42),
+  })
 }
 
 function deterministicUnit(seed: number, salt: string): number {
@@ -342,6 +403,7 @@ export function musicBrainScoreForDirection(
     version: MUSIC_BRAIN_SCORE_VERSION,
     ruleVersion: MUSIC_BRAIN_RULE_VERSION,
     knowledgeVersion: MUSIC_BRAIN_KNOWLEDGE_VERSION,
+    contentMode: MUSIC_BRAIN_CONTENT_MODE,
     bookId: project.bookId,
     chapterIndex: project.chapterIndex,
     sourceRevision: project.revision,
@@ -379,6 +441,7 @@ export function musicBrainScoreForExperience(
     version: MUSIC_BRAIN_SCORE_VERSION,
     ruleVersion: MUSIC_BRAIN_RULE_VERSION,
     knowledgeVersion: MUSIC_BRAIN_KNOWLEDGE_VERSION,
+    contentMode: MUSIC_BRAIN_CONTENT_MODE,
     bookId: profile.bookId,
     chapterIndex: profile.chapterIndex,
     sourceRevision: profile.revision,
@@ -420,6 +483,7 @@ export function musicBrainScoreForProceduralRecipe(recipe: LegacyProceduralRecip
     version: MUSIC_BRAIN_SCORE_VERSION,
     ruleVersion: MUSIC_BRAIN_RULE_VERSION,
     knowledgeVersion: MUSIC_BRAIN_KNOWLEDGE_VERSION,
+    contentMode: MUSIC_BRAIN_CONTENT_MODE,
     bookId: 1,
     chapterIndex: 0,
     sourceRevision: 1,
@@ -524,6 +588,7 @@ export function compileMusicBrainScore(input: MusicBrainScoreV1): MusicBrainComp
       maxPolyphony: region.silence ? 0 : density > 0.52 ? 6 : density > 0.28 ? 5 : 4,
       silence: region.silence,
       characterIds: region.characterIds,
+      dwellPhases: dwellPhasesFor(score, region),
     })
     plans.push(plan)
     events.push({ id: `${region.id}:start`, regionId: region.id, kind: "marker", marker: "region_start", beat: cursor, durationBeats: durationBeats })
@@ -611,6 +676,7 @@ export function compileMusicBrainScore(input: MusicBrainScoreV1): MusicBrainComp
     scoreVersion: MUSIC_BRAIN_SCORE_VERSION,
     ruleVersion: MUSIC_BRAIN_RULE_VERSION,
     knowledgeVersion: MUSIC_BRAIN_KNOWLEDGE_VERSION,
+    contentMode: MUSIC_BRAIN_CONTENT_MODE,
     seed: score.seed,
     rootMidi: score.rootMidi,
     regions: plans,
@@ -620,6 +686,7 @@ export function compileMusicBrainScore(input: MusicBrainScoreV1): MusicBrainComp
     version: MUSIC_BRAIN_TIMELINE_VERSION,
     planVersion: MUSIC_BRAIN_PLAN_VERSION,
     ruleVersion: MUSIC_BRAIN_RULE_VERSION,
+    contentMode: MUSIC_BRAIN_CONTENT_MODE,
     seed: score.seed,
     totalBeats: cursor,
     events,

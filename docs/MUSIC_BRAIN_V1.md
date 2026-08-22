@@ -4,6 +4,8 @@
 
 Music Brain converts the Direction Agent sidecar into an adaptive, renderer-neutral score. It does not analyze raw manuscript text inside the audio engine and it does not promise to induce focus, flow, dopamine, or a specific emotion.
 
+Tloque supports instrumental music only. Lyrics, singing, choirs, and musical voices are outside the contract; audiobook speech belongs to the separate voice pipeline.
+
 The pipeline is:
 
 `manuscript -> Direction Agent -> MusicBrainScoreV1 -> CompositionPlanV1 -> TimelineV1 -> renderer`
@@ -14,6 +16,7 @@ The normal editor remains manuscript-only. Analysis and direction remain in the 
 
 - Versioned semantic score, composition plan, and event timeline.
 - Deterministic seed, rule version, and knowledge version.
+- An `instrumental_only` contract propagated through score, plan, and timeline.
 - Narrative regions with emotion, valence, arousal, tension, warmth, density, texture, pauses, silence, and transition time.
 - Character leitmotifs represented by relative intervals and rhythm cells.
 - Stable motif transformation input without storing or replaying a protected melody.
@@ -22,6 +25,7 @@ The normal editor remains manuscript-only. Analysis and direction remain in the 
 - Real silence markers and regions with zero note attacks.
 - Reading-mode caps for intensity, density, polyphony, velocity, tempo, and MIDI range.
 - Tone.js `Part` scheduling on the audio transport rather than UI timers.
+- Deterministic dwell evolution that establishes, varies, fragments, and finally thins a repeated region into ambience.
 - Backward-compatible compilation of existing procedural recipes.
 - Region selection from the reader's existing narrative-attention resolver.
 - Fallback compilation from the compact experience profile when no matching advanced sidecar exists.
@@ -32,13 +36,15 @@ The server derives `MusicBrainScoreV1` when it serves an approved experience pro
 
 The client compiles that score locally. A procedural soundtrack can then select a region at the next musical boundary while the reader moves through the chapter. Stream and SoundFont engines keep their existing behavior and receive the same conservative gain direction.
 
+If the reader remains in the same region, the engine does not infer distraction or a psychological state. It advances through deterministic dwell phases: the first cycle establishes the material, later cycles thin motion and leitmotif attacks, and prolonged dwell settles into a sparse foundation. A silence region remains silent.
+
 Nothing plays automatically. Silence and mute remain first-class user choices.
 
 ## Scientific translation
 
 The engine uses research as safety constraints, not as an emotion-control model:
 
-- Lyrics can interfere with verbal memory and reading comprehension, so reading music defaults to instrumental. Souza & Leite, 2023, DOI `10.5334/joc.273`, PMID `37152835`.
+- Lyrics can interfere with verbal memory and reading comprehension. Tloque therefore permits only instrumental music; this is a product invariant, not a user-profile prediction. Souza & Leite, 2023, DOI `10.5334/joc.273`, PMID `37152835`.
 - Fast and loud background music can impair reading comprehension, so tempo, intensity, and velocity are bounded. Thompson, Schellenberg & Letnic, 2012, DOI `10.1177/0305735611400173`.
 - Preferred music does not guarantee better reading performance. Perham & Currie, 2014, DOI `10.1002/acp.2994`.
 - Effects depend on listener, task, and musical features. Furnham et al., 2002, PMID `11964204`; Du et al., 2020, DOI `10.1038/s41598-020-75623-3`.
@@ -82,8 +88,10 @@ SoundFonts, samples, presets, corpora, datasets, and model weights always requir
 ## V1 invariants
 
 - Same score + seed + versions produces the same plan and timeline.
+- Score, plan, and timeline reject any content mode other than `instrumental_only`.
 - Character IDs produce stable, distinguishable motif signatures.
 - Silence regions emit no note events.
+- Staying in one region produces deterministic, bounded evolution and eventually removes motion and leitmotif attacks.
 - Events are sorted and finite.
 - MIDI, duration, velocity, tempo, density, intensity, and polyphony stay bounded.
 - Region changes use musical transport boundaries.

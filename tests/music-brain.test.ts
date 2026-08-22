@@ -2,9 +2,13 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { advancedDirectionProjectSchema } from "../shared/direction.ts"
 import {
+  MUSIC_BRAIN_CONTENT_MODE,
   compileMusicBrainScore,
   defaultMusicBrainSeed,
   leitmotifForCharacter,
+  musicBrainDwellPhaseForCycle,
+  musicBrainNoteForDwellCycle,
+  musicBrainScoreSchema,
   musicBrainScoreForDirection,
   musicBrainScoreForProceduralRecipe,
   notesForMusicBrainRegion,
@@ -71,6 +75,15 @@ test("la misma dirección, semilla y versiones producen la misma partitura", () 
   assert.equal(JSON.stringify(first), JSON.stringify(second))
 })
 
+test("el contrato permite únicamente música instrumental", () => {
+  const score = musicBrainScoreForDirection(directionFixture(), 512)
+  const compilation = compileMusicBrainScore(score)
+  assert.equal(score.contentMode, MUSIC_BRAIN_CONTENT_MODE)
+  assert.equal(compilation.plan.contentMode, MUSIC_BRAIN_CONTENT_MODE)
+  assert.equal(compilation.timeline.contentMode, MUSIC_BRAIN_CONTENT_MODE)
+  assert.equal(musicBrainScoreSchema.safeParse({ ...score, contentMode: "vocals_allowed" }).success, false)
+})
+
 test("los personajes conservan leitmotivs estables y distinguibles", () => {
   const seed = 918_271
   const ines = leitmotifForCharacter("ines", seed)
@@ -95,6 +108,25 @@ test("el silencio es una región real y no emite ataques de nota", () => {
   assert.ok(compilation.timeline.events.some(event =>
     event.kind === "marker" && event.regionId === "quietud" && event.marker === "silence_end",
   ))
+})
+
+test("una región evoluciona y se vuelve ambiental si el lector permanece en ella", () => {
+  const compilation = compileMusicBrainScore(musicBrainScoreForDirection(directionFixture(), 73))
+  const region = compilation.plan.regions.find(candidate => candidate.regionId === "encuentro")!
+  const notes = notesForMusicBrainRegion(compilation.timeline, region.regionId)
+  const playableAt = (cycle: number) => {
+    const phase = musicBrainDwellPhaseForCycle(region, cycle)
+    return notes.map(event => musicBrainNoteForDwellCycle(event, phase, cycle)).filter(Boolean)
+  }
+
+  assert.equal(musicBrainDwellPhaseForCycle(region, 0).id, "establish")
+  assert.equal(musicBrainDwellPhaseForCycle(region, 1).id, "vary")
+  assert.equal(musicBrainDwellPhaseForCycle(region, 2).id, "fragment")
+  assert.equal(musicBrainDwellPhaseForCycle(region, 4).id, "ambient")
+  assert.deepEqual(playableAt(2), playableAt(2))
+  assert.notDeepEqual(playableAt(0), playableAt(1))
+  assert.ok(playableAt(4).length < playableAt(0).length)
+  assert.ok(playableAt(4).every(event => event?.voice === "foundation"))
 })
 
 test("la compilación respeta los límites de lectura y orden temporal", () => {
