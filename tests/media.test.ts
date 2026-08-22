@@ -19,10 +19,12 @@ test("acepta imágenes raster seguras y rechaza SVG o datos mal formados", () =>
   assert.equal(isSafeImageSource("https://images.example.com/cover.webp"), true)
 })
 
-test("la Fonoteca sólo acepta fuentes de audio HTTPS reconocibles", () => {
+test("la Fonoteca acepta audio HTTPS y objetos internos de App Storage", () => {
   assert.equal(isSafeAudioSource("https://audio.example.com/track.mp3?sig=abc"), true)
   assert.equal(isSafeAudioSource("https://audio.example.com/track.opus"), true)
   assert.equal(isSafeAudioSource("https://audio.example.com/track.exe"), false)
   assert.equal(isSafeAudioSource("http://audio.example.com/track.mp3"), false)
   assert.equal(isSafeAudioSource("data:audio/mp3;base64,AAAA"), false)
+  assert.equal(isSafeAudioSource(`/api/audio/uploads/${"a".repeat(64)}.wav`), true)
+  assert.equal(isSafeAudioSource("/api/audio/uploads/../../secret.wav"), false)
 })
