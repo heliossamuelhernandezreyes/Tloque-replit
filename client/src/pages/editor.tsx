@@ -8,17 +8,18 @@ import { useSettings } from "@/context/SettingsContext"
 import {
   ArrowLeft, Plus, Trash2, BookOpen, FileText,
   Upload, Save, Globe, EyeOff, ChevronDown, ChevronUp,
-  Check, AlertCircle, Layers, Music2, Mic2,
-  ListChecks, Maximize2, Minimize2, PenLine,
-  Bot,
+  Check, AlertCircle, Layers, ListChecks,
+  Maximize2, Minimize2, Bot,
 } from "lucide-react"
 import ParallaxCover from "@/components/ParallaxCover"
 import { type CoverFxConfig } from "@/lib/cover-effects"
 import { LayerUpload } from "@/components/LayerUpload"
-import ChapterSoundtrackPicker from "@/components/ChapterSoundtrackPicker"
-import NarrativeStudioPanel from "@/components/NarrativeStudioPanel"
-import SpeechStudioPanel from "@/components/SpeechStudioPanel"
-import DirectionAgentPanel from "@/components/DirectionAgentPanel"
+import {
+  loadDurableEditorDraft,
+  removeDurableEditorDraft,
+  saveDurableEditorDraft,
+} from "@/lib/editor-drafts"
+import { buildDirectionWorkspaceUrl } from "@/lib/editor-workspace"
 
 // ── TIPOS ────────────────────────────────────────────────
 type Chapter  = { title: string; content: string }
@@ -55,20 +56,22 @@ const STORAGE_PUBLISHED = "novareads_authored"
 function loadAll(key: string): any[] {
   try { return JSON.parse(localStorage.getItem(key) || "[]") } catch { return [] }
 }
-function saveAll(key: string, items: any[]) {
+function saveAll(key: string, items: any[]): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(items))
+    return true
   } catch (e) {
     // La memoria local es pequeña; los libros grandes (clásicos) no caben.
     // No es un error fatal: el guardado real va al servidor.
     console.warn("No se pudo guardar en memoria local (cuota llena):", e)
+    return false
   }
 }
 function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length
 }
 
-type SaveStatus = "idle" | "saving" | "saved" | "error"
+type SaveStatus = "idle" | "saving" | "saved" | "recovered" | "error"
 
 // ── PANEL DE PORTADA ─────────────────────────────────────
 function CoverPanel({
@@ -289,13 +292,14 @@ export default function Editor() {
   const createBook      = useCreateBook()
   const updateBook      = useUpdateBook()
   const autoSaveTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const durableSaveQueue = useRef<Promise<void>>(Promise.resolve())
 
   const [activeChapter, setActiveChapter] = useState(0)
   const [metaOpen,      setMetaOpen]      = useState(true)
   const [coverTab,      setCoverTab]      = useState<"cover" | "meta">("meta")
   const [coverMode,     setCoverMode]     = useState<CoverMode>("simple")
   const [saveStatus,    setSaveStatus]    = useState<SaveStatus>("idle")
-  const [studioMode,    setStudioMode]    = useState<"write" | "music" | "voice" | "direction">("write")
+  const [manuscriptDirty, setManuscriptDirty] = useState(false)
   const [focusMode,     setFocusMode]     = useState(false)
   const [showChecklist, setShowChecklist] = useState(false)
   // Metadata del libro de servidor que se está editando (admin/clásicos).
@@ -315,6 +319,12 @@ export default function Editor() {
     spotifyLink:  "",
     status:       "draft",
   })
+  const formRef = useRef(form)
+  const manuscriptDirtyRef = useRef(manuscriptDirty)
+  useEffect(() => {
+    formRef.current = form
+    manuscriptDirtyRef.current = manuscriptDirty
+  }, [form, manuscriptDirty])
 
   // Las obras nuevas heredan el nombre autenticado; no se presenta un campo
   // editable que sugiera la posibilidad de publicar como otra persona.
@@ -330,6 +340,18 @@ export default function Editor() {
     const editId     = params.get("id")
     const editStatus = params.get("status") as "draft" | "published" | null
     const editSource = params.get("source")
+    const recoverDurableCopy = (id: string) => {
+      void loadDurableEditorDraft<BookForm & { id?: number }>(id)
+        .then(recovered => {
+          if (!recovered) return
+          setForm(recovered)
+          setManuscriptDirty(true)
+          setMetaOpen(false)
+          setSaveStatus("recovered")
+          setTimeout(() => setSaveStatus("idle"), 3500)
+        })
+        .catch(error => console.warn("No se pudo recuperar el borrador durable", error))
+    }
 
     // Carga desde el SERVIDOR — admin editando catálogo o clásicos
     if (editSource === "server" && editId) {
@@ -339,6 +361,7 @@ export default function Editor() {
           if (!res.ok) return
           const b = await res.json()
           setForm(b as any)
+          setManuscriptDirty(false)
           setMetaOpen(false)
           // Guardar la metadata original para preservarla al publicar
           setServerMeta({
@@ -357,6 +380,7 @@ export default function Editor() {
             if (layers.front) setCoverMode("triple")
             else if (layers.mid) setCoverMode("double")
           }
+          recoverDurableCopy(editId)
         } catch { /* sin conexión: no carga */ }
       })()
       return
@@ -367,6 +391,7 @@ export default function Editor() {
     const found  = loadAll(source).find((b: any) => String(b.id) === editId)
     if (found) {
       setForm(found)
+      setManuscriptDirty(false)
       setMetaOpen(false)
       // Detectar modo de portada actual
       if (found.coverFx?.mode === "layered") {
@@ -375,10 +400,12 @@ export default function Editor() {
         else if (layers.mid) setCoverMode("double")
       }
     }
+    recoverDurableCopy(editId)
   }, [])
 
   function update<K extends keyof BookForm>(key: K, value: BookForm[K]) {
     setForm(f => ({ ...f, [key]: value }))
+    setManuscriptDirty(true)
     triggerAutoSave()
   }
 
@@ -388,6 +415,7 @@ export default function Editor() {
       chapters[i] = { ...chapters[i], [key]: value }
       return { ...f, chapters }
     })
+    setManuscriptDirty(true)
     triggerAutoSave()
   }
 
@@ -397,7 +425,6 @@ export default function Editor() {
     setSaveStatus("idle")
     autoSaveTimer.current = setTimeout(() => {
       setForm(current => {
-        if (!current.title?.trim()) return current
         doSaveDraft(current, true)
         return current
       })
@@ -405,11 +432,24 @@ export default function Editor() {
   }, [])
 
   function doSaveDraft(currentForm: BookForm & { id?: number }, isAuto = false) {
-    if (!currentForm.title?.trim()) return
-    // Libros de servidor (clásicos/admin): NO se guardan en memoria local
-    // (son enormes y viven en el servidor). Se guardan con "Publicar".
+    // Las obras de servidor no se duplican en localStorage porque pueden ser
+    // enormes. Sí reciben una copia durable en IndexedDB para recuperación.
     if (serverMetaRef.current) {
-      setSaveStatus("idle")
+      if (!currentForm.id) return
+      setSaveStatus("saving")
+      const durableSave = durableSaveQueue.current
+        .catch(() => undefined)
+        .then(() => saveDurableEditorDraft(currentForm.id!, currentForm))
+      durableSaveQueue.current = durableSave
+      void durableSave.then(() => {
+        setSaveStatus("saved")
+        if (!isAuto) toast({ title: "Copia de recuperación guardada ✓" })
+        setTimeout(() => setSaveStatus("idle"), 2500)
+      }).catch(error => {
+        console.warn("No se pudo respaldar la edición de servidor", error)
+        setSaveStatus("error")
+        setTimeout(() => setSaveStatus("idle"), 3000)
+      })
       return
     }
     setSaveStatus("saving")
@@ -417,15 +457,33 @@ export default function Editor() {
       const id   = currentForm.id || Date.now()
       const book = { ...currentForm, id, status: "draft" as const }
       const drafts = loadAll(STORAGE_DRAFTS)
-      saveAll(STORAGE_DRAFTS,
-        currentForm.id
+      const existingDraft = drafts.some((draft: any) => draft.id === id)
+      const fallbackSaved = saveAll(STORAGE_DRAFTS,
+        existingDraft
           ? drafts.map((b: any) => b.id === id ? book : b)
           : [...drafts, book]
       )
       setForm(f => ({ ...f, id }))
-      setSaveStatus("saved")
-      if (!isAuto) toast({ title: "Borrador guardado ✓" })
-      setTimeout(() => setSaveStatus("idle"), 2500)
+
+      const durableSave = durableSaveQueue.current
+        .catch(() => undefined)
+        .then(() => saveDurableEditorDraft(id, book))
+      durableSaveQueue.current = durableSave
+      void durableSave.then(() => {
+        setSaveStatus("saved")
+        if (!isAuto) toast({ title: "Borrador guardado ✓" })
+        setTimeout(() => setSaveStatus("idle"), 2500)
+      }).catch(error => {
+        console.warn("No se pudo crear la copia durable del manuscrito", error)
+        if (fallbackSaved) {
+          setSaveStatus("saved")
+          if (!isAuto) toast({ title: "Borrador guardado localmente" })
+          setTimeout(() => setSaveStatus("idle"), 2500)
+          return
+        }
+        setSaveStatus("error")
+        setTimeout(() => setSaveStatus("idle"), 3000)
+      })
     } catch {
       setSaveStatus("error")
       setTimeout(() => setSaveStatus("idle"), 3000)
@@ -439,6 +497,24 @@ export default function Editor() {
     }
     doSaveDraft(form)
   }
+
+  useEffect(() => {
+    const persistPendingChanges = () => {
+      if (document.visibilityState === "hidden" && manuscriptDirtyRef.current) {
+        doSaveDraft(formRef.current, true)
+      }
+    }
+    const persistBeforePageExit = () => {
+      if (manuscriptDirtyRef.current) doSaveDraft(formRef.current, true)
+    }
+    document.addEventListener("visibilitychange", persistPendingChanges)
+    window.addEventListener("pagehide", persistBeforePageExit)
+    return () => {
+      document.removeEventListener("visibilitychange", persistPendingChanges)
+      window.removeEventListener("pagehide", persistBeforePageExit)
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    }
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -519,6 +595,8 @@ export default function Editor() {
       // Edición de servidor (admin/clásico): NO se guarda en la lista local
       // del admin; vive en el servidor. Solo confirmar y volver.
       if (serverMeta) {
+        setManuscriptDirty(false)
+        if (form.id) void removeDurableEditorDraft(form.id).catch(() => undefined)
         setSaveStatus("saved")
         toast({
           title: "Cambios guardados ✦",
@@ -540,6 +618,8 @@ export default function Editor() {
           : [...pub, book]
       )
       setForm(f => ({ ...f, id: finalId }))
+      setManuscriptDirty(false)
+      if (localId) void removeDurableEditorDraft(localId).catch(() => undefined)
       setSaveStatus("saved")
       toast({ title: "¡Historia publicada! ✦", description: "Ya visible para todos los lectores." })
       setLocation("/library")
@@ -576,6 +656,9 @@ export default function Editor() {
         ? drafts.map((b: any) => b.id === id ? book : b)
         : [...drafts, book]
     )
+    void saveDurableEditorDraft(id, book).catch(error => {
+      console.warn("No se pudo conservar la copia durable al despublicar", error)
+    })
     toast({ title: "Historia despublicada" })
     setLocation("/library")
   }
@@ -584,6 +667,8 @@ export default function Editor() {
     const n = form.chapters.length + 1
     setForm(f => ({ ...f, chapters: [...f.chapters, { title: `Capítulo ${n}`, content: "" }] }))
     setActiveChapter(form.chapters.length)
+    setManuscriptDirty(true)
+    triggerAutoSave()
   }
 
   function removeChapter(index: number) {
@@ -593,6 +678,8 @@ export default function Editor() {
     const updated = form.chapters.filter((_, i) => i !== index)
     setForm(f => ({ ...f, chapters: updated }))
     setActiveChapter(Math.min(activeChapter, updated.length - 1))
+    setManuscriptDirty(true)
+    triggerAutoSave()
   }
 
   const gc           = genres.find(g => g.key === form.genre) || genres[0]
@@ -605,6 +692,25 @@ export default function Editor() {
     { label: t("chapter"), done: form.chapters.some(chapter => wordCount(chapter.content) >= 50) },
   ]
   const publishingReady = publishingChecks.every(item => item.done)
+  const directionUrl = buildDirectionWorkspaceUrl(form.id, activeChapter)
+
+  function openDirectionWorkspace() {
+    if (!directionUrl) {
+      toast({
+        title: "Guarda la obra en Tloque primero",
+        description: "Dirección trabaja sobre una versión persistida del manuscrito.",
+      })
+      return
+    }
+    if (manuscriptDirty) {
+      toast({
+        title: "Hay cambios sin sincronizar",
+        description: "Publica o actualiza la obra antes de abrir Dirección para evitar una partitura desfasada.",
+      })
+      return
+    }
+    setLocation(directionUrl)
+  }
 
   return (
     <div className="min-h-screen bg-black text-zinc-300 overflow-x-hidden">
@@ -622,8 +728,9 @@ export default function Editor() {
           <motion.button
             whileTap={{ scale: 0.92 }}
             onClick={() => setLocation("/library")}
-            className="p-1.5 rounded-lg"
+            className="grid min-h-11 min-w-11 place-items-center rounded-lg"
             style={{ color: "rgba(255,255,255,0.4)" }}
+            aria-label="Volver a la biblioteca"
           >
             <ArrowLeft className="w-4 h-4" />
           </motion.button>
@@ -643,6 +750,13 @@ export default function Editor() {
                 className="flex items-center gap-1 text-[10px] font-sans"
                 style={{ color: gc.color + "aa" }}>
                 <Check className="w-3 h-3" /> Guardado
+              </motion.span>
+            )}
+            {saveStatus === "recovered" && (
+              <motion.span key="recovered"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="flex items-center gap-1 text-[10px] font-sans text-violet-200/70">
+                <Check className="w-3 h-3" /> Borrador recuperado
               </motion.span>
             )}
             {saveStatus === "error" && (
@@ -671,41 +785,63 @@ export default function Editor() {
           >
             {focusMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
+          <button
+            type="button"
+            onClick={openDirectionWorkspace}
+            className="flex min-h-11 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-sans transition"
+            style={directionUrl && !manuscriptDirty ? {
+              borderColor: "rgba(196,181,253,.22)",
+              background: "rgba(196,181,253,.08)",
+              color: "rgba(221,214,254,.78)",
+            } : {
+              borderColor: "rgba(255,255,255,.06)",
+              background: "rgba(255,255,255,.025)",
+              color: "rgba(255,255,255,.25)",
+            }}
+            title={manuscriptDirty ? "Sincroniza el manuscrito antes de abrir Dirección" : "Abrir Dirección avanzada"}
+            aria-label="Abrir Dirección avanzada"
+          >
+            <Bot className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Dirección</span>
+          </button>
           <motion.button
             whileTap={{ scale: 0.93 }}
             onClick={saveDraft}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-sans"
+            className="flex min-h-11 items-center gap-1 rounded-lg px-2.5 text-xs font-sans"
             style={{
               background: "rgba(255,255,255,0.05)",
               border:     "1px solid rgba(255,255,255,0.1)",
               color:      "rgba(255,255,255,0.5)",
             }}
+            aria-label="Guardar borrador"
           >
-            <Save className="w-3 h-3" /> Borrador
+            <Save className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Borrador</span>
           </motion.button>
 
           {form.status === "published" && (
             <motion.button
               whileTap={{ scale: 0.93 }}
               onClick={unpublish}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-sans"
+              className="flex min-h-11 items-center gap-1 rounded-lg px-2.5 text-xs font-sans"
               style={{ background: "rgba(255,100,100,0.1)", color: "rgba(255,100,100,0.7)" }}
+              aria-label="Despublicar obra"
             >
-              <EyeOff className="w-3 h-3" /> Despublicar
+              <EyeOff className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Despublicar</span>
             </motion.button>
           )}
 
           <motion.button
             whileTap={{ scale: 0.93 }}
             onClick={publish}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-sans font-semibold"
+            className="flex min-h-11 items-center gap-1 rounded-lg px-2.5 text-xs font-sans font-semibold"
             style={{
               background: `linear-gradient(135deg, ${gc.glow}cc, ${gc.color})`,
               color:      "rgba(0,0,0,0.85)",
               boxShadow:  `0 2px 12px ${gc.glow}50`,
             }}
+            aria-label="Publicar obra"
           >
-            <Globe className="w-3 h-3" /> Publicar
+            <Globe className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Publicar</span>
           </motion.button>
         </div>
       </div>
@@ -720,7 +856,7 @@ export default function Editor() {
       </AnimatePresence>
 
       {/* ── LAYOUT PRINCIPAL ── */}
-      <div className={`pt-14 flex flex-col md:flex-row md:gap-0 mx-auto transition-[max-width] duration-300 ${focusMode ? "max-w-4xl" : "max-w-6xl"}`}>
+      <div className={`pt-16 flex flex-col md:flex-row md:gap-0 mx-auto transition-[max-width] duration-300 ${focusMode ? "max-w-4xl" : "max-w-6xl"}`}>
 
         {/* ── PANEL IZQUIERDO — METADATA + PORTADA ── */}
         {!focusMode && <div
@@ -761,7 +897,7 @@ export default function Editor() {
                 transition={{ duration: 0.22, ease: "easeInOut" }}
                 className="overflow-hidden"
               >
-                <div className="md:sticky md:top-14 overflow-y-auto md:max-h-[calc(100vh-56px)]">
+                <div className="md:sticky md:top-16 overflow-y-auto md:max-h-[calc(100vh-64px)]">
 
                   {/* Tabs: Meta / Portada */}
                   <div className="flex border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
@@ -993,7 +1129,7 @@ export default function Editor() {
         </div>}
 
         {/* ── PANEL DERECHO — ESCRITURA ── */}
-        <div className="flex-1 flex flex-col min-h-[calc(100vh-56px)]">
+        <div className="flex-1 flex flex-col min-h-[calc(100vh-64px)]">
 
           {/* Tabs de capítulos */}
           {form.type === "book" && (
@@ -1005,7 +1141,7 @@ export default function Editor() {
                 <div key={i} className="relative group shrink-0">
                   <button
                     onClick={() => setActiveChapter(i)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-sans transition-all whitespace-nowrap"
+                    className="min-h-11 whitespace-nowrap rounded-lg px-3 text-xs font-sans transition-all"
                     style={activeChapter === i ? {
                       background: `${gc.glow}20`,
                       border:     `1px solid ${gc.color}45`,
@@ -1031,7 +1167,7 @@ export default function Editor() {
               ))}
               <button
                 onClick={addChapter}
-                className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-sans"
+                className="flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-xs font-sans"
                 style={{
                   background: "transparent",
                   border:     "1px dashed rgba(255,255,255,0.12)",
@@ -1063,56 +1199,11 @@ export default function Editor() {
                 />
               )}
 
-              <div className="flex items-center gap-1 rounded-xl border border-white/[.06] bg-white/[.02] p-1" role="tablist" aria-label="Estudio del capítulo">
-                {([
-                  { key: "write", label: t("chapter"), Icon: PenLine },
-                  { key: "music", label: t("narrativeMusicLabel"), Icon: Music2 },
-                  { key: "voice", label: t("startVoice"), Icon: Mic2 },
-                  { key: "direction", label: "DA", Icon: Bot },
-                ] as const).map(item => (
-                  <button key={item.key} role="tab" aria-selected={studioMode === item.key} onClick={() => setStudioMode(item.key)} className="flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-[11px] font-sans transition-colors" style={studioMode === item.key ? { color: gc.color, background: `${gc.glow}18`, border: `1px solid ${gc.color}30` } : { color: "rgba(255,255,255,.28)", border: "1px solid transparent" }}>
-                    <item.Icon className="h-3.5 w-3.5" />{item.label}
-                  </button>
-                ))}
-              </div>
-
-              {studioMode === "music" && typeof form.id === "number" && form.id < 1_000_000_000_000 && (
-                <ChapterSoundtrackPicker bookId={form.id} chapterIndex={activeChapter} accent={gc.color} />
-              )}
-
-              {studioMode === "music" && typeof form.id === "number" && form.id < 1_000_000_000_000 && (
-                <NarrativeStudioPanel
-                  bookId={form.id}
-                  chapterIndex={activeChapter}
-                  content={form.chapters[activeChapter]?.content || ""}
-                  accent={gc.color}
-                />
-              )}
-
-              {studioMode === "voice" && typeof form.id === "number" && form.id < 1_000_000_000_000 && (
-                <SpeechStudioPanel
-                  bookId={form.id}
-                  chapterIndex={activeChapter}
-                  content={form.chapters[activeChapter]?.content || ""}
-                  accent={gc.color}
-                />
-              )}
-
-              {studioMode === "direction" && typeof form.id === "number" && form.id < 1_000_000_000_000 && (
-                <DirectionAgentPanel
-                  bookId={form.id}
-                  chapterIndex={activeChapter}
-                  content={form.chapters[activeChapter]?.content || ""}
-                  accent={gc.color}
-                  saveSignal={saveStatus}
-                />
-              )}
-
               <textarea
                 value={form.chapters[activeChapter]?.content || ""}
                 onChange={e => updateChapter(activeChapter, "content", e.target.value)}
                 placeholder={t("chapterContentPlaceholder")}
-                className={`flex-1 bg-transparent text-zinc-300 outline-none resize-none font-serif leading-[2] ${studioMode === "write" ? "" : "opacity-55"}`}
+                className="flex-1 resize-none bg-transparent font-serif leading-[2] text-zinc-300 outline-none"
                 style={{ fontSize: focusMode ? "18px" : "16px", minHeight: focusMode ? "78vh" : "60vh", caretColor: gc.color, maxWidth: focusMode ? 760 : undefined, width: "100%", marginInline: focusMode ? "auto" : undefined }}
                 onFocus={e => {
                   // En móvil, evita que el teclado tape el cursor

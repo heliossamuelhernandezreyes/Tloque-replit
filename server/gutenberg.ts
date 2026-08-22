@@ -38,6 +38,26 @@ async function readBodyWithLimit(res: Response, maxBytes: number): Promise<Uint8
   return out
 }
 
+// Node y algunos runtimes mínimos han tratado históricamente la etiqueta
+// windows-1252 como ISO-8859-1. La tabla explícita conserva comillas, rayas y
+// otros signos editoriales sin depender del ICU instalado en el servidor.
+const WINDOWS_1252_C1 = [
+  "€", "\u0081", "‚", "ƒ", "„", "…", "†", "‡",
+  "ˆ", "‰", "Š", "‹", "Œ", "\u008d", "Ž", "\u008f",
+  "\u0090", "‘", "’", "“", "”", "•", "–", "—",
+  "˜", "™", "š", "›", "œ", "\u009d", "ž", "Ÿ",
+] as const
+
+function decodeWindows1252(bytes: Uint8Array): string {
+  let text = ""
+  for (const byte of bytes) {
+    text += byte >= 0x80 && byte <= 0x9f
+      ? WINDOWS_1252_C1[byte - 0x80]
+      : String.fromCharCode(byte)
+  }
+  return text
+}
+
 // ── INTERFACES ───────────────────────────────────────────
 export interface GutenbergBook {
   id:            number
@@ -227,7 +247,7 @@ export async function downloadBookText(book: GutenbergBook): Promise<string> {
     // por lo que el respaldo para libros antiguos nunca llegaba a ejecutarse.
     return new TextDecoder("utf-8", { fatal: true }).decode(buffer)
   } catch {
-    return new TextDecoder("windows-1252").decode(buffer)
+    return decodeWindows1252(buffer)
   }
 }
 
