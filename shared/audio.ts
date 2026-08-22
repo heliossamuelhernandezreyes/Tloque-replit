@@ -1,12 +1,12 @@
 import { z } from "zod"
 import {
   DEFAULT_TLOQUE_SCORE_V2, TLOQUE_SCORE_COMPILER_V2, compileTloqueScoreV2,
-  linearScoreRecipeV2Schema, type LinearScoreRecipeV2, type LinearScoreTrackV2,
+  linearScoreRecipeV2Schema, type LinearScoreControlV2, type LinearScoreRecipeV2, type LinearScoreTrackV2,
 } from "./tloque-score-v2"
 export {
-  DEFAULT_TLOQUE_SCORE_V2, TLOQUE_SCORE_COMPILER_V2, compileTloqueScoreV2,
-  linearScorePlanV2Schema, linearScoreRecipeV2Schema,
-  type LinearScorePlanV2, type LinearScoreRecipeV2, type LinearScoreTrackV2,
+  DEFAULT_TLOQUE_SCORE_V2, TLOQUE_SCORE_COMPILER_V2, TLOQUE_SCORE_COMPILER_V2_LEGACY, compileTloqueScoreV2,
+  linearScoreControlV2Schema, linearScorePlanV2Schema, linearScoreRecipeV2Schema,
+  type LinearScoreControlV2, type LinearScorePlanV2, type LinearScoreRecipeV2, type LinearScoreTrackV2,
 } from "./tloque-score-v2"
 
 export const AUDIO_CONTRACT_VERSION = "tloque-audio-2026-08-v2" as const
@@ -91,6 +91,7 @@ export const anyLinearScoreRecipeSchema = z.union([linearScoreRecipeSchema, line
 export type LinearScorePlan = z.infer<typeof linearScorePlanSchema> | LinearScoreRecipeV2["plan"]
 export type LinearScoreRecipe = z.infer<typeof linearScoreRecipeSchema> | LinearScoreRecipeV2
 export type LinearScoreTrack = z.infer<typeof linearScoreTrackSchema> | LinearScoreTrackV2
+export type LinearScoreControl = LinearScoreControlV2
 
 export interface TloqueScoreDiagnostic {
   line: number
