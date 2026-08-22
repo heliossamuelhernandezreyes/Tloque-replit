@@ -16,6 +16,8 @@ export interface MusicCue {
   loop: boolean
   volume: number
   crossfadeSeconds: number
+  /** Studio-only full-scale monitoring; reader cues never set this. */
+  monitoring?: "program" | "reference"
 }
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
