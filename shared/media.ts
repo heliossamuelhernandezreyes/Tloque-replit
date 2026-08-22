@@ -28,6 +28,17 @@ export function isSafeAudioSource(value: string): boolean {
   }
 }
 
+export function isSafeSoundBankSource(value: string): boolean {
+  if (/^\/api\/audio\/modules\/[a-f0-9]{64}\.(?:sf2|sf3|dls)$/.test(value)) return true
+  if (!isSafeHttpsUrl(value, 2_000)) return false
+  try {
+    const path = new URL(value).pathname.toLowerCase()
+    return /\.(?:sf2|sf3|dls)$/.test(path)
+  } catch {
+    return false
+  }
+}
+
 // Clave relativa y opaca para almacenamiento de audiolibros. Nunca se acepta
 // una ruta absoluta, segmentos de navegación ni separadores de Windows: el
 // mismo valor puede terminar en disco local o en un firmador de objetos.

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowLeft, CheckCircle2, Download, Headphones, LibraryBig, Loader2, Music2,
-  FileDown, Package, Pencil, Play, Plus, RotateCcw, SlidersHorizontal, Square, Trash2, Upload,
+  ExternalLink, FileDown, Package, Pencil, Play, Plus, RotateCcw, SlidersHorizontal, Square, Trash2, Upload,
 } from "lucide-react"
 import { useLocation } from "wouter"
 import { useAuth } from "@/hooks/useAuth"
@@ -14,6 +14,10 @@ import {
   type LinearScoreRecipe, type ProceduralRecipe,
   type UiSoundEventKey, type UiSoundRecipe,
 } from "@shared/audio"
+import {
+  AUDIO_MODULE_SOURCES, AUDIO_SOURCE_REGISTRY_VERSION,
+  type AudioSourceStatus,
+} from "@shared/audio-module-sources"
 import { musicCueFor, type CatalogAudioAsset as AudioAsset } from "@/audio/catalog"
 import { cacheAudioResource, isAudioResourceCached, removeCachedAudioResource } from "@/audio/AudioResourceCache"
 import { downloadWav, estimateScoreExport, renderTloqueScoreToWav } from "@/audio/ScoreExporter"
@@ -43,6 +47,19 @@ const EMPTY: AudioAssetForm = {
 const SCORE_META = {
   title: "", artist: "", license: "Propio · Tloque", sourceName: "Compositor TloqueScore",
   sourceUrl: "", status: "draft" as AudioAsset["status"],
+}
+
+const SOURCE_STATUS: Record<AudioSourceStatus, { label: string; className: string }> = {
+  integrated: { label: "Integrado", className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-200" },
+  approved: { label: "Aprobado", className: "border-sky-400/20 bg-sky-400/10 text-sky-200" },
+  conversion: { label: "Requiere conversión", className: "border-amber-400/20 bg-amber-400/10 text-amber-200" },
+  review: { label: "En revisión", className: "border-orange-400/20 bg-orange-400/10 text-orange-200" },
+  excluded: { label: "Excluido", className: "border-red-400/20 bg-red-400/10 text-red-200" },
+}
+
+function moduleIdFor(name: string) {
+  return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "instrument-bank"
 }
 
 export default function AudioCatalogAdmin() {
@@ -242,6 +259,54 @@ export default function AudioCatalogAdmin() {
     },
   })
 
+  const uploadModule = useMutation({
+    mutationFn: async (file: File) => {
+      if (file.size > 500 * 1024 * 1024) throw new Error("El banco supera 500 MB. Usa SF3 comprimido o una URL HTTPS para módulos mayores.")
+      const res = await fetch("/api/admin/audio/module-uploads", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "X-Tloque-Filename": encodeURIComponent(file.name),
+        },
+        body: file,
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.message || "No se pudo importar el banco instrumental")
+      return body as {
+        url: string
+        sha256: string
+        bytes: number
+        extension: "sf2" | "sf3" | "dls"
+        originalName: string
+        deduplicated: boolean
+      }
+    },
+    onSuccess: upload => {
+      const title = upload.originalName.replace(/\.(sf2|sf3|dls)$/i, "") || "Banco instrumental"
+      setEditingId(null)
+      setForm({
+        ...EMPTY,
+        title,
+        kind: "music",
+        sourceType: "soundfont",
+        recipe: DEFAULT_PROCEDURAL_RECIPE,
+        texture: `Banco ${upload.extension.toUpperCase()}`,
+        tags: [`module:${moduleIdFor(title)}`, "instrument-bank", `format:${upload.extension}`, `sha256:${upload.sha256.slice(0, 16)}`],
+        packUrl: upload.url,
+        packBytes: upload.bytes,
+        packSha256: upload.sha256,
+        instrumentProgram: 0,
+        license: "Pendiente de verificar antes de publicar",
+        sourceName: `Carga directa · ${upload.originalName}`,
+        status: "draft",
+      })
+      setUploadMessage(`${upload.deduplicated ? "Banco ya existente" : "Banco importado"} · ${(upload.bytes / 1024 / 1024).toFixed(1)} MB · completa procedencia y licencia; permanecerá como borrador hasta que lo publiques.`)
+      setTab("library")
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    },
+  })
+
   const manageModule = useMutation({
     mutationFn: async ({ asset, install }: { asset: AudioAsset; install: boolean }) => {
       if (install) await cacheAudioResource(asset.packUrl, asset.packSha256)
@@ -435,6 +500,21 @@ export default function AudioCatalogAdmin() {
               <h2 className="text-sm font-semibold">Módulos instrumentales bajo demanda</h2>
               <p className="mt-1 text-xs text-zinc-500">La síntesis base siempre está incluida. Los bancos SF2/SF3 de mayor fidelidad se descargan uno por uno y pueden retirarse sin borrar partituras.</p>
             </div>
+            <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.04] p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">Importar banco desde este teléfono</p>
+                <p className="mt-1 text-[10px] text-zinc-500">SF2, SF3 o DLS · máximo 500 MB · contenido verificado · SHA-256 · deduplicación. Para móvil se recomienda SF3.</p>
+              </div>
+              <label className="cursor-pointer rounded-lg bg-amber-400 px-3 py-2 text-center text-xs font-semibold text-black">
+                {uploadModule.isPending ? <Loader2 className="inline w-4 h-4 animate-spin mr-1" /> : <Upload className="inline w-4 h-4 mr-1" />} Seleccionar banco
+                <input className="sr-only" type="file" accept=".sf2,.sf3,.dls,application/octet-stream" disabled={uploadModule.isPending} onChange={event => {
+                  const file = event.target.files?.[0]
+                  if (file) { setUploadMessage(""); uploadModule.mutate(file) }
+                  event.target.value = ""
+                }} />
+              </label>
+            </div>
+            {uploadModule.isError && <p className="rounded-lg bg-red-950/30 px-3 py-2 text-xs text-red-200">{(uploadModule.error as Error).message}</p>}
             <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 flex items-center justify-between gap-3">
               <div><p className="text-sm font-medium">Síntesis base Tloque</p><p className="text-[10px] text-zinc-500">Incluida · sin descarga · <code>module builtin</code></p></div>
               <CheckCircle2 className="w-5 h-5 text-emerald-300" />
@@ -457,6 +537,32 @@ export default function AudioCatalogAdmin() {
             })}
             {!qualityModules.length && <p className="rounded-xl border border-dashed border-white/10 p-4 text-xs text-zinc-500">Aún no hay bancos instrumentales. Créalo en Fonoteca como “Instrumentos SF2/SF3” y añade una etiqueta única como <code>module:orchestra-core</code>.</p>}
             {manageModule.isError && <p className="text-xs text-red-300">{(manageModule.error as Error).message}</p>}
+            <details className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+              <summary className="cursor-pointer text-sm font-medium">Motores, herramientas y bibliotecas evaluadas · {AUDIO_MODULE_SOURCES.length}</summary>
+              <p className="mt-2 text-[10px] leading-4 text-zinc-500">Registro {AUDIO_SOURCE_REGISTRY_VERSION}. Estos enlaces documentan procedencia; Tloque nunca consulta GitHub durante la reproducción. Cada banco publicado queda en la app y fijado por SHA-256.</p>
+              <div className="mt-3 grid gap-2">
+                {AUDIO_MODULE_SOURCES.map(source => {
+                  const status = SOURCE_STATUS[source.status]
+                  return (
+                    <article key={source.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
+                      <div className="flex flex-wrap items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-zinc-200">{source.name}</p>
+                          <p className="mt-1 text-[10px] text-zinc-500">{source.license} · {source.formats.join(" · ")}</p>
+                        </div>
+                        <span className={`rounded-full border px-2 py-1 text-[9px] ${status.className}`}>{status.label}</span>
+                      </div>
+                      <p className="mt-2 text-[11px] leading-4 text-zinc-400">{source.role}</p>
+                      <p className="mt-1 text-[10px] leading-4 text-zinc-500">{source.decision}</p>
+                      <div className="mt-2 flex flex-wrap gap-3 text-[10px]">
+                        <a href={source.repositoryUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sky-300">Repositorio <ExternalLink className="h-3 w-3" /></a>
+                        {source.documentationUrl && <a href={source.documentationUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sky-300">Guía <ExternalLink className="h-3 w-3" /></a>}
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            </details>
           </section>
         )}
 

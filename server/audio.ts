@@ -4,7 +4,7 @@ import { z } from "zod"
 import {
   audioAssets, audioEventBindings, audioFavorites, books, chapterAudioAssignments,
 } from "@shared/schema"
-import { isSafeAudioSource, isSafeHttpsUrl } from "@shared/media"
+import { isSafeAudioSource, isSafeHttpsUrl, isSafeSoundBankSource } from "@shared/media"
 import {
   AUDIO_CONTRACT_VERSION, UI_SOUND_EVENTS, audioRecipeSchema, audioSourceTypeSchema,
   anyLinearScoreRecipeSchema, compileTloqueScore, proceduralRecipeSchema,
@@ -14,16 +14,6 @@ import { db } from "./db"
 import { isAdmin, requireAdmin } from "./auth"
 import { rateLimit } from "./rateLimit"
 import { registerAudioUploadRoutes } from "./audioUploads"
-
-function isSafeSoundBankSource(value: string): boolean {
-  if (!isSafeHttpsUrl(value, 2_000)) return false
-  try {
-    const path = new URL(value).pathname.toLowerCase()
-    return [".sf2", ".sf3", ".dls"].some(extension => path.endsWith(extension))
-  } catch {
-    return false
-  }
-}
 
 export const audioAssetInputSchema = z.object({
   title: z.string().trim().min(1).max(160),
@@ -63,7 +53,7 @@ export const audioAssetInputSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La síntesis necesita una receta válida" })
   }
   if (value.sourceType === "soundfont" && !isSafeSoundBankSource(value.packUrl)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["packUrl"], message: "El banco debe ser una URL HTTPS .sf2, .sf3 o .dls" })
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["packUrl"], message: "El banco debe ser una importación interna o una URL HTTPS .sf2, .sf3 o .dls" })
   }
   if (value.sourceType === "soundfont" && value.tags.some(tag => tag.startsWith("module:")) && (!value.packBytes || !value.packSha256)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["packSha256"], message: "Un módulo descargable necesita tamaño y huella SHA-256" })
