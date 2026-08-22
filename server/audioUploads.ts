@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto"
-import { Client } from "@replit/object-storage"
+import type { Client } from "@replit/object-storage"
 import express, { type Express } from "express"
 import { requireAdmin } from "./auth"
+import { audioStorage } from "./audioStorage"
 import { rateLimit } from "./rateLimit"
 
 const MAX_UPLOAD_BYTES = 96 * 1024 * 1024
-const storage = new Client()
 
 function audioType(bytes: Buffer): { extension: "mp3" | "wav"; mimeType: string } | null {
   const wav = bytes.length >= 12
@@ -25,11 +25,14 @@ function errorMessage(error: unknown) {
 
 export function registerAudioUploadRoutes(app: Express) {
   app.get("/api/admin/audio/uploads/status", requireAdmin, async (_req, res) => {
+    let storage: Client | undefined
     try {
+      storage = audioStorage.get()
       const result = await storage.list({ maxResults: 1, prefix: "audio/fonoteca/" })
       if (!result.ok) throw result.error
       res.json({ ready: true, maxUploadBytes: MAX_UPLOAD_BYTES })
     } catch (error) {
+      audioStorage.reset(storage)
       res.status(503).json({
         ready: false,
         maxUploadBytes: MAX_UPLOAD_BYTES,
@@ -50,7 +53,9 @@ export function registerAudioUploadRoutes(app: Express) {
       if (!detected) return res.status(415).json({ message: "El contenido no es un MP3 o WAV válido" })
       const sha256 = createHash("sha256").update(req.body).digest("hex")
       const objectName = `audio/fonoteca/${sha256}.${detected.extension}`
+      let storage: Client | undefined
       try {
+        storage = audioStorage.get()
         const exists = await storage.exists(objectName)
         if (!exists.ok) throw exists.error
         if (!exists.value) {
@@ -68,6 +73,7 @@ export function registerAudioUploadRoutes(app: Express) {
           deduplicated: exists.value,
         })
       } catch (error) {
+        audioStorage.reset(storage)
         console.error("Audio upload failed:", error)
         res.status(503).json({ message: "App Storage no está listo. Conecta un bucket en Replit e inténtalo de nuevo." })
       }
@@ -81,12 +87,21 @@ export function registerAudioUploadRoutes(app: Express) {
     const objectName = `audio/fonoteca/${match[1]}.${match[2]}`
     res.setHeader("Content-Type", match[2] === "wav" ? "audio/wav" : "audio/mpeg")
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable")
-    const stream = storage.downloadAsStream(objectName, { decompress: false })
-    stream.once("error", error => {
-      console.error("Audio stream failed:", error)
-      if (!res.headersSent) res.status(404).end()
-      else res.destroy(error)
-    })
-    stream.pipe(res)
+    let storage: Client | undefined
+    try {
+      storage = audioStorage.get()
+      const stream = storage.downloadAsStream(objectName, { decompress: false })
+      stream.once("error", error => {
+        audioStorage.reset(storage)
+        console.error("Audio stream failed:", error)
+        if (!res.headersSent) res.status(404).end()
+        else res.destroy(error)
+      })
+      stream.pipe(res)
+    } catch (error) {
+      audioStorage.reset(storage)
+      console.error("Audio stream initialization failed:", error)
+      res.status(503).end()
+    }
   })
 }
