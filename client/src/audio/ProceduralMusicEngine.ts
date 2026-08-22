@@ -1,4 +1,4 @@
-import { proceduralRecipeFor } from "@shared/audio"
+import { proceduralRecipeFor, type ProceduralRecipe } from "@shared/audio"
 import {
   compileMusicBrainScore,
   musicBrainScoreForProceduralRecipe,
@@ -33,6 +33,7 @@ export class ProceduralMusicEngine {
   private nodes: any[] = []
   private output: any = null
   private score: MusicBrainScoreV1 | null = null
+  private recipe: ProceduralRecipe | null = null
   private compilation: MusicBrainCompilationV1 | null = null
   private activeRegionId: string | null = null
   private requestedRegionId: string | null = null
@@ -48,6 +49,7 @@ export class ProceduralMusicEngine {
       this.tone = Tone
       await Tone.start()
       const recipe = proceduralRecipeFor(cue.recipe)
+      this.recipe = recipe
       const output = new Tone.Gain(0)
       const compressor = new Tone.Compressor({ threshold: -18, ratio: 3, attack: 0.08, release: 0.45 })
       const reverb = new Tone.Reverb({ decay: 5 + recipe.movement * 6, preDelay: 0.08, wet: 0.28 + recipe.movement * 0.28 })
@@ -102,8 +104,9 @@ export class ProceduralMusicEngine {
   setNarrativeScore(score: MusicBrainScoreV1 | null) {
     this.score = score
     if (!score) this.requestedRegionId = null
-    if (!score || !this.tone || !this.cue) return
-    this.compilation = compileMusicBrainScore(score)
+    const effectiveScore = score ?? (this.recipe ? musicBrainScoreForProceduralRecipe(this.recipe) : null)
+    if (!effectiveScore || !this.tone || !this.cue) return
+    this.compilation = compileMusicBrainScore(effectiveScore)
     const region = this.compilation.plan.regions.find(candidate => candidate.regionId === this.requestedRegionId)
       ?? this.compilation.plan.regions[0]
     this.startRegion(region.regionId, false)
@@ -169,6 +172,7 @@ export class ProceduralMusicEngine {
     this.bell = null
     this.output = null
     this.compilation = null
+    this.recipe = null
     this.activeRegionId = null
   }
   private setState(state: MusicState, cue: MusicCue | null) { this.listener(state, cue) }
