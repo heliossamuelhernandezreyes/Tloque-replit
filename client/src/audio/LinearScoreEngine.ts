@@ -3,8 +3,9 @@ import { linearScoreRecipeFor, type LinearScoreTrack } from "@shared/audio"
 import { fetchAudioResource } from "./AudioResourceCache"
 import type { MusicCue, MusicState } from "./MusicEngine"
 import {
-  articulationDurationFactor, midiNotesToFrequencies, scoreTrackEnvelope,
-  scoreMonitorVolume, scoreRenderProfile, scoreTrackTimbre, scoreVelocityGain,
+  articulationDurationFactor, articulationVelocityFactor, midiNotesToFrequencies, scoreBrightnessFrequency, scorePedalReleaseTime,
+  scoreMonitorVolume, scoreRenderProfile, scoreTrackBrightness, scoreTrackEnvelope,
+  scoreTrackExpression, scoreTrackTimbre, scoreTrackVibrato, scoreVelocityGain,
 } from "./ScoreAudioMath"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
@@ -20,6 +21,7 @@ export class LinearScoreEngine {
   private moduleTimer = 0
   private completionTimer = 0
   private synths = new Map<string, any>()
+  private trackNodes = new Map<string, { filter: any; gain: any; vibrato: any; baseFilterHz: number; baseGain: number }>()
   private nodes: any[] = []
   private master = 0.35
   private duckFactor = 1
@@ -64,12 +66,15 @@ export class LinearScoreEngine {
       for (const track of recipe.plan.tracks) {
         const synth = this.createSynth(Tone, track, maxPolyphony)
         const timbre = scoreTrackTimbre(track)
-        const filter = new Tone.Filter({ type: "lowpass", frequency: timbre.filterHz, rolloff: -24, Q: timbre.filterQ })
+        const filter = new Tone.Filter({ type: "lowpass", frequency: scoreBrightnessFrequency(timbre.filterHz, scoreTrackBrightness(track)), rolloff: -24, Q: timbre.filterQ })
+        const vibrato = new Tone.Vibrato({ frequency: 5.2, depth: 0.22, wet: scoreTrackVibrato(track) * 0.55 })
         const panner = new Tone.Panner(track.pan)
-        const gain = new Tone.Gain(track.gain * timbre.level)
-        synth.chain(filter, panner, gain, chorus)
+        const baseGain = track.gain * timbre.level
+        const gain = new Tone.Gain(baseGain * scoreTrackExpression(track))
+        synth.chain(vibrato, filter, panner, gain, chorus)
         this.synths.set(track.id, synth)
-        this.nodes.push(filter, panner, gain)
+        this.trackNodes.set(track.id, { filter, gain, vibrato, baseFilterHz: timbre.filterHz, baseGain })
+        this.nodes.push(vibrato, filter, panner, gain)
       }
 
       const transport = Tone.getTransport()
@@ -79,17 +84,39 @@ export class LinearScoreEngine {
       transport.timeSignature = [recipe.plan.meter.numerator, recipe.plan.meter.denominator]
       const beatSeconds = 60 / recipe.plan.bpm
 
+      if (recipe.version === 2) {
+        for (const control of recipe.plan.controls) {
+          transport.schedule(time => {
+            const nodes = this.trackNodes.get(control.trackId)
+            if (!nodes) return
+            const ramp = Math.max(0.001, control.rampSeconds)
+            if (control.expression !== null) nodes.gain.gain.rampTo(nodes.baseGain * control.expression, ramp, time)
+            if (control.brightness !== null) nodes.filter.frequency.rampTo(scoreBrightnessFrequency(nodes.baseFilterHz, control.brightness), ramp, time)
+            if (control.vibrato !== null) nodes.vibrato.wet.rampTo(control.vibrato * 0.55, ramp, time)
+            if (control.pitchBend !== null) this.synths.get(control.trackId)?.set({ detune: control.pitchBend * 100 })
+          }, control.timeSeconds)
+        }
+      }
+
       for (const event of recipe.plan.events) {
         transport.schedule(time => {
           const articulation = "articulation" in event ? event.articulation : "normal"
-          const duration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds)
+          const eventStart = "timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds
+          const baseDuration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds)
             * articulationDurationFactor(articulation)
-          this.synths.get(event.trackId)?.triggerAttackRelease(
-            midiNotesToFrequencies(event.notes),
-            duration,
-            time,
-            scoreVelocityGain(event.velocity),
-          )
+          const duration = Math.max(baseDuration, scorePedalReleaseTime(recipe, event.trackId, eventStart + baseDuration) - eventStart)
+          const synth = this.synths.get(event.trackId)
+          const frequencies = midiNotesToFrequencies(event.notes)
+          const velocity = Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation))
+          if (articulation === "tremolo") {
+            const pulseSeconds = 0.12
+            const pulses = Math.max(1, Math.ceil(baseDuration / pulseSeconds))
+            for (let pulse = 0; pulse < pulses; pulse += 1) {
+              synth?.triggerAttackRelease(frequencies, Math.min(0.085, Math.max(0.035, baseDuration - pulse * pulseSeconds)), time + pulse * pulseSeconds, velocity)
+            }
+          } else {
+            synth?.triggerAttackRelease(frequencies, duration, time, velocity)
+          }
         }, "timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds)
       }
 
@@ -244,19 +271,91 @@ export class LinearScoreEngine {
       synth.programChange(channel, Number(program), { time: startAt })
       synth.controllerChange(channel, 7 as any, Math.round(Math.min(1, track.gain * timbre.level) * 127), { time: startAt })
       synth.controllerChange(channel, 10 as any, Math.round((track.pan + 1) * 63.5), { time: startAt })
+      synth.controllerChange(channel, 11 as any, Math.round(scoreTrackExpression(track) * 127), { time: startAt })
+      synth.controllerChange(channel, 74 as any, Math.round(scoreTrackBrightness(track) * 127), { time: startAt })
+      synth.controllerChange(channel, 1 as any, Math.round(scoreTrackVibrato(track) * 127), { time: startAt })
+      synth.controllerChange(channel, 64 as any, 0, { time: startAt })
+      synth.controllerChange(channel, 91 as any, Math.round((0.18 + timbre.level * 0.18) * 127), { time: startAt })
+      synth.pitchWheelRange(channel, 2, { time: startAt })
+      synth.pitchWheel(channel, 8_192, { time: startAt })
     }
 
     const scheduleCycle = (cycleStart: number) => {
+      const states = new Map(recipe.plan.tracks.slice(0, 16).map(track => [track.id, {
+        expression: scoreTrackExpression(track),
+        brightness: scoreTrackBrightness(track),
+        vibrato: scoreTrackVibrato(track),
+        pitchBend: 0,
+      }]))
+      for (const track of recipe.plan.tracks.slice(0, 16)) {
+        const channel = channels.get(track.id)!
+        synth.controllerChange(channel, 11 as any, Math.round(scoreTrackExpression(track) * 127), { time: cycleStart })
+        synth.controllerChange(channel, 74 as any, Math.round(scoreTrackBrightness(track) * 127), { time: cycleStart })
+        synth.controllerChange(channel, 1 as any, Math.round(scoreTrackVibrato(track) * 127), { time: cycleStart })
+        synth.controllerChange(channel, 64 as any, 0, { time: cycleStart })
+        synth.pitchWheel(channel, 8_192, { time: cycleStart })
+      }
+      if (recipe.version === 2) {
+        for (const control of recipe.plan.controls) {
+          const channel = channels.get(control.trackId)
+          const state = states.get(control.trackId)
+          if (channel === undefined || !state) continue
+          const controlAt = cycleStart + control.timeSeconds
+          const scheduleController = (key: "expression" | "brightness" | "vibrato", controller: number, target: number | null) => {
+            if (target === null) return
+            const steps = control.rampSeconds > 0 ? Math.max(2, Math.min(16, Math.ceil(control.rampSeconds * 8))) : 1
+            const from = state[key]
+            for (let step = 1; step <= steps; step += 1) {
+              const fraction = step / steps
+              synth.controllerChange(channel, controller as any, Math.round((from + (target - from) * fraction) * 127), {
+                time: controlAt + control.rampSeconds * fraction,
+              })
+            }
+            state[key] = target
+          }
+          scheduleController("expression", 11, control.expression)
+          scheduleController("brightness", 74, control.brightness)
+          scheduleController("vibrato", 1, control.vibrato)
+          if (control.pedal !== null) synth.controllerChange(channel, 64 as any, control.pedal ? 127 : 0, { time: controlAt })
+          if (control.pitchBend !== null) {
+            const steps = control.rampSeconds > 0 ? Math.max(2, Math.min(16, Math.ceil(control.rampSeconds * 8))) : 1
+            const from = state.pitchBend
+            for (let step = 1; step <= steps; step += 1) {
+              const fraction = step / steps
+              const bend = from + (control.pitchBend - from) * fraction
+              synth.pitchWheel(channel, Math.max(0, Math.min(16_383, Math.round(8_192 + bend / 2 * 8_191))), {
+                time: controlAt + control.rampSeconds * fraction,
+              })
+            }
+            state.pitchBend = control.pitchBend
+          }
+        }
+      }
       for (const event of recipe.plan.events) {
         const channel = channels.get(event.trackId)
         if (channel === undefined) continue
         const noteAt = cycleStart + ("timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds)
         const articulation = "articulation" in event ? event.articulation : "normal"
         const factor = articulationDurationFactor(articulation)
-        const releaseAt = noteAt + ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds) * factor
-        for (const note of event.notes) {
-          synth.noteOn(channel, note, Math.round(scoreVelocityGain(event.velocity) * 127), { time: noteAt })
-          synth.noteOff(channel, note, { time: releaseAt })
+        const baseDuration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds) * factor
+        const velocity = Math.round(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation)) * 127)
+        if (articulation === "tremolo") {
+          const pulseSeconds = 0.12
+          const pulses = Math.max(1, Math.ceil(baseDuration / pulseSeconds))
+          for (let pulse = 0; pulse < pulses; pulse += 1) {
+            const pulseAt = noteAt + pulse * pulseSeconds
+            const pulseEnd = pulseAt + Math.min(0.085, Math.max(0.035, baseDuration - pulse * pulseSeconds))
+            for (const note of event.notes) {
+              synth.noteOn(channel, note, velocity, { time: pulseAt })
+              synth.noteOff(channel, note, { time: pulseEnd })
+            }
+          }
+        } else {
+          const releaseAt = noteAt + baseDuration
+          for (const note of event.notes) {
+            synth.noteOn(channel, note, velocity, { time: noteAt })
+            synth.noteOff(channel, note, { time: releaseAt })
+          }
         }
       }
     }
@@ -296,6 +395,7 @@ export class LinearScoreEngine {
       synth.dispose?.()
     }
     this.synths.clear()
+    this.trackNodes.clear()
     for (const node of this.nodes) node?.dispose?.()
     this.nodes = []
     this.soundfont?.stopAll(true)
