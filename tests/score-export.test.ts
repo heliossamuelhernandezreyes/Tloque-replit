@@ -4,7 +4,7 @@ import { compileTloqueScore } from "../shared/audio"
 import { estimateScoreExport, renderTloqueScoreToWav } from "../client/src/audio/ScoreExporter"
 import {
   TLOQUE_SCORE_AUDIO_PROFILE, articulationDurationFactor, midiNoteToFrequency,
-  midiNotesToFrequencies, scoreRenderProfile, scoreTrackEnvelope, scoreTrackTimbre, scoreVelocityGain,
+  midiNotesToFrequencies, scoreMonitorVolume, scoreRenderProfile, scoreTrackEnvelope, scoreTrackTimbre, scoreVelocityGain,
 } from "../client/src/audio/ScoreAudioMath"
 
 const SOURCE = `TLOQUE_SCORE 2
@@ -26,7 +26,7 @@ test("el exportador calcula PCM profesional sin guardar audio durante la edició
   if (!compiled.ok) return
   const estimate = estimateScoreExport(compiled.recipe)
   assert.equal(estimate.audioProfile, TLOQUE_SCORE_AUDIO_PROFILE)
-  assert.equal(estimate.sampleRate, 48_000)
+  assert.equal(estimate.sampleRate, 96_000)
   assert.equal(estimate.bitDepth, 24)
   const wav = await renderTloqueScoreToWav(compiled.recipe, { quality: "preview" })
   const bytes = new Uint8Array(await wav.slice(0, 44).arrayBuffer())
@@ -44,7 +44,7 @@ test("el exportador calcula PCM profesional sin guardar audio durante la edició
 })
 
 test("la preescucha y el WAV comparten afinación, articulación y envolvente", () => {
-  assert.equal(TLOQUE_SCORE_AUDIO_PROFILE, "tloque-score-audio-v2")
+  assert.equal(TLOQUE_SCORE_AUDIO_PROFILE, "tloque-score-audio-v3-max")
   assert.equal(midiNoteToFrequency(69), 440)
   assert.ok(Math.abs(midiNoteToFrequency(60) - 261.625565) < 0.000001)
   assert.deepEqual(midiNotesToFrequencies([60, 64, 67]).map(value => Math.round(value)), [262, 330, 392])
@@ -52,7 +52,10 @@ test("la preescucha y el WAV comparten afinación, articulación y envolvente", 
   assert.equal(articulationDurationFactor("legato"), 1.08)
   assert.ok(scoreVelocityGain(0.5) > 0.5)
   assert.ok(scoreRenderProfile("master").polyphonyBudget > scoreRenderProfile("core").polyphonyBudget)
+  assert.equal(scoreRenderProfile("master").polyphonyBudget, 128)
   assert.ok(scoreRenderProfile("master").reverbWet > scoreRenderProfile("core").reverbWet)
+  assert.equal(scoreMonitorVolume(0.35, 1, 0.16, 0.72, true), 1)
+  assert.ok(Math.abs(scoreMonitorVolume(0.35, 1, 0.16, 0.72, false) - 0.04032) < 0.000001)
 
   const compiled = compileTloqueScore(SOURCE)
   assert.equal(compiled.ok, true)
@@ -60,4 +63,25 @@ test("la preescucha y el WAV comparten afinación, articulación y envolvente", 
   const track = compiled.recipe.plan.tracks[0]
   assert.deepEqual(scoreTrackEnvelope(track), { attack: 0.01, decay: 0.55, sustain: 0.42, release: 0.1 })
   assert.deepEqual(scoreTrackTimbre(track), { filterHz: 6_000, filterQ: 0.6, level: 1.08 })
+})
+
+
+test("el maestro máximo conserva resolución y render determinista", async () => {
+  const compiled = compileTloqueScore(SOURCE)
+  assert.equal(compiled.ok, true)
+  if (!compiled.ok) return
+  const studio = estimateScoreExport(compiled.recipe, "studio")
+  const master = estimateScoreExport(compiled.recipe, "master")
+  assert.deepEqual(
+    { sampleRate: studio.sampleRate, bitDepth: studio.bitDepth },
+    { sampleRate: 48_000, bitDepth: 24 },
+  )
+  assert.deepEqual(
+    { sampleRate: master.sampleRate, bitDepth: master.bitDepth },
+    { sampleRate: 96_000, bitDepth: 24 },
+  )
+  assert.ok(master.durationSeconds > studio.durationSeconds)
+  const first = new Uint8Array(await (await renderTloqueScoreToWav(compiled.recipe, { quality: "preview" })).arrayBuffer())
+  const second = new Uint8Array(await (await renderTloqueScoreToWav(compiled.recipe, { quality: "preview" })).arrayBuffer())
+  assert.deepEqual(first, second)
 })

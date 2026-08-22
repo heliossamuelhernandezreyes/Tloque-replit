@@ -1,6 +1,6 @@
 import type { LinearScoreTrack } from "@shared/audio"
 
-export const TLOQUE_SCORE_AUDIO_PROFILE = "tloque-score-audio-v2" as const
+export const TLOQUE_SCORE_AUDIO_PROFILE = "tloque-score-audio-v3-max" as const
 
 export interface ScoreEnvelope {
   attack: number
@@ -71,7 +71,18 @@ export function scoreRenderProfile(quality: "core" | "studio" | "master" = "stud
     return { polyphonyBudget: 32, reverbDecay: 2.4, reverbWet: 0.1, chorusWet: 0.04, stereoWidth: 0.56, makeup: 1.18, masterDrive: 1.46 }
   }
   if (quality === "master") {
-    return { polyphonyBudget: 64, reverbDecay: 4.2, reverbWet: 0.2, chorusWet: 0.1, stereoWidth: 0.68, makeup: 1.34, masterDrive: 1.72 }
+    return { polyphonyBudget: 128, reverbDecay: 5.8, reverbWet: 0.22, chorusWet: 0.12, stereoWidth: 0.75, makeup: 1.42, masterDrive: 1.82 }
   }
-  return { polyphonyBudget: 48, reverbDecay: 3.2, reverbWet: 0.16, chorusWet: 0.08, stereoWidth: 0.62, makeup: 1.28, masterDrive: 1.62 }
+  return { polyphonyBudget: 64, reverbDecay: 3.8, reverbWet: 0.17, chorusWet: 0.09, stereoWidth: 0.65, makeup: 1.3, masterDrive: 1.64 }
+}
+
+export function scoreMonitorVolume(
+  master: number,
+  cueVolume: number,
+  duckFactor: number,
+  narrativeGain: number,
+  reference: boolean,
+): number {
+  const programGain = reference ? cueVolume : master * cueVolume * duckFactor * narrativeGain
+  return Math.max(0, Math.min(1, programGain))
 }
