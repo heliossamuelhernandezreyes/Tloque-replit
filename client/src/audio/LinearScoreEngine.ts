@@ -2,6 +2,7 @@ import processorUrl from "spessasynth_lib/dist/spessasynth_processor.min.js?url"
 import { linearScoreRecipeFor, type LinearScoreTrack } from "@shared/audio"
 import { fetchAudioResource } from "./AudioResourceCache"
 import type { MusicCue, MusicState } from "./MusicEngine"
+import { articulationDurationFactor, midiNotesToFrequencies, scoreTrackEnvelope } from "./ScoreAudioMath"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 
@@ -60,9 +61,12 @@ export class LinearScoreEngine {
 
       for (const event of recipe.plan.events) {
         transport.schedule(time => {
+          const articulation = "articulation" in event ? event.articulation : "normal"
+          const duration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds)
+            * articulationDurationFactor(articulation)
           this.synths.get(event.trackId)?.triggerAttackRelease(
-            event.notes,
-            "durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds,
+            midiNotesToFrequencies(event.notes),
+            duration,
             time,
             event.velocity,
           )
@@ -118,15 +122,16 @@ export class LinearScoreEngine {
   dispose() { this.stop() }
 
   private createSynth(Tone: typeof import("tone"), track: LinearScoreTrack) {
+    const timing = scoreTrackEnvelope(track)
     const envelope = track.synth === "pad"
-      ? { attack: 1.1, decay: 0.7, sustain: 0.72, release: 3.8 }
+      ? { attack: timing.attack, decay: 0.7, sustain: 0.72, release: timing.release }
       : track.synth === "bell"
-        ? { attack: 0.008, decay: 1.1, sustain: 0.04, release: 2.4 }
+        ? { attack: timing.attack, decay: 1.1, sustain: 0.04, release: timing.release }
         : track.synth === "pluck"
-          ? { attack: 0.003, decay: 0.25, sustain: 0.08, release: 0.7 }
+          ? { attack: timing.attack, decay: 0.25, sustain: 0.08, release: timing.release }
           : track.synth === "bass"
-            ? { attack: 0.02, decay: 0.4, sustain: 0.55, release: 1.2 }
-            : { attack: 0.12, decay: 0.45, sustain: 0.52, release: 1.8 }
+            ? { attack: timing.attack, decay: 0.4, sustain: 0.55, release: timing.release }
+            : { attack: timing.attack, decay: 0.45, sustain: 0.52, release: timing.release }
     const oscillator = track.synth === "bass" ? "triangle" : track.synth === "pluck" ? "sine" : "fatsine"
     return new Tone.PolySynth(Tone.Synth, { oscillator: { type: oscillator as any }, envelope })
   }
@@ -181,7 +186,7 @@ export class LinearScoreEngine {
         if (channel === undefined) continue
         const noteAt = cycleStart + ("timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds)
         const articulation = "articulation" in event ? event.articulation : "normal"
-        const factor = articulation === "staccato" ? 0.55 : articulation === "legato" ? 1.06 : 0.96
+        const factor = articulationDurationFactor(articulation)
         const releaseAt = noteAt + ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds) * factor
         for (const note of event.notes) {
           synth.noteOn(channel, note, Math.round(event.velocity * 127), { time: noteAt })

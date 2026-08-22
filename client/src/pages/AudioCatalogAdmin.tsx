@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowLeft, CheckCircle2, Download, Headphones, LibraryBig, Loader2, Music2,
-  Package, Pencil, Play, Plus, RotateCcw, SlidersHorizontal, Square, Trash2, Upload,
+  FileDown, Package, Pencil, Play, Plus, RotateCcw, SlidersHorizontal, Square, Trash2, Upload,
 } from "lucide-react"
 import { useLocation } from "wouter"
 import { useAuth } from "@/hooks/useAuth"
@@ -381,6 +381,19 @@ export default function AudioCatalogAdmin() {
               <summary className="cursor-pointer text-zinc-300">Referencia rápida del lenguaje</summary>
               <p className="mt-2 font-mono leading-5">quality core|studio|master · module builtin|id<br />track id synth=… instrument=… program=0..127 role=… gain=… pan=…<br />section id form=exposition|development|recapitulation|coda bars=N repeat=N fade=N tempo=32..180<br />use track · compás:tiempo C3,Eb3,G3 duración velocity=… articulation=… · rest posición duración · end</p>
             </details>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-sky-400/20 bg-sky-400/5 p-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-sky-100">¿Quieres componer con una IA?</p>
+                <p className="mt-1 text-[11px] text-zinc-400">Descarga la skill oficial, entrégasela a tu IA y pídele una obra. Después pega aquí únicamente el código TloqueScore.</p>
+              </div>
+              <a
+                href="/downloads/TLOQUE_SCORE_AI_SKILL.md"
+                download="TLOQUE_SCORE_AI_SKILL.md"
+                className="inline-flex w-full sm:w-auto items-center justify-center rounded-lg bg-sky-300 px-4 py-2 text-xs font-semibold text-sky-950"
+              >
+                <FileDown className="mr-2 h-4 w-4" /> Descargar skill para IA
+              </a>
+            </div>
             {compiled && (
               <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 flex gap-2 text-xs text-emerald-200">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
