@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowLeft, CheckCircle2, Download, Headphones, LibraryBig, Loader2, Music2,
@@ -57,6 +57,74 @@ const SOURCE_STATUS: Record<AudioSourceStatus, { label: string; className: strin
   excluded: { label: "Excluido", className: "border-red-400/20 bg-red-400/10 text-red-200" },
 }
 
+const SCORE_STARTER = `TLOQUE_SCORE 2
+title "Obra sin título"
+tempo 72
+meter 4/4
+loop false
+seed 20260822
+humanize 0.10
+quality master
+module builtin
+
+track piano synth=warm instrument=piano.grand program=0 role=harmony gain=0.30 pan=-0.10 attack=0.04 release=1.8 expression=0.86 brightness=0.54 vibrato=0
+track violin synth=pad instrument=strings.violin program=40 role=melody gain=0.24 pan=0.12 attack=0.14 release=1.6 expression=0.72 brightness=0.62 vibrato=0.14
+
+section opening form=exposition bars=4 repeat=1 fade=2 tempo=72 rubato=0.08
+use piano
+1:1 C3,E3,G3 4 velocity=0.46 articulation=tenuto
+2:1 F3,A3,C4 4 velocity=0.44
+3:1 G3,B3,D4 4 velocity=0.46
+4:1 C3,E3,G3 4 velocity=0.40 articulation=tenuto
+use violin
+control 1:1 expression=0.58 brightness=0.48 vibrato=0.08 ramp=0
+1:1 E4 2 velocity=0.42 articulation=legato
+2:1 A4 2 velocity=0.46 articulation=legato
+control 3:1 expression=0.76 brightness=0.66 vibrato=0.24 ramp=2
+3:1 B4 2 velocity=0.50 articulation=tenuto
+4:1 E4 4 velocity=0.38 articulation=harmonic
+end`
+
+const SCORE_PALETTE = [
+  {
+    title: "Dinámica y color",
+    items: [
+      { label: "p · Suave", snippet: "control 1:1 expression=0.38 ramp=0\n" },
+      { label: "mf · Presente", snippet: "control 1:1 expression=0.66 ramp=0\n" },
+      { label: "f · Intenso", snippet: "control 1:1 expression=0.90 ramp=0\n" },
+      { label: "Crescendo", snippet: "control 1:1 expression=0.86 ramp=4\n" },
+      { label: "Diminuendo", snippet: "control 1:1 expression=0.34 ramp=4\n" },
+      { label: "Oscuro", snippet: "control 1:1 brightness=0.24 ramp=2\n" },
+      { label: "Brillante", snippet: "control 1:1 brightness=0.86 ramp=2\n" },
+    ],
+  },
+  {
+    title: "Cuerda y gesto",
+    items: [
+      { label: "Legato", snippet: "1:1 C5 1 velocity=0.48 articulation=legato\n" },
+      { label: "Staccato", snippet: "1:1 C5 0.5 velocity=0.50 articulation=staccato\n" },
+      { label: "Spiccato", snippet: "1:1 C5 0.5 velocity=0.52 articulation=spiccato\n" },
+      { label: "Pizzicato", snippet: "1:1 C5 0.5 velocity=0.48 articulation=pizzicato\n" },
+      { label: "Trémolo", snippet: "1:1 C5 2 velocity=0.46 articulation=tremolo\n" },
+      { label: "Armónico", snippet: "1:1 C6 2 velocity=0.38 articulation=harmonic\n" },
+      { label: "Acento", snippet: "1:1 C5 1 velocity=0.62 articulation=accent\n" },
+      { label: "Tenuto", snippet: "1:1 C5 2 velocity=0.46 articulation=tenuto\n" },
+    ],
+  },
+  {
+    title: "Interpretación",
+    items: [
+      { label: "Vibrato natural", snippet: "control 1:1 vibrato=0.24 ramp=1\n" },
+      { label: "Vibrato intenso", snippet: "control 1:1 vibrato=0.62 ramp=2\n" },
+      { label: "Sin vibrato", snippet: "control 1:1 vibrato=0 ramp=1\n" },
+      { label: "Pedal abajo", snippet: "control 1:1 pedal=down\n" },
+      { label: "Pedal arriba", snippet: "control 2:1 pedal=up\n" },
+      { label: "Bend arriba", snippet: "control 1:1 bend=1 ramp=1\n" },
+      { label: "Bend al centro", snippet: "control 1:2 bend=0 ramp=0.5\n" },
+    ],
+  },
+] as const
+
 function moduleIdFor(name: string) {
   return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
     .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "instrument-bank"
@@ -80,6 +148,7 @@ export default function AudioCatalogAdmin() {
   const [uploadMessage, setUploadMessage] = useState("")
   const [moduleCache, setModuleCache] = useState<Record<number, boolean>>({})
   const [bindingDrafts, setBindingDrafts] = useState<Record<string, BindingDraft>>({})
+  const scoreEditorRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => () => music.stop(), [music.stop])
 
@@ -387,6 +456,31 @@ export default function AudioCatalogAdmin() {
     setForm(current => ({ ...current, recipe: { ...sfx, voices: [{ ...sfx.voices[0], ...patch }] } }))
   }
 
+  function insertScoreSnippet(snippet: string) {
+    const editor = scoreEditorRef.current
+    const start = editor?.selectionStart ?? scoreSource.length
+    const end = editor?.selectionEnd ?? start
+    const before = scoreSource.slice(0, start)
+    const needsLineBreak = Boolean(before && !before.endsWith("\n") && !snippet.startsWith("\n"))
+    const insertion = `${needsLineBreak ? "\n" : ""}${snippet}`
+    const next = `${before}${insertion}${scoreSource.slice(end)}`
+    setScoreSource(next)
+    setCompiled(null)
+    compile.reset()
+    window.requestAnimationFrame(() => {
+      const cursor = start + insertion.length
+      scoreEditorRef.current?.focus()
+      scoreEditorRef.current?.setSelectionRange(cursor, cursor)
+    })
+  }
+
+  function loadScoreStarter() {
+    setScoreSource(SCORE_STARTER)
+    setCompiled(null)
+    compile.reset()
+    window.requestAnimationFrame(() => scoreEditorRef.current?.focus())
+  }
+
   function togglePreview(asset: AudioAsset) {
     if (preview === asset.id) {
       music.stop()
@@ -428,25 +522,58 @@ export default function AudioCatalogAdmin() {
         {tab === "composer" && (
           <section className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.035] p-4 space-y-4">
             <div>
-              <h2 className="text-sm font-semibold">Compositor de obras · TloqueScore V2</h2>
+              <h2 className="text-sm font-semibold">Compositor de obras · TloqueScore V2.1</h2>
               <p className="mt-1 text-xs text-zinc-500">El código es la obra maestra: editarlo recompila y cambia el audio. La reproducción no crea archivos; Exportar genera un WAV sólo cuando lo pides.</p>
-              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code> activa 128 voces, procesamiento multibanda y exportación 24-bit / 96 kHz. Los módulos SF2/SF3 añaden instrumentos muestreados bajo demanda.</p>
+              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code> activa 128 voces, interpretación expresiva, procesamiento multibanda y exportación 24-bit / 96 kHz. Los módulos SF2/SF3 añaden instrumentos muestreados bajo demanda.</p>
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <input className={inputClass} placeholder="Título del tema" value={scoreMeta.title} onChange={e => setScoreMeta(meta => ({ ...meta, title: e.target.value }))} />
               <input className={inputClass} placeholder="Compositor / DA" value={scoreMeta.artist} onChange={e => setScoreMeta(meta => ({ ...meta, artist: e.target.value }))} />
             </div>
+            <div className="flex flex-col sm:flex-row gap-2 rounded-xl border border-amber-400/20 bg-black/20 p-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-amber-100">Empieza desde cero o usa una estructura limpia</p>
+                <p className="mt-1 text-[10px] text-zinc-500">El editor permanece vacío hasta que tú escribes, pegas o cargas esta plantilla.</p>
+              </div>
+              <button type="button" onClick={loadScoreStarter} className="min-h-11 rounded-lg border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-xs font-semibold text-amber-100">
+                Crear obra base
+              </button>
+            </div>
             <textarea
+              ref={scoreEditorRef}
               className={`${inputClass} min-h-[360px] font-mono text-[12px] leading-5 resize-y`}
               spellCheck={false}
               aria-label="Código TloqueScore"
               placeholder="Pega o escribe aquí una obra TLOQUE_SCORE 2"
               value={scoreSource}
-              onChange={event => { setScoreSource(event.target.value); setCompiled(null) }}
+              onChange={event => { setScoreSource(event.target.value); setCompiled(null); compile.reset() }}
             />
+            <details className="rounded-xl border border-amber-300/20 bg-amber-300/[0.035] p-3 text-xs" open>
+              <summary className="cursor-pointer font-medium text-amber-100">Paleta expresiva táctil</summary>
+              <p className="mt-2 text-[10px] leading-4 text-zinc-500">Coloca el cursor dentro de una sección, después de <code>use nombre-del-track</code>, y toca un gesto. Cambia <code>1:1</code> por el compás y tiempo deseados.</p>
+              <div className="mt-3 space-y-3">
+                {SCORE_PALETTE.map(group => (
+                  <div key={group.title}>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">{group.title}</p>
+                    <div className="flex gap-2 overflow-x-auto pb-1 snap-x">
+                      {group.items.map(item => (
+                        <button
+                          type="button"
+                          key={item.label}
+                          onClick={() => insertScoreSnippet(item.snippet)}
+                          className="min-h-11 shrink-0 snap-start rounded-lg border border-white/10 bg-white/[0.055] px-3 py-2 text-left text-[11px] text-zinc-200 active:bg-amber-300 active:text-black"
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
             <details className="rounded-xl border border-white/10 p-3 text-xs text-zinc-400">
               <summary className="cursor-pointer text-zinc-300">Referencia rápida del lenguaje</summary>
-              <p className="mt-2 font-mono leading-5">quality core|studio|master · module builtin|id<br />track id synth=… instrument=… program=0..127 role=… gain=… pan=…<br />section id form=exposition|development|recapitulation|coda bars=N repeat=N fade=N tempo=32..180<br />use track · compás:tiempo C3,Eb3,G3 duración velocity=… articulation=… · rest posición duración · end</p>
+              <p className="mt-2 font-mono leading-5">humanize 0..1 · quality core|studio|master · module builtin|id<br />track id synth=… instrument=… program=0..127 role=… gain=… pan=… expression=… brightness=… vibrato=…<br />section id form=exposition|development|recapitulation|coda bars=N repeat=N fade=N tempo=32..180 rubato=0..0.35<br />use track · control compás:tiempo expression=… brightness=… vibrato=… pedal=down|up bend=-2..2 ramp=0..16<br />compás:tiempo C3,Eb3,G3 duración velocity=… articulation=normal|legato|staccato|tenuto|accent|spiccato|pizzicato|tremolo|harmonic · rest posición duración · end</p>
             </details>
             <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-sky-400/20 bg-sky-400/5 p-3">
               <div className="min-w-0 flex-1">
@@ -464,13 +591,13 @@ export default function AudioCatalogAdmin() {
             {compiled && (
               <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 flex gap-2 text-xs text-emerald-200">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>Compilada: {compiled.plan.totalBars} compases · {compiled.plan.tracks.length} pistas · {compiled.plan.events.length} eventos · {compiled.plan.bpm} BPM · {compiled.plan.sourceHash}{compiled.version === 2 ? ` · ${compiled.plan.quality} · módulo ${compiled.plan.moduleId}` : ""}</span>
+                <span>Compilada: {compiled.plan.totalBars} compases · {compiled.plan.tracks.length} pistas · {compiled.plan.events.length} notas{compiled.version === 2 ? ` · ${compiled.plan.controls.length} gestos` : ""} · {compiled.plan.bpm} BPM · {compiled.plan.sourceHash}{compiled.version === 2 ? ` · ${compiled.plan.quality} · módulo ${compiled.plan.moduleId}` : ""}</span>
               </div>
             )}
             {compiled?.version === 2 && compiled.plan.moduleId !== "builtin" && !compiledModule && (
               <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-200">Falta el módulo <code>module:{compiled.plan.moduleId}</code>. Tloque puede previsualizar con síntesis base, pero exige el banco publicado para guardar esta versión.</p>
             )}
-            {compile.isError && <pre className="whitespace-pre-wrap rounded-xl bg-red-950/30 p-3 text-xs text-red-200">{(compile.error as Error).message}</pre>}
+            {compile.isError && <pre role="alert" className="whitespace-pre-wrap rounded-xl border border-red-400/20 bg-red-950/30 p-3 text-xs text-red-200">{(compile.error as Error).message}</pre>}
             <div className="grid sm:grid-cols-3 gap-3">
               <input className={inputClass} placeholder="Licencia / autorización" value={scoreMeta.license} onChange={e => setScoreMeta(meta => ({ ...meta, license: e.target.value }))} />
               <input className={inputClass} placeholder="Procedencia" value={scoreMeta.sourceName} onChange={e => setScoreMeta(meta => ({ ...meta, sourceName: e.target.value }))} />
