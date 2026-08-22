@@ -1,7 +1,7 @@
 import { linearScoreRecipeFor, type LinearScoreRecipe, type LinearScoreTrack } from "@shared/audio"
 import {
-  TLOQUE_SCORE_AUDIO_PROFILE, articulationDurationFactor, midiNoteToFrequency, scoreTrackEnvelope,
-  scoreRenderProfile, scoreTrackTimbre, scoreVelocityGain,
+  TLOQUE_SCORE_AUDIO_PROFILE, articulationDurationFactor, articulationVelocityFactor, midiNoteToFrequency, scoreTrackEnvelope,
+  scoreExpressionStateAt, scorePedalReleaseTime, scoreRenderProfile, scoreTrackTimbre, scoreVelocityGain,
 } from "./ScoreAudioMath"
 
 export type ScoreExportQuality = "preview" | "studio" | "master"
@@ -48,46 +48,63 @@ function partial(phase: number, multiple: number, frequency: number, sampleRate:
   return frequency * multiple < sampleRate * 0.46 ? Math.sin(phase * multiple) : 0
 }
 
-function oscillator(synth: LinearScoreTrack["synth"], phase: number, elapsed: number, frequency: number, sampleRate: number) {
+function oscillator(
+  synth: LinearScoreTrack["synth"],
+  phase: number,
+  elapsed: number,
+  frequency: number,
+  sampleRate: number,
+  brightness: number,
+  articulation: string,
+) {
+  const color = 0.42 + Math.max(0, Math.min(1, brightness)) * 1.08
+  if (articulation === "harmonic") {
+    return Math.sin(phase * 2) * 0.72
+      + partial(phase, 4, frequency, sampleRate) * 0.18 * color
+      + partial(phase, 6, frequency, sampleRate) * 0.1 * color
+  }
+  let sample: number
   if (synth === "pad") {
     const motion = 0.96 + Math.sin(elapsed * Math.PI * 0.34) * 0.04
-    return motion * (
+    sample = motion * (
       Math.sin(phase * 0.994) * 0.27
       + Math.sin(phase) * 0.34
       + Math.sin(phase * 1.006) * 0.27
-      + partial(phase, 2, frequency, sampleRate) * 0.08
-      + partial(phase, 3, frequency, sampleRate) * 0.04
+      + partial(phase, 2, frequency, sampleRate) * 0.08 * color
+      + partial(phase, 3, frequency, sampleRate) * 0.04 * color
     )
-  }
-  if (synth === "bell") {
+  } else if (synth === "bell") {
     const shimmer = Math.exp(-elapsed * 0.72)
-    return Math.sin(phase) * 0.44
-      + partial(phase, 2.01, frequency, sampleRate) * 0.24 * shimmer
-      + partial(phase, 3.99, frequency, sampleRate) * 0.2 * shimmer
-      + partial(phase, 6.02, frequency, sampleRate) * 0.12 * shimmer
-  }
-  if (synth === "pluck") {
+    sample = Math.sin(phase) * 0.44
+      + partial(phase, 2.01, frequency, sampleRate) * 0.24 * shimmer * color
+      + partial(phase, 3.99, frequency, sampleRate) * 0.2 * shimmer * color
+      + partial(phase, 6.02, frequency, sampleRate) * 0.12 * shimmer * color
+  } else if (synth === "pluck") {
     const decay = 0.3 + Math.exp(-elapsed * 3.4) * 0.7
-    return decay * (
+    sample = decay * (
       Math.sin(phase) * 0.5
-      + partial(phase, 2, frequency, sampleRate) * 0.25
-      + partial(phase, 3, frequency, sampleRate) * 0.14
-      + partial(phase, 4, frequency, sampleRate) * 0.07
-      + partial(phase, 5, frequency, sampleRate) * 0.04
+      + partial(phase, 2, frequency, sampleRate) * 0.25 * color
+      + partial(phase, 3, frequency, sampleRate) * 0.14 * color
+      + partial(phase, 4, frequency, sampleRate) * 0.07 * color
+      + partial(phase, 5, frequency, sampleRate) * 0.04 * color
     )
+  } else if (synth === "bass") {
+    sample = Math.sin(phase) * 0.72
+      + partial(phase, 2, frequency, sampleRate) * 0.12 * color
+      + partial(phase, 3, frequency, sampleRate) * 0.11 * color
+      + partial(phase, 5, frequency, sampleRate) * 0.05 * color
+  } else {
+    const hammer = Math.exp(-elapsed * 5.2)
+    sample = Math.sin(phase) * 0.56
+      + partial(phase, 2, frequency, sampleRate) * (0.18 + hammer * 0.08) * color
+      + partial(phase, 3, frequency, sampleRate) * 0.1 * color
+      + partial(phase, 4.02, frequency, sampleRate) * 0.05 * color
+      + partial(phase, 5.98, frequency, sampleRate) * 0.03 * color
   }
-  if (synth === "bass") {
-    return Math.sin(phase) * 0.72
-      + partial(phase, 2, frequency, sampleRate) * 0.12
-      + partial(phase, 3, frequency, sampleRate) * 0.11
-      + partial(phase, 5, frequency, sampleRate) * 0.05
-  }
-  const hammer = Math.exp(-elapsed * 5.2)
-  return Math.sin(phase) * 0.56
-    + partial(phase, 2, frequency, sampleRate) * (0.18 + hammer * 0.08)
-    + partial(phase, 3, frequency, sampleRate) * 0.1
-    + partial(phase, 4.02, frequency, sampleRate) * 0.05
-    + partial(phase, 5.98, frequency, sampleRate) * 0.03
+  if (articulation === "pizzicato") sample *= 0.2 + Math.exp(-elapsed * 7.5) * 0.8
+  if (articulation === "spiccato") sample *= 0.38 + Math.exp(-elapsed * 10) * 0.62
+  if (articulation === "tremolo") sample *= 0.42 + Math.abs(Math.sin(elapsed * Math.PI * 15.5)) * 0.58
+  return sample
 }
 
 function writeHeader(dataBytes: number, sampleRate: number, bitDepth: 16 | 24) {
@@ -172,13 +189,20 @@ export async function renderTloqueScoreToWav(value: unknown, options: ScoreExpor
     const durationFactor = articulationDurationFactor(articulation)
     const start = "timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds
     const duration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds) * durationFactor
-    const chordGain = track.gain * timbre.level * scoreVelocityGain(event.velocity) / Math.sqrt(event.notes.length)
+    const originalEnd = start + duration
+    const end = scorePedalReleaseTime(recipe, event.trackId, originalEnd)
+    const expressionStart = scoreExpressionStateAt(recipe, track, start)
+    const expressionEnd = scoreExpressionStateAt(recipe, track, end)
+    const chordGain = track.gain * timbre.level
+      * Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation))
+      / Math.sqrt(event.notes.length)
     const angle = (track.pan + 1) * Math.PI / 4
     return event.notes.map(note => ({
       synth: track.synth, frequency: midiNoteToFrequency(note), start,
-      end: start + duration, releaseEnd: start + duration + envelope.release,
+      end, releaseEnd: end + envelope.release,
       attack: envelope.attack, decay: envelope.decay, sustain: envelope.sustain,
-      release: envelope.release, gain: chordGain,
+      release: envelope.release, gain: chordGain, articulation,
+      expressionStart, expressionEnd,
       left: Math.cos(angle), right: Math.sin(angle),
     }))
   })
@@ -220,8 +244,19 @@ export async function renderTloqueScoreToWav(value: unknown, options: ScoreExpor
         const decayElapsed = Math.max(0, elapsed - voice.attack)
         const decayGain = voice.sustain + (1 - voice.sustain) * Math.exp(-decayElapsed / Math.max(0.001, voice.decay))
         const releaseGain = absolute <= voice.end ? 1 : Math.max(0, 1 - (absolute - voice.end) / voice.release)
-        const phase = Math.PI * 2 * voice.frequency * elapsed
-        const sample = oscillator(voice.synth, phase, elapsed, voice.frequency, sampleRate) * attackGain * decayGain * releaseGain * voice.gain
+        const expressionProgress = Math.max(0, Math.min(1, elapsed / Math.max(0.001, voice.end - voice.start)))
+        const interpolate = (start: number, end: number) => start + (end - start) * expressionProgress
+        const expression = interpolate(voice.expressionStart.expression, voice.expressionEnd.expression)
+        const brightness = interpolate(voice.expressionStart.brightness, voice.expressionEnd.brightness)
+        const vibrato = interpolate(voice.expressionStart.vibrato, voice.expressionEnd.vibrato)
+        const pitchBend = interpolate(voice.expressionStart.pitchBend, voice.expressionEnd.pitchBend)
+        const frequency = voice.frequency * 2 ** (pitchBend / 12)
+        const vibratoRate = 5.15
+        const vibratoDepth = vibrato * 0.3
+        const vibratoHz = frequency * (2 ** (vibratoDepth / 12) - 1)
+        const phase = Math.PI * 2 * frequency * elapsed + vibratoHz / vibratoRate * Math.sin(Math.PI * 2 * vibratoRate * elapsed)
+        const sample = oscillator(voice.synth, phase, elapsed, frequency, sampleRate, brightness, voice.articulation)
+          * attackGain * decayGain * releaseGain * voice.gain * expression
         left[index] += sample * voice.left
         right[index] += sample * voice.right
       }

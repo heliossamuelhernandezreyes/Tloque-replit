@@ -9,7 +9,9 @@ test("la skill descargable declara el contrato y contiene un ejemplo compilable"
   const markdown = await readFile(SKILL_PATH, "utf8")
   assert.match(markdown, /^---\nname: compose-tloque-score\n/)
   assert.match(markdown, /tloque-audio-2026-08-v2/)
-  assert.match(markdown, /tloque-score-compiler-v2/)
+  assert.match(markdown, /tloque-score-compiler-v2\.1/)
+  assert.match(markdown, /control bar:beat expression=0\.\.1/)
+  assert.match(markdown, /articulation=.*spiccato.*pizzicato.*tremolo.*harmonic/)
   assert.match(markdown, /Create only original instrumental music/)
 
   const examples = [...markdown.matchAll(/```text\n(TLOQUE_SCORE 2[\s\S]*?)\n```/g)]
@@ -21,4 +23,5 @@ test("la skill descargable declara el contrato y contiene un ejemplo compilable"
   assert.equal(result.recipe.version, 2)
   assert.equal(result.recipe.plan.tracks.length, 2)
   assert.ok(result.recipe.plan.events.length > 1)
+  assert.equal(result.recipe.version === 2 ? result.recipe.plan.controls.length : 0, 3)
 })
