@@ -1,4 +1,5 @@
 import { linearScoreRecipeFor, type LinearScoreRecipe, type LinearScoreTrack } from "@shared/audio"
+import { articulationDurationFactor, midiNoteToFrequency, scoreTrackEnvelope } from "./ScoreAudioMath"
 
 export type ScoreExportQuality = "preview" | "studio" | "master"
 
@@ -37,15 +38,6 @@ export function estimateScoreExport(value: unknown, requested?: ScoreExportQuali
   const durationSeconds = ("totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * 60 / recipe.plan.bpm) + TAIL_SECONDS
   const bytes = 44 + Math.ceil(durationSeconds * profile.sampleRate) * 2 * (profile.bitDepth / 8)
   return { quality, sampleRate: profile.sampleRate, bitDepth: profile.bitDepth, durationSeconds, bytes }
-}
-
-function trackEnvelope(track: LinearScoreTrack) {
-  if ("attack" in track) return { attack: track.attack, release: track.release }
-  if (track.synth === "pad") return { attack: 1.1, release: 3.8 }
-  if (track.synth === "bell") return { attack: 0.008, release: 2.4 }
-  if (track.synth === "pluck") return { attack: 0.003, release: 0.7 }
-  if (track.synth === "bass") return { attack: 0.02, release: 1.2 }
-  return { attack: 0.12, release: 1.8 }
 }
 
 function oscillator(synth: LinearScoreTrack["synth"], phase: number, elapsed: number) {
@@ -125,15 +117,15 @@ export async function renderTloqueScoreToWav(value: unknown, options: ScoreExpor
   const voices = recipe.plan.events.flatMap(event => {
     const track = tracks.get(event.trackId)
     if (!track) return []
-    const envelope = trackEnvelope(track)
+    const envelope = scoreTrackEnvelope(track)
     const articulation = "articulation" in event ? event.articulation : "normal"
-    const durationFactor = articulation === "staccato" ? 0.55 : articulation === "legato" ? 1.08 : 0.96
+    const durationFactor = articulationDurationFactor(articulation)
     const start = "timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds
     const duration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds) * durationFactor
     const chordGain = track.gain * event.velocity / Math.sqrt(event.notes.length)
     const angle = (track.pan + 1) * Math.PI / 4
     return event.notes.map(note => ({
-      synth: track.synth, frequency: 440 * 2 ** ((note - 69) / 12), start,
+      synth: track.synth, frequency: midiNoteToFrequency(note), start,
       end: start + duration, releaseEnd: start + duration + envelope.release,
       attack: envelope.attack, release: envelope.release, gain: chordGain,
       left: Math.cos(angle), right: Math.sin(angle),
