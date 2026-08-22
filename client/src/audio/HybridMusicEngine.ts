@@ -1,5 +1,5 @@
 import { MusicEngine, type MusicCue, type MusicState } from "./MusicEngine"
-import type { MusicBrainScoreV1 } from "@shared/music-brain"
+import { LinearScoreEngine } from "./LinearScoreEngine"
 import { ProceduralMusicEngine } from "./ProceduralMusicEngine"
 import { SoundFontMusicEngine } from "./SoundFontMusicEngine"
 
@@ -10,6 +10,7 @@ export class HybridMusicEngine {
   private readonly stream: MusicEngine
   private readonly procedural: ProceduralMusicEngine
   private readonly soundfont: SoundFontMusicEngine
+  private readonly score: LinearScoreEngine
   private active: Engine | null = null
   private master = 0.35
   private ducked = false
@@ -20,6 +21,7 @@ export class HybridMusicEngine {
     this.stream = new MusicEngine(listener)
     this.procedural = new ProceduralMusicEngine(listener)
     this.soundfont = new SoundFontMusicEngine(listener)
+    this.score = new LinearScoreEngine(listener)
   }
 
   async play(cue: MusicCue): Promise<void> {
@@ -39,7 +41,8 @@ export class HybridMusicEngine {
     }
     const next: Engine = cue.sourceType === "procedural"
       ? this.procedural
-      : cue.sourceType === "soundfont" ? this.soundfont : this.stream
+      : cue.sourceType === "soundfont" ? this.soundfont
+        : cue.sourceType === "score" ? this.score : this.stream
     if (this.active && this.active !== next) this.active.stop()
     this.active = next
     next.setMasterVolume(this.master)
@@ -48,10 +51,9 @@ export class HybridMusicEngine {
   }
   setMasterVolume(value: number) { this.master = value; this.active?.setMasterVolume(value) }
   setDucked(value: boolean) { this.ducked = value; this.active?.setDucked(value) }
-  setNarrativeScore(score: MusicBrainScoreV1 | null) { this.procedural.setNarrativeScore(score) }
-  setNarrativeDirection(intensity: number, silence: boolean, seconds: number, regionId?: string) { this.active?.setNarrativeDirection(intensity, silence, seconds, regionId) }
+  setNarrativeDirection(intensity: number, silence: boolean, seconds: number) { this.active?.setNarrativeDirection(intensity, silence, seconds) }
   pause() { this.active?.pause() }
   async resume() { await this.active?.resume() }
   stop() { this.active?.stop(); this.active = null }
-  dispose() { this.stream.dispose(); this.procedural.dispose(); this.soundfont.dispose(); this.active = null }
+  dispose() { this.stream.dispose(); this.procedural.dispose(); this.soundfont.dispose(); this.score.dispose(); this.active = null }
 }

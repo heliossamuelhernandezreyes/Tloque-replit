@@ -6,7 +6,7 @@ export interface MusicCue {
   id: number
   title: string
   artist?: string
-  sourceType?: "stream" | "procedural" | "soundfont"
+  sourceType?: "stream" | "procedural" | "soundfont" | "score" | "sfx"
   url?: string
   recipe?: unknown
   packUrl?: string
@@ -55,7 +55,7 @@ export class MusicEngine {
     this.applyActiveVolume()
   }
 
-  setNarrativeDirection(intensity: number, silence: boolean, transitionSeconds: number, _regionId?: string) {
+  setNarrativeDirection(intensity: number, silence: boolean, transitionSeconds: number) {
     const normalized = Math.max(0, Math.min(0.8, intensity))
     const target = silence ? 0.12 : 0.72 + normalized * 0.35
     const start = this.narrativeGain
