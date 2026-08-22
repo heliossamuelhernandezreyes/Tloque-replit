@@ -1,4 +1,4 @@
-name: Editor P0 check
+name: Core app check
 
 on:
   pull_request:
@@ -7,6 +7,11 @@ on:
       - "client/src/pages/editor.tsx"
       - "client/src/pages/editor-direction.tsx"
       - "client/src/lib/editor-*.ts"
+      - "client/src/audio/**"
+      - "client/src/pages/reader.tsx"
+      - "shared/music-brain.ts"
+      - "server/narrative.ts"
+      - "tests/music-brain.test.ts"
       - "tests/editor-workspace.test.ts"
       - ".github/workflows/editor-p0-check.yml"
   workflow_dispatch:
