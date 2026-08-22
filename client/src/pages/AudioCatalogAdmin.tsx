@@ -11,12 +11,13 @@ import { useSoundFX } from "@/hooks/useSoundFX"
 import {
   DEFAULT_PROCEDURAL_RECIPE, DEFAULT_TLOQUE_SCORE, DEFAULT_UI_SOUND_RECIPE,
   anyLinearScoreRecipeSchema, proceduralRecipeSchema, uiSoundRecipeSchema,
-  type LinearScoreRecipe, type ProceduralRecipe, type TloqueScoreCompileResult,
+  type LinearScoreRecipe, type ProceduralRecipe,
   type UiSoundEventKey, type UiSoundRecipe,
 } from "@shared/audio"
 import { musicCueFor, type CatalogAudioAsset as AudioAsset } from "@/audio/catalog"
 import { cacheAudioResource, isAudioResourceCached, removeCachedAudioResource } from "@/audio/AudioResourceCache"
 import { downloadWav, estimateScoreExport, renderTloqueScoreToWav } from "@/audio/ScoreExporter"
+import { compileTloqueScoreOnServer } from "@/lib/tloqueScoreApi"
 
 type AudioAssetForm = Omit<AudioAsset, "id" | "favorite">
 type StudioTab = "library" | "composer" | "modules" | "interface"
@@ -148,28 +149,14 @@ export default function AudioCatalogAdmin() {
 
   const compile = useMutation({
     mutationFn: async (source: string) => {
-      const res = await fetch("/api/admin/audio/score/compile", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source }),
-      })
-      const body = await res.json() as TloqueScoreCompileResult & { message?: string }
-      if (!res.ok || !body.ok) throw new Error(body.ok ? body.message || "No se pudo compilar" : body.diagnostics.map(item => `L${item.line}: ${item.message}`).join("\n"))
-      return body.recipe
+      return compileTloqueScoreOnServer(source)
     },
     onSuccess: setCompiled,
   })
 
   const saveScore = useMutation({
     mutationFn: async () => {
-      const compileResponse = await fetch("/api/admin/audio/score/compile", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: scoreSource }),
-      })
-      const compileBody = await compileResponse.json() as TloqueScoreCompileResult
-      if (!compileResponse.ok || !compileBody.ok) {
-        throw new Error(compileBody.ok ? "No se pudo compilar" : compileBody.diagnostics.map(item => `L${item.line}: ${item.message}`).join("\n"))
-      }
-      const recipe = compileBody.recipe
+      const recipe = await compileTloqueScoreOnServer(scoreSource)
       const moduleAsset = resolveScoreModule(recipe)
       if (recipe.version === 2 && recipe.plan.moduleId !== "builtin" && !moduleAsset) {
         throw new Error(`Publica un banco instrumental con la etiqueta module:${recipe.plan.moduleId}`)
