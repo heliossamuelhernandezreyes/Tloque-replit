@@ -2,7 +2,10 @@ import processorUrl from "spessasynth_lib/dist/spessasynth_processor.min.js?url"
 import { linearScoreRecipeFor, type LinearScoreTrack } from "@shared/audio"
 import { fetchAudioResource } from "./AudioResourceCache"
 import type { MusicCue, MusicState } from "./MusicEngine"
-import { articulationDurationFactor, midiNotesToFrequencies, scoreTrackEnvelope } from "./ScoreAudioMath"
+import {
+  articulationDurationFactor, midiNotesToFrequencies, scoreTrackEnvelope,
+  scoreRenderProfile, scoreTrackTimbre, scoreVelocityGain,
+} from "./ScoreAudioMath"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 
@@ -36,20 +39,31 @@ export class LinearScoreEngine {
       const Tone = this.tone ?? await import("tone")
       this.tone = Tone
       await Tone.start()
+      const render = scoreRenderProfile(recipe.version === 2 ? recipe.plan.quality : "studio")
       const output = new Tone.Gain(0).toDestination()
-      const limiter = new Tone.Limiter(-5)
-      limiter.connect(output)
+      const limiter = new Tone.Limiter(-1)
+      const compressor = new Tone.Compressor({ threshold: -20, ratio: 2.6, knee: 14, attack: 0.015, release: 0.24 })
+      const makeup = new Tone.Gain(render.makeup)
+      const eq = new Tone.EQ3({ low: -1, mid: 0.6, high: 1.2, lowFrequency: 240, highFrequency: 3_600 })
+      const widener = new Tone.StereoWidener(render.stereoWidth)
+      const reverb = new Tone.Reverb({ decay: render.reverbDecay, preDelay: 0.035, wet: render.reverbWet })
+      const chorus = new Tone.Chorus({ frequency: 0.16, delayTime: 3.8, depth: 0.22, spread: 150, wet: render.chorusWet }).start()
+      chorus.chain(reverb, widener, eq, makeup, compressor, limiter, output)
+      await reverb.generate()
       this.output = output
-      this.nodes = [limiter, output]
+      this.nodes = [chorus, reverb, widener, eq, makeup, compressor, limiter, output]
       this.cue = cue
 
+      const maxPolyphony = Math.max(4, Math.min(16, Math.floor(render.polyphonyBudget / recipe.plan.tracks.length)))
       for (const track of recipe.plan.tracks) {
-        const synth = this.createSynth(Tone, track)
+        const synth = this.createSynth(Tone, track, maxPolyphony)
+        const timbre = scoreTrackTimbre(track)
+        const filter = new Tone.Filter({ type: "lowpass", frequency: timbre.filterHz, rolloff: -24, Q: timbre.filterQ })
         const panner = new Tone.Panner(track.pan)
-        const gain = new Tone.Gain(track.gain)
-        synth.chain(panner, gain, limiter)
+        const gain = new Tone.Gain(track.gain * timbre.level)
+        synth.chain(filter, panner, gain, chorus)
         this.synths.set(track.id, synth)
-        this.nodes.push(panner, gain)
+        this.nodes.push(filter, panner, gain)
       }
 
       const transport = Tone.getTransport()
@@ -68,7 +82,7 @@ export class LinearScoreEngine {
             midiNotesToFrequencies(event.notes),
             duration,
             time,
-            event.velocity,
+            scoreVelocityGain(event.velocity),
           )
         }, "timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds)
       }
@@ -121,19 +135,41 @@ export class LinearScoreEngine {
   stop() { this.stopRuntime(); this.cue = null; this.listener("idle", null) }
   dispose() { this.stop() }
 
-  private createSynth(Tone: typeof import("tone"), track: LinearScoreTrack) {
-    const timing = scoreTrackEnvelope(track)
-    const envelope = track.synth === "pad"
-      ? { attack: timing.attack, decay: 0.7, sustain: 0.72, release: timing.release }
-      : track.synth === "bell"
-        ? { attack: timing.attack, decay: 1.1, sustain: 0.04, release: timing.release }
-        : track.synth === "pluck"
-          ? { attack: timing.attack, decay: 0.25, sustain: 0.08, release: timing.release }
-          : track.synth === "bass"
-            ? { attack: timing.attack, decay: 0.4, sustain: 0.55, release: timing.release }
-            : { attack: timing.attack, decay: 0.45, sustain: 0.52, release: timing.release }
-    const oscillator = track.synth === "bass" ? "triangle" : track.synth === "pluck" ? "sine" : "fatsine"
-    return new Tone.PolySynth(Tone.Synth, { oscillator: { type: oscillator as any }, envelope })
+  private createSynth(Tone: typeof import("tone"), track: LinearScoreTrack, maxPolyphony: number) {
+    const envelope = scoreTrackEnvelope(track)
+    let synth: any
+    if (track.synth === "pad") {
+      synth = new Tone.PolySynth(Tone.AMSynth, {
+        harmonicity: 1.005,
+        oscillator: { type: "fatsine" },
+        envelope,
+        modulation: { type: "sine" },
+        modulationEnvelope: { attack: envelope.attack * 1.4, decay: 0.8, sustain: 0.48, release: envelope.release },
+      })
+    } else if (track.synth === "bell") {
+      synth = new Tone.PolySynth(Tone.FMSynth, {
+        harmonicity: 3.01,
+        modulationIndex: 8.5,
+        oscillator: { type: "sine" },
+        envelope,
+        modulation: { type: "sine" },
+        modulationEnvelope: { attack: 0.004, decay: 1.1, sustain: 0.01, release: envelope.release },
+      })
+    } else if (track.synth === "warm") {
+      synth = new Tone.PolySynth(Tone.FMSynth, {
+        harmonicity: 1.5,
+        modulationIndex: 1.65,
+        oscillator: { type: "fatsine" },
+        envelope,
+        modulation: { type: "sine" },
+        modulationEnvelope: { attack: 0.01, decay: 0.7, sustain: 0.18, release: envelope.release * 0.8 },
+      })
+    } else {
+      const oscillator = track.synth === "bass" ? "fatsawtooth" : "triangle8"
+      synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: oscillator as any }, envelope })
+    }
+    synth.maxPolyphony = maxPolyphony
+    return synth
   }
 
   private targetVolume() {
@@ -157,7 +193,24 @@ export class LinearScoreEngine {
     const synth = new WorkletSynthesizer(context)
     const output = context.createGain()
     output.gain.value = 0
-    synth.connect(output)
+    const lowShelf = context.createBiquadFilter()
+    lowShelf.type = "lowshelf"
+    lowShelf.frequency.value = 220
+    lowShelf.gain.value = -1
+    const highShelf = context.createBiquadFilter()
+    highShelf.type = "highshelf"
+    highShelf.frequency.value = 3_600
+    highShelf.gain.value = 1.2
+    const compressor = context.createDynamicsCompressor()
+    compressor.threshold.value = -20
+    compressor.knee.value = 14
+    compressor.ratio.value = 2.6
+    compressor.attack.value = 0.015
+    compressor.release.value = 0.24
+    synth.connect(lowShelf)
+    lowShelf.connect(highShelf)
+    highShelf.connect(compressor)
+    compressor.connect(output)
     output.connect(context.destination)
     await synth.soundBankManager.addSoundBank(await response.arrayBuffer(), "tloque-score-module")
     await synth.isReady
@@ -175,8 +228,9 @@ export class LinearScoreEngine {
     for (const track of recipe.plan.tracks.slice(0, 16)) {
       const channel = channels.get(track.id)!
       const program = "program" in track ? track.program : ({ warm: 0, pad: 48, bell: 8, pluck: 24, bass: 32 } as const)[track.synth]
+      const timbre = scoreTrackTimbre(track)
       synth.programChange(channel, Number(program), { time: startAt })
-      synth.controllerChange(channel, 7 as any, Math.round(track.gain * 127), { time: startAt })
+      synth.controllerChange(channel, 7 as any, Math.round(Math.min(1, track.gain * timbre.level) * 127), { time: startAt })
       synth.controllerChange(channel, 10 as any, Math.round((track.pan + 1) * 63.5), { time: startAt })
     }
 
@@ -189,7 +243,7 @@ export class LinearScoreEngine {
         const factor = articulationDurationFactor(articulation)
         const releaseAt = noteAt + ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds) * factor
         for (const note of event.notes) {
-          synth.noteOn(channel, note, Math.round(event.velocity * 127), { time: noteAt })
+          synth.noteOn(channel, note, Math.round(scoreVelocityGain(event.velocity) * 127), { time: noteAt })
           synth.noteOff(channel, note, { time: releaseAt })
         }
       }
