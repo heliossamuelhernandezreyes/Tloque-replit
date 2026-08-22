@@ -1,7 +1,17 @@
 import { z } from "zod"
+import {
+  DEFAULT_TLOQUE_SCORE_V2, TLOQUE_SCORE_COMPILER_V2, compileTloqueScoreV2,
+  linearScoreRecipeV2Schema, type LinearScoreRecipeV2, type LinearScoreTrackV2,
+} from "./tloque-score-v2"
+export {
+  DEFAULT_TLOQUE_SCORE_V2, TLOQUE_SCORE_COMPILER_V2, compileTloqueScoreV2,
+  linearScorePlanV2Schema, linearScoreRecipeV2Schema,
+  type LinearScorePlanV2, type LinearScoreRecipeV2, type LinearScoreTrackV2,
+} from "./tloque-score-v2"
 
-export const AUDIO_CONTRACT_VERSION = "tloque-audio-2026-08-v1" as const
-export const TLOQUE_SCORE_COMPILER_VERSION = "tloque-score-compiler-v1" as const
+export const AUDIO_CONTRACT_VERSION = "tloque-audio-2026-08-v2" as const
+export const TLOQUE_SCORE_COMPILER_V1 = "tloque-score-compiler-v1" as const
+export const TLOQUE_SCORE_COMPILER_VERSION = TLOQUE_SCORE_COMPILER_V2
 
 export const audioSourceTypeSchema = z.enum(["stream", "procedural", "soundfont", "score", "sfx"])
 export type AudioSourceType = z.infer<typeof audioSourceTypeSchema>
@@ -57,7 +67,7 @@ export const linearScoreEventSchema = z.object({
 
 export const linearScorePlanSchema = z.object({
   version: z.literal(1),
-  compilerVersion: z.literal(TLOQUE_SCORE_COMPILER_VERSION),
+  compilerVersion: z.literal(TLOQUE_SCORE_COMPILER_V1),
   sourceHash: z.string().regex(/^[a-f0-9]{8}$/),
   bpm: z.number().int().min(32).max(180),
   meter: z.object({ numerator: z.number().int().min(2).max(12), denominator: z.union([z.literal(4), z.literal(8)]) }).strict(),
@@ -76,9 +86,11 @@ export const linearScoreRecipeSchema = z.object({
   plan: linearScorePlanSchema,
 }).strict()
 
-export type LinearScorePlan = z.infer<typeof linearScorePlanSchema>
-export type LinearScoreRecipe = z.infer<typeof linearScoreRecipeSchema>
-export type LinearScoreTrack = z.infer<typeof linearScoreTrackSchema>
+export const anyLinearScoreRecipeSchema = z.union([linearScoreRecipeSchema, linearScoreRecipeV2Schema])
+
+export type LinearScorePlan = z.infer<typeof linearScorePlanSchema> | LinearScoreRecipeV2["plan"]
+export type LinearScoreRecipe = z.infer<typeof linearScoreRecipeSchema> | LinearScoreRecipeV2
+export type LinearScoreTrack = z.infer<typeof linearScoreTrackSchema> | LinearScoreTrackV2
 
 export interface TloqueScoreDiagnostic {
   line: number
@@ -89,7 +101,7 @@ export type TloqueScoreCompileResult =
   | { ok: true; recipe: LinearScoreRecipe; diagnostics: [] }
   | { ok: false; diagnostics: TloqueScoreDiagnostic[] }
 
-export const DEFAULT_TLOQUE_SCORE = `TLOQUE_SCORE 1
+export const DEFAULT_TLOQUE_SCORE_V1 = `TLOQUE_SCORE 1
 tempo 68
 meter 4/4
 loop true
@@ -106,6 +118,8 @@ track motif synth=bell gain=0.18 pan=0.12
 2:3 Ab4 0.75 velocity=0.38
 3:3 Bb4 0.75 velocity=0.42
 4:3 F4 0.75 velocity=0.36`
+
+export const DEFAULT_TLOQUE_SCORE = DEFAULT_TLOQUE_SCORE_V2
 
 function fnv1a(value: string): string {
   let hash = 0x811c9dc5
@@ -135,6 +149,9 @@ function keyValues(parts: string[]): Record<string, string> {
 }
 
 export function compileTloqueScore(source: string): TloqueScoreCompileResult {
+  if (source.replace(/\r/g, "").trimStart().startsWith("TLOQUE_SCORE 2")) {
+    return compileTloqueScoreV2(source)
+  }
   const diagnostics: TloqueScoreDiagnostic[] = []
   const clean = source.replace(/\r/g, "").trim()
   const lines = clean.split("\n")
@@ -143,8 +160,8 @@ export function compileTloqueScore(source: string): TloqueScoreCompileResult {
   let denominator: 4 | 8 = 4
   let loop = true
   let seed = 1
-  let currentTrack: LinearScoreTrack | null = null
-  const tracks: LinearScoreTrack[] = []
+  let currentTrack: z.infer<typeof linearScoreTrackSchema> | null = null
+  const tracks: z.infer<typeof linearScoreTrackSchema>[] = []
   const events: z.infer<typeof linearScoreEventSchema>[] = []
   const ids = new Set<string>()
 
@@ -233,9 +250,9 @@ export function compileTloqueScore(source: string): TloqueScoreCompileResult {
   events.sort((left, right) => left.timeBeats - right.timeBeats || left.trackId.localeCompare(right.trackId))
   const totalBars = Math.max(...events.map(event => event.bar))
   const totalBeats = totalBars * numerator * (4 / denominator)
-  const plan: LinearScorePlan = linearScorePlanSchema.parse({
+  const plan = linearScorePlanSchema.parse({
     version: 1,
-    compilerVersion: TLOQUE_SCORE_COMPILER_VERSION,
+    compilerVersion: TLOQUE_SCORE_COMPILER_V1,
     sourceHash: fnv1a(clean),
     bpm, meter: { numerator, denominator }, loop, seed, totalBars, totalBeats, tracks, events,
   })
@@ -247,7 +264,7 @@ export function compileTloqueScore(source: string): TloqueScoreCompileResult {
 }
 
 export function linearScoreRecipeFor(value: unknown): LinearScoreRecipe {
-  return linearScoreRecipeSchema.parse(value)
+  return anyLinearScoreRecipeSchema.parse(value)
 }
 
 // ── MICROSONIDOS DE INTERFAZ ───────────────────────────────
@@ -312,7 +329,7 @@ export function uiSoundRecipeFor(value: unknown): UiSoundRecipe {
   return uiSoundRecipeSchema.parse(value)
 }
 
-export const audioRecipeSchema = z.union([proceduralRecipeSchema, linearScoreRecipeSchema, uiSoundRecipeSchema])
+export const audioRecipeSchema = z.union([proceduralRecipeSchema, linearScoreRecipeSchema, linearScoreRecipeV2Schema, uiSoundRecipeSchema])
 export type AudioRecipe = z.infer<typeof audioRecipeSchema>
 
 export interface UiSoundManifestBinding {

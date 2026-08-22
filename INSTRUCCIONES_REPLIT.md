@@ -3,6 +3,10 @@
 Este paquete reemplaza únicamente el código. No contiene secretos y no cambia
 la base de datos durante la instalación.
 
+## App Storage para la Fonoteca
+
+Antes de importar MP3 o WAV desde **Administración → Estudio de audio → Fonoteca**, abre la herramienta **App Storage** de Replit y crea o conecta un bucket al proyecto. No hace falta copiar credenciales al código: `@replit/object-storage` usa el bucket adjunto. Sin bucket, la app devuelve un mensaje claro y conserva la opción de registrar una URL HTTPS externa.
+
 ## 1. Subir el ZIP
 
 Sube `TLOQUE_REPLIT_RELEASE_2026-08-09.zip` a la raíz del Repl actual.

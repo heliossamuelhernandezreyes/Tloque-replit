@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  ArrowLeft, CheckCircle2, Headphones, LibraryBig, Loader2, Music2,
-  Pencil, Play, Plus, RotateCcw, SlidersHorizontal, Square, Trash2,
+  ArrowLeft, CheckCircle2, Download, Headphones, LibraryBig, Loader2, Music2,
+  Package, Pencil, Play, Plus, RotateCcw, SlidersHorizontal, Square, Trash2, Upload,
 } from "lucide-react"
 import { useLocation } from "wouter"
 import { useAuth } from "@/hooks/useAuth"
@@ -10,14 +10,16 @@ import { useMusic } from "@/audio/MusicProvider"
 import { useSoundFX } from "@/hooks/useSoundFX"
 import {
   DEFAULT_PROCEDURAL_RECIPE, DEFAULT_TLOQUE_SCORE, DEFAULT_UI_SOUND_RECIPE,
-  linearScoreRecipeSchema, proceduralRecipeSchema, uiSoundRecipeSchema,
+  anyLinearScoreRecipeSchema, proceduralRecipeSchema, uiSoundRecipeSchema,
   type LinearScoreRecipe, type ProceduralRecipe, type TloqueScoreCompileResult,
   type UiSoundEventKey, type UiSoundRecipe,
 } from "@shared/audio"
 import { musicCueFor, type CatalogAudioAsset as AudioAsset } from "@/audio/catalog"
+import { cacheAudioResource, isAudioResourceCached, removeCachedAudioResource } from "@/audio/AudioResourceCache"
+import { downloadWav, estimateScoreExport, renderTloqueScoreToWav } from "@/audio/ScoreExporter"
 
 type AudioAssetForm = Omit<AudioAsset, "id" | "favorite">
-type StudioTab = "library" | "composer" | "interface"
+type StudioTab = "library" | "composer" | "modules" | "interface"
 
 interface EventBinding {
   eventKey: UiSoundEventKey
@@ -56,6 +58,9 @@ export default function AudioCatalogAdmin() {
   const [scoreSource, setScoreSource] = useState(DEFAULT_TLOQUE_SCORE)
   const [scoreMeta, setScoreMeta] = useState({ ...SCORE_META })
   const [compiled, setCompiled] = useState<LinearScoreRecipe | null>(null)
+  const [exportProgress, setExportProgress] = useState(0)
+  const [uploadMessage, setUploadMessage] = useState("")
+  const [moduleCache, setModuleCache] = useState<Record<number, boolean>>({})
   const [bindingDrafts, setBindingDrafts] = useState<Record<string, BindingDraft>>({})
 
   useEffect(() => () => music.stop(), [music.stop])
@@ -70,6 +75,14 @@ export default function AudioCatalogAdmin() {
     enabled: isAdmin,
   })
   const assets = data?.assets || []
+  const qualityModules = assets.filter(asset => asset.sourceType === "soundfont" && asset.packUrl)
+
+  useEffect(() => {
+    let active = true
+    void Promise.all(qualityModules.map(async asset => [asset.id, await isAudioResourceCached(asset.packUrl)] as const))
+      .then(entries => { if (active) setModuleCache(Object.fromEntries(entries)) })
+    return () => { active = false }
+  }, [qualityModules.map(asset => `${asset.id}:${asset.packUrl}`).join("|")])
 
   const bindingsQuery = useQuery<{
     events: readonly { key: UiSoundEventKey; label: string }[]
@@ -157,6 +170,10 @@ export default function AudioCatalogAdmin() {
         throw new Error(compileBody.ok ? "No se pudo compilar" : compileBody.diagnostics.map(item => `L${item.line}: ${item.message}`).join("\n"))
       }
       const recipe = compileBody.recipe
+      const moduleAsset = resolveScoreModule(recipe)
+      if (recipe.version === 2 && recipe.plan.moduleId !== "builtin" && !moduleAsset) {
+        throw new Error(`Publica un banco instrumental con la etiqueta module:${recipe.plan.moduleId}`)
+      }
       const payload: AudioAssetForm = {
         ...EMPTY,
         title: scoreMeta.title,
@@ -165,11 +182,14 @@ export default function AudioCatalogAdmin() {
         sourceType: "score",
         recipe,
         musicalMode: `${recipe.plan.meter.numerator}/${recipe.plan.meter.denominator}`,
-        tags: ["theme", "instrumental", "tloque-score"],
+        tags: ["theme", "instrumental", "tloque-score", ...(recipe.version === 2 ? [`module:${recipe.plan.moduleId}`, `quality:${recipe.plan.quality}`] : [])],
         texture: "partitura lineal TloqueScore",
+        packUrl: moduleAsset?.packUrl || "",
+        packBytes: moduleAsset?.packBytes ?? null,
+        packSha256: moduleAsset?.packSha256 || "",
         bpm: recipe.plan.bpm,
         energy: 0.45,
-        durationSeconds: Math.ceil(recipe.plan.totalBeats * 60 / recipe.plan.bpm),
+        durationSeconds: Math.ceil("totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * 60 / recipe.plan.bpm),
         loop: recipe.plan.loop,
         license: scoreMeta.license,
         sourceName: scoreMeta.sourceName,
@@ -190,6 +210,58 @@ export default function AudioCatalogAdmin() {
       setScoreEditingId(null)
       await invalidate()
     },
+  })
+
+  const exportScore = useMutation({
+    mutationFn: async () => {
+      if (!compiled) throw new Error("Valida y compila el código antes de exportar")
+      setExportProgress(0)
+      const blob = await renderTloqueScoreToWav(compiled, { onProgress: setExportProgress })
+      downloadWav(blob, scoreMeta.title || (compiled.version === 2 ? compiled.plan.title : "tloque-score"))
+      return blob.size
+    },
+  })
+
+  const uploadAudio = useMutation({
+    mutationFn: async (file: File) => {
+      if (file.size > 96 * 1024 * 1024) throw new Error("El archivo supera 96 MB; usa un enlace CDN para maestros mayores")
+      const res = await fetch("/api/admin/audio/uploads", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "X-Tloque-Filename": encodeURIComponent(file.name),
+        },
+        body: file,
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.message || "No se pudo importar el audio")
+      return body as { url: string; sha256: string; bytes: number; originalName: string; deduplicated: boolean }
+    },
+    onSuccess: upload => {
+      const title = upload.originalName.replace(/\.(mp3|wav)$/i, "")
+      setForm(current => ({
+        ...current,
+        title: current.title || title,
+        sourceType: "stream",
+        url: upload.url,
+        recipe: null,
+        packBytes: upload.bytes,
+        packSha256: upload.sha256,
+        sourceName: "Carga directa · Replit App Storage",
+        tags: [...new Set([...current.tags, "imported-audio", `sha256:${upload.sha256.slice(0, 16)}`])].slice(0, 24),
+      }))
+      setUploadMessage(`${upload.deduplicated ? "Archivo ya existente" : "Carga terminada"} · ${(upload.bytes / 1024 / 1024).toFixed(1)} MB · ahora completa la licencia y guarda el activo.`)
+    },
+  })
+
+  const manageModule = useMutation({
+    mutationFn: async ({ asset, install }: { asset: AudioAsset; install: boolean }) => {
+      if (install) await cacheAudioResource(asset.packUrl, asset.packSha256)
+      else await removeCachedAudioResource(asset.packUrl)
+      return { id: asset.id, install }
+    },
+    onSuccess: ({ id, install }) => setModuleCache(current => ({ ...current, [id]: install })),
   })
 
   const saveBinding = useMutation({
@@ -220,6 +292,14 @@ export default function AudioCatalogAdmin() {
     "Interfaz y sistema": assets.filter(asset => asset.kind === "system"),
   }), [assets])
 
+  function resolveScoreModule(recipe: LinearScoreRecipe) {
+    if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") return null
+    return qualityModules.find(asset => asset.tags.includes(`module:${recipe.plan.moduleId}`)) || null
+  }
+
+  const compiledModule = compiled ? resolveScoreModule(compiled) : null
+  const exportEstimate = compiled ? estimateScoreExport(compiled) : null
+
   const procedural = proceduralRecipeSchema.safeParse(form.recipe).success
     ? proceduralRecipeSchema.parse(form.recipe) : DEFAULT_PROCEDURAL_RECIPE
   const sfx = uiSoundRecipeSchema.safeParse(form.recipe).success
@@ -227,7 +307,7 @@ export default function AudioCatalogAdmin() {
 
   function edit(asset: AudioAsset) {
     if (asset.sourceType === "score") {
-      const recipe = linearScoreRecipeSchema.safeParse(asset.recipe)
+      const recipe = anyLinearScoreRecipeSchema.safeParse(asset.recipe)
       if (!recipe.success) return
       setScoreEditingId(asset.id)
       setScoreSource(recipe.data.source)
@@ -282,21 +362,22 @@ export default function AudioCatalogAdmin() {
       <header className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-zinc-950/95 border-b border-white/10">
         <button aria-label="Volver" onClick={() => setLocation("/library")}><ArrowLeft className="w-4 h-4" /></button>
         <Headphones className="w-4 h-4 text-amber-400" />
-        <div><h1 className="font-semibold leading-tight">Estudio de audio</h1><p className="text-[10px] text-zinc-500">Fonoteca total · instrumental · interfaz</p></div>
+        <div><h1 className="font-semibold leading-tight">Estudio de audio</h1><p className="text-[10px] text-zinc-500">Código musical · módulos · Fonoteca total</p></div>
       </header>
 
       <main className="max-w-4xl mx-auto p-4 space-y-6">
         <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.025] p-2">
           <button className={tabClass("library")} onClick={() => setTab("library")}><LibraryBig className="w-4 h-4" /> Fonoteca</button>
           <button className={tabClass("composer")} onClick={() => setTab("composer")}><Music2 className="w-4 h-4" /> Compositor</button>
+          <button className={tabClass("modules")} onClick={() => setTab("modules")}><Package className="w-4 h-4" /> Módulos</button>
           <button className={tabClass("interface")} onClick={() => setTab("interface")}><SlidersHorizontal className="w-4 h-4" /> Interfaz</button>
         </nav>
 
         {tab === "composer" && (
           <section className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.035] p-4 space-y-4">
             <div>
-              <h2 className="text-sm font-semibold">Compositor lineal · TloqueScore V1</h2>
-              <p className="mt-1 text-xs text-zinc-500">Pega o escribe una partitura declarativa. Sólo genera música instrumental; nunca ejecuta JavaScript.</p>
+              <h2 className="text-sm font-semibold">Compositor de obras · TloqueScore V2</h2>
+              <p className="mt-1 text-xs text-zinc-500">El código es la obra maestra: editarlo recompila y cambia el audio. La reproducción no crea archivos; Exportar genera un WAV sólo cuando lo pides.</p>
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <input className={inputClass} placeholder="Título del tema" value={scoreMeta.title} onChange={e => setScoreMeta(meta => ({ ...meta, title: e.target.value }))} />
@@ -311,13 +392,16 @@ export default function AudioCatalogAdmin() {
             />
             <details className="rounded-xl border border-white/10 p-3 text-xs text-zinc-400">
               <summary className="cursor-pointer text-zinc-300">Referencia rápida del lenguaje</summary>
-              <p className="mt-2 font-mono leading-5">tempo 32..180 · meter 3/4, 4/4 o 6/8 · loop true|false<br />track nombre synth=warm|pad|bell|pluck|bass gain=0..1 pan=-1..1<br />compás:tiempo C3,Eb3,G3 duración velocity=0..1</p>
+              <p className="mt-2 font-mono leading-5">quality core|studio|master · module builtin|id<br />track id synth=… instrument=… program=0..127 role=… gain=… pan=…<br />section id form=exposition|development|recapitulation|coda bars=N repeat=N fade=N tempo=32..180<br />use track · compás:tiempo C3,Eb3,G3 duración velocity=… articulation=… · rest posición duración · end</p>
             </details>
             {compiled && (
               <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 flex gap-2 text-xs text-emerald-200">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>Compilada: {compiled.plan.totalBars} compases · {compiled.plan.tracks.length} pistas · {compiled.plan.events.length} eventos · {compiled.plan.bpm} BPM · {compiled.plan.sourceHash}</span>
+                <span>Compilada: {compiled.plan.totalBars} compases · {compiled.plan.tracks.length} pistas · {compiled.plan.events.length} eventos · {compiled.plan.bpm} BPM · {compiled.plan.sourceHash}{compiled.version === 2 ? ` · ${compiled.plan.quality} · módulo ${compiled.plan.moduleId}` : ""}</span>
               </div>
+            )}
+            {compiled?.version === 2 && compiled.plan.moduleId !== "builtin" && !compiledModule && (
+              <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-200">Falta el módulo <code>module:{compiled.plan.moduleId}</code>. Tloque puede previsualizar con síntesis base, pero exige el banco publicado para guardar esta versión.</p>
             )}
             {compile.isError && <pre className="whitespace-pre-wrap rounded-xl bg-red-950/30 p-3 text-xs text-red-200">{(compile.error as Error).message}</pre>}
             <div className="grid sm:grid-cols-3 gap-3">
@@ -331,13 +415,46 @@ export default function AudioCatalogAdmin() {
               <button disabled={compile.isPending} onClick={() => compile.mutate(scoreSource)} className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-50">
                 {compile.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validar y compilar"}
               </button>
-              <button disabled={!compiled} onClick={() => compiled && music.playCue({ id: -11, title: scoreMeta.title || "Vista previa", sourceType: "score", recipe: compiled, loop: compiled.plan.loop, volume: 0.35, crossfadeSeconds: 0.25 })} className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"><Play className="inline w-4 h-4 mr-1" /> Escuchar</button>
+              <button disabled={!compiled} onClick={() => compiled && music.playCue({ id: -11, title: scoreMeta.title || "Vista previa", sourceType: "score", recipe: compiled, packUrl: compiledModule?.packUrl, packBytes: compiledModule?.packBytes, packSha256: compiledModule?.packSha256, loop: compiled.plan.loop, volume: 0.35, crossfadeSeconds: 0.25 })} className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"><Play className="inline w-4 h-4 mr-1" /> Escuchar</button>
               <button onClick={() => music.stop()} className="rounded-lg bg-white/10 px-4 py-2 text-sm"><Square className="inline w-4 h-4 mr-1" /> Detener</button>
+              <button disabled={!compiled || exportScore.isPending} onClick={() => exportScore.mutate()} className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"><Download className="inline w-4 h-4 mr-1" /> {exportScore.isPending ? `Exportando ${Math.round(exportProgress * 100)}%` : "Exportar WAV"}</button>
               <button disabled={saveScore.isPending || !scoreMeta.title.trim()} onClick={() => saveScore.mutate()} className="sm:ml-auto rounded-lg bg-amber-400 text-black px-4 py-2 text-sm font-semibold disabled:opacity-40">
                 {saveScore.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : `${scoreEditingId ? "Actualizar" : "Guardar"} en Fonoteca`}
               </button>
             </div>
-            {saveScore.isError && <pre className="whitespace-pre-wrap text-xs text-red-300">{(saveScore.error as Error).message}</pre>}
+            {exportEstimate && <p className="text-[10px] text-zinc-500">Exportación {exportEstimate.bitDepth}-bit / {(exportEstimate.sampleRate / 1000).toFixed(0)} kHz · tamaño estimado {(exportEstimate.bytes / 1024 / 1024).toFixed(1)} MB. El render se procesa por bloques para obras largas.</p>}
+            {(saveScore.isError || exportScore.isError) && <pre className="whitespace-pre-wrap text-xs text-red-300">{((saveScore.error || exportScore.error) as Error).message}</pre>}
+          </section>
+        )}
+
+        {tab === "modules" && (
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold">Módulos instrumentales bajo demanda</h2>
+              <p className="mt-1 text-xs text-zinc-500">La síntesis base siempre está incluida. Los bancos SF2/SF3 de mayor fidelidad se descargan uno por uno y pueden retirarse sin borrar partituras.</p>
+            </div>
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 flex items-center justify-between gap-3">
+              <div><p className="text-sm font-medium">Síntesis base Tloque</p><p className="text-[10px] text-zinc-500">Incluida · sin descarga · <code>module builtin</code></p></div>
+              <CheckCircle2 className="w-5 h-5 text-emerald-300" />
+            </div>
+            {qualityModules.map(asset => {
+              const moduleTag = asset.tags.find(tag => tag.startsWith("module:")) || "Falta etiqueta module:id"
+              const installed = Boolean(moduleCache[asset.id])
+              return (
+                <div key={asset.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{asset.title}</p>
+                    <p className="text-[10px] text-zinc-500">{moduleTag} · {asset.packBytes ? `${(asset.packBytes / 1024 / 1024).toFixed(1)} MB` : "tamaño no declarado"} · {asset.license}</p>
+                    <p className="text-[10px] text-zinc-600 truncate">{asset.sourceName}</p>
+                  </div>
+                  <button disabled={manageModule.isPending || !moduleTag.startsWith("module:")} onClick={() => manageModule.mutate({ asset, install: !installed })} className={`rounded-lg px-3 py-2 text-xs disabled:opacity-40 ${installed ? "bg-white/10" : "bg-amber-400 text-black font-semibold"}`}>
+                    {installed ? <><Trash2 className="inline w-3.5 h-3.5 mr-1" /> Retirar del dispositivo</> : <><Download className="inline w-3.5 h-3.5 mr-1" /> Descargar módulo</>}
+                  </button>
+                </div>
+              )
+            })}
+            {!qualityModules.length && <p className="rounded-xl border border-dashed border-white/10 p-4 text-xs text-zinc-500">Aún no hay bancos instrumentales. Créalo en Fonoteca como “Instrumentos SF2/SF3” y añade una etiqueta única como <code>module:orchestra-core</code>.</p>}
+            {manageModule.isError && <p className="text-xs text-red-300">{(manageModule.error as Error).message}</p>}
           </section>
         )}
 
@@ -377,6 +494,19 @@ export default function AudioCatalogAdmin() {
                 <div><h2 className="text-sm font-semibold">{editingId ? "Editar activo" : "Nuevo activo"}</h2><p className="mt-1 text-[10px] text-zinc-600">Música, ambientes y efectos comparten procedencia; cada dominio conserva su propio reproductor.</p></div>
                 {editingId && <button onClick={() => { setEditingId(null); setForm({ ...EMPTY }) }} className="text-xs text-zinc-500">Cancelar</button>}
               </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1"><p className="text-xs font-medium">Importar MP3 o WAV desde este dispositivo</p><p className="mt-1 text-[10px] text-zinc-600">Máximo 96 MB. El original se guarda por huella en App Storage; los duplicados no ocupan espacio dos veces.</p></div>
+                <label className="cursor-pointer rounded-lg bg-white/10 px-3 py-2 text-xs text-center">
+                  {uploadAudio.isPending ? <Loader2 className="inline w-4 h-4 animate-spin mr-1" /> : <Upload className="inline w-4 h-4 mr-1" />} Seleccionar audio
+                  <input className="sr-only" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" disabled={uploadAudio.isPending} onChange={event => {
+                    const file = event.target.files?.[0]
+                    if (file) { setUploadMessage(""); uploadAudio.mutate(file) }
+                    event.target.value = ""
+                  }} />
+                </label>
+              </div>
+              {uploadMessage && <p className="rounded-lg bg-emerald-400/5 px-3 py-2 text-xs text-emerald-200">{uploadMessage}</p>}
+              {uploadAudio.isError && <p className="rounded-lg bg-red-950/30 px-3 py-2 text-xs text-red-200">{(uploadAudio.error as Error).message}</p>}
               <div className="grid sm:grid-cols-2 gap-3">
                 <input className={inputClass} placeholder="Título" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
                 <input className={inputClass} placeholder="Artista / autor" value={form.artist} onChange={e => setForm(f => ({ ...f, artist: e.target.value }))} />

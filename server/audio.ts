@@ -7,12 +7,13 @@ import {
 import { isSafeAudioSource, isSafeHttpsUrl } from "@shared/media"
 import {
   AUDIO_CONTRACT_VERSION, UI_SOUND_EVENTS, audioRecipeSchema, audioSourceTypeSchema,
-  compileTloqueScore, linearScoreRecipeSchema, proceduralRecipeSchema,
+  anyLinearScoreRecipeSchema, compileTloqueScore, proceduralRecipeSchema,
   uiSoundEventKeySchema, uiSoundRecipeSchema,
 } from "@shared/audio"
 import { db } from "./db"
 import { isAdmin, requireAdmin } from "./auth"
 import { rateLimit } from "./rateLimit"
+import { registerAudioUploadRoutes } from "./audioUploads"
 
 function isSafeSoundBankSource(value: string): boolean {
   if (!isSafeHttpsUrl(value, 2_000)) return false
@@ -64,17 +65,23 @@ export const audioAssetInputSchema = z.object({
   if (value.sourceType === "soundfont" && !isSafeSoundBankSource(value.packUrl)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["packUrl"], message: "El banco debe ser una URL HTTPS .sf2, .sf3 o .dls" })
   }
+  if (value.sourceType === "soundfont" && value.tags.some(tag => tag.startsWith("module:")) && (!value.packBytes || !value.packSha256)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["packSha256"], message: "Un módulo descargable necesita tamaño y huella SHA-256" })
+  }
   if (["procedural", "soundfont"].includes(value.sourceType) && !proceduralRecipeSchema.safeParse(value.recipe).success) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La receta musical procedural no es válida" })
   }
   if (value.sourceType === "score") {
-    const recipe = linearScoreRecipeSchema.safeParse(value.recipe)
+    const recipe = anyLinearScoreRecipeSchema.safeParse(value.recipe)
     if (!recipe.success) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "Compila el código TloqueScore antes de guardar" })
     } else {
       const verified = compileTloqueScore(recipe.data.source)
       if (!verified.ok || verified.recipe.plan.sourceHash !== recipe.data.plan.sourceHash) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La partitura compilada no corresponde al código fuente" })
+      }
+      if (recipe.data.version === 2 && recipe.data.plan.moduleId !== "builtin" && !isSafeSoundBankSource(value.packUrl)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["packUrl"], message: `El módulo ${recipe.data.plan.moduleId} necesita un banco SF2/SF3 publicado` })
       }
     }
   }
@@ -100,7 +107,7 @@ const assignmentInputSchema = z.object({
 })
 
 const scoreCompileInputSchema = z.object({
-  source: z.string().min(1).max(40_000),
+  source: z.string().min(1).max(200_000),
 }).strict()
 
 const eventBindingInputSchema = z.object({
@@ -115,7 +122,7 @@ const MIDI_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", 
 function normalizedAudioAsset(data: z.infer<typeof audioAssetInputSchema>) {
   if (data.sourceType === "stream" || !data.recipe) return data
   if (data.sourceType === "score") {
-    const recipe = linearScoreRecipeSchema.parse(data.recipe)
+    const recipe = anyLinearScoreRecipeSchema.parse(data.recipe)
     return {
       ...data,
       recipe,
@@ -123,7 +130,7 @@ function normalizedAudioAsset(data: z.infer<typeof audioAssetInputSchema>) {
       musicalMode: `${recipe.plan.meter.numerator}/${recipe.plan.meter.denominator}`,
       texture: data.texture || "partitura lineal TloqueScore",
       tags: [...new Set([...data.tags, "tloque-score", "instrumental", recipe.plan.compilerVersion])].slice(0, 24),
-      durationSeconds: Math.max(1, Math.ceil(recipe.plan.totalBeats * 60 / recipe.plan.bpm)),
+      durationSeconds: Math.max(1, Math.ceil("totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * 60 / recipe.plan.bpm)),
       loop: recipe.plan.loop,
     }
   }
@@ -174,6 +181,7 @@ function publicAsset(asset: typeof audioAssets.$inferSelect) {
 }
 
 export function registerAudioRoutes(app: Express) {
+  registerAudioUploadRoutes(app)
   app.get("/api/audio/ui-manifest", async (_req, res) => {
     try {
       const rows = await db.select({

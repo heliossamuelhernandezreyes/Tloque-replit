@@ -18,6 +18,7 @@ export function isSafeImageSource(value: string, maxLength = 3_000_000): boolean
 }
 
 export function isSafeAudioSource(value: string): boolean {
+  if (/^\/api\/audio\/uploads\/[a-f0-9]{64}\.(?:mp3|wav)$/.test(value)) return true
   if (!isSafeHttpsUrl(value, 4_000)) return false
   try {
     const path = new URL(value).pathname.toLowerCase()
