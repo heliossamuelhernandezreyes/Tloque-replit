@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { type MusicCue, type MusicState } from "./MusicEngine"
 import { HybridMusicEngine } from "./HybridMusicEngine"
 import { useSettings } from "@/context/SettingsContext"
+import type { MusicBrainScoreV1 } from "@shared/music-brain"
 
 interface MusicContextValue {
   state: MusicState
@@ -9,7 +10,8 @@ interface MusicContextValue {
   playCue: (cue: MusicCue | null) => void
   toggle: () => void
   duck: (active: boolean) => void
-  direct: (intensity: number, silence: boolean, transitionSeconds: number) => void
+  loadNarrativeScore: (score: MusicBrainScoreV1 | null) => void
+  direct: (intensity: number, silence: boolean, transitionSeconds: number, regionId?: string) => void
   stop: () => void
 }
 
@@ -57,13 +59,16 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, [cue, settings.musicEnabled, state])
 
   const duck = useCallback((active: boolean) => engineRef.current?.setDucked(active), [])
-  const direct = useCallback((intensity: number, silence: boolean, seconds: number) => {
-    engineRef.current?.setNarrativeDirection(intensity, silence, seconds)
+  const loadNarrativeScore = useCallback((score: MusicBrainScoreV1 | null) => {
+    engineRef.current?.setNarrativeScore(score)
+  }, [])
+  const direct = useCallback((intensity: number, silence: boolean, seconds: number, regionId?: string) => {
+    engineRef.current?.setNarrativeDirection(intensity, silence, seconds, regionId)
   }, [])
   const stop = useCallback(() => engineRef.current?.stop(), [])
 
   return (
-    <MusicContext.Provider value={{ state, cue, playCue, toggle, duck, direct, stop }}>
+    <MusicContext.Provider value={{ state, cue, playCue, toggle, duck, loadNarrativeScore, direct, stop }}>
       {children}
     </MusicContext.Provider>
   )

@@ -19,6 +19,7 @@ import ReaderAudioMenu from "@/components/ReaderAudioMenu"
 import type { ChapterAudioAssignment } from "@/audio/catalog"
 import { useReadingAttention } from "@/narrative/useReadingAttention"
 import { narrativeParagraphsFor, resolveNarrativeRegion, type ExperienceProfileV1, type NarrativeRuntimeState } from "@shared/narrative"
+import type { MusicBrainScoreV1 } from "@shared/music-brain"
 import { FREE_SAVE_LIMIT, countsTowardLimit, countLimitedSaved } from "@/lib/library"
 import {
   useSettings,
@@ -97,11 +98,11 @@ export default function Reader() {
   })
   const soundtrack = soundtrackData?.assignments.find(item => item.chapterIndex === activeChapter) || null
 
-  const { data: experienceData } = useQuery<{ profile: ExperienceProfileV1 | null }>({
+  const { data: experienceData } = useQuery<{ profile: ExperienceProfileV1 | null; musicBrain: MusicBrainScoreV1 | null }>({
     queryKey: ["/api/books", numericBookId, "experience", activeChapter],
     queryFn: async () => {
       const response = await fetch(`/api/books/${numericBookId}/experience/${activeChapter}`, { credentials: "include" })
-      return response.ok ? response.json() : { profile: null }
+      return response.ok ? response.json() : { profile: null, musicBrain: null }
     },
     enabled: numericBookId !== null,
   })
@@ -111,6 +112,11 @@ export default function Reader() {
   useEffect(() => {
     narrativeState.current = { activeRegionId: null, lastProgress: 0 }
   }, [activeChapter, experienceData?.profile?.revision])
+
+  useEffect(() => {
+    music.loadNarrativeScore(experienceData?.musicBrain ?? null)
+    return () => music.loadNarrativeScore(null)
+  }, [experienceData?.musicBrain, music.loadNarrativeScore])
 
   useEffect(() => {
     const profile = experienceData?.profile
@@ -130,6 +136,7 @@ export default function Reader() {
       decision.region.targetIntensity,
       decision.region.mood === "silence",
       decision.region.transition.preferredSeconds,
+      decision.region.id,
     )
   }, [
     experienceData?.profile,
