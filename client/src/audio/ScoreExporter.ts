@@ -23,12 +23,12 @@ export interface ScoreExportOptions {
 
 const QUALITY = {
   preview: { sampleRate: 32_000, bitDepth: 16 as const },
-  studio: { sampleRate: 48_000, bitDepth: 16 as const },
-  master: { sampleRate: 48_000, bitDepth: 24 as const },
+  studio: { sampleRate: 48_000, bitDepth: 24 as const },
+  master: { sampleRate: 96_000, bitDepth: 24 as const },
 }
 
 const MAX_EXPORT_BYTES = 750_000_000
-const TAIL_SECONDS = 3
+const TAIL_SECONDS: Record<ScoreExportQuality, number> = { preview: 2.5, studio: 5, master: 8 }
 
 function defaultQuality(recipe: LinearScoreRecipe): ScoreExportQuality {
   if (recipe.version === 2) return recipe.plan.quality === "core" ? "preview" : recipe.plan.quality
@@ -39,7 +39,7 @@ export function estimateScoreExport(value: unknown, requested?: ScoreExportQuali
   const recipe = linearScoreRecipeFor(value)
   const quality = requested ?? defaultQuality(recipe)
   const profile = QUALITY[quality]
-  const durationSeconds = ("totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * 60 / recipe.plan.bpm) + TAIL_SECONDS
+  const durationSeconds = ("totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * 60 / recipe.plan.bpm) + TAIL_SECONDS[quality]
   const bytes = 44 + Math.ceil(durationSeconds * profile.sampleRate) * 2 * (profile.bitDepth / 8)
   return { audioProfile: TLOQUE_SCORE_AUDIO_PROFILE, quality, sampleRate: profile.sampleRate, bitDepth: profile.bitDepth, durationSeconds, bytes }
 }
@@ -111,14 +111,27 @@ function writeHeader(dataBytes: number, sampleRate: number, bitDepth: 16 | 24) {
   return new Uint8Array(header)
 }
 
-function encodePcm(left: Float32Array, right: Float32Array, bitDepth: 16 | 24) {
+function deterministicNoise(index: number, salt: number) {
+  let value = (index + Math.imul(salt, 0x9e3779b1)) >>> 0
+  value ^= value >>> 16
+  value = Math.imul(value, 0x7feb352d)
+  value ^= value >>> 15
+  value = Math.imul(value, 0x846ca68b)
+  value ^= value >>> 16
+  return (value >>> 0) / 0x1_0000_0000
+}
+
+function encodePcm(left: Float32Array, right: Float32Array, bitDepth: 16 | 24, frameStart: number) {
   const bytesPerSample = bitDepth / 8
   const bytes = new Uint8Array(left.length * 2 * bytesPerSample)
   const view = new DataView(bytes.buffer)
   let offset = 0
   for (let index = 0; index < left.length; index += 1) {
-    for (const raw of [left[index], right[index]]) {
-      const sample = Math.max(-1, Math.min(1, raw))
+    for (const [channel, raw] of [left[index], right[index]].entries()) {
+      const absoluteSample = (frameStart + index) * 2 + channel
+      const scale = bitDepth === 16 ? 0x7fff : 0x7fffff
+      const dither = (deterministicNoise(absoluteSample, 11) - deterministicNoise(absoluteSample, 29)) / scale
+      const sample = Math.max(-1, Math.min(1, raw + dither))
       if (bitDepth === 16) {
         view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true)
         offset += 2
@@ -183,6 +196,8 @@ export async function renderTloqueScoreToWav(value: unknown, options: ScoreExpor
   let previousInputRight = 0
   let previousOutputLeft = 0
   let previousOutputRight = 0
+  let dynamicsEnvelope = 0
+  let dynamicsGain = 1
   options.onProgress?.(0)
 
   for (let frameStart = 0; frameStart < totalFrames; frameStart += chunkFrames) {
@@ -223,19 +238,33 @@ export async function renderTloqueScoreToWav(value: unknown, options: ScoreExpor
       delayRight[delayIndex] = right[index] + delayedLeft * 0.31
       const mixedLeft = left[index] + reflectedLeft * 0.09 + delayedLeft * render.reverbWet
       const mixedRight = right[index] + reflectedRight * 0.09 + delayedRight * render.reverbWet
-      const highPassedLeft = mixedLeft - previousInputLeft + 0.995 * previousOutputLeft
-      const highPassedRight = mixedRight - previousInputRight + 0.995 * previousOutputRight
-      previousInputLeft = mixedLeft
-      previousInputRight = mixedRight
+      const mid = (mixedLeft + mixedRight) * 0.5
+      const width = 0.82 + render.stereoWidth * 0.42
+      const side = (mixedLeft - mixedRight) * 0.5 * width
+      const widenedLeft = mid + side
+      const widenedRight = mid - side
+      const highPassedLeft = widenedLeft - previousInputLeft + 0.995 * previousOutputLeft
+      const highPassedRight = widenedRight - previousInputRight + 0.995 * previousOutputRight
+      previousInputLeft = widenedLeft
+      previousInputRight = widenedRight
       previousOutputLeft = highPassedLeft
       previousOutputRight = highPassedRight
-      left[index] = Math.tanh(highPassedLeft * render.masterDrive) * 0.96
-      right[index] = Math.tanh(highPassedRight * render.masterDrive) * 0.96
+      const detector = Math.max(Math.abs(highPassedLeft), Math.abs(highPassedRight))
+      const envelopeCoefficient = detector > dynamicsEnvelope ? 0.08 : 0.0018
+      dynamicsEnvelope += (detector - dynamicsEnvelope) * envelopeCoefficient
+      const threshold = 0.58
+      const targetGain = dynamicsEnvelope <= threshold
+        ? 1
+        : (threshold + (dynamicsEnvelope - threshold) / 3.2) / Math.max(threshold, dynamicsEnvelope)
+      dynamicsGain += (targetGain - dynamicsGain) * (targetGain < dynamicsGain ? 0.045 : 0.0012)
+      const saturationScale = 0.985 / Math.tanh(render.masterDrive)
+      left[index] = Math.tanh(highPassedLeft * dynamicsGain * render.masterDrive) * saturationScale
+      right[index] = Math.tanh(highPassedRight * dynamicsGain * render.masterDrive) * saturationScale
       delayIndex = (delayIndex + 1) % delayFrames
       earlyIndex = (earlyIndex + 1) % earlyFrames
     }
 
-    parts.push(encodePcm(left, right, bitDepth))
+    parts.push(encodePcm(left, right, bitDepth, frameStart))
     options.onProgress?.(Math.min(1, (frameStart + length) / totalFrames))
     await nextFrame()
   }
