@@ -6,7 +6,7 @@ export interface MusicCue {
   id: number
   title: string
   artist?: string
-  sourceType?: "stream" | "procedural" | "soundfont"
+  sourceType?: "stream" | "procedural" | "soundfont" | "score" | "sfx"
   url?: string
   recipe?: unknown
   packUrl?: string

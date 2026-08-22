@@ -1,4 +1,4 @@
-import type { AudioSourceType, ProceduralRecipe } from "@shared/audio"
+import type { AudioRecipe, AudioSourceType } from "@shared/audio"
 import type { MusicCue } from "./MusicEngine"
 
 export interface CatalogAudioAsset {
@@ -8,7 +8,7 @@ export interface CatalogAudioAsset {
   kind: "music" | "ambience" | "system"
   sourceType: AudioSourceType
   url: string
-  recipe: ProceduralRecipe | null
+  recipe: AudioRecipe | null
   musicalKey: string
   musicalMode: string
   brightness: number

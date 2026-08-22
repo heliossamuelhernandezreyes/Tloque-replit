@@ -1,7 +1,10 @@
 // Web Audio API — genera sonidos sintéticos sin archivos externos
 // Funciona en todos los navegadores modernos, sin dependencias
+import { useEffect } from "react"
+import type { UiSoundEventKey } from "@shared/audio"
+import { soundFXEngine, type PreviewableSoundAsset } from "@/audio/SoundFXEngine"
 
-type SoundType =
+export type SoundType =
   | "orb_tap"        // tap suave en orbe central
   | "orb_hold"       // activación de buscador
   | "genre_cycle"    // ciclar género
@@ -23,6 +26,25 @@ const COOLDOWN_MS: Partial<Record<SoundType, number>> = {
   save_book: 350,
   book_complete: 1_500,
   streak_milestone: 1_500,
+}
+
+function eventKeyFor(type: SoundType, genre?: string): UiSoundEventKey {
+  if (type === "genre_cycle") {
+    const variant = ["todos", "melancolico", "terror", "fantasia", "misterio", "romance"].includes(genre || "")
+      ? genre!
+      : "todos"
+    return `ui.genre.cycle.${variant}` as UiSoundEventKey
+  }
+  switch (type) {
+    case "orb_tap": return "ui.orb.tap"
+    case "orb_hold": return "ui.orb.hold"
+    case "genre_reset": return "ui.genre.reset"
+    case "save_book": return "ui.book.save"
+    case "page_turn": return "ui.page.turn"
+    case "navigate": return "ui.navigation"
+    case "book_complete": return "ui.book.complete"
+    case "streak_milestone": return "ui.streak.milestone"
+  }
 }
 
 function connectToOutput(ctx: AudioContext, node: AudioNode) {
@@ -362,10 +384,15 @@ function getAudioSettings(): { enabled: boolean; volume: number } {
 }
 
 export function useSoundFX() {
+  useEffect(() => { void soundFXEngine.loadManifest() }, [])
+
   function play(type: SoundType, genre?: string) {
     // Movimiento reducido y audio son preferencias independientes.
-    const { enabled } = getAudioSettings()
+    const { enabled, volume } = getAudioSettings()
     if (!enabled) return
+    // La Fonoteca publicada tiene prioridad. El sintetizador histórico queda
+    // como fallback offline o durante una migración aún no aplicada.
+    if (soundFXEngine.play(eventKeyFor(type, genre), volume)) return
     const now = performance.now()
     const cooldown = COOLDOWN_MS[type] ?? 70
     if (now - (lastPlayedAt.get(type) ?? -Infinity) < cooldown) return
@@ -388,5 +415,14 @@ export function useSoundFX() {
     }
   }
 
-  return { play }
+  function preview(asset: PreviewableSoundAsset) {
+    const { enabled, volume } = getAudioSettings()
+    return enabled && soundFXEngine.preview(asset, volume)
+  }
+
+  return {
+    play,
+    preview,
+    reloadManifest: () => soundFXEngine.loadManifest(true),
+  }
 }

@@ -459,8 +459,22 @@ export const audioFavorites = pgTable("audio_favorites", {
   uniqAudioFavorite: unique("uniq_audio_favorite").on(t.userId, t.assetId),
 }))
 
+// Un evento estable de la aplicación apunta a un activo publicado de tipo
+// system. Separar la asignación del activo permite cambiar volumen/cooldown o
+// reutilizar un sonido sin duplicar su receta y procedencia en la Fonoteca.
+export const audioEventBindings = pgTable("audio_event_bindings", {
+  eventKey:  text("event_key").primaryKey(),
+  assetId:   integer("asset_id").references(() => audioAssets.id, { onDelete: "cascade" }).notNull(),
+  volume:    real("volume").notNull().default(0.8),
+  cooldownMs: integer("cooldown_ms").notNull().default(70),
+  enabled:   boolean("enabled").notNull().default(true),
+  updatedBy: integer("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
 export type AudioAsset = typeof audioAssets.$inferSelect
 export type ChapterAudioAssignment = typeof chapterAudioAssignments.$inferSelect
+export type AudioEventBinding = typeof audioEventBindings.$inferSelect
 
 // ── FONOTECA ADAPTATIVA Y DIRECCIÓN NARRATIVA ──────────
 // Las capas son exclusivamente musicales. No existen roles de SFX, foley o

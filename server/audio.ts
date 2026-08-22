@@ -2,10 +2,14 @@ import type { Express } from "express"
 import { and, asc, eq } from "drizzle-orm"
 import { z } from "zod"
 import {
-  audioAssets, audioFavorites, books, chapterAudioAssignments,
+  audioAssets, audioEventBindings, audioFavorites, books, chapterAudioAssignments,
 } from "@shared/schema"
 import { isSafeAudioSource, isSafeHttpsUrl } from "@shared/media"
-import { audioSourceTypeSchema, proceduralRecipeSchema } from "@shared/audio"
+import {
+  AUDIO_CONTRACT_VERSION, UI_SOUND_EVENTS, audioRecipeSchema, audioSourceTypeSchema,
+  compileTloqueScore, linearScoreRecipeSchema, proceduralRecipeSchema,
+  uiSoundEventKeySchema, uiSoundRecipeSchema,
+} from "@shared/audio"
 import { db } from "./db"
 import { isAdmin, requireAdmin } from "./auth"
 import { rateLimit } from "./rateLimit"
@@ -26,7 +30,7 @@ export const audioAssetInputSchema = z.object({
   kind: z.enum(["music", "ambience", "system"]).default("music"),
   sourceType: audioSourceTypeSchema.default("stream"),
   url: z.string().trim().max(2_000).default(""),
-  recipe: proceduralRecipeSchema.nullable().default(null),
+  recipe: audioRecipeSchema.nullable().default(null),
   musicalKey: z.string().trim().max(16).default(""),
   musicalMode: z.string().trim().max(32).default(""),
   brightness: z.number().min(0).max(1).default(0.5),
@@ -55,10 +59,36 @@ export const audioAssetInputSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["url"], message: "La pista de respaldo debe ser audio HTTPS permitido" })
   }
   if (value.sourceType !== "stream" && !value.recipe) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La síntesis necesita una receta musical" })
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La síntesis necesita una receta válida" })
   }
   if (value.sourceType === "soundfont" && !isSafeSoundBankSource(value.packUrl)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["packUrl"], message: "El banco debe ser una URL HTTPS .sf2, .sf3 o .dls" })
+  }
+  if (["procedural", "soundfont"].includes(value.sourceType) && !proceduralRecipeSchema.safeParse(value.recipe).success) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La receta musical procedural no es válida" })
+  }
+  if (value.sourceType === "score") {
+    const recipe = linearScoreRecipeSchema.safeParse(value.recipe)
+    if (!recipe.success) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "Compila el código TloqueScore antes de guardar" })
+    } else {
+      const verified = compileTloqueScore(recipe.data.source)
+      if (!verified.ok || verified.recipe.plan.sourceHash !== recipe.data.plan.sourceHash) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La partitura compilada no corresponde al código fuente" })
+      }
+    }
+  }
+  if (value.sourceType === "sfx" && !uiSoundRecipeSchema.safeParse(value.recipe).success) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La receta de microsonido no es válida" })
+  }
+  if (value.kind === "system" && !["stream", "sfx"].includes(value.sourceType)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["sourceType"], message: "Los sonidos de interfaz usan archivo o receta SFX" })
+  }
+  if (value.sourceType === "sfx" && value.kind !== "system") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["kind"], message: "Un microsonido SFX pertenece a Sonidos del sistema" })
+  }
+  if (value.sourceType === "score" && value.kind !== "music") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["kind"], message: "TloqueScore genera temas instrumentales de Música" })
   }
 })
 
@@ -69,24 +99,65 @@ const assignmentInputSchema = z.object({
   crossfadeSeconds: z.number().min(0.25).max(20).default(6),
 })
 
+const scoreCompileInputSchema = z.object({
+  source: z.string().min(1).max(40_000),
+}).strict()
+
+const eventBindingInputSchema = z.object({
+  assetId: z.number().int().positive(),
+  volume: z.number().min(0).max(1).default(0.8),
+  cooldownMs: z.number().int().min(0).max(10_000).default(70),
+  enabled: z.boolean().default(true),
+}).strict()
+
 const MIDI_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const
 
 function normalizedAudioAsset(data: z.infer<typeof audioAssetInputSchema>) {
   if (data.sourceType === "stream" || !data.recipe) return data
+  if (data.sourceType === "score") {
+    const recipe = linearScoreRecipeSchema.parse(data.recipe)
+    return {
+      ...data,
+      recipe,
+      bpm: recipe.plan.bpm,
+      musicalMode: `${recipe.plan.meter.numerator}/${recipe.plan.meter.denominator}`,
+      texture: data.texture || "partitura lineal TloqueScore",
+      tags: [...new Set([...data.tags, "tloque-score", "instrumental", recipe.plan.compilerVersion])].slice(0, 24),
+      durationSeconds: Math.max(1, Math.ceil(recipe.plan.totalBeats * 60 / recipe.plan.bpm)),
+      loop: recipe.plan.loop,
+    }
+  }
+  if (data.sourceType === "sfx") {
+    const recipe = uiSoundRecipeSchema.parse(data.recipe)
+    const duration = Math.max(...recipe.voices.map(voice => voice.offset + voice.duration))
+    return {
+      ...data,
+      recipe,
+      bpm: null,
+      musicalKey: "",
+      musicalMode: "",
+      texture: data.texture || "microsonido procedural",
+      tags: [...new Set([...data.tags, "interface", "procedural-sfx"])].slice(0, 24),
+      durationSeconds: Math.max(1, Math.ceil(duration)),
+      loop: false,
+    }
+  }
+  const recipe = proceduralRecipeSchema.parse(data.recipe)
   const presetEmotion = {
     quiet_observatory: "contemplative",
     warm_memory: "nostalgic",
     cold_suspense: "suspense",
     deep_focus: "focused",
-  }[data.recipe.preset]
-  const automaticTags = [data.recipe.preset, data.recipe.scale, data.sourceType]
+  }[recipe.preset]
+  const automaticTags = [recipe.preset, recipe.scale, data.sourceType]
   return {
     ...data,
-    bpm: data.recipe.bpm,
-    musicalKey: `${MIDI_NAMES[data.recipe.rootMidi % 12]}${Math.floor(data.recipe.rootMidi / 12) - 1}`,
-    musicalMode: data.recipe.scale,
-    brightness: data.recipe.brightness,
-    texture: data.texture || data.recipe.preset.replaceAll("_", " "),
+    recipe,
+    bpm: recipe.bpm,
+    musicalKey: `${MIDI_NAMES[recipe.rootMidi % 12]}${Math.floor(recipe.rootMidi / 12) - 1}`,
+    musicalMode: recipe.scale,
+    brightness: recipe.brightness,
+    texture: data.texture || recipe.preset.replaceAll("_", " "),
     emotion: data.emotion === "neutral" ? presetEmotion : data.emotion,
     tags: [...new Set([...data.tags, ...automaticTags])].slice(0, 24),
   }
@@ -103,6 +174,113 @@ function publicAsset(asset: typeof audioAssets.$inferSelect) {
 }
 
 export function registerAudioRoutes(app: Express) {
+  app.get("/api/audio/ui-manifest", async (_req, res) => {
+    try {
+      const rows = await db.select({
+        eventKey: audioEventBindings.eventKey,
+        volume: audioEventBindings.volume,
+        cooldownMs: audioEventBindings.cooldownMs,
+        asset: audioAssets,
+      }).from(audioEventBindings)
+        .innerJoin(audioAssets, eq(audioEventBindings.assetId, audioAssets.id))
+        .where(and(
+          eq(audioEventBindings.enabled, true),
+          eq(audioAssets.kind, "system"),
+          eq(audioAssets.status, "published"),
+        ))
+        .orderBy(asc(audioEventBindings.eventKey))
+
+      const bindings = rows.flatMap(row => {
+        const event = uiSoundEventKeySchema.safeParse(row.eventKey)
+        if (!event.success || !["stream", "sfx"].includes(row.asset.sourceType)) return []
+        const recipe = row.asset.sourceType === "sfx"
+          ? uiSoundRecipeSchema.safeParse(row.asset.recipe)
+          : null
+        if (recipe && !recipe.success) return []
+        return [{
+          eventKey: event.data,
+          volume: row.volume,
+          cooldownMs: row.cooldownMs,
+          asset: {
+            id: row.asset.id,
+            title: row.asset.title,
+            sourceType: row.asset.sourceType as "stream" | "sfx",
+            url: row.asset.url,
+            recipe: recipe?.success ? recipe.data : null,
+          },
+        }]
+      })
+      res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+      res.json({ version: AUDIO_CONTRACT_VERSION, bindings })
+    } catch (error) {
+      console.error("UI audio manifest read failed:", error)
+      res.status(500).json({ message: "No se pudo cargar el mapa de sonidos" })
+    }
+  })
+
+  app.post("/api/admin/audio/score/compile", requireAdmin, rateLimit(60_000, 60), (req, res) => {
+    const parsed = scoreCompileInputSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ message: "Código TloqueScore inválido" })
+    const result = compileTloqueScore(parsed.data.source)
+    if (!result.ok) return res.status(400).json(result)
+    res.json(result)
+  })
+
+  app.get("/api/admin/audio/ui-bindings", requireAdmin, async (_req, res) => {
+    try {
+      const [bindings, assets] = await Promise.all([
+        db.select().from(audioEventBindings).orderBy(asc(audioEventBindings.eventKey)),
+        db.select().from(audioAssets)
+          .where(and(eq(audioAssets.kind, "system"), eq(audioAssets.status, "published")))
+          .orderBy(asc(audioAssets.title)),
+      ])
+      res.json({ events: UI_SOUND_EVENTS, bindings, assets })
+    } catch (error) {
+      console.error("Admin UI audio bindings read failed:", error)
+      res.status(500).json({ message: "No se pudieron cargar las asignaciones" })
+    }
+  })
+
+  app.put("/api/admin/audio/ui-bindings/:eventKey", requireAdmin, rateLimit(60_000, 60), async (req, res) => {
+    const event = uiSoundEventKeySchema.safeParse(req.params.eventKey)
+    const parsed = eventBindingInputSchema.safeParse(req.body)
+    if (!event.success || !parsed.success) return res.status(400).json({ message: "Asignación inválida" })
+    try {
+      const [asset] = await db.select().from(audioAssets).where(and(
+        eq(audioAssets.id, parsed.data.assetId),
+        eq(audioAssets.kind, "system"),
+        eq(audioAssets.status, "published"),
+      ))
+      if (!asset || !["stream", "sfx"].includes(asset.sourceType)) {
+        return res.status(400).json({ message: "Elige un sonido del sistema publicado" })
+      }
+      const [binding] = await db.insert(audioEventBindings).values({
+        eventKey: event.data,
+        ...parsed.data,
+        updatedBy: (req.user as any).id,
+      }).onConflictDoUpdate({
+        target: audioEventBindings.eventKey,
+        set: { ...parsed.data, updatedBy: (req.user as any).id, updatedAt: new Date() },
+      }).returning()
+      res.json({ binding })
+    } catch (error) {
+      console.error("Admin UI audio binding update failed:", error)
+      res.status(500).json({ message: "No se pudo guardar la asignación" })
+    }
+  })
+
+  app.delete("/api/admin/audio/ui-bindings/:eventKey", requireAdmin, rateLimit(60_000, 60), async (req, res) => {
+    const event = uiSoundEventKeySchema.safeParse(req.params.eventKey)
+    if (!event.success) return res.status(400).json({ message: "Evento inválido" })
+    try {
+      await db.delete(audioEventBindings).where(eq(audioEventBindings.eventKey, event.data))
+      res.json({ ok: true })
+    } catch (error) {
+      console.error("Admin UI audio binding delete failed:", error)
+      res.status(500).json({ message: "No se pudo restaurar el sonido base" })
+    }
+  })
+
   app.get("/api/audio/assets", async (req, res) => {
     try {
       const list = await db.select().from(audioAssets)
