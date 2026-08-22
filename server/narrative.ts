@@ -4,6 +4,7 @@ import { z } from "zod"
 import {
   adaptiveScoreLayers,
   adaptiveScores,
+  advancedDirectionProjects,
   audioAssets,
   books,
   experienceProfiles,
@@ -18,6 +19,8 @@ import {
   paragraphCountFor,
   type NarrativeProjectV1,
 } from "@shared/narrative"
+import { advancedDirectionProjectSchema } from "@shared/direction"
+import { musicBrainScoreForDirection, musicBrainScoreForExperience } from "@shared/music-brain"
 import { paperChargeFor } from "@shared/paper"
 import { db } from "./db"
 import { isAdmin } from "./auth"
@@ -420,8 +423,8 @@ export function registerNarrativeRoutes(app: Express) {
     }
   })
 
-  // El lector recibe únicamente el perfil compacto. El documento editorial,
-  // sus notas y la procedencia de Oráculo nunca salen en esta respuesta.
+  // El lector recibe contratos compactos ya derivados. El manuscrito, las
+  // notas editoriales y la procedencia del agente nunca salen en esta respuesta.
   app.get("/api/books/:id/experience/:chapterIndex", async (req, res) => {
     const bookId = parsePositiveInt(req.params.id)
     const chapterIndex = parseChapterIndex(req.params.chapterIndex)
@@ -437,8 +440,18 @@ export function registerNarrativeRoutes(app: Express) {
       ]
       if (!owner) conditions.push(eq(experienceProfiles.status, "approved"))
       const [profile] = await db.select().from(experienceProfiles).where(and(...conditions))
-      if (!profile) return res.json({ profile: null })
-      res.json({ profile: experienceProfileSchema.parse(profile.data) })
+      if (!profile) return res.json({ profile: null, musicBrain: null })
+      const compactProfile = experienceProfileSchema.parse(profile.data)
+      const [advanced] = await db.select().from(advancedDirectionProjects).where(and(
+        eq(advancedDirectionProjects.bookId, bookId),
+        eq(advancedDirectionProjects.chapterIndex, chapterIndex),
+        eq(advancedDirectionProjects.revision, profile.sourceProjectRevision),
+      ))
+      const advancedProject = advancedDirectionProjectSchema.safeParse(advanced?.data)
+      const musicBrain = advancedProject.success && advancedProject.data.musicProject.regions.length > 0
+        ? musicBrainScoreForDirection(advancedProject.data)
+        : compactProfile.regions.length > 0 ? musicBrainScoreForExperience(compactProfile) : null
+      res.json({ profile: compactProfile, musicBrain })
     } catch (error) {
       console.error("Experience profile read failed:", error)
       res.status(500).json({ message: "No se pudo cargar la experiencia narrativa" })
