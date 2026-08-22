@@ -501,6 +501,9 @@ export const narrativeProjects = pgTable("narrative_projects", {
   bookId:       integer("book_id").references(() => books.id, { onDelete: "cascade" }).notNull(),
   chapterIndex: integer("chapter_index").notNull(),
   revision:     integer("revision").notNull().default(1),
+  // El hash ancla las regiones musicales a una versión exacta del manuscrito.
+  // El valor vacío migra filas heredadas a un estado explícitamente stale.
+  contentHash:  text("content_hash").notNull().default(""),
   data:         jsonb("data").$type<NarrativeProjectV1>().notNull(),
   createdBy:    integer("created_by").references(() => users.id),
   updatedAt:    timestamp("updated_at").defaultNow().notNull(),
