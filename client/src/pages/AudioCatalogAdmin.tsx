@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { useMusic } from "@/audio/MusicProvider"
 import { useSoundFX } from "@/hooks/useSoundFX"
 import {
-  DEFAULT_PROCEDURAL_RECIPE, DEFAULT_TLOQUE_SCORE, DEFAULT_UI_SOUND_RECIPE,
+  DEFAULT_PROCEDURAL_RECIPE, DEFAULT_UI_SOUND_RECIPE,
   anyLinearScoreRecipeSchema, proceduralRecipeSchema, uiSoundRecipeSchema,
   type LinearScoreRecipe, type ProceduralRecipe,
   type UiSoundEventKey, type UiSoundRecipe,
@@ -56,7 +56,7 @@ export default function AudioCatalogAdmin() {
   const [form, setForm] = useState<AudioAssetForm>({ ...EMPTY })
   const [preview, setPreview] = useState<number | null>(null)
   const [scoreEditingId, setScoreEditingId] = useState<number | null>(null)
-  const [scoreSource, setScoreSource] = useState(DEFAULT_TLOQUE_SCORE)
+  const [scoreSource, setScoreSource] = useState("")
   const [scoreMeta, setScoreMeta] = useState({ ...SCORE_META })
   const [compiled, setCompiled] = useState<LinearScoreRecipe | null>(null)
   const [exportProgress, setExportProgress] = useState(0)
@@ -365,6 +365,7 @@ export default function AudioCatalogAdmin() {
             <div>
               <h2 className="text-sm font-semibold">Compositor de obras · TloqueScore V2</h2>
               <p className="mt-1 text-xs text-zinc-500">El código es la obra maestra: editarlo recompila y cambia el audio. La reproducción no crea archivos; Exportar genera un WAV sólo cuando lo pides.</p>
+              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code> activa la máxima polifonía, profundidad estéreo y masterización integrada. Los módulos SF2/SF3 añaden instrumentos muestreados bajo demanda.</p>
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <input className={inputClass} placeholder="Título del tema" value={scoreMeta.title} onChange={e => setScoreMeta(meta => ({ ...meta, title: e.target.value }))} />
@@ -374,6 +375,7 @@ export default function AudioCatalogAdmin() {
               className={`${inputClass} min-h-[360px] font-mono text-[12px] leading-5 resize-y`}
               spellCheck={false}
               aria-label="Código TloqueScore"
+              placeholder="Pega o escribe aquí una obra TLOQUE_SCORE 2"
               value={scoreSource}
               onChange={event => { setScoreSource(event.target.value); setCompiled(null) }}
             />
@@ -412,17 +414,17 @@ export default function AudioCatalogAdmin() {
               </select>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button disabled={compile.isPending} onClick={() => compile.mutate(scoreSource)} className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-50">
+              <button disabled={compile.isPending || !scoreSource.trim()} onClick={() => compile.mutate(scoreSource)} className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-50">
                 {compile.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validar y compilar"}
               </button>
-              <button disabled={!compiled} onClick={() => compiled && music.playCue({ id: -11, title: scoreMeta.title || "Vista previa", sourceType: "score", recipe: compiled, packUrl: compiledModule?.packUrl, packBytes: compiledModule?.packBytes, packSha256: compiledModule?.packSha256, loop: compiled.plan.loop, volume: 0.35, crossfadeSeconds: 0.25 })} className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"><Play className="inline w-4 h-4 mr-1" /> Escuchar</button>
+              <button disabled={!compiled} onClick={() => compiled && music.playCue({ id: -11, title: scoreMeta.title || "Vista previa", sourceType: "score", recipe: compiled, packUrl: compiledModule?.packUrl, packBytes: compiledModule?.packBytes, packSha256: compiledModule?.packSha256, loop: compiled.plan.loop, volume: 1, crossfadeSeconds: 0.25 })} className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"><Play className="inline w-4 h-4 mr-1" /> Escuchar</button>
               <button onClick={() => music.stop()} className="rounded-lg bg-white/10 px-4 py-2 text-sm"><Square className="inline w-4 h-4 mr-1" /> Detener</button>
               <button disabled={!compiled || exportScore.isPending} onClick={() => exportScore.mutate()} className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"><Download className="inline w-4 h-4 mr-1" /> {exportScore.isPending ? `Exportando ${Math.round(exportProgress * 100)}%` : "Exportar WAV"}</button>
-              <button disabled={saveScore.isPending || !scoreMeta.title.trim()} onClick={() => saveScore.mutate()} className="sm:ml-auto rounded-lg bg-amber-400 text-black px-4 py-2 text-sm font-semibold disabled:opacity-40">
+              <button disabled={saveScore.isPending || !scoreMeta.title.trim() || !scoreSource.trim()} onClick={() => saveScore.mutate()} className="sm:ml-auto rounded-lg bg-amber-400 text-black px-4 py-2 text-sm font-semibold disabled:opacity-40">
                 {saveScore.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : `${scoreEditingId ? "Actualizar" : "Guardar"} en Fonoteca`}
               </button>
             </div>
-            {exportEstimate && <p className="text-[10px] text-zinc-500">Exportación {exportEstimate.bitDepth}-bit / {(exportEstimate.sampleRate / 1000).toFixed(0)} kHz · tamaño estimado {(exportEstimate.bytes / 1024 / 1024).toFixed(1)} MB. El render se procesa por bloques para obras largas.</p>}
+            {exportEstimate && <p className="text-[10px] text-zinc-500">Exportación {exportEstimate.bitDepth}-bit / {(exportEstimate.sampleRate / 1000).toFixed(0)} kHz · {exportEstimate.audioProfile} · tamaño estimado {(exportEstimate.bytes / 1024 / 1024).toFixed(1)} MB. El render se procesa por bloques para obras largas.</p>}
             {(saveScore.isError || exportScore.isError) && <pre className="whitespace-pre-wrap text-xs text-red-300">{((saveScore.error || exportScore.error) as Error).message}</pre>}
           </section>
         )}

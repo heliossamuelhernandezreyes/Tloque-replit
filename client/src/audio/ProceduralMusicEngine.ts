@@ -10,6 +10,7 @@ import {
   type MusicBrainScoreV1,
 } from "@shared/music-brain"
 import type { MusicCue, MusicState } from "./MusicEngine"
+import { midiNoteToFrequency } from "./ScoreAudioMath"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 
@@ -167,7 +168,7 @@ export class ProceduralMusicEngine {
       if (!adapted) return
       const instrument = adapted.voice === "foundation" ? this.synth : this.bell
       const durationSeconds = adapted.durationBeats * 60 / region.bpm
-      instrument?.triggerAttackRelease(adapted.midi, durationSeconds, time, adapted.velocity)
+      instrument?.triggerAttackRelease(midiNoteToFrequency(adapted.midi), durationSeconds, time, adapted.velocity)
     }, relativeEvents)
     part.loop = true
     part.loopEnd = transportPosition(region.durationBeats, region.meter[0])
