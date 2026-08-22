@@ -21,6 +21,7 @@ const Library = lazy(() => import("@/pages/library"))
 const Reader = lazy(() => import("@/pages/reader"))
 const BookPage = lazy(() => import("@/pages/book"))
 const Editor = lazy(() => import("@/pages/editor"))
+const EditorDirection = lazy(() => import("@/pages/editor-direction"))
 const AuthorPage = lazy(() => import("@/pages/author"))
 const ClaimPage = lazy(() => import("@/pages/claim"))
 const FrameWorkshop = lazy(() => import("@/pages/FrameWorkshop"))
@@ -78,6 +79,7 @@ function Router() {
         <Route path="/library"                 component={Library}  />
         <Route path="/book/:id"                component={BookPage} />
         <Route path="/read/:bookId/:chapterId" component={Reader}   />
+        <Route path="/editor/direction"        component={EditorDirection} />
         <Route path="/editor"                  component={Editor}     />
         <Route path="/profile"                 component={ProfileHub} />
         <Route path="/inbox"                   component={Inbox} />
