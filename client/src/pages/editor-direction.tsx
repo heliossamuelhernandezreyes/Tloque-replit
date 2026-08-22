@@ -5,13 +5,11 @@ import {
   Bot,
   FileLock2,
   Loader2,
-  Mic2,
-  Music2,
+  SlidersHorizontal,
 } from "lucide-react"
 import ChapterSoundtrackPicker from "@/components/ChapterSoundtrackPicker"
 import DirectionAgentPanel from "@/components/DirectionAgentPanel"
-import NarrativeStudioPanel from "@/components/NarrativeStudioPanel"
-import SpeechStudioPanel from "@/components/SpeechStudioPanel"
+import ManualDirectionPanel from "@/components/ManualDirectionPanel"
 import { parseDirectionWorkspaceLocation } from "@/lib/editor-workspace"
 
 type DirectionChapter = {
@@ -27,17 +25,16 @@ type DirectionBook = {
   content?: string | null
 }
 
-type DirectionTool = "music" | "audiobook" | "agent"
+type DirectionTool = "agent" | "manual"
 
 const toolOptions: Array<{
   key: DirectionTool
   label: string
   shortLabel: string
-  Icon: typeof Music2
+  Icon: typeof Bot
 }> = [
-  { key: "music", label: "Dirección musical", shortLabel: "Música", Icon: Music2 },
-  { key: "audiobook", label: "Dirección de audiolibro", shortLabel: "Audiolibro", Icon: Mic2 },
-  { key: "agent", label: "Director Artificial", shortLabel: "DA", Icon: Bot },
+    { key: "agent", label: "Analizar con IA", shortLabel: "IA", Icon: Bot },
+    { key: "manual", label: "Editar manualmente", shortLabel: "Manual", Icon: SlidersHorizontal },
 ]
 
 function chaptersFor(book: DirectionBook): DirectionChapter[] {
@@ -53,7 +50,7 @@ export default function EditorDirection() {
   )
   const [book, setBook] = useState<DirectionBook | null>(null)
   const [chapterIndex, setChapterIndex] = useState(location?.chapterIndex ?? 0)
-  const [activeTool, setActiveTool] = useState<DirectionTool>("music")
+  const [activeTool, setActiveTool] = useState<DirectionTool>("agent")
   const [loading, setLoading] = useState(Boolean(location))
   const [error, setError] = useState(location ? "" : "No se indicó una obra válida.")
 
@@ -190,7 +187,7 @@ export default function EditorDirection() {
           </aside>
 
           <section className="min-w-0">
-            <div className="mb-4 grid grid-cols-3 gap-1 rounded-2xl border border-white/[.07] bg-white/[.02] p-1" role="tablist" aria-label="Herramientas de dirección">
+            <div className="mb-4 grid grid-cols-2 gap-1 rounded-2xl border border-white/[.07] bg-white/[.02] p-1" role="tablist" aria-label="Modo de dirección">
               {toolOptions.map(({ key, label, shortLabel, Icon }) => (
                 <button
                   type="button"
@@ -217,15 +214,6 @@ export default function EditorDirection() {
             </div>
 
             <div className="rounded-2xl border border-white/[.07] bg-white/[.012] p-3 sm:p-4">
-              {activeTool === "music" && (
-                <div className="space-y-4">
-                  <ChapterSoundtrackPicker bookId={book.id} chapterIndex={chapterIndex} accent={accent} />
-                  <NarrativeStudioPanel bookId={book.id} chapterIndex={chapterIndex} content={chapter.content} accent={accent} />
-                </div>
-              )}
-              {activeTool === "audiobook" && (
-                <SpeechStudioPanel bookId={book.id} chapterIndex={chapterIndex} content={chapter.content} accent={accent} />
-              )}
               {activeTool === "agent" && (
                 <DirectionAgentPanel
                   bookId={book.id}
@@ -234,6 +222,12 @@ export default function EditorDirection() {
                   accent={accent}
                   saveSignal={`${book.id}:${chapterIndex}`}
                 />
+              )}
+              {activeTool === "manual" && (
+                <div className="space-y-4">
+                  <ChapterSoundtrackPicker bookId={book.id} chapterIndex={chapterIndex} accent={accent} />
+                  <ManualDirectionPanel bookId={book.id} chapterIndex={chapterIndex} content={chapter.content} accent={accent} />
+                </div>
               )}
             </div>
           </section>

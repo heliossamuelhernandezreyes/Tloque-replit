@@ -201,12 +201,18 @@ function emptyMusicProject(bookId: number, index: number, revision: number): Nar
   })
 }
 
-async function currentProject(
+interface CurrentProjectState {
+  project: AdvancedDirectionProjectV2 | null
+  stale: boolean
+  currentRevision: number
+}
+
+async function currentProjectState(
   book: typeof books.$inferSelect,
   index: number,
   content: string,
   catalog: DirectionCatalog,
-): Promise<AdvancedDirectionProjectV2 | null> {
+): Promise<CurrentProjectState> {
   const hash = contentHash(content)
   const [stored] = await db.select().from(advancedDirectionProjects).where(and(
     eq(advancedDirectionProjects.bookId, book.id),
@@ -216,23 +222,35 @@ async function currentProject(
     const parsed = advancedDirectionProjectSchema.parse(stored.data)
     // Los offsets de voz y las regiones musicales pertenecen exactamente al
     // texto cuyo hash guardaron. Nunca se mezclan con un manuscrito distinto.
-    return parsed.contentHash === hash ? parsed : null
+    return parsed.contentHash === hash
+      ? { project: parsed, stale: false, currentRevision: stored.revision }
+      : { project: null, stale: true, currentRevision: stored.revision }
   }
 
   const [[voice], [music]] = await Promise.all([
     db.select().from(speechProjects).where(and(eq(speechProjects.bookId, book.id), eq(speechProjects.chapterIndex, index))),
     db.select().from(narrativeProjects).where(and(eq(narrativeProjects.bookId, book.id), eq(narrativeProjects.chapterIndex, index))),
   ])
-  if (!voice && !music) return null
+  if (!voice && !music) return { project: null, stale: false, currentRevision: 0 }
+
+  // Los proyectos heredados sólo se importan cuando ambas capas demuestran
+  // que pertenecen al manuscrito actual. Las filas musicales anteriores a la
+  // migración tienen hash vacío y se consideran desactualizadas por seguridad.
+  const stale = Boolean(
+    (voice && voice.contentHash !== hash)
+    || (music && music.contentHash !== hash),
+  )
+  if (stale) return { project: null, stale: true, currentRevision: 0 }
+
   const revision = Math.max(1, voice?.revision ?? 0, music?.revision ?? 0)
   const language = String((voice?.data as any)?.language || book.originalLanguage || "es").trim() || "es"
-  const voiceProject = voice && voice.contentHash === hash
+  const voiceProject = voice
     ? speechProjectSchema.parse({ ...voice.data, revision })
     : emptyVoiceProject({ bookId: book.id, chapterIndex: index, revision, hash, language })
   const musicProject = music
     ? narrativeProjectSchema.parse({ ...music.data, revision })
     : emptyMusicProject(book.id, index, revision)
-  return advancedDirectionProjectSchema.parse({
+  const project = advancedDirectionProjectSchema.parse({
     version: ADVANCED_DIRECTION_VERSION,
     bookId: book.id,
     chapterIndex: index,
@@ -245,6 +263,18 @@ async function currentProject(
     musicNodes: musicProject.regions.map(region => defaultMusicNode(region, layerIdsForProject(musicProject, catalog).get(region.id) ?? [])),
     agentAudit: null,
   })
+  // currentRevision representa sólo la fila canónica avanzada. Un proyecto
+  // heredado todavía no existe allí y debe guardarse con expectedRevision=0.
+  return { project, stale: false, currentRevision: 0 }
+}
+
+async function currentProject(
+  book: typeof books.$inferSelect,
+  index: number,
+  content: string,
+  catalog: DirectionCatalog,
+): Promise<AdvancedDirectionProjectV2 | null> {
+  return (await currentProjectState(book, index, content, catalog)).project
 }
 
 async function assertPublishedMusicNodes(
@@ -355,11 +385,13 @@ export function registerDirectionAgentRoutes(app: Express) {
       const content = contentFor(book, index)
       if (content === null) return res.status(400).json({ message: "El capítulo no existe" })
       const catalog = await directionCatalog()
-      const project = await currentProject(book, index, content, catalog)
+      const state = await currentProjectState(book, index, content, catalog)
       res.json({
         contentHash: contentHash(content),
-        project,
-        stale: Boolean(project && project.contentHash !== contentHash(content)),
+        language: state.project?.language || String(book.originalLanguage || "es").trim() || "es",
+        currentRevision: state.currentRevision,
+        project: state.project,
+        stale: state.stale,
         agent: {
           configured: directionConfigured(),
           paperBalance: await paperBalance((req.user as any).id),
@@ -657,11 +689,12 @@ export function registerDirectionAgentRoutes(app: Express) {
           bookId,
           chapterIndex: index,
           revision,
+          contentHash: hash,
           data: project.musicProject,
           createdBy: (req.user as any).id,
         }).onConflictDoUpdate({
           target: [narrativeProjects.bookId, narrativeProjects.chapterIndex],
-          set: { revision, data: project.musicProject, updatedAt: new Date() },
+          set: { revision, contentHash: hash, data: project.musicProject, updatedAt: new Date() },
         })
         if (parsed.data.runRequestKey) await tx.update(directionAgentRuns).set({ status: "applied" })
           .where(and(

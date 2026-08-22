@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import type { Express } from "express"
 import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { z } from "zod"
@@ -66,6 +67,10 @@ function chapterContent(book: typeof books.$inferSelect, chapterIndex: number): 
 
 function canEditBook(book: typeof books.$inferSelect, user: any): boolean {
   return !!user && (book.authorId === user.id || isAdmin(user))
+}
+
+function contentHash(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex")
 }
 
 async function loadBook(bookId: number) {
@@ -177,9 +182,13 @@ export function registerNarrativeRoutes(app: Express) {
         eq(experienceProfiles.bookId, bookId),
         eq(experienceProfiles.chapterIndex, chapterIndex),
       ))
+      const hash = contentHash(content)
+      const stale = Boolean(project && project.contentHash !== hash)
       res.json({
+        contentHash: hash,
         paragraphCount: paragraphCountFor(content),
-        project: project?.data ?? null,
+        project: stale ? null : project?.data ?? null,
+        stale,
         profile: profile?.data ?? null,
         profileStatus: profile?.status ?? null,
         oracle: {
@@ -299,7 +308,9 @@ export function registerNarrativeRoutes(app: Express) {
       const book = await loadBook(bookId)
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
       if (!canEditBook(book, req.user)) return res.status(403).json({ message: "Solo el autor puede dirigir este capítulo" })
-      if (chapterContent(book, chapterIndex) === null) return res.status(400).json({ message: "El capítulo no existe" })
+      const content = chapterContent(book, chapterIndex)
+      if (content === null) return res.status(400).json({ message: "El capítulo no existe" })
+      const hash = contentHash(content)
 
       const outcome = await db.transaction(async tx => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`narrative:${bookId}:${chapterIndex}`}))`)
@@ -318,10 +329,10 @@ export function registerNarrativeRoutes(app: Express) {
           ...parsed.data.project, version: 1, bookId, chapterIndex, revision,
         })
         const [saved] = await tx.insert(narrativeProjects).values({
-          bookId, chapterIndex, revision, data: project, createdBy: (req.user as any).id,
+          bookId, chapterIndex, revision, contentHash: hash, data: project, createdBy: (req.user as any).id,
         }).onConflictDoUpdate({
           target: [narrativeProjects.bookId, narrativeProjects.chapterIndex],
-          set: { revision, data: project, updatedAt: new Date() },
+          set: { revision, contentHash: hash, data: project, updatedAt: new Date() },
         }).returning()
         return { conflict: null, saved }
       })
@@ -354,6 +365,9 @@ export function registerNarrativeRoutes(app: Express) {
         eq(narrativeProjects.chapterIndex, chapterIndex),
       ))
       if (!stored) return res.status(404).json({ message: "Guarda primero la dirección del capítulo" })
+      if (stored.contentHash !== contentHash(content)) {
+        return res.status(409).json({ message: "El manuscrito cambió; vuelve a guardar o analizar la música" })
+      }
 
       const project = narrativeProjectSchema.parse(stored.data)
       const profile = compileNarrativeProject(project, paragraphCountFor(content))
@@ -395,7 +409,10 @@ export function registerNarrativeRoutes(app: Express) {
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
       if (!canEditBook(book, req.user)) return res.status(403).json({ message: "Solo el autor puede publicar esta dirección" })
       const content = chapterContent(book, chapterIndex)
-      const [project] = await db.select({ revision: narrativeProjects.revision }).from(narrativeProjects).where(and(
+      const [project] = await db.select({
+        revision: narrativeProjects.revision,
+        contentHash: narrativeProjects.contentHash,
+      }).from(narrativeProjects).where(and(
         eq(narrativeProjects.bookId, bookId),
         eq(narrativeProjects.chapterIndex, chapterIndex),
       ))
@@ -404,6 +421,7 @@ export function registerNarrativeRoutes(app: Express) {
         eq(experienceProfiles.chapterIndex, chapterIndex),
       ))
       if (!project || !currentProfile || content === null
+          || project.contentHash !== contentHash(content)
           || currentProfile.sourceProjectRevision !== project.revision
           || experienceProfileSchema.parse(currentProfile.data).paragraphCount !== paragraphCountFor(content)) {
         return res.status(409).json({ message: "Compila nuevamente la dirección del capítulo" })

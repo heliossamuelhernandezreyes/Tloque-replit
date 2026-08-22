@@ -16,6 +16,8 @@ type Busy = "load" | "quote" | "run" | "save" | null
 
 interface DirectionResponse {
   contentHash: string
+  language: string
+  currentRevision: number
   project: AdvancedDirectionProjectV2 | null
   stale: boolean
   agent: { configured: boolean; paperBalance: number; promptVersion: string }
@@ -30,7 +32,7 @@ interface QuoteResponse {
 }
 
 const ui = {
-  es: { title: "Director Artificial", subtitle: "Prepara actuación, pausas y nodos musicales sin tocar el manuscrito", hidden: "Capa invisible para el lector", quote: "Calcular uso de Papel", run: "Crear propuesta", replace: "Reemplazar lo no bloqueado", gaps: "Sólo completar huecos", estimated: "Estimado", maximum: "Reserva máxima", balance: "Saldo", review: "Revisar propuesta", apply: "Aplicar a la partitura", applied: "Partitura avanzada actualizada", voice: "Actuación y voces", music: "Música del catálogo", cues: "indicaciones", locked: "Bloqueado", noMusic: "Sin nodos musicales", stale: "El texto cambió. Guarda el capítulo antes de analizar.", unavailable: "Configura Oráculo/Groq para activar el DA", safety: "No crea audio ni música; sólo propone metadatos.", error: "No se pudo completar la acción", analyzing: "El DA está leyendo la obra y componiendo la partitura…" },
+  es: { title: "Director Artificial", subtitle: "Analiza en una sola operación la actuación, las pausas y la música instrumental", hidden: "Capa invisible para el lector", quote: "Calculando uso de Papel…", run: "Analizar capítulo", replace: "Reemplazar lo no bloqueado", gaps: "Sólo completar huecos", estimated: "Estimado", maximum: "Reserva máxima", balance: "Saldo", review: "Revisar propuesta", apply: "Aplicar a la partitura", applied: "Partitura avanzada actualizada", voice: "Actuación y voces", music: "Música del catálogo", cues: "indicaciones", locked: "Bloqueado", noMusic: "Sin nodos musicales", stale: "El texto cambió. Guarda el capítulo antes de analizar.", unavailable: "Configura Oráculo/Groq para activar el DA", safety: "No crea audio ni música; sólo propone metadatos.", error: "No se pudo completar la acción", analyzing: "El DA está leyendo la obra y componiendo la partitura…" },
   en: { title: "Artificial Director", subtitle: "Prepares performance, pauses and music nodes without touching the manuscript", hidden: "Invisible reader layer", quote: "Calculate Paper use", run: "Create proposal", replace: "Replace unlocked cues", gaps: "Fill gaps only", estimated: "Estimated", maximum: "Maximum reserve", balance: "Balance", review: "Review proposal", apply: "Apply to score", applied: "Advanced score updated", voice: "Performance and voices", music: "Catalog music", cues: "cues", locked: "Locked", noMusic: "No music nodes", stale: "The text changed. Save the chapter before analysis.", unavailable: "Configure Oracle/Groq to enable the AD", safety: "It creates no audio or music; it only proposes metadata.", error: "The action could not be completed", analyzing: "The AD is reading the work and composing its score…" },
   pt: { title: "Diretor Artificial", subtitle: "Prepara atuação, pausas e nós musicais sem alterar o manuscrito", hidden: "Camada invisível ao leitor", quote: "Calcular uso de Papel", run: "Criar proposta", replace: "Substituir o que não está bloqueado", gaps: "Apenas preencher lacunas", estimated: "Estimado", maximum: "Reserva máxima", balance: "Saldo", review: "Revisar proposta", apply: "Aplicar à partitura", applied: "Partitura avançada atualizada", voice: "Atuação e vozes", music: "Música do catálogo", cues: "indicações", locked: "Bloqueado", noMusic: "Sem nós musicais", stale: "O texto mudou. Salve o capítulo antes da análise.", unavailable: "Configure Oráculo/Groq para ativar o DA", safety: "Não cria áudio nem música; apenas propõe metadados.", error: "Não foi possível concluir a ação", analyzing: "O DA está lendo a obra e compondo a partitura…" },
   fr: { title: "Directeur artificiel", subtitle: "Prépare jeu, pauses et nœuds musicaux sans modifier le manuscrit", hidden: "Couche invisible au lecteur", quote: "Calculer l’usage du Papier", run: "Créer la proposition", replace: "Remplacer les éléments non verrouillés", gaps: "Compléter seulement les vides", estimated: "Estimé", maximum: "Réserve maximale", balance: "Solde", review: "Réviser la proposition", apply: "Appliquer à la partition", applied: "Partition avancée mise à jour", voice: "Jeu et voix", music: "Musique du catalogue", cues: "indications", locked: "Verrouillé", noMusic: "Aucun nœud musical", stale: "Le texte a changé. Enregistrez le chapitre avant l’analyse.", unavailable: "Configurez Oracle/Groq pour activer le DA", safety: "Il ne crée ni audio ni musique ; seulement des métadonnées.", error: "Action impossible", analyzing: "Le DA lit l’œuvre et compose sa partition…" },
@@ -71,9 +73,11 @@ export default function DirectionAgentPanel({
   const [project, setProject] = useState<AdvancedDirectionProjectV2 | null>(null)
   const [proposal, setProposal] = useState<AdvancedDirectionProjectV2 | null>(null)
   const [quote, setQuote] = useState<QuoteResponse | null>(null)
+  const [currentRevision, setCurrentRevision] = useState(0)
   const [mode, setMode] = useState<DirectionAgentMode>("replace_unlocked")
   const [agent, setAgent] = useState({ configured: false, paperBalance: 0, promptVersion: "" })
   const [stale, setStale] = useState(false)
+  const [sidecarStale, setSidecarStale] = useState(false)
   const [voicePage, setVoicePage] = useState(0)
   const [notice, setNotice] = useState("")
   const paragraphs = useMemo(() => narrativeParagraphsFor(content), [content])
@@ -94,9 +98,11 @@ export default function DirectionAgentPanel({
       .then(([data, localHash]) => {
         if (cancelled) return
         setProject(data.project)
+        setCurrentRevision(data.currentRevision ?? data.project?.revision ?? 0)
         setAgent(data.agent)
-        const textIsStale = data.stale || data.contentHash !== localHash
+        const textIsStale = data.contentHash !== localHash
         setStale(textIsStale)
+        setSidecarStale(data.stale)
         setVoicePage(0)
         setQuote(null)
         setProposal(null)
@@ -108,7 +114,7 @@ export default function DirectionAgentPanel({
     return () => { cancelled = true; window.clearTimeout(timer) }
   }, [bookId, chapterIndex, content, saveSignal, copy.error, copy.stale])
 
-  async function requestQuote() {
+  async function analyzeChapter() {
     setBusy("quote")
     setNotice("")
     try {
@@ -116,21 +122,21 @@ export default function DirectionAgentPanel({
         requestKey: crypto.randomUUID(),
         mode,
       })
-      setQuote(await response.json() as QuoteResponse)
-    } catch (error) {
-      setNotice(messageFor(error, copy.error))
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function runAgent() {
-    if (!quote) return
-    setBusy("run")
-    setNotice("")
-    try {
-      const response = await apiRequest("POST", `/api/books/${bookId}/direction/${chapterIndex}/run`, { requestKey: quote.requestKey })
-      const data = await response.json() as { proposal: AdvancedDirectionProjectV2; paperCharged: number }
+      const nextQuote = await response.json() as QuoteResponse
+      setQuote(nextQuote)
+      if (nextQuote.paperBalance < nextQuote.maximumPaper) {
+        throw new Error(`Necesitas ${nextQuote.maximumPaper} de Papel disponible; tu saldo es ${nextQuote.paperBalance}.`)
+      }
+      const accepted = window.confirm(
+        `El DA analizará audiolibro y música instrumental.\n\nEstimado: ${nextQuote.estimatedPaper} Papel\nReserva máxima: ${nextQuote.maximumPaper} Papel\nSaldo: ${nextQuote.paperBalance} Papel\n\n¿Continuar?`,
+      )
+      if (!accepted) {
+        setQuote(null)
+        return
+      }
+      setBusy("run")
+      const runResponse = await apiRequest("POST", `/api/books/${bookId}/direction/${chapterIndex}/run`, { requestKey: nextQuote.requestKey })
+      const data = await runResponse.json() as { proposal: AdvancedDirectionProjectV2; paperCharged: number }
       setProposal(data.proposal)
       setAgent(current => ({ ...current, paperBalance: Math.max(0, current.paperBalance - data.paperCharged) }))
     } catch (error) {
@@ -147,15 +153,17 @@ export default function DirectionAgentPanel({
     try {
       const { bookId: _bookId, chapterIndex: _chapter, revision: _revision, contentHash: _hash, ...editable } = proposal
       const response = await apiRequest("PUT", `/api/books/${bookId}/direction/${chapterIndex}`, {
-        expectedRevision: project?.revision ?? 0,
+        expectedRevision: currentRevision,
         runRequestKey: quote?.requestKey,
         project: editable,
       })
       const data = await response.json() as { project: AdvancedDirectionProjectV2 }
       setProject(data.project)
+      setCurrentRevision(data.project.revision)
       setProposal(null)
       setQuote(null)
       setStale(false)
+      setSidecarStale(false)
       setVoicePage(0)
       setNotice(copy.applied)
     } catch (error) {
@@ -191,8 +199,6 @@ export default function DirectionAgentPanel({
   const voicePageSize = proposal ? 24 : 8
   const voicePages = Math.max(1, Math.ceil((visible?.voiceNotes.length ?? 0) / voicePageSize))
   const visibleVoiceNotes = visible?.voiceNotes.slice(voicePage * voicePageSize, (voicePage + 1) * voicePageSize) ?? []
-  const expiresSoon = quote ? new Date(quote.expiresAt).getTime() <= Date.now() : false
-
   return (
     <section className="overflow-hidden rounded-2xl border border-white/[.08] bg-white/[.025]" dir={language === "ar" ? "rtl" : undefined}>
       <button type="button" onClick={() => setOpen(value => !value)} className="flex min-h-14 w-full items-center gap-3 px-3.5 py-3 text-left">
@@ -215,6 +221,7 @@ export default function DirectionAgentPanel({
 
           {!agent.configured && <p className="rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-[11px] text-amber-100/60">{copy.unavailable}</p>}
           {stale && <p className="rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-[11px] text-amber-100/60">{copy.stale}</p>}
+          {sidecarStale && !stale && <p className="rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-[11px] text-amber-100/60">La partitura guardada pertenece a una versión anterior. El análisis nuevo la reemplazará sin tocar el manuscrito.</p>}
 
           {!proposal && (
             <>
@@ -227,22 +234,11 @@ export default function DirectionAgentPanel({
                 ))}
               </div>
 
-              {!quote ? (
-                <button type="button" disabled={!agent.configured || stale || busy !== null} onClick={requestQuote} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-35" style={{ color: "#050505", background: accent }}>
-                  {busy === "quote" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{copy.quote}
-                </button>
-              ) : (
-                <div className="space-y-2 rounded-xl border p-3" style={{ borderColor: `${accent}25`, background: `${accent}08` }}>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div><p className="text-[9px] uppercase tracking-wider text-white/25">{copy.estimated}</p><p className="mt-1 text-sm font-semibold text-white/75">{quote.estimatedPaper}</p></div>
-                    <div><p className="text-[9px] uppercase tracking-wider text-white/25">{copy.maximum}</p><p className="mt-1 text-sm font-semibold" style={{ color: accent }}>{quote.maximumPaper}</p></div>
-                    <div><p className="text-[9px] uppercase tracking-wider text-white/25">{copy.balance}</p><p className="mt-1 text-sm font-semibold text-white/75">{quote.paperBalance}</p></div>
-                  </div>
-                  <button type="button" disabled={busy !== null || expiresSoon || quote.paperBalance < quote.maximumPaper} onClick={runAgent} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-35" style={{ color: "#050505", background: accent }}>
-                    {busy === "run" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}{copy.run}
-                  </button>
-                </div>
-              )}
+              <button type="button" disabled={!agent.configured || stale || busy !== null} onClick={analyzeChapter} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-35" style={{ color: "#050505", background: accent }}>
+                {busy === "quote" || busy === "run" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {busy === "quote" ? copy.quote : busy === "run" ? copy.analyzing : copy.run}
+              </button>
+              <p className="text-center text-[9px] text-white/25">{copy.balance}: {agent.paperBalance} Papel · el costo se confirma antes de ejecutar</p>
             </>
           )}
 

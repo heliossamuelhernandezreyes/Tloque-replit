@@ -282,6 +282,69 @@ export function defaultMusicNode(region: NarrativeProjectV1["regions"][number], 
   })
 }
 
+export function createEmptyAdvancedDirection(input: {
+  bookId: number
+  chapterIndex: number
+  contentHash: string
+  language: string
+  revision?: number
+}): AdvancedDirectionProjectV2 {
+  const revision = Math.max(1, Math.trunc(input.revision ?? 1))
+  const language = input.language.trim() || "es"
+  return advancedDirectionProjectSchema.parse({
+    version: ADVANCED_DIRECTION_VERSION,
+    bookId: input.bookId,
+    chapterIndex: input.chapterIndex,
+    revision,
+    contentHash: input.contentHash,
+    language,
+    voiceProject: {
+      version: 1,
+      bookId: input.bookId,
+      chapterIndex: input.chapterIndex,
+      revision,
+      contentHash: input.contentHash,
+      language,
+      narratorVoiceProfileId: null,
+      paragraphPauseMs: 650,
+      characters: [],
+      spans: [],
+    },
+    musicProject: {
+      version: 1,
+      bookId: input.bookId,
+      chapterIndex: input.chapterIndex,
+      revision,
+      directionStyle: "subtle",
+      defaultScoreId: null,
+      regions: [],
+    },
+    voiceNotes: [],
+    musicNodes: [],
+    agentAudit: null,
+  })
+}
+
+export function manualNarrationSpans(contentHash: string, paragraphs: readonly string[]): SpeechSpanV1[] {
+  const anchor = /^[a-f0-9]{64}$/.test(contentHash) ? contentHash.slice(0, 10) : "draft"
+  return paragraphs.map((paragraph, index) => ({
+    id: `manual_narration_${anchor}_${index + 1}`,
+    paragraphIndex: index,
+    startOffset: 0,
+    endOffset: paragraph.length,
+    kind: "narration" as const,
+    speakerId: "narrator",
+    delivery: "neutral" as const,
+    pace: 1,
+    pauseBeforeMs: 0,
+    pauseAfterMs: index === paragraphs.length - 1 ? 0 : 350,
+    confidence: 1,
+    source: "manual" as const,
+    locked: false,
+    note: "",
+  })).filter(span => span.endOffset > 0)
+}
+
 export function createAdvancedDirection(input: {
   revision: number
   voiceProject: SpeechProjectV1
