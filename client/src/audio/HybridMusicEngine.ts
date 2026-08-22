@@ -1,4 +1,5 @@
 import { MusicEngine, type MusicCue, type MusicState } from "./MusicEngine"
+import type { MusicBrainScoreV1 } from "@shared/music-brain"
 import { LinearScoreEngine } from "./LinearScoreEngine"
 import { ProceduralMusicEngine } from "./ProceduralMusicEngine"
 import { SoundFontMusicEngine } from "./SoundFontMusicEngine"
@@ -51,7 +52,8 @@ export class HybridMusicEngine {
   }
   setMasterVolume(value: number) { this.master = value; this.active?.setMasterVolume(value) }
   setDucked(value: boolean) { this.ducked = value; this.active?.setDucked(value) }
-  setNarrativeDirection(intensity: number, silence: boolean, seconds: number) { this.active?.setNarrativeDirection(intensity, silence, seconds) }
+  setNarrativeScore(score: MusicBrainScoreV1 | null) { this.procedural.setNarrativeScore(score) }
+  setNarrativeDirection(intensity: number, silence: boolean, seconds: number, regionId?: string) { this.active?.setNarrativeDirection(intensity, silence, seconds, regionId) }
   pause() { this.active?.pause() }
   async resume() { await this.active?.resume() }
   stop() { this.active?.stop(); this.active = null }
