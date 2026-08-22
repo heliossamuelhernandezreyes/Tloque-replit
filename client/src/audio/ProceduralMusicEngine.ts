@@ -1,25 +1,23 @@
 import { proceduralRecipeFor } from "@shared/audio"
+import {
+  compileMusicBrainScore,
+  musicBrainScoreForProceduralRecipe,
+  notesForMusicBrainRegion,
+  type MusicBrainCompilationV1,
+  type MusicBrainNoteEventV1,
+  type MusicBrainScoreV1,
+} from "@shared/music-brain"
 import type { MusicCue, MusicState } from "./MusicEngine"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 
-const SCALE = {
-  major: [0, 2, 4, 5, 7, 9, 11],
-  minor: [0, 2, 3, 5, 7, 8, 10],
-  dorian: [0, 2, 3, 5, 7, 9, 10],
-  pentatonic: [0, 3, 5, 7, 10],
-} as const
-
-const PROGRESSIONS = {
-  quiet_observatory: [0, 3, 5, 2],
-  warm_memory: [0, 4, 3, 5],
-  cold_suspense: [0, 1, 4, 2],
-  deep_focus: [0, 5, 3, 4],
-} as const
-
-function seeded(seed: number, index: number): number {
-  const value = Math.sin(seed * 12.9898 + index * 78.233) * 43_758.5453
-  return value - Math.floor(value)
+function transportPosition(beat: number, beatsPerBar: number): string {
+  const safeBeat = Math.max(0, beat)
+  const bar = Math.floor(safeBeat / beatsPerBar)
+  const insideBar = safeBeat - bar * beatsPerBar
+  const quarter = Math.floor(insideBar)
+  const sixteenth = Math.round((insideBar - quarter) * 4 * 1_000) / 1_000
+  return `${bar}:${quarter}:${sixteenth}`
 }
 
 export class ProceduralMusicEngine {
@@ -29,10 +27,16 @@ export class ProceduralMusicEngine {
   private duckFactor = 1
   private narrativeGain = 1
   private loop: any = null
+  private retiredParts: any[] = []
   private synth: any = null
   private bell: any = null
   private nodes: any[] = []
   private output: any = null
+  private score: MusicBrainScoreV1 | null = null
+  private compilation: MusicBrainCompilationV1 | null = null
+  private activeRegionId: string | null = null
+  private requestedRegionId: string | null = null
+  private transitionSeconds = 8
 
   constructor(private readonly listener: Listener) {}
 
@@ -74,27 +78,15 @@ export class ProceduralMusicEngine {
       this.bell = bell
       this.nodes = [filter, chorus, reverb, compressor, output]
       this.cue = cue
-
-      const scale = SCALE[recipe.scale]
-      const progression = PROGRESSIONS[recipe.preset]
-      let bar = 0
-      const playBar = (time: number) => {
-        const degree = progression[bar % progression.length] % scale.length
-        const root = recipe.rootMidi + scale[degree]
-        const third = recipe.rootMidi + scale[(degree + 2) % scale.length] + (degree + 2 >= scale.length ? 12 : 0)
-        const fifth = recipe.rootMidi + scale[(degree + 4) % scale.length] + (degree + 4 >= scale.length ? 12 : 0)
-        synth.triggerAttackRelease([root, third, fifth], "1m", time, 0.28 + recipe.density * 0.25)
-        if (seeded(recipe.seed, bar) < recipe.density * 0.75) {
-          const note = recipe.rootMidi + 12 + scale[Math.floor(seeded(recipe.seed + 17, bar) * scale.length)]
-          bell.triggerAttackRelease(note, "2n", time + Tone.Time("2n").toSeconds(), 0.12 + recipe.brightness * 0.16)
-        }
-        bar = (bar + 1) % Math.max(2, recipe.bars)
-      }
+      this.compilation = compileMusicBrainScore(this.score ?? musicBrainScoreForProceduralRecipe(recipe))
       const transport = Tone.getTransport()
       transport.stop()
       transport.cancel()
-      transport.bpm.value = recipe.bpm
-      this.loop = new Tone.Loop(playBar, "1m").start(0)
+      const firstRegion = this.compilation.plan.regions.find(region => region.regionId === this.requestedRegionId)
+        ?? this.compilation.plan.regions[0]
+      transport.bpm.value = firstRegion.bpm
+      transport.timeSignature = firstRegion.meter[0]
+      this.startRegion(firstRegion.regionId, true)
       transport.start()
       output.gain.rampTo(this.targetVolume(), Math.max(0.35, cue.crossfadeSeconds))
       this.setState("playing", cue)
@@ -107,9 +99,21 @@ export class ProceduralMusicEngine {
 
   setMasterVolume(value: number) { this.master = Math.max(0, Math.min(1, value)); this.applyVolume() }
   setDucked(value: boolean) { this.duckFactor = value ? 0.16 : 1; this.applyVolume() }
-  setNarrativeDirection(intensity: number, silence: boolean, seconds: number) {
+  setNarrativeScore(score: MusicBrainScoreV1 | null) {
+    this.score = score
+    if (!score) this.requestedRegionId = null
+    if (!score || !this.tone || !this.cue) return
+    this.compilation = compileMusicBrainScore(score)
+    const region = this.compilation.plan.regions.find(candidate => candidate.regionId === this.requestedRegionId)
+      ?? this.compilation.plan.regions[0]
+    this.startRegion(region.regionId, false)
+  }
+  setNarrativeDirection(intensity: number, silence: boolean, seconds: number, regionId?: string) {
     this.narrativeGain = silence ? 0.08 : 0.72 + Math.max(0, Math.min(0.8, intensity)) * 0.35
+    this.transitionSeconds = Math.max(0.25, Math.min(30, seconds))
     this.output?.gain.rampTo(this.targetVolume(), Math.max(0.25, seconds))
+    if (regionId) this.requestedRegionId = regionId
+    if (regionId && regionId !== this.activeRegionId) this.startRegion(regionId, false)
   }
   pause() { this.tone?.getTransport().pause(); this.setState("paused", this.cue) }
   async resume() { if (!this.tone || !this.cue) return; await this.tone.start(); this.tone.getTransport().start(); this.setState("playing", this.cue) }
@@ -118,9 +122,41 @@ export class ProceduralMusicEngine {
 
   private targetVolume() { return Math.max(0, Math.min(1, this.master * (this.cue?.volume ?? 1) * this.duckFactor * this.narrativeGain)) }
   private applyVolume() { this.output?.gain.rampTo(this.targetVolume(), 0.18) }
+  private startRegion(regionId: string, immediate: boolean) {
+    if (!this.tone || !this.compilation) return
+    const region = this.compilation.plan.regions.find(candidate => candidate.regionId === regionId)
+    if (!region) return
+    const transport = this.tone.getTransport()
+    const when = immediate ? 0 : transport.nextSubdivision("1m")
+    if (this.loop) {
+      this.loop.stop(when)
+      this.retiredParts.push(this.loop)
+      this.loop = null
+    }
+    transport.bpm.rampTo(region.bpm, immediate ? 0 : Math.max(1, this.transitionSeconds))
+    transport.timeSignature = region.meter[0]
+    this.activeRegionId = region.regionId
+    if (region.silence) return
+    const notes = notesForMusicBrainRegion(this.compilation.timeline, region.regionId)
+    const relativeEvents: Array<[string, MusicBrainNoteEventV1]> = notes.map(event => [
+      transportPosition(event.beat - region.startBeat, region.meter[0]),
+      event,
+    ])
+    const part = new this.tone.Part<[string, MusicBrainNoteEventV1]>((time: number, event) => {
+      const instrument = event.voice === "foundation" ? this.synth : this.bell
+      const durationSeconds = event.durationBeats * 60 / region.bpm
+      instrument?.triggerAttackRelease(event.midi, durationSeconds, time, event.velocity)
+    }, relativeEvents)
+    part.loop = true
+    part.loopEnd = transportPosition(region.durationBeats, region.meter[0])
+    part.start(when)
+    this.loop = part
+  }
   private stopRuntime() {
     this.loop?.dispose?.()
     this.loop = null
+    for (const part of this.retiredParts) part?.dispose?.()
+    this.retiredParts = []
     this.tone?.getTransport().stop()
     this.tone?.getTransport().cancel()
     this.synth?.releaseAll?.()
@@ -132,6 +168,8 @@ export class ProceduralMusicEngine {
     this.synth = null
     this.bell = null
     this.output = null
+    this.compilation = null
+    this.activeRegionId = null
   }
   private setState(state: MusicState, cue: MusicCue | null) { this.listener(state, cue) }
 }
