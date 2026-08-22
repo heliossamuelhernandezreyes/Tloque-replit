@@ -1,6 +1,6 @@
-import type { LinearScoreTrack } from "@shared/audio"
+import type { LinearScoreRecipe, LinearScoreTrack } from "@shared/audio"
 
-export const TLOQUE_SCORE_AUDIO_PROFILE = "tloque-score-audio-v3-max" as const
+export const TLOQUE_SCORE_AUDIO_PROFILE = "tloque-score-audio-v4-expression" as const
 
 export interface ScoreEnvelope {
   attack: number
@@ -25,6 +25,14 @@ export interface ScoreRenderProfile {
   masterDrive: number
 }
 
+export interface ScoreExpressionState {
+  expression: number
+  brightness: number
+  vibrato: number
+  pedal: boolean
+  pitchBend: number
+}
+
 export function midiNoteToFrequency(note: number): number {
   return 440 * 2 ** ((note - 69) / 12)
 }
@@ -34,9 +42,23 @@ export function midiNotesToFrequencies(notes: readonly number[]): number[] {
 }
 
 export function articulationDurationFactor(articulation = "normal"): number {
+  if (articulation === "spiccato") return 0.32
+  if (articulation === "pizzicato") return 0.48
+  if (articulation === "tremolo") return 0.96
   if (articulation === "staccato") return 0.55
   if (articulation === "legato") return 1.08
+  if (articulation === "harmonic") return 0.92
   return 0.96
+}
+
+export function articulationVelocityFactor(articulation = "normal"): number {
+  if (articulation === "accent") return 1.18
+  if (articulation === "spiccato") return 1.08
+  if (articulation === "harmonic") return 0.72
+  if (articulation === "pizzicato") return 0.94
+  if (articulation === "tremolo") return 0.88
+  if (articulation === "tenuto") return 1.03
+  return 1
 }
 
 export function scoreVelocityGain(velocity: number): number {
@@ -64,6 +86,81 @@ export function scoreTrackTimbre(track: LinearScoreTrack): ScoreTimbreProfile {
   if (track.synth === "pluck") return { filterHz: 6_400, filterQ: 0.8, level: 1 }
   if (track.synth === "bass") return { filterHz: 1_500, filterQ: 0.65, level: 0.82 }
   return { filterHz: 6_000, filterQ: 0.6, level: 1.08 }
+}
+
+export function scoreTrackExpression(track: LinearScoreTrack): number {
+  return "expression" in track ? track.expression : 1
+}
+
+export function scoreTrackBrightness(track: LinearScoreTrack): number {
+  return "brightness" in track ? track.brightness : 0.5
+}
+
+export function scoreTrackVibrato(track: LinearScoreTrack): number {
+  return "vibrato" in track ? track.vibrato : 0
+}
+
+export function scoreBrightnessFrequency(baseHz: number, brightness: number): number {
+  return Math.max(180, Math.min(14_000, baseHz * (0.34 + Math.max(0, Math.min(1, brightness)) * 1.32)))
+}
+
+function controlsFor(recipe: LinearScoreRecipe, trackId: string) {
+  return recipe.version === 2
+    ? recipe.plan.controls.filter(control => control.trackId === trackId)
+    : []
+}
+
+function automatedNumber(
+  recipe: LinearScoreRecipe,
+  trackId: string,
+  timeSeconds: number,
+  key: "expression" | "brightness" | "vibrato" | "pitchBend",
+  initial: number,
+) {
+  let startValue = initial
+  let targetValue = initial
+  let startTime = 0
+  let endTime = 0
+  for (const control of controlsFor(recipe, trackId)) {
+    const next = control[key]
+    if (next === null || control.timeSeconds > timeSeconds) continue
+    const progress = endTime <= startTime
+      ? 1
+      : Math.max(0, Math.min(1, (control.timeSeconds - startTime) / (endTime - startTime)))
+    const valueAtControl = startValue + (targetValue - startValue) * progress
+    startValue = valueAtControl
+    targetValue = next
+    startTime = control.timeSeconds
+    endTime = control.timeSeconds + control.rampSeconds
+  }
+  if (timeSeconds >= endTime || endTime <= startTime) return targetValue
+  const progress = Math.max(0, Math.min(1, (timeSeconds - startTime) / (endTime - startTime)))
+  return startValue + (targetValue - startValue) * progress
+}
+
+export function scoreExpressionStateAt(recipe: LinearScoreRecipe, track: LinearScoreTrack, timeSeconds: number): ScoreExpressionState {
+  let pedal = false
+  for (const control of controlsFor(recipe, track.id)) {
+    if (control.timeSeconds > timeSeconds) break
+    if (control.pedal !== null) pedal = control.pedal
+  }
+  return {
+    expression: automatedNumber(recipe, track.id, timeSeconds, "expression", scoreTrackExpression(track)),
+    brightness: automatedNumber(recipe, track.id, timeSeconds, "brightness", scoreTrackBrightness(track)),
+    vibrato: automatedNumber(recipe, track.id, timeSeconds, "vibrato", scoreTrackVibrato(track)),
+    pitchBend: automatedNumber(recipe, track.id, timeSeconds, "pitchBend", 0),
+    pedal,
+  }
+}
+
+export function scorePedalReleaseTime(recipe: LinearScoreRecipe, trackId: string, noteEndSeconds: number): number {
+  if (recipe.version !== 2) return noteEndSeconds
+  const track = recipe.plan.tracks.find(item => item.id === trackId)
+  if (!track || !scoreExpressionStateAt(recipe, track, noteEndSeconds).pedal) return noteEndSeconds
+  const release = recipe.plan.controls.find(control =>
+    control.trackId === trackId && control.timeSeconds > noteEndSeconds && control.pedal === false,
+  )
+  return Math.min(release?.timeSeconds ?? recipe.plan.totalSeconds, noteEndSeconds + 12)
 }
 
 export function scoreRenderProfile(quality: "core" | "studio" | "master" = "studio"): ScoreRenderProfile {
