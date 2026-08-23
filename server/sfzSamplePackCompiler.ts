@@ -1,11 +1,22 @@
 import type { TloqueArticulation } from "../shared/instrument-manifest"
-import { validateTloqueSamplePack, type TloqueMute, type TloqueSamplePack, type TloqueVibratoColour } from "../shared/native-sample-pack"
+import {
+  validateTloqueSamplePack,
+  type TloqueMicPosition,
+  type TloqueMute,
+  type TloqueSamplePack,
+  type TloqueSampleTrigger,
+  type TloqueVibratoColour,
+} from "../shared/native-sample-pack"
 
 export interface CompiledSfzZone {
   articulation: TloqueArticulation
   vibrato: boolean
   vibratoColour: TloqueVibratoColour
   mute: TloqueMute
+  trigger: TloqueSampleTrigger
+  micPosition: TloqueMicPosition
+  transitionFromMidi?: number
+  transitionToMidi?: number
   samplePath: string
   rootMidi: number
   loMidi: number
@@ -28,6 +39,9 @@ export interface SfzSamplePackCompileOptions {
   sourceName: string
   sourceUrl?: string
   sourceCommit?: string
+  /** Optional curated declaration; otherwise mic perspective is inferred from paths. */
+  micPositions?: readonly TloqueMicPosition[]
+  defaultMicPosition?: TloqueMicPosition
   sampleUrlForPath(path: string): string
   sampleSha256ForPath?(path: string): string | undefined
 }
@@ -37,6 +51,8 @@ interface GroupState {
   vibrato: boolean
   vibratoColour: TloqueVibratoColour
   mute: TloqueMute
+  trigger: TloqueSampleTrigger
+  micPosition: TloqueMicPosition
   defaultPath: string
   seqLength: number
   seqPosition: number
@@ -78,6 +94,7 @@ function articulationForGroup(label: string | undefined, defaultPath = ""): Tloq
   if (/trem|(?:^|[\s/_-])rolls?(?:$|[\s/_-])/.test(normalized)) return "tremolo"
   if (/stacc?/.test(normalized)) return "staccato"
   if (/harmonic/.test(normalized)) return "harmonic"
+  if (/legato/.test(normalized)) return "legato"
   return "normal"
 }
 
@@ -99,6 +116,28 @@ function timbreForGroup(label: string | undefined, defaultPath = ""): { vibratoC
         ? "mute"
         : "none"
   return { vibratoColour, mute }
+}
+
+function triggerFor(value: string | undefined, fallback: TloqueSampleTrigger = "attack"): TloqueSampleTrigger {
+  const normalized = value?.trim().toLowerCase()
+  if (normalized === "release" || normalized === "release_key") return "release"
+  if (normalized === "legato") return "legato-transition"
+  if (!normalized || normalized === "attack" || normalized === "first") return fallback
+  return fallback
+}
+function micPositionFor(value: string | undefined, defaultPath = ""): TloqueMicPosition {
+  const normalized = `${value || ""} ${defaultPath}`.toLowerCase()
+  if (/(?:^|[\s/_-])close(?:$|[\s/_-])|closemic/.test(normalized)) return "close"
+  if (/(?:^|[\s/_-])room(?:$|[\s/_-])|ambient|ambience/.test(normalized)) return "room"
+  if (/(?:^|[\s/_-])far(?:$|[\s/_-])|distant/.test(normalized)) return "far"
+  if (/(?:^|[\s/_-])main(?:$|[\s/_-])|tree|decca/.test(normalized)) return "main"
+  return "default"
+}
+function optionalMidi(value: string | undefined): number | undefined {
+  if (!value) return undefined
+  const numeric = Number(value)
+  if (Number.isInteger(numeric) && numeric >= 0 && numeric <= 127) return numeric
+  try { const midi = sfzNoteToMidi(value); return midi >= 0 && midi <= 127 ? midi : undefined } catch { return undefined }
 }
 
 function opcodes(text: string) {
@@ -129,7 +168,7 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
   assertSafeSfz(source)
   const chunks = source.split(/(?=<(?:control|group|region)>)/gi)
   let defaultPath = ""
-  let group: GroupState = { articulation: "normal", vibrato: false, vibratoColour: "none", mute: "none", defaultPath: "", seqLength: 1, seqPosition: 1, groupRoundRobin: 0 }
+  let group: GroupState = { articulation: "normal", vibrato: false, vibratoColour: "none", mute: "none", trigger: "attack", micPosition: "default", defaultPath: "", seqLength: 1, seqPosition: 1, groupRoundRobin: 0 }
   const rawZones: Omit<CompiledSfzZone, "velocityLayer">[] = []
 
   for (const chunk of chunks) {
@@ -149,6 +188,8 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
         vibrato: timbre.vibratoColour !== "none",
         vibratoColour: timbre.vibratoColour,
         mute: timbre.mute,
+        trigger: triggerFor(values.get("trigger"), "attack"),
+        micPosition: micPositionFor(values.get("tloque_mic") ?? values.get("mic_position"), defaultPath),
         defaultPath,
         seqLength: Math.max(1, Number(values.get("seq_length") || 1)),
         seqPosition: Math.max(1, Number(values.get("seq_position") || 1)),
@@ -163,17 +204,40 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
     if (![loMidi, hiMidi, rootMidi, loVelocity, hiVelocity].every(Number.isFinite)) throw new Error("Región SFZ incompleta")
     const samplePath = normalizeRelativePath(`${group.defaultPath}/${sample}`)
     const sampleRoundRobin = rrFromSample(sample)
-    rawZones.push({ articulation: group.articulation, vibrato: group.vibrato, vibratoColour: group.vibratoColour, mute: group.mute, samplePath, rootMidi, loMidi, hiMidi, loVelocity, hiVelocity, roundRobin: sampleRoundRobin ?? (group.seqLength > 1 ? group.seqPosition - 1 : group.groupRoundRobin), gainDb: Number(values.get("volume") || 0), tuneCents: Number(values.get("tune") || 0) })
+    const trigger = triggerFor(values.get("trigger"), group.trigger)
+    const micPosition = micPositionFor(values.get("tloque_mic") ?? values.get("mic_position"), group.defaultPath)
+    rawZones.push({
+      articulation: trigger === "legato-transition" ? "legato" : group.articulation,
+      vibrato: group.vibrato,
+      vibratoColour: group.vibratoColour,
+      mute: group.mute,
+      trigger,
+      micPosition,
+      transitionFromMidi: trigger === "legato-transition" ? optionalMidi(values.get("tloque_transition_from")) : undefined,
+      transitionToMidi: trigger === "legato-transition" ? optionalMidi(values.get("tloque_transition_to")) : undefined,
+      samplePath,
+      rootMidi,
+      loMidi,
+      hiMidi,
+      loVelocity,
+      hiVelocity,
+      roundRobin: sampleRoundRobin ?? (group.seqLength > 1 ? group.seqPosition - 1 : group.groupRoundRobin),
+      gainDb: Number(values.get("volume") || 0),
+      tuneCents: Number(values.get("tune") || 0),
+    })
   }
 
   if (!rawZones.length) throw new Error("El SFZ no produjo zonas")
   const velocityBands = new Map<string, { lo: number; hi: number }[]>()
   for (const zone of rawZones) {
-    const key = `${zone.articulation}:${zone.vibratoColour}:${zone.mute}`
+    const key = `${zone.articulation}:${zone.vibratoColour}:${zone.mute}:${zone.trigger}:${zone.micPosition}:${zone.transitionFromMidi ?? ""}:${zone.transitionToMidi ?? ""}`
     const bands = velocityBands.get(key) ?? []
     if (!bands.some(item => item.lo === zone.loVelocity && item.hi === zone.hiVelocity)) { bands.push({ lo: zone.loVelocity, hi: zone.hiVelocity }); bands.sort((a, b) => a.lo - b.lo); velocityBands.set(key, bands) }
   }
-  return rawZones.map(zone => ({ ...zone, velocityLayer: Math.max(0, (velocityBands.get(`${zone.articulation}:${zone.vibratoColour}:${zone.mute}`) ?? []).findIndex(item => item.lo === zone.loVelocity && item.hi === zone.hiVelocity)) }))
+  return rawZones.map(zone => {
+    const key = `${zone.articulation}:${zone.vibratoColour}:${zone.mute}:${zone.trigger}:${zone.micPosition}:${zone.transitionFromMidi ?? ""}:${zone.transitionToMidi ?? ""}`
+    return { ...zone, velocityLayer: Math.max(0, (velocityBands.get(key) ?? []).findIndex(item => item.lo === zone.loVelocity && item.hi === zone.hiVelocity)) }
+  })
 }
 
 export function samplePathsFromSfz(source: string): string[] { return [...new Set(compileCuratedSfzZones(source).map(zone => zone.samplePath))] }
@@ -183,16 +247,36 @@ export function compileSfzToTloqueSamplePack(source: string, options: SfzSampleP
 export function compileSfzBundleToTloqueSamplePack(sources: readonly string[], options: SfzSamplePackCompileOptions): TloqueSamplePack {
   if (!sources.length) throw new Error("El paquete curado no contiene SFZ")
   const { manifestId, license } = packMetadata(options)
-  const zones = sources.flatMap((source, sourceIndex) => compileCuratedSfzZones(source).map((zone, zoneIndex) => ({
-    id: `${sourceIndex}:${zoneIndex}:${zone.samplePath}`,
+  const compiled = sources.flatMap(source => compileCuratedSfzZones(source))
+  const inferredMics = [...new Set(compiled.map(zone => zone.micPosition))]
+  const declaredMics = options.micPositions ?? inferredMics
+  const defaultMicPosition = options.defaultMicPosition ?? (declaredMics.includes("default") ? "default" : declaredMics[0])
+  const zones = compiled.map((zone, zoneIndex) => ({
+    id: `${zoneIndex}:${zone.samplePath}`,
     articulation: zone.articulation,
     vibrato: zone.vibrato,
     vibratoColour: zone.vibratoColour,
     mute: zone.mute,
+    trigger: zone.trigger,
+    micPosition: zone.micPosition,
+    transitionFromMidi: zone.transitionFromMidi,
+    transitionToMidi: zone.transitionToMidi,
     sampleUrl: options.sampleUrlForPath(zone.samplePath),
     sha256: options.sampleSha256ForPath?.(zone.samplePath),
     rootMidi: zone.rootMidi, loMidi: zone.loMidi, hiMidi: zone.hiMidi, loVelocity: zone.loVelocity, hiVelocity: zone.hiVelocity,
     velocityLayer: zone.velocityLayer, roundRobin: zone.roundRobin, gainDb: zone.gainDb, tuneCents: zone.tuneCents,
-  })))
-  return validateTloqueSamplePack({ version: 1, id: options.id, name: options.name, instrumentManifestId: manifestId, license, sourceName: options.sourceName, sourceUrl: options.sourceUrl || "", sourceCommit: options.sourceCommit, zones })
+  }))
+  return validateTloqueSamplePack({
+    version: 1,
+    id: options.id,
+    name: options.name,
+    instrumentManifestId: manifestId,
+    license,
+    sourceName: options.sourceName,
+    sourceUrl: options.sourceUrl || "",
+    sourceCommit: options.sourceCommit,
+    micPositions: declaredMics,
+    defaultMicPosition,
+    zones,
+  })
 }
