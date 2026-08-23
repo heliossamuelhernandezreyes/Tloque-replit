@@ -98,12 +98,6 @@ export interface DownloadedCuratedSamplePack {
   source: AudioModuleSource
 }
 
-/**
- * Downloads a curated SFZ package strictly from its pinned GitHub commit.
- * The SFZ is parsed before any WAV is fetched, so arbitrary remote paths never
- * participate in installation. All samples are validated as RIFF/WAVE and the
- * complete package is bounded to protect Replit/mobile storage.
- */
 export async function downloadCuratedSamplePack(
   source: AudioModuleSource,
   fetcher: typeof fetch = fetch,
@@ -113,7 +107,6 @@ export async function downloadCuratedSamplePack(
   const sfzUrl = rawGitHubUrl(source.repositoryUrl, install.pinnedCommit, install.sfzPath)
   const sfzBytes = await strictFetch(sfzUrl, 2 * 1024 * 1024, fetcher)
   const sfzText = sfzBytes.toString("utf8")
-  // Parse once before downloading. This validates preprocessor/traversal rules.
   compileSfzToTloqueSamplePack(sfzText, {
     id: install.moduleId,
     name: `${source.name} · Solo Violin`,
@@ -121,7 +114,7 @@ export async function downloadCuratedSamplePack(
     sourceName: source.name,
     sourceLicense: source.license,
     sourceCommit: install.pinnedCommit,
-    sampleUrlForPath: path => `/api/audio/sample-packs/pending/${encodeURIComponent(path)}`,
+    sampleUrlForPath: path => `/api/audio/sample-packs/samples/${createHash("sha256").update(path).digest("hex")}.wav`,
   })
   const paths = samplePathsFromSfz(sfzText)
   if (!paths.length) throw new Error("El SFZ fijado no contiene muestras")
@@ -130,7 +123,6 @@ export async function downloadCuratedSamplePack(
   const directory = install.sfzPath.includes("/") ? install.sfzPath.slice(0, install.sfzPath.lastIndexOf("/") + 1) : ""
   const samples: DownloadedCuratedSample[] = []
   let totalBytes = sfzBytes.length
-  // Sequential by design: bounded memory and friendlier behavior on Replit.
   for (const sourcePath of paths) {
     const relative = sourcePath.replace(/\\/g, "/")
     const url = rawGitHubUrl(source.repositoryUrl, install.pinnedCommit, `${directory}${relative}`)
