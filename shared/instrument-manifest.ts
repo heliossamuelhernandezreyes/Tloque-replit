@@ -126,6 +126,71 @@ export const VSCO2_CE_SOLO_CONTRABASS_MANIFEST: InstrumentManifest = {
   ],
 }
 
+/**
+ * Flute KS upstream: C2 sustain non-vibrato, C#2 sustain vibrato,
+ * D2 expression vibrato, D#2 staccato. Tloque currently models the neutral C2
+ * sustain as `normal`; the two vibrato colours remain upstream variants until
+ * the score language has an explicit timbre/vibrato dimension.
+ */
+export const VSCO2_CE_FLUTE_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vsco2-ce-flute",
+  family: "woodwinds",
+  name: "VSCO 2 CE Flute",
+  instruments: ["woodwinds.flute"],
+  basePrograms: [73],
+  capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
+  articulations: [
+    { articulation: "normal", keyswitch: 36 },
+    { articulation: "staccato", keyswitch: 39, roundRobins: 2 },
+  ],
+}
+
+/** Clarinet KS upstream: C2 sustain long, C#2 staccato. */
+export const VSCO2_CE_CLARINET_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vsco2-ce-clarinet",
+  family: "woodwinds",
+  name: "VSCO 2 CE Clarinet",
+  instruments: ["woodwinds.clarinet"],
+  basePrograms: [71],
+  capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
+  articulations: [
+    { articulation: "normal", keyswitch: 36, velocityLayers: 3 },
+    { articulation: "staccato", keyswitch: 37, velocityLayers: 3, roundRobins: 2 },
+  ],
+}
+
+/** Oboe is published upstream as separate sustain/staccato SFZ patches. */
+export const VSCO2_CE_OBOE_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vsco2-ce-oboe",
+  family: "woodwinds",
+  name: "VSCO 2 CE Oboe",
+  instruments: ["woodwinds.oboe"],
+  basePrograms: [68],
+  capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
+  articulations: [
+    { articulation: "normal", velocityLayers: 2 },
+    { articulation: "staccato", velocityLayers: 3, roundRobins: 2 },
+  ],
+}
+
+/** Bassoon is published upstream as separate sustain/staccato SFZ patches. */
+export const VSCO2_CE_BASSOON_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vsco2-ce-bassoon",
+  family: "woodwinds",
+  name: "VSCO 2 CE Bassoon",
+  instruments: ["woodwinds.bassoon"],
+  basePrograms: [70],
+  capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
+  articulations: [
+    { articulation: "normal", velocityLayers: 2 },
+    { articulation: "staccato", velocityLayers: 2, roundRobins: 2 },
+  ],
+}
+
 export const BUILTIN_INSTRUMENT_MANIFESTS: readonly InstrumentManifest[] = [
   GM_ORCHESTRAL_STRINGS_MANIFEST,
 ]
@@ -136,6 +201,10 @@ export const INSTRUMENT_MANIFEST_REGISTRY: readonly InstrumentManifest[] = [
   VSCO2_CE_VIOLA_SECTION_MANIFEST,
   VSCO2_CE_CELLO_SECTION_MANIFEST,
   VSCO2_CE_SOLO_CONTRABASS_MANIFEST,
+  VSCO2_CE_FLUTE_MANIFEST,
+  VSCO2_CE_CLARINET_MANIFEST,
+  VSCO2_CE_OBOE_MANIFEST,
+  VSCO2_CE_BASSOON_MANIFEST,
 ]
 
 export function instrumentManifestById(id: string | null | undefined): InstrumentManifest | null {
