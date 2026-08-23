@@ -3,8 +3,9 @@ import { MIDIBuilder } from "spessasynth_core"
 import { linearScoreRecipeFor, type LinearScoreRecipe } from "@shared/audio"
 import { fetchAudioResource } from "./AudioResourceCache"
 import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQuality } from "./ScoreExporter"
+import { buildPerformancePlan } from "./PerformanceEngine"
 import {
-  articulationDurationFactor, articulationVelocityFactor, scoreSampledChannelPlan, scoreSampledProgram,
+  articulationDurationFactor, articulationVelocityFactor,
   scoreTrackBrightness, scoreTrackExpression, scoreTrackTimbre, scoreTrackVibrato, scoreVelocityGain,
 } from "./ScoreAudioMath"
 
@@ -34,8 +35,8 @@ export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
     midi.addTrack(track.id)
     midiTracks.set(track.id, midi.tracks.length - 1)
   }
-  const sampledPlan = scoreSampledChannelPlan(playableTracks, recipe.plan.events)
-  for (const { channel, track, program } of sampledPlan.channels) {
+  const performance = buildPerformancePlan(recipe)
+  for (const { channel, track, program } of performance.channels) {
     const trackNumber = midiTracks.get(track.id)!
     const timbre = scoreTrackTimbre(track)
     midi.programChange(0, trackNumber, channel, program)
@@ -57,7 +58,7 @@ export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
     }]))
     for (const control of recipe.plan.controls) {
       const trackNumber = midiTracks.get(control.trackId)
-      const channels = sampledPlan.channelsForTrack(control.trackId)
+      const channels = performance.channelsForTrack(control.trackId)
       const state = states.get(control.trackId)
       if (trackNumber === undefined || !channels.length || !state) continue
       const scheduleController = (key: "expression" | "brightness" | "vibrato", controller: number, target: number | null) => {
@@ -67,8 +68,8 @@ export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
         for (let step = 1; step <= steps; step += 1) {
           const fraction = step / steps
           const at = ticks(control.timeSeconds + control.rampSeconds * fraction)
-          const value = midi7(from + (target - from) * fraction)
-          for (const channel of channels) midi.controllerChange(at, trackNumber, channel, controller, value)
+          const controllerValue = midi7(from + (target - from) * fraction)
+          for (const channel of channels) midi.controllerChange(at, trackNumber, channel, controller, controllerValue)
         }
         state[key] = target
       }
@@ -84,8 +85,8 @@ export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
         for (let step = 1; step <= steps; step += 1) {
           const fraction = step / steps
           const bend = from + (control.pitchBend - from) * fraction
-          const value = Math.max(0, Math.min(16_383, Math.round(8_192 + bend / 2 * 8_191)))
-          for (const channel of channels) midi.pitchWheel(ticks(control.timeSeconds + control.rampSeconds * fraction), trackNumber, channel, value)
+          const pitchValue = Math.max(0, Math.min(16_383, Math.round(8_192 + bend / 2 * 8_191)))
+          for (const channel of channels) midi.pitchWheel(ticks(control.timeSeconds + control.rampSeconds * fraction), trackNumber, channel, pitchValue)
         }
         state.pitchBend = control.pitchBend
       }
@@ -93,19 +94,20 @@ export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
   }
 
   const beatSeconds = 60 / recipe.plan.bpm
-  for (const event of recipe.plan.events) {
+  for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
+    const event = recipe.plan.events[eventIndex]
     const track = tracksById.get(event.trackId)
     const trackNumber = midiTracks.get(event.trackId)
-    if (!track || trackNumber === undefined) continue
-    const articulation = "articulation" in event ? event.articulation : "normal"
-    const channel = sampledPlan.channelForEvent(event.trackId, articulation)
+    const decision = performance.decisionForEvent(eventIndex)
+    if (!track || trackNumber === undefined || !decision) continue
+    const channel = performance.channelForEventIndex(eventIndex)
     if (channel === undefined) continue
+    const articulation = decision.articulation
     const start = "timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds
     const duration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds)
       * articulationDurationFactor(articulation)
     const velocity = midi7(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation)))
-    const usesDedicatedTremolo = articulation === "tremolo"
-      && scoreSampledProgram(track, articulation) !== scoreSampledProgram(track)
+    const usesDedicatedTremolo = articulation === "tremolo" && decision.source === "dedicated-articulation"
     if (articulation === "tremolo" && !usesDedicatedTremolo) {
       const pulseSeconds = 0.12
       const pulses = Math.max(1, Math.ceil(duration / pulseSeconds))
