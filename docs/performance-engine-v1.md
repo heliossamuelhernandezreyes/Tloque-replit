@@ -28,8 +28,9 @@ SamplerAdapter
    └─ capability metadata (velocity/RR/legato/releases)
    ↓
 Renderer
+   ├─ live SpessaSynth SF2/SF3/DLS
+   ├─ sampled WAV export
    ├─ Tone.js builtin
-   ├─ SpessaSynth SF2/SF3/DLS
    └─ future premium sampler
 ```
 
@@ -53,7 +54,7 @@ El primer manifest incorporado es `gm-orchestral-strings`. Conserva General MIDI
 
 El adaptador de compatibilidad SpessaSynth sólo deja pasar lo que SF2/SF3/DLS puede expresar explícitamente de manera universal: programa, keyswitch y CC. Las decisiones premium que el backend no entiende permanecen como metadata; Tloque no las aproxima falsamente.
 
-`ScoreSampledExporter` ya consume `PerformancePlan` y `SamplerAdapter`. Cuando una ruta del manifest declara keyswitch o controlador, el MIDI exportado emite esas órdenes inmediatamente antes de la nota. El manifest GM actual no declara esas órdenes, por lo que conserva exactamente el comportamiento anterior.
+Tanto `ScoreSampledExporter` como `LinearScoreEngine` consumen ahora `PerformancePlan` + `SamplerAdapter`. Cuando una ruta del manifest declara keyswitch o controlador, tanto el MIDI/WAV como la reproducción SoundFont en vivo emiten esas órdenes inmediatamente antes de la nota. El manifest GM actual no declara esas órdenes, por lo que conserva exactamente el comportamiento anterior.
 
 ## Estado
 
@@ -61,9 +62,9 @@ Fase 1 (manifest + resolver): completada.
 
 Fase 2 (PerformancePlan): completada.
 
-Fase 3 (sampler adapters): implementada en el camino MIDI/WAV para programa, keyswitch y CC. Velocity layer, RR, true-legato y releases quedan preservados para un backend premium que pueda seleccionarlos directamente.
+Fase 3 (sampler adapters): completada para programa, keyswitch y CC tanto en live playback como en exportación. Velocity layer, RR, true-legato y releases quedan preservados para un backend premium que pueda seleccionar esas dimensiones directamente.
 
-La reproducción SoundFont en vivo ya comparte el routing del Performance Engine, pero todavía falta hacer que emita los keyswitches/CC por evento igual que el exportador. Después de eso, el siguiente trabajo es unified mix/master y la incorporación de una biblioteca acústica premium real.
+El siguiente trabajo es unified mix/master y, después, integrar una biblioteca acústica premium real que exponga múltiples dinámicas, round robins, legato y releases.
 
 ## Validación
 
