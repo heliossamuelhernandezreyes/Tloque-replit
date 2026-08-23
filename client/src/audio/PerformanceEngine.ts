@@ -35,11 +35,15 @@ export interface PerformanceChannel {
   program: number
 }
 
-export interface PerformancePlan {
+export interface PerformanceRoutingPlan {
   channels: PerformanceChannel[]
-  events: PerformanceEventDecision[]
   channelsForTrack(trackId: string): number[]
-  channelForEvent(eventIndex: number): number | undefined
+  channelForEvent(trackId: string, articulation?: string): number | undefined
+}
+
+export interface PerformancePlan extends PerformanceRoutingPlan {
+  events: PerformanceEventDecision[]
+  channelForEventIndex(eventIndex: number): number | undefined
   decisionForEvent(eventIndex: number): PerformanceEventDecision | undefined
 }
 
@@ -58,7 +62,6 @@ export function resolveInstrumentManifest(
 ): InstrumentManifest | null {
   const instrument = semanticInstrumentId(track)
   const program = baseProgramForTrack(track)
-
   if (instrument) {
     const exact = manifests.find(manifest => manifest.instruments.includes(instrument))
     if (exact) return exact
@@ -74,7 +77,6 @@ export function resolvePerformanceRoute(
   const baseProgram = baseProgramForTrack(track)
   const manifest = resolveInstrumentManifest(track, manifests)
   const route = manifest?.articulations.find(item => item.articulation === articulation) ?? null
-
   return {
     manifestId: manifest?.id ?? null,
     articulation,
@@ -107,8 +109,55 @@ function eventIdentity(recipe: LinearScoreRecipe, event: LinearScoreRecipe["plan
 }
 
 /**
- * Compiles score semantics into renderer-neutral acoustic decisions. Both live
- * SoundFont playback and sampled WAV export consume this same plan.
+ * Shared channel/program routing used by every sampled renderer. This is the
+ * compatibility bridge: GM still behaves as before, but the decision now comes
+ * from InstrumentManifest rather than duplicated hard-coded rules.
+ */
+export function buildPerformanceRoutingPlan(
+  tracks: readonly LinearScoreTrack[],
+  events: readonly { trackId: string; articulation?: string }[],
+  manifests: readonly InstrumentManifest[] = BUILTIN_INSTRUMENT_MANIFESTS,
+  maxChannels = 16,
+): PerformanceRoutingPlan {
+  const playableTracks = tracks.slice(0, maxChannels)
+  const tracksById = new Map(playableTracks.map(track => [track.id, track]))
+  const baseChannels = new Map<string, number>()
+  const channelByTrackProgram = new Map<string, number>()
+  const channels: PerformanceChannel[] = []
+  const addChannel = (track: LinearScoreTrack, program: number) => {
+    const key = `${track.id}:${program}`
+    const existing = channelByTrackProgram.get(key)
+    if (existing !== undefined) return existing
+    if (channels.length >= maxChannels) return baseChannels.get(track.id)
+    const channel = channels.length
+    channels.push({ channel, track, program })
+    channelByTrackProgram.set(key, channel)
+    if (!baseChannels.has(track.id)) baseChannels.set(track.id, channel)
+    return channel
+  }
+  for (const track of playableTracks) addChannel(track, baseProgramForTrack(track))
+  for (const event of events) {
+    const track = tracksById.get(event.trackId)
+    if (!track) continue
+    const articulation = (event.articulation ?? "normal") as TloqueArticulation
+    addChannel(track, resolvePerformanceRoute(track, articulation, manifests).program)
+  }
+  return {
+    channels,
+    channelsForTrack: trackId => channels.filter(config => config.track.id === trackId).map(config => config.channel),
+    channelForEvent: (trackId, articulation = "normal") => {
+      const track = tracksById.get(trackId)
+      if (!track) return undefined
+      const program = resolvePerformanceRoute(track, articulation as TloqueArticulation, manifests).program
+      return channelByTrackProgram.get(`${track.id}:${program}`) ?? baseChannels.get(track.id)
+    },
+  }
+}
+
+/**
+ * Compiles score semantics into renderer-neutral acoustic decisions. The full
+ * plan adds velocity layers, round-robin and true-legato metadata on top of the
+ * same routing consumed by live SoundFont playback and sampled WAV export.
  */
 export function buildPerformancePlan(
   recipe: LinearScoreRecipe,
@@ -118,8 +167,8 @@ export function buildPerformancePlan(
   const playableTracks = recipe.plan.tracks.slice(0, maxChannels)
   const tracksById = new Map(playableTracks.map(track => [track.id, track]))
   const previousByTrack = new Map<string, { notes: readonly number[]; endSeconds: number }>()
-
   const decisions: PerformanceEventDecision[] = []
+
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
     const track = tracksById.get(event.trackId)
@@ -127,8 +176,6 @@ export function buildPerformancePlan(
     const articulation = ("articulation" in event ? event.articulation : "normal") as TloqueArticulation
     const resolved = resolvePerformanceRoute(track, articulation, manifests)
     const identity = eventIdentity(recipe, event, eventIndex)
-    const velocityLayers = resolved.route?.velocityLayers ?? 1
-    const roundRobins = resolved.route?.roundRobins ?? 1
     const startSeconds = "timeSeconds" in event ? event.timeSeconds : event.timeBeats * 60 / recipe.plan.bpm
     const durationSeconds = "durationSeconds" in event ? event.durationSeconds : event.durationBeats * 60 / recipe.plan.bpm
     const previous = previousByTrack.get(track.id)
@@ -146,8 +193,8 @@ export function buildPerformancePlan(
       program: resolved.program,
       source: resolved.source,
       manifestId: resolved.manifestId,
-      velocityLayer: velocityLayerIndex(event.velocity, velocityLayers),
-      roundRobin: deterministicRoundRobinIndex(recipe.plan.seed, identity, roundRobins),
+      velocityLayer: velocityLayerIndex(event.velocity, resolved.route?.velocityLayers ?? 1),
+      roundRobin: deterministicRoundRobinIndex(recipe.plan.seed, identity, resolved.route?.roundRobins ?? 1),
       trueLegato: connected,
       releaseSamples: Boolean(resolved.route?.releaseSamples),
       previousNotes: connected && previous ? previous.notes : null,
@@ -156,36 +203,14 @@ export function buildPerformancePlan(
     previousByTrack.set(track.id, { notes: event.notes, endSeconds: startSeconds + durationSeconds })
   }
 
-  const baseChannels = new Map<string, number>()
-  const channelByTrackProgram = new Map<string, number>()
-  const channels: PerformanceChannel[] = []
-  const addChannel = (track: LinearScoreTrack, program: number) => {
-    const key = `${track.id}:${program}`
-    const existing = channelByTrackProgram.get(key)
-    if (existing !== undefined) return existing
-    if (channels.length >= maxChannels) return baseChannels.get(track.id)
-    const channel = channels.length
-    channels.push({ channel, track, program })
-    channelByTrackProgram.set(key, channel)
-    if (!baseChannels.has(track.id)) baseChannels.set(track.id, channel)
-    return channel
-  }
-
-  for (const track of playableTracks) addChannel(track, baseProgramForTrack(track))
-  for (const decision of decisions) {
-    const track = tracksById.get(decision.trackId)
-    if (track) addChannel(track, decision.program)
-  }
-
+  const routing = buildPerformanceRoutingPlan(playableTracks, recipe.plan.events, manifests, maxChannels)
   const decisionByIndex = new Map(decisions.map(decision => [decision.eventIndex, decision]))
   return {
-    channels,
+    ...routing,
     events: decisions,
-    channelsForTrack: trackId => channels.filter(config => config.track.id === trackId).map(config => config.channel),
-    channelForEvent: eventIndex => {
+    channelForEventIndex: eventIndex => {
       const decision = decisionByIndex.get(eventIndex)
-      if (!decision) return undefined
-      return channelByTrackProgram.get(`${decision.trackId}:${decision.program}`) ?? baseChannels.get(decision.trackId)
+      return decision ? routing.channelForEvent(decision.trackId, decision.articulation) : undefined
     },
     decisionForEvent: eventIndex => decisionByIndex.get(eventIndex),
   }
