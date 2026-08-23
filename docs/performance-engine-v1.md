@@ -4,7 +4,7 @@
 
 Separar la intención musical de TloqueScore de la forma concreta en que un renderer produce audio. Una etiqueta como `articulation=legato` expresa intención; sólo debe convertirse en una articulación muestreada cuando el módulo instalado declare que realmente la contiene.
 
-## Flujo propuesto
+## Flujo actual
 
 ```text
 TloqueScore
@@ -17,15 +17,13 @@ Performance Engine
    ├─ Dynamic / velocity layer resolver
    ├─ Deterministic round-robin selector
    ├─ Legato transition resolver
-   ├─ Release-sample resolver
-   └─ Performance automation
+   └─ Release-sample resolver
    ↓
-Renderer-neutral performance plan
-   ├─ Tone.js builtin
-   ├─ SpessaSynth SF2/SF3/DLS
-   └─ future SFZ / native sampler
+Renderer-neutral PerformancePlan
+   ├─ shared sampled routing → live SoundFont playback
+   └─ shared sampled routing → sampled WAV export
    ↓
-Unified mix/master chain
+future unified mix/master
 ```
 
 ## Principio de seguridad acústica
@@ -34,63 +32,61 @@ El manifest no debe inventar capacidades. Si un banco sólo ofrece sustain, Tloq
 
 ## InstrumentManifest V1
 
-El contrato inicial vive en `shared/instrument-manifest.ts` y describe:
+El contrato vive en `shared/instrument-manifest.ts` y describe id/familia, ids semánticos de instrumento, programas base compatibles, capacidades acústicas verificadas y rutas por articulación. También reserva hooks para keyswitches y CC selectors, número de velocity layers y round robins, true legato y release samples.
 
-- id y familia;
-- ids semánticos de instrumento (`strings.violin`, etc.);
-- programas base compatibles;
-- capacidades acústicas verificadas;
-- rutas por articulación;
-- hooks futuros para keyswitches y CC selectors;
-- número de velocity layers y round robins cuando el módulo lo conozca;
-- flags de true legato y release samples.
+El primer manifest incorporado es `gm-orchestral-strings`. Conserva General MIDI: programas 40–43 como cuerda base, 44 para tremolo y 45 para pizzicato. No declara legato real, spiccato real, armónicos, round robin ni releases.
 
-El primer manifest incorporado es `gm-orchestral-strings`. Conserva el comportamiento actual de General MIDI: programas 40–43 como cuerda base, 44 para tremolo y 45 para pizzicato. No declara legato real, spiccato real, armónicos, round robin ni releases.
+## PerformancePlan
 
-## PerformanceRoute
+`client/src/audio/PerformanceEngine.ts` ya compila decisiones acústicas por evento. Cada decisión conserva:
 
-`client/src/audio/PerformanceEngine.ts` resuelve una pista + articulación a una ruta concreta. Hoy devuelve un programa compatible y la procedencia de la decisión (`base-program` o `dedicated-articulation`). En siguientes fases crecerá a un `PerformanceEvent` renderer-neutral.
+- manifest resuelto;
+- articulación solicitada;
+- programa/preset seleccionado;
+- si la ruta es base o articulación dedicada;
+- velocity layer;
+- round robin determinista;
+- posible transición true-legato y nota previa;
+- presencia de release samples;
+- identidad estable del evento.
 
-## Round robin
+También existe `PerformanceRoutingPlan`, que concentra la asignación de programas y canales. `ScoreAudioMath.scoreSampledChannelPlan()` delega a este plan, por lo que el playback SoundFont y el exportador WAV muestreado dejan de mantener reglas GM separadas.
 
-El selector incluido es determinista por `seed + event identity`. Esto mantiene una propiedad importante de TloqueScore: una misma obra y semilla produce la misma interpretación. Cuando un módulo declare, por ejemplo, 6 ataques spiccato alternativos, todos los renderers deberán elegir la misma toma.
+## Determinismo
 
-## Fases de integración
+Round robin se selecciona mediante `seed + event identity`. Velocity layer se obtiene de la velocidad compilada. Una misma obra, semilla y manifest generan las mismas decisiones acústicas. Esto conserva la reproducibilidad de TloqueScore.
 
-### Fase 1 — contrato y resolver
+## Estado de integración
+
+### Fase 1 — contrato y resolver · completada
 
 - InstrumentManifest V1.
 - Resolver semántico por `instrument` con fallback por programa GM.
 - Round-robin determinista.
-- Pruebas de compatibilidad con las rutas 40/44/45 existentes.
+- Pruebas de compatibilidad 40/44/45.
 
-### Fase 2 — performance plan
+### Fase 2 — PerformancePlan · completada en contrato y routing
 
-Crear un plan intermedio por evento con:
-
-- instrumento resuelto;
-- articulación solicitada y articulación disponible;
-- dinámica continua;
+- decisiones por evento;
 - velocity layer;
 - round robin;
-- transición legato previa/siguiente;
-- release sample;
-- timing humanizado;
-- curva de vibrato y expresión.
+- detección de transición true-legato monofónica;
+- release-sample metadata;
+- routing compartido entre preview SoundFont y WAV muestreado.
 
-Los renderers dejarán de resolver estas decisiones por su cuenta.
+Las bibliotecas actuales todavía no exponen RR/legato/releases reales, por lo que esos campos permanecen metadata hasta instalar un sampler/banco que pueda consumirlos.
 
-### Fase 3 — renderer parity
+### Fase 3 — sampler adapters · siguiente
 
-`LinearScoreEngine`, `ScoreSampledExporter` y el renderer builtin consumirán el mismo performance plan. La preview y el WAV deben compartir articulación, selección de muestra y automatización.
+Añadir adaptadores de manifest para keyswitches, CC selectors y/o regiones de samples. En esta fase `PerformancePlan.roundRobin`, `velocityLayer`, `trueLegato` y `releaseSamples` empezarán a seleccionar recursos acústicos reales, no sólo describirlos.
 
-### Fase 4 — unified mix/master
+### Fase 4 — renderer parity y unified mix/master
 
-Extraer la cadena de mezcla a una especificación compartida. El renderer muestreado offline debe pasar por una cadena equivalente a la preview, evitando que el WAV y la escucha de referencia difieran en EQ, dinámica o nivel.
+Extraer la cadena de mezcla a una especificación compartida. El renderer muestreado offline debe pasar por una cadena equivalente a la preview, evitando diferencias en EQ, dinámica, ambiente o nivel.
 
 ### Fase 5 — módulos premium
 
-Convertir/adaptar bibliotecas sólo después de disponer de manifests verificables. Prioridades:
+Prioridades:
 
 1. violín solista con múltiples dinámicas, RR, legato y releases;
 2. cello solista;
@@ -98,22 +94,12 @@ Convertir/adaptar bibliotecas sólo después de disponer de manifests verificabl
 4. cuerdas de sección;
 5. maderas y metales.
 
-## Criterio de calidad para un violín premium
+## Criterio de calidad para violín premium
 
-Un módulo no se considerará `premium-solo-string` sólo por usar samples. Debe cubrir como mínimo:
+Un módulo no se considera `premium-solo-string` sólo por usar samples. Debe cubrir como mínimo sustain en varias dinámicas, short notes con al menos 3 round robins, pizzicato y tremolo dedicados, legato/transiciones reales o ausencia explícita, releases, rango/afinación documentados, licencia/procedencia verificadas y presupuesto de memoria móvil conocido.
 
-- sustain en varias dinámicas;
-- short notes con al menos 3 round robins;
-- pizzicato dedicado;
-- tremolo dedicado;
-- legato/transiciones reales o una declaración explícita de que no las tiene;
-- releases;
-- rango y afinación documentados;
-- licencia/procedencia verificadas;
-- presupuesto de memoria móvil conocido.
-
-Spiccato, harmonics y otras técnicas deben declararse únicamente si existen como recursos reales o si el manifest marca explícitamente el fallback sintético.
+Spiccato, harmonics y otras técnicas sólo se declaran cuando existen como recursos reales o cuando el manifest indica explícitamente el fallback.
 
 ## Compatibilidad
 
-TloqueScore V1/V2/V2.1 no necesita cambiar para esta primera fase. `instrument` pasa a ser semánticamente útil, pero `program` continúa funcionando como fallback. Los módulos GM actuales conservan sus programas y partituras.
+TloqueScore V1/V2/V2.1 no cambia. `instrument` ahora participa en el routing acústico, pero `program` continúa siendo fallback. Los módulos GM actuales conservan sus programas y partituras.
