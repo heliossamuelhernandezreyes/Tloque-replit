@@ -1,4 +1,10 @@
+import { VCSL_ESTUARY_KEYS_MANIFESTS } from "./instrument-manifest-keys"
 import { VSCO2_CE_PERCUSSION_MANIFESTS } from "./instrument-manifest-percussion"
+export {
+  VCSL_ESTUARY_GRAND_PIANO_MANIFEST,
+  VCSL_ESTUARY_PIPE_ORGAN_MANIFEST,
+  VCSL_ESTUARY_KEYS_MANIFESTS,
+} from "./instrument-manifest-keys"
 export {
   VSCO2_CE_GLOCKENSPIEL_MANIFEST,
   VSCO2_CE_MARIMBA_MANIFEST,
@@ -119,6 +125,7 @@ export const INSTRUMENT_MANIFEST_REGISTRY: readonly InstrumentManifest[] = [
   VSCO2_CE_F_HORN_MANIFEST,
   VSCO2_CE_TUBA_MANIFEST,
   SFZINSTRUMENTS_LEGATO_VOCAL_A_MANIFEST,
+  ...VCSL_ESTUARY_KEYS_MANIFESTS,
   ...VSCO2_CE_PERCUSSION_MANIFESTS,
 ]
 export function instrumentManifestById(id: string | null | undefined): InstrumentManifest | null { if (!id) return null; return INSTRUMENT_MANIFEST_REGISTRY.find(manifest => manifest.id === id) ?? null }
