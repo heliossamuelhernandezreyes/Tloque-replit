@@ -86,7 +86,7 @@ Un módulo no se considera `premium-solo-string` sólo por usar samples. Debe cu
 
 ## Validación
 
-La rama incorpora pruebas unitarias nuevas de routing GM, PerformancePlan, velocity layers, round robin, true-legato y releases. El repositorio no tiene checks de GitHub Actions asociados a esta rama, así que el PR se mantiene en borrador hasta ejecutar `npm run check`, `npm test` y `npm run build` en un entorno de proyecto.
+La rama incorpora pruebas unitarias nuevas de routing GM, PerformancePlan, velocity layers, round robin, true-legato y releases. GitHub no reporta checks automáticos para esta rama, por lo que el PR permanece en borrador hasta ejecutar `npm run check`, `npm test` y `npm run build` en un entorno de proyecto.
 
 ## Compatibilidad
 
