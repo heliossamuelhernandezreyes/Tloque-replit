@@ -1,14 +1,24 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { curatedSamplePackSource } from "../server/audioModuleInstaller"
 import { compileRawWavIndexToSfz } from "../server/rawWavSamplePackCompiler"
-import { compileCuratedSfzZones } from "../server/sfzSamplePackCompiler"
+import { compileCuratedSfzZones, compileSfzToTloqueSamplePack } from "../server/sfzSamplePackCompiler"
 import {
   VCSL_ESTUARY_GRAND_PIANO_PACK,
   VCSL_ESTUARY_PIPE_ORGAN_PACK,
 } from "../shared/curated-raw-wav-packs"
+import {
+  VCSL_ESTUARY_GRAND_PIANO_MANIFEST,
+  VCSL_ESTUARY_PIPE_ORGAN_MANIFEST,
+  instrumentManifestById,
+} from "../shared/instrument-manifest"
 
 function index(entries: Array<{ bank: string; url: string }>) {
   return JSON.stringify(entries.map((entry, n) => ({ ...entry, n, type: "audio" })))
+}
+
+function internalUrl(path: string) {
+  return `/api/audio/sample-packs/samples/${Buffer.from(path).toString("hex")}.wav`
 }
 
 test("raw VCSL piano keeps three physical velocity layers and close mic", () => {
@@ -27,6 +37,21 @@ test("raw VCSL piano keeps three physical velocity layers and close mic", () => 
   assert.deepEqual([...new Set(zones.map(zone => zone.velocityLayer))], [0, 1, 2])
   assert.ok(zones.every(zone => zone.micPosition === "close"))
   assert.deepEqual([...new Set(zones.map(zone => zone.rootMidi))].sort((a, b) => a - b), [48, 60])
+
+  const pack = compileSfzToTloqueSamplePack(compiled.sfzText, {
+    id: VCSL_ESTUARY_GRAND_PIANO_PACK.moduleId,
+    name: VCSL_ESTUARY_GRAND_PIANO_PACK.displayName,
+    instrumentManifestId: VCSL_ESTUARY_GRAND_PIANO_PACK.manifestId,
+    license: VCSL_ESTUARY_GRAND_PIANO_PACK.license,
+    sourceName: VCSL_ESTUARY_GRAND_PIANO_PACK.libraryName,
+    sourceUrl: VCSL_ESTUARY_GRAND_PIANO_PACK.repositoryUrl,
+    sourceCommit: VCSL_ESTUARY_GRAND_PIANO_PACK.pinnedCommit,
+    sampleUrlForPath: internalUrl,
+  })
+  assert.equal(pack.instrumentManifestId, "vcsl-estuary-grand-piano")
+  assert.deepEqual(pack.micPositions, ["close"])
+  assert.equal(pack.defaultMicPosition, "close")
+  assert.deepEqual([...new Set(pack.zones.map(zone => zone.velocityLayer))], [0, 1, 2])
 })
 
 test("raw VCSL pipe organ selects only Rode Man3 Open samples", () => {
@@ -45,4 +70,29 @@ test("raw VCSL pipe organ selects only Rode Man3 Open samples", () => {
   ])
   assert.equal(zones.length, 2)
   assert.ok(zones.every(zone => zone.loVelocity === 0 && zone.hiVelocity === 127))
+
+  const pack = compileSfzToTloqueSamplePack(compiled.sfzText, {
+    id: VCSL_ESTUARY_PIPE_ORGAN_PACK.moduleId,
+    name: VCSL_ESTUARY_PIPE_ORGAN_PACK.displayName,
+    instrumentManifestId: VCSL_ESTUARY_PIPE_ORGAN_PACK.manifestId,
+    license: VCSL_ESTUARY_PIPE_ORGAN_PACK.license,
+    sourceName: VCSL_ESTUARY_PIPE_ORGAN_PACK.libraryName,
+    sourceUrl: VCSL_ESTUARY_PIPE_ORGAN_PACK.repositoryUrl,
+    sourceCommit: VCSL_ESTUARY_PIPE_ORGAN_PACK.pinnedCommit,
+    sampleUrlForPath: internalUrl,
+  })
+  assert.equal(pack.instrumentManifestId, "vcsl-estuary-pipe-organ")
+  assert.ok(pack.zones.every(zone => zone.articulation === "normal"))
+})
+
+test("VCSL keyboard packs resolve through the canonical catalog and manifest registry", () => {
+  assert.equal(curatedSamplePackSource("vcsl-estuary-grand-piano")?.moduleId, "vcsl-estuary-grand-piano")
+  assert.equal(curatedSamplePackSource("vcsl-estuary-pipe-organ")?.moduleId, "vcsl-estuary-pipe-organ")
+  assert.equal(instrumentManifestById("vcsl-estuary-grand-piano"), VCSL_ESTUARY_GRAND_PIANO_MANIFEST)
+  assert.equal(instrumentManifestById("vcsl-estuary-pipe-organ"), VCSL_ESTUARY_PIPE_ORGAN_MANIFEST)
+  assert.deepEqual(VCSL_ESTUARY_GRAND_PIANO_MANIFEST.capabilities, ["velocity-layers", "mic-positions"])
+  assert.deepEqual(VCSL_ESTUARY_PIPE_ORGAN_MANIFEST.capabilities, [])
+  assert.equal(VCSL_ESTUARY_GRAND_PIANO_MANIFEST.articulations[0].velocityLayers, 3)
+  assert.equal(VCSL_ESTUARY_PIPE_ORGAN_MANIFEST.articulations[0].trueLegato, undefined)
+  assert.equal(VCSL_ESTUARY_PIPE_ORGAN_MANIFEST.articulations[0].releaseSamples, undefined)
 })
