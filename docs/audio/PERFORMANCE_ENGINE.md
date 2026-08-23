@@ -79,3 +79,7 @@ Los `hit` son one-shots físicos. La duración escrita conserva el significado r
 ## Exportación
 
 Los módulos nativos se renderizan con `OfflineAudioContext` usando exactamente el mismo plan acústico del live. El master WAV no imprime ducking ni fades narrativos dependientes de la lectura. Preview usa 32 kHz/16-bit; Studio/Master 48 kHz/24-bit, con límite de 220 MB de buffers float para proteger navegadores móviles. Para one-shots, el límite de memoria se calcula después de conocer la cola física real de las muestras seleccionadas.
+
+## Estado
+
+Cuerdas, maderas, metales, percusión afinada y percusión orquestal semántica quedan integrados sobre la misma ruta nativa sampled live/WAV. El siguiente crecimiento del motor debe modelar dimensiones tímbricas explícitas —por ejemplo mute/vibrato— únicamente donde existan grabaciones upstream verificadas, sin convertir colores distintos en articulaciones ficticias.
