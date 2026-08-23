@@ -5,6 +5,7 @@ import { createServer } from "http"
 import { setupAuth, setupAuthRoutes, ensureFounderAdmin } from "./auth"
 import { sameOriginProtection, securityHeaders } from "./security"
 import { rateLimit } from "./rateLimit"
+import { registerNativeSamplePackRoutes } from "./nativeSamplePackRoutes"
 
 const app        = express()
 const httpServer = createServer(app)
@@ -63,6 +64,10 @@ app.use((req, res, next) => {
   // Asegurar que el admin fundador esté en la BD
   await ensureFounderAdmin()
 
+  // Los paquetes nativos tienen un router curado independiente. Se registra
+  // antes del router legado de uploads para que cada instrumento conserve su
+  // identidad, manifest y procedencia exactos.
+  registerNativeSamplePackRoutes(app)
   await registerRoutes(httpServer, app)
 
   // Una ruta API inexistente nunca debe caer al index.html con estado 200.
