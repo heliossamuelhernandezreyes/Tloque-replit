@@ -65,7 +65,8 @@ Round robin se selecciona mediante `seed + event identity`. Velocity layer se ob
 - detección de transición true-legato monofónica;
 - release-sample metadata;
 - routing compartido;
-- exportación muestreada consumiendo PerformancePlan completo.
+- exportación muestreada consumiendo PerformancePlan completo;
+- perfil de audio `tloque-score-audio-v6-performance`.
 
 ### Fase 3 — sampler adapters · siguiente
 
