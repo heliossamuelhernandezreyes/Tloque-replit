@@ -1,4 +1,4 @@
-export const AUDIO_SOURCE_REGISTRY_VERSION = "tloque-audio-sources-2026-08-v1" as const
+export const AUDIO_SOURCE_REGISTRY_VERSION = "tloque-audio-sources-2026-08-v2" as const
 
 export type AudioSourceStatus = "integrated" | "approved" | "conversion" | "review" | "excluded"
 export type AudioSourceKind = "runtime" | "theory" | "offline-tool" | "sample-library" | "plugin-standard"
@@ -14,6 +14,20 @@ export interface AudioModuleSource {
   role: string
   decision: string
   formats: readonly string[]
+  install?: CuratedAudioModuleInstall
+}
+
+export interface CuratedAudioModuleInstall {
+  moduleId: string
+  version: string
+  fileName: string
+  sourceUrl: string
+  pinnedCommit: string
+  estimatedMegabytes: number
+  presetCount: number
+  drumKitCount: number
+  acknowledgement: string
+  tags: readonly string[]
 }
 
 // Catálogo de procedencia, no CDN de reproducción. Los renderers nunca buscan
@@ -158,8 +172,53 @@ export const AUDIO_MODULE_SOURCES: readonly AudioModuleSource[] = [
     repositoryUrl: "https://github.com/mrbumpy409/GeneralUser-GS",
     documentationUrl: "https://www.schristiancollins.com/generaluser.php",
     role: "Banco General MIDI compacto de amplia cobertura.",
-    decision: "No se distribuye automáticamente: su propia licencia advierte incertidumbre sobre el origen de algunas muestras.",
+    decision: "Instalación comunitaria opt-in: la licencia permite integrarlo en software, pero el administrador debe aceptar el aviso de procedencia antes de copiarlo al almacenamiento interno.",
     formats: ["SF2"],
+    install: {
+      moduleId: "generaluser-gs-203",
+      version: "2.0.3",
+      fileName: "GeneralUser-GS.sf2",
+      sourceUrl: "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/97049183643d5fc5a9322a69c5b09efb667c6c3a/GeneralUser-GS.sf2",
+      pinnedCommit: "97049183643d5fc5a9322a69c5b09efb667c6c3a",
+      estimatedMegabytes: 30.8,
+      presetCount: 261,
+      drumKitCount: 13,
+      acknowledgement: "Entiendo que GeneralUser GS usa una licencia permisiva propia y que su autor declara incertidumbre sobre la procedencia original de algunas muestras.",
+      tags: ["gm", "orchestra", "piano", "strings", "woodwinds", "brass", "percussion", "mobile"],
+    },
+  },
+  {
+    id: "tonejs-instruments",
+    name: "Tone.js Instruments",
+    kind: "sample-library",
+    status: "conversion",
+    license: "MIT (código) · CC-BY-3.0 (muestras)",
+    repositoryUrl: "https://github.com/nbrosowsky/tonejs-instruments",
+    role: "Veinte instrumentos muestreados para Web Audio: piano, violín, cello, contrabajo, maderas, metales, arpa, órgano y guitarras.",
+    decision: "Fuente útil para módulos ligeros por instrumento; requiere empaquetado interno, atribución y caché antes de entrar al renderer de producción.",
+    formats: ["MP3", "Web Audio", "JavaScript"],
+  },
+  {
+    id: "discord-sfz-gm-bank",
+    name: "Discord SFZ General MIDI Bank",
+    kind: "sample-library",
+    status: "review",
+    license: "CC0/CC-BY por instrumento; manifiesto aún incompleto",
+    repositoryUrl: "https://github.com/sfzinstruments/Discord-SFZ-GM-Bank",
+    role: "Banco General MIDI abierto construido con muestras libres de varias procedencias.",
+    decision: "No se instala todavía: está en desarrollo, usa SFZ y mantiene incidencias abiertas de licencia en instrumentos concretos.",
+    formats: ["SFZ", "WAV", "FLAC"],
+  },
+  {
+    id: "sfz-web-player",
+    name: "SFZ Web Player",
+    kind: "runtime",
+    status: "review",
+    license: "CC0-1.0",
+    repositoryUrl: "https://github.com/sfzlab/sfz-web-player",
+    role: "Reproductor SFZ directo sobre Web Audio para explorar módulos sin convertirlos a SoundFont.",
+    decision: "Se conserva como prototipo de laboratorio; Tloque usa SpessaSynth/SF2-SF3 hasta validar compatibilidad SFZ, streaming, rendimiento móvil y seguridad.",
+    formats: ["SFZ", "Web Audio", "TypeScript"],
   },
   {
     id: "faustwasm",

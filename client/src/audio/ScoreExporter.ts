@@ -169,6 +169,26 @@ function nextFrame() {
   return new Promise<void>(resolve => setTimeout(resolve, 0))
 }
 
+export async function encodeAudioBufferToWav(
+  audio: AudioBuffer,
+  bitDepth: 16 | 24,
+  onProgress?: (value: number) => void,
+): Promise<Blob> {
+  const totalFrames = audio.length
+  const bytesPerSample = bitDepth / 8
+  const parts: BlobPart[] = [writeHeader(totalFrames * 2 * bytesPerSample, audio.sampleRate, bitDepth)]
+  const leftSource = audio.getChannelData(0)
+  const rightSource = audio.numberOfChannels > 1 ? audio.getChannelData(1) : leftSource
+  const chunkFrames = 65_536
+  for (let frameStart = 0; frameStart < totalFrames; frameStart += chunkFrames) {
+    const end = Math.min(totalFrames, frameStart + chunkFrames)
+    parts.push(encodePcm(leftSource.subarray(frameStart, end), rightSource.subarray(frameStart, end), bitDepth, frameStart))
+    onProgress?.(Math.min(1, end / totalFrames))
+    await nextFrame()
+  }
+  return new Blob(parts, { type: "audio/wav" })
+}
+
 export async function renderTloqueScoreToWav(value: unknown, options: ScoreExportOptions = {}): Promise<Blob> {
   const recipe = linearScoreRecipeFor(value)
   const estimate = estimateScoreExport(recipe, options.quality)

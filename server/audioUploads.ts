@@ -3,6 +3,7 @@ import type { Client } from "@replit/object-storage"
 import express, { type Express } from "express"
 import { requireAdmin } from "./auth"
 import { audioStorage } from "./audioStorage"
+import { curatedAudioModuleSource, downloadCuratedAudioModule } from "./audioModuleInstaller"
 import { rateLimit } from "./rateLimit"
 import { detectSoundBankType } from "./soundBankDetection"
 
@@ -79,6 +80,56 @@ export function registerAudioUploadRoutes(app: Express) {
         audioStorage.reset(storage)
         console.error("Audio upload failed:", error)
         res.status(503).json({ message: "App Storage no está listo. Conecta un bucket en Replit e inténtalo de nuevo." })
+      }
+    },
+  )
+
+  app.post(
+    "/api/admin/audio/module-catalog/:sourceId/install",
+    requireAdmin,
+    rateLimit(60_000, 3),
+    express.json({ limit: "8kb" }),
+    async (req, res) => {
+      const sourceId = Array.isArray(req.params.sourceId) ? req.params.sourceId[0] : req.params.sourceId
+      const source = curatedAudioModuleSource(sourceId || "")
+      if (!source?.install) return res.status(404).json({ message: "El módulo no está disponible para instalación" })
+      if (req.body?.acknowledgement !== source.install.acknowledgement) {
+        return res.status(400).json({ message: "Debes aceptar el aviso de licencia y procedencia para instalar este banco" })
+      }
+      let storage: Client | undefined
+      try {
+        const downloaded = await downloadCuratedAudioModule(source)
+        const objectName = `audio/modules/${downloaded.sha256}.${downloaded.extension}`
+        storage = audioStorage.get()
+        const exists = await storage.exists(objectName)
+        if (!exists.ok) throw exists.error
+        if (!exists.value) {
+          const uploaded = await storage.uploadFromBytes(objectName, downloaded.bytes, { compress: false })
+          if (!uploaded.ok) throw uploaded.error
+        }
+        res.status(201).json({
+          url: `/api/audio/modules/${downloaded.sha256}.${downloaded.extension}`,
+          sha256: downloaded.sha256,
+          bytes: downloaded.bytes.length,
+          mimeType: downloaded.mimeType,
+          extension: downloaded.extension,
+          originalName: source.install.fileName,
+          deduplicated: exists.value,
+          source: {
+            id: source.id,
+            name: source.name,
+            license: source.license,
+            repositoryUrl: source.repositoryUrl,
+            moduleId: source.install.moduleId,
+            version: source.install.version,
+            pinnedCommit: source.install.pinnedCommit,
+            tags: source.install.tags,
+          },
+        })
+      } catch (error) {
+        audioStorage.reset(storage)
+        console.error("Curated sound bank installation failed:", error)
+        res.status(502).json({ message: "No se pudo descargar y verificar el banco fijado. Inténtalo de nuevo." })
       }
     },
   )

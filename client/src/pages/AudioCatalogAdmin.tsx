@@ -21,6 +21,7 @@ import {
 import { musicCueFor, type CatalogAudioAsset as AudioAsset } from "@/audio/catalog"
 import { cacheAudioResource, isAudioResourceCached, removeCachedAudioResource } from "@/audio/AudioResourceCache"
 import { downloadWav, estimateScoreExport, renderTloqueScoreToWav } from "@/audio/ScoreExporter"
+import { renderTloqueScoreWithModuleToWav } from "@/audio/ScoreSampledExporter"
 import { compileTloqueScoreOnServer } from "@/lib/tloqueScoreApi"
 
 type AudioAssetForm = Omit<AudioAsset, "id" | "favorite">
@@ -289,7 +290,10 @@ export default function AudioCatalogAdmin() {
     mutationFn: async () => {
       if (!compiled) throw new Error("Valida y compila el código antes de exportar")
       setExportProgress(0)
-      const blob = await renderTloqueScoreToWav(compiled, { onProgress: setExportProgress })
+      const moduleAsset = resolveScoreModule(compiled)
+      const blob = moduleAsset
+        ? await renderTloqueScoreWithModuleToWav(compiled, moduleAsset.packUrl, { onProgress: setExportProgress })
+        : await renderTloqueScoreToWav(compiled, { onProgress: setExportProgress })
       downloadWav(blob, scoreMeta.title || (compiled.version === 2 ? compiled.plan.title : "tloque-score"))
       return blob.size
     },
@@ -373,6 +377,53 @@ export default function AudioCatalogAdmin() {
       setUploadMessage(`${upload.deduplicated ? "Banco ya existente" : "Banco importado"} · ${(upload.bytes / 1024 / 1024).toFixed(1)} MB · completa procedencia y licencia; permanecerá como borrador hasta que lo publiques.`)
       setTab("library")
       window.scrollTo({ top: 0, behavior: "smooth" })
+    },
+  })
+
+  const installCuratedModule = useMutation({
+    mutationFn: async (source: (typeof AUDIO_MODULE_SOURCES)[number]) => {
+      if (!source.install) throw new Error("Este recurso todavía requiere conversión manual")
+      const existing = qualityModules.find(asset => asset.tags.includes(`module:${source.install!.moduleId}`))
+      if (existing) return { asset: existing, deduplicated: true, bytes: existing.packBytes || 0 }
+      const installResponse = await fetch(`/api/admin/audio/module-catalog/${source.id}/install`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acknowledgement: source.install.acknowledgement }),
+      })
+      const installed = await installResponse.json().catch(() => ({}))
+      if (!installResponse.ok) throw new Error(installed.message || "No se pudo instalar el banco")
+      const payload: AudioAssetForm = {
+        ...EMPTY,
+        title: `${source.name} ${source.install.version}`,
+        kind: "music",
+        sourceType: "soundfont",
+        recipe: DEFAULT_PROCEDURAL_RECIPE,
+        texture: `${installed.extension.toUpperCase()} · ${source.install.presetCount} presets · ${source.install.drumKitCount} baterías`,
+        tags: [
+          `module:${source.install.moduleId}`, "instrument-bank", `format:${installed.extension}`,
+          "curated-install", `source:${source.id}`, `sha256:${installed.sha256.slice(0, 16)}`,
+        ],
+        packUrl: installed.url,
+        packBytes: installed.bytes,
+        packSha256: installed.sha256,
+        instrumentProgram: 0,
+        license: source.license,
+        sourceName: `${source.name} ${source.install.version} · commit ${source.install.pinnedCommit.slice(0, 12)}`,
+        sourceUrl: source.repositoryUrl,
+        status: "draft",
+      }
+      const assetResponse = await fetch("/api/admin/audio/assets", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const body = await assetResponse.json().catch(() => ({}))
+      if (!assetResponse.ok) throw new Error(body.message || "El banco se descargó, pero no se pudo registrar en Fonoteca")
+      return { asset: body.asset as AudioAsset, deduplicated: installed.deduplicated, bytes: installed.bytes as number }
+    },
+    onSuccess: async result => {
+      await invalidate()
+      setUploadMessage(`${result.deduplicated ? "Banco verificado" : "Banco instalado"} · ${(result.bytes / 1024 / 1024).toFixed(1)} MB · ya puedes usarlo en el Compositor. Queda como borrador hasta que revises su licencia y lo publiques.`)
     },
   })
 
@@ -481,6 +532,29 @@ export default function AudioCatalogAdmin() {
     window.requestAnimationFrame(() => scoreEditorRef.current?.focus())
   }
 
+  function useModuleInComposer(asset: AudioAsset) {
+    const moduleId = asset.tags.find(tag => tag.startsWith("module:"))?.slice("module:".length)
+    if (!moduleId) return
+    setScoreSource(current => {
+      const base = current.trim() ? current : SCORE_STARTER
+      if (/^module\s+\S+/m.test(base)) return base.replace(/^module\s+\S+/m, `module ${moduleId}`)
+      if (/^quality\s+\S+/m.test(base)) return base.replace(/^(quality\s+\S+)$/m, `$1\nmodule ${moduleId}`)
+      return base.replace(/^(TLOQUE_SCORE\s+2)$/m, `$1\nmodule ${moduleId}`)
+    })
+    setCompiled(null)
+    compile.reset()
+    setTab("composer")
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  function requestCuratedInstall(source: (typeof AUDIO_MODULE_SOURCES)[number]) {
+    if (!source.install) return
+    if (window.confirm(`${source.install.acknowledgement}\n\n¿Descargar ${source.install.estimatedMegabytes} MB e instalarlo en Tloque?`)) {
+      setUploadMessage("")
+      installCuratedModule.mutate(source)
+    }
+  }
+
   function togglePreview(asset: AudioAsset) {
     if (preview === asset.id) {
       music.stop()
@@ -524,7 +598,7 @@ export default function AudioCatalogAdmin() {
             <div>
               <h2 className="text-sm font-semibold">Compositor de obras · TloqueScore V2.1</h2>
               <p className="mt-1 text-xs text-zinc-500">El código es la obra maestra: editarlo recompila y cambia el audio. La reproducción no crea archivos; Exportar genera un WAV sólo cuando lo pides.</p>
-              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code> activa 128 voces, interpretación expresiva, procesamiento multibanda y exportación 24-bit / 96 kHz. Los módulos SF2/SF3 añaden instrumentos muestreados bajo demanda.</p>
+              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code> activa 128 voces e interpretación expresiva. Con <code>module builtin</code> exporta 24-bit / 96 kHz; un módulo SF2/SF3 reproduce y exporta sus muestras a 24-bit / 48 kHz, sin inflar artificialmente la frecuencia original.</p>
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <input className={inputClass} placeholder="Título del tema" value={scoreMeta.title} onChange={e => setScoreMeta(meta => ({ ...meta, title: e.target.value }))} />
@@ -611,12 +685,12 @@ export default function AudioCatalogAdmin() {
               </button>
               <button disabled={!compiled} onClick={() => compiled && music.playCue({ id: -11, title: scoreMeta.title || "Vista previa", sourceType: "score", recipe: compiled, packUrl: compiledModule?.packUrl, packBytes: compiledModule?.packBytes, packSha256: compiledModule?.packSha256, loop: compiled.plan.loop, volume: 1, crossfadeSeconds: 0.25, monitoring: "reference" })} className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"><Play className="inline w-4 h-4 mr-1" /> Escuchar al 100%</button>
               <button onClick={() => music.stop()} className="rounded-lg bg-white/10 px-4 py-2 text-sm"><Square className="inline w-4 h-4 mr-1" /> Detener</button>
-              <button disabled={!compiled || exportScore.isPending} onClick={() => exportScore.mutate()} className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"><Download className="inline w-4 h-4 mr-1" /> {exportScore.isPending ? `Exportando ${Math.round(exportProgress * 100)}%` : "Exportar WAV"}</button>
+              <button disabled={!compiled || exportScore.isPending} onClick={() => exportScore.mutate()} className="rounded-lg bg-white/10 px-4 py-2 text-sm disabled:opacity-40"><Download className="inline w-4 h-4 mr-1" /> {exportScore.isPending ? `Exportando ${Math.round(exportProgress * 100)}%` : compiledModule ? "Exportar WAV muestreado" : "Exportar WAV"}</button>
               <button disabled={saveScore.isPending || !scoreMeta.title.trim() || !scoreSource.trim()} onClick={() => saveScore.mutate()} className="sm:ml-auto rounded-lg bg-amber-400 text-black px-4 py-2 text-sm font-semibold disabled:opacity-40">
                 {saveScore.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : `${scoreEditingId ? "Actualizar" : "Guardar"} en Fonoteca`}
               </button>
             </div>
-            {exportEstimate && <p className="text-[10px] text-zinc-500">Monitoreo de referencia independiente del volumen de lectura · Exportación {exportEstimate.bitDepth}-bit / {(exportEstimate.sampleRate / 1000).toFixed(0)} kHz · {exportEstimate.audioProfile} · tamaño estimado {(exportEstimate.bytes / 1024 / 1024).toFixed(1)} MB. El render se procesa por bloques para obras largas.</p>}
+            {exportEstimate && <p className="text-[10px] text-zinc-500">Monitoreo de referencia independiente del volumen de lectura · {compiledModule ? `Render muestreado ${compiledModule.title} · 24-bit / 48 kHz` : `Render incorporado ${exportEstimate.bitDepth}-bit / ${(exportEstimate.sampleRate / 1000).toFixed(0)} kHz`} · {exportEstimate.audioProfile}{compiledModule ? " · en móvil, las obras muy largas se exportan por movimientos para proteger la memoria" : ` · tamaño estimado ${(exportEstimate.bytes / 1024 / 1024).toFixed(1)} MB · procesamiento por bloques`}.</p>}
             {(saveScore.isError || exportScore.isError) && <pre className="whitespace-pre-wrap text-xs text-red-300">{((saveScore.error || exportScore.error) as Error).message}</pre>}
           </section>
         )}
@@ -646,6 +720,28 @@ export default function AudioCatalogAdmin() {
               <div><p className="text-sm font-medium">Síntesis base Tloque</p><p className="text-[10px] text-zinc-500">Incluida · sin descarga · <code>module builtin</code></p></div>
               <CheckCircle2 className="w-5 h-5 text-emerald-300" />
             </div>
+            {AUDIO_MODULE_SOURCES.filter(source => source.install).map(source => (
+              <article key={source.id} className="rounded-xl border border-sky-400/20 bg-sky-400/[0.045] p-3 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-sky-100">{source.name} {source.install!.version}</p>
+                    <p className="mt-1 text-[10px] leading-4 text-zinc-400">{source.install!.presetCount} presets · {source.install!.drumKitCount} baterías · {source.install!.estimatedMegabytes} MB · {source.formats.join("/")}</p>
+                    <p className="mt-1 text-[10px] leading-4 text-orange-200/80">Instalación comunitaria con aceptación de procedencia. Se guarda internamente y se fija por SHA-256.</p>
+                  </div>
+                  <Package className="h-5 w-5 shrink-0 text-sky-300" />
+                </div>
+                <button
+                  disabled={installCuratedModule.isPending}
+                  onClick={() => requestCuratedInstall(source)}
+                  className="min-h-11 w-full rounded-lg bg-sky-300 px-3 py-2 text-xs font-semibold text-sky-950 disabled:opacity-40"
+                >
+                  {installCuratedModule.isPending ? <Loader2 className="mr-1 inline h-4 w-4 animate-spin" /> : <Download className="mr-1 inline h-4 w-4" />}
+                  Descargar, verificar e instalar
+                </button>
+              </article>
+            ))}
+            {uploadMessage && <p className="rounded-lg bg-emerald-400/5 px-3 py-2 text-xs leading-5 text-emerald-200">{uploadMessage}</p>}
+            {installCuratedModule.isError && <p className="rounded-lg bg-red-950/30 px-3 py-2 text-xs text-red-200">{(installCuratedModule.error as Error).message}</p>}
             {qualityModules.map(asset => {
               const moduleTag = asset.tags.find(tag => tag.startsWith("module:")) || "Falta etiqueta module:id"
               const installed = Boolean(moduleCache[asset.id])
@@ -656,9 +752,12 @@ export default function AudioCatalogAdmin() {
                     <p className="text-[10px] text-zinc-500">{moduleTag} · {asset.packBytes ? `${(asset.packBytes / 1024 / 1024).toFixed(1)} MB` : "tamaño no declarado"} · {asset.license}</p>
                     <p className="text-[10px] text-zinc-600 truncate">{asset.sourceName}</p>
                   </div>
-                  <button disabled={manageModule.isPending || !moduleTag.startsWith("module:")} onClick={() => manageModule.mutate({ asset, install: !installed })} className={`rounded-lg px-3 py-2 text-xs disabled:opacity-40 ${installed ? "bg-white/10" : "bg-amber-400 text-black font-semibold"}`}>
-                    {installed ? <><Trash2 className="inline w-3.5 h-3.5 mr-1" /> Retirar del dispositivo</> : <><Download className="inline w-3.5 h-3.5 mr-1" /> Descargar módulo</>}
-                  </button>
+                  <div className="grid grid-cols-2 gap-2 sm:flex">
+                    <button disabled={!moduleTag.startsWith("module:")} onClick={() => useModuleInComposer(asset)} className="rounded-lg bg-sky-300 px-3 py-2 text-xs font-semibold text-sky-950 disabled:opacity-40"><Music2 className="mr-1 inline h-3.5 w-3.5" /> Usar</button>
+                    <button disabled={manageModule.isPending || !moduleTag.startsWith("module:")} onClick={() => manageModule.mutate({ asset, install: !installed })} className={`rounded-lg px-3 py-2 text-xs disabled:opacity-40 ${installed ? "bg-white/10" : "bg-amber-400 text-black font-semibold"}`}>
+                      {installed ? <><Trash2 className="inline w-3.5 h-3.5 mr-1" /> Retirar</> : <><Download className="inline w-3.5 h-3.5 mr-1" /> Al dispositivo</>}
+                    </button>
+                  </div>
                 </div>
               )
             })}

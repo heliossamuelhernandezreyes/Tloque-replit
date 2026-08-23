@@ -5,7 +5,7 @@ import type { MusicCue, MusicState } from "./MusicEngine"
 import {
   articulationDurationFactor, articulationVelocityFactor, midiNotesToFrequencies, scoreBrightnessFrequency, scorePedalReleaseTime,
   scoreMonitorVolume, scoreRenderProfile, scoreTrackBrightness, scoreTrackEnvelope,
-  scoreTrackExpression, scoreTrackTimbre, scoreTrackVibrato, scoreVelocityGain,
+  scoreSampledChannelPlan, scoreSampledProgram, scoreTrackExpression, scoreTrackTimbre, scoreTrackVibrato, scoreVelocityGain,
 } from "./ScoreAudioMath"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
@@ -262,13 +262,13 @@ export class LinearScoreEngine {
 
     const beatSeconds = 60 / recipe.plan.bpm
     const totalSeconds = "totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * beatSeconds
-    const channels = new Map(recipe.plan.tracks.slice(0, 16).map((track, index) => [track.id, index]))
+    const playableTracks = recipe.plan.tracks.slice(0, 16)
+    const tracksById = new Map(playableTracks.map(track => [track.id, track]))
+    const sampledPlan = scoreSampledChannelPlan(playableTracks, recipe.plan.events)
     const startAt = context.currentTime + 0.08
-    for (const track of recipe.plan.tracks.slice(0, 16)) {
-      const channel = channels.get(track.id)!
-      const program = "program" in track ? track.program : ({ warm: 0, pad: 48, bell: 8, pluck: 24, bass: 32 } as const)[track.synth]
+    for (const { channel, track, program } of sampledPlan.channels) {
       const timbre = scoreTrackTimbre(track)
-      synth.programChange(channel, Number(program), { time: startAt })
+      synth.programChange(channel, program, { time: startAt })
       synth.controllerChange(channel, 7 as any, Math.round(Math.min(1, track.gain * timbre.level) * 127), { time: startAt })
       synth.controllerChange(channel, 10 as any, Math.round((track.pan + 1) * 63.5), { time: startAt })
       synth.controllerChange(channel, 11 as any, Math.round(scoreTrackExpression(track) * 127), { time: startAt })
@@ -276,30 +276,32 @@ export class LinearScoreEngine {
       synth.controllerChange(channel, 1 as any, Math.round(scoreTrackVibrato(track) * 127), { time: startAt })
       synth.controllerChange(channel, 64 as any, 0, { time: startAt })
       synth.controllerChange(channel, 91 as any, Math.round((0.18 + timbre.level * 0.18) * 127), { time: startAt })
+      synth.controllerChange(channel, 93 as any, Math.round((track.synth === "pad" ? 0.1 : 0.035) * 127), { time: startAt })
       synth.pitchWheelRange(channel, 2, { time: startAt })
       synth.pitchWheel(channel, 8_192, { time: startAt })
     }
 
     const scheduleCycle = (cycleStart: number) => {
-      const states = new Map(recipe.plan.tracks.slice(0, 16).map(track => [track.id, {
+      const states = new Map(playableTracks.map(track => [track.id, {
         expression: scoreTrackExpression(track),
         brightness: scoreTrackBrightness(track),
         vibrato: scoreTrackVibrato(track),
         pitchBend: 0,
       }]))
-      for (const track of recipe.plan.tracks.slice(0, 16)) {
-        const channel = channels.get(track.id)!
-        synth.controllerChange(channel, 11 as any, Math.round(scoreTrackExpression(track) * 127), { time: cycleStart })
-        synth.controllerChange(channel, 74 as any, Math.round(scoreTrackBrightness(track) * 127), { time: cycleStart })
-        synth.controllerChange(channel, 1 as any, Math.round(scoreTrackVibrato(track) * 127), { time: cycleStart })
-        synth.controllerChange(channel, 64 as any, 0, { time: cycleStart })
-        synth.pitchWheel(channel, 8_192, { time: cycleStart })
+      for (const track of playableTracks) {
+        for (const channel of sampledPlan.channelsForTrack(track.id)) {
+          synth.controllerChange(channel, 11 as any, Math.round(scoreTrackExpression(track) * 127), { time: cycleStart })
+          synth.controllerChange(channel, 74 as any, Math.round(scoreTrackBrightness(track) * 127), { time: cycleStart })
+          synth.controllerChange(channel, 1 as any, Math.round(scoreTrackVibrato(track) * 127), { time: cycleStart })
+          synth.controllerChange(channel, 64 as any, 0, { time: cycleStart })
+          synth.pitchWheel(channel, 8_192, { time: cycleStart })
+        }
       }
       if (recipe.version === 2) {
         for (const control of recipe.plan.controls) {
-          const channel = channels.get(control.trackId)
+          const trackChannels = sampledPlan.channelsForTrack(control.trackId)
           const state = states.get(control.trackId)
-          if (channel === undefined || !state) continue
+          if (!trackChannels.length || !state) continue
           const controlAt = cycleStart + control.timeSeconds
           const scheduleController = (key: "expression" | "brightness" | "vibrato", controller: number, target: number | null) => {
             if (target === null) return
@@ -307,39 +309,45 @@ export class LinearScoreEngine {
             const from = state[key]
             for (let step = 1; step <= steps; step += 1) {
               const fraction = step / steps
-              synth.controllerChange(channel, controller as any, Math.round((from + (target - from) * fraction) * 127), {
-                time: controlAt + control.rampSeconds * fraction,
-              })
+              for (const channel of trackChannels) {
+                synth.controllerChange(channel, controller as any, Math.round((from + (target - from) * fraction) * 127), {
+                  time: controlAt + control.rampSeconds * fraction,
+                })
+              }
             }
             state[key] = target
           }
           scheduleController("expression", 11, control.expression)
           scheduleController("brightness", 74, control.brightness)
           scheduleController("vibrato", 1, control.vibrato)
-          if (control.pedal !== null) synth.controllerChange(channel, 64 as any, control.pedal ? 127 : 0, { time: controlAt })
+          if (control.pedal !== null) for (const channel of trackChannels) synth.controllerChange(channel, 64 as any, control.pedal ? 127 : 0, { time: controlAt })
           if (control.pitchBend !== null) {
             const steps = control.rampSeconds > 0 ? Math.max(2, Math.min(16, Math.ceil(control.rampSeconds * 8))) : 1
             const from = state.pitchBend
             for (let step = 1; step <= steps; step += 1) {
               const fraction = step / steps
               const bend = from + (control.pitchBend - from) * fraction
-              synth.pitchWheel(channel, Math.max(0, Math.min(16_383, Math.round(8_192 + bend / 2 * 8_191))), {
-                time: controlAt + control.rampSeconds * fraction,
-              })
+              for (const channel of trackChannels) {
+                synth.pitchWheel(channel, Math.max(0, Math.min(16_383, Math.round(8_192 + bend / 2 * 8_191))), {
+                  time: controlAt + control.rampSeconds * fraction,
+                })
+              }
             }
             state.pitchBend = control.pitchBend
           }
         }
       }
       for (const event of recipe.plan.events) {
-        const channel = channels.get(event.trackId)
+        const track = tracksById.get(event.trackId)
+        if (!track) continue
+        const articulation = "articulation" in event ? event.articulation : "normal"
+        const channel = sampledPlan.channelForEvent(track.id, articulation)
         if (channel === undefined) continue
         const noteAt = cycleStart + ("timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds)
-        const articulation = "articulation" in event ? event.articulation : "normal"
         const factor = articulationDurationFactor(articulation)
         const baseDuration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds) * factor
         const velocity = Math.round(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation)) * 127)
-        if (articulation === "tremolo") {
+        if (articulation === "tremolo" && scoreSampledProgram(track, articulation) === scoreSampledProgram(track)) {
           const pulseSeconds = 0.12
           const pulses = Math.max(1, Math.ceil(baseDuration / pulseSeconds))
           for (let pulse = 0; pulse < pulses; pulse += 1) {
