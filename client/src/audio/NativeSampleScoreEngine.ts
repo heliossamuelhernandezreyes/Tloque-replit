@@ -53,7 +53,8 @@ export class NativeSampleScoreEngine {
         trackGain.set(track.id, gain)
       }
 
-      await player.preload(plan.zones)
+      const decoded = await player.preload(plan.zones)
+      const durationByUrl = new Map(plan.zones.map((zone, index) => [zone.sampleUrl, decoded[index]?.duration ?? 0]))
       await context.resume()
 
       this.context = context
@@ -83,14 +84,20 @@ export class NativeSampleScoreEngine {
           startTime: startAt + voice.startSeconds,
           durationSeconds: voice.durationSeconds,
           destination,
+          oneShot: voice.oneShot,
         }))
       }
       await Promise.all(scheduled)
 
+      const naturalEnd = plan.voices.reduce((latest, voice) => {
+        if (!voice.oneShot || !voice.sampleUrl) return latest
+        const physical = durationByUrl.get(voice.sampleUrl) ?? 0
+        return Math.max(latest, voice.startSeconds + physical / Math.max(0.01, voice.playbackRate))
+      }, plan.totalSeconds)
       output.gain.linearRampToValueAtTime(this.targetVolume(), context.currentTime + Math.max(0.25, cue.crossfadeSeconds))
       this.completionTimer = window.setTimeout(() => {
         this.listener("paused", this.cue)
-      }, (plan.totalSeconds + 0.5) * 1_000)
+      }, (naturalEnd + 0.5) * 1_000)
       this.listener("playing", cue)
     } catch (error) {
       console.error("Tloque native sample playback failed:", error)
