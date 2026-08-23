@@ -9,11 +9,13 @@ import { buildNativeSampleScorePlan } from "../client/src/audio/NativeSampleScor
 
 const url = (letter: string) => `/api/audio/sample-packs/samples/${letter.repeat(64)}.wav`
 
-function zone(id: string, sampleUrl: string, options: { articulation?: "normal" | "staccato"; vibrato?: boolean; mute?: "none" | "straight" | "harmon" | "mute" } = {}) {
+function zone(id: string, sampleUrl: string, options: { articulation?: "normal" | "staccato"; vibrato?: boolean; vibratoColour?: "none" | "vibrato" | "expression"; mute?: "none" | "straight" | "harmon" | "mute" } = {}) {
+  const vibratoColour = options.vibratoColour ?? (options.vibrato ? "vibrato" : "none")
   return {
     id,
     articulation: options.articulation ?? "normal",
-    vibrato: options.vibrato ?? false,
+    vibrato: vibratoColour !== "none",
+    vibratoColour,
     mute: options.mute ?? "none",
     sampleUrl,
     rootMidi: 60,
@@ -37,7 +39,7 @@ test("SFZ mantiene vibrato y sordinas como dimensiones independientes de articul
   ]
   const [vib, straight, harmon, horn] = sources.map(source => compileCuratedSfzZones(source)[0])
   assert.equal(vib.articulation, "normal")
-  assert.equal(vib.vibrato, true)
+  assert.equal(vib.vibratoColour, "vibrato")
   assert.equal(vib.mute, "none")
   assert.equal(straight.articulation, "normal")
   assert.equal(straight.mute, "straight")
@@ -58,12 +60,12 @@ test("selector prioriza el color físico solicitado antes que una articulación 
     sourceUrl: "",
     zones: [
       zone("open", url("a")),
-      zone("vib", url("b"), { vibrato: true }),
+      zone("vib", url("b"), { vibratoColour: "vibrato" }),
       zone("straight", url("c"), { mute: "straight" }),
       zone("open-staccato", url("d"), { articulation: "staccato" }),
     ],
   }
-  assert.equal(selectNativeSampleZone(pack, "normal", 60, 64, 0, { vibrato: true })?.zone.id, "vib")
+  assert.equal(selectNativeSampleZone(pack, "normal", 60, 64, 0, { vibratoColour: "vibrato" })?.zone.id, "vib")
   assert.equal(selectNativeSampleZone(pack, "normal", 60, 64, 0, { mute: "straight" })?.zone.id, "straight")
   assert.equal(selectNativeSampleZone(pack, "staccato", 60, 64, 0, { mute: "straight" })?.zone.id, "straight")
   assert.equal(selectNativeSampleZone(pack, "staccato", 60, 64, 0)?.zone.id, "open-staccato")
@@ -82,7 +84,7 @@ test("catálogo instala sólo variantes tímbricas verificadas dentro del instru
   assert.deepEqual(horn?.sfzPaths, ["FHornSus.sfz", "FHornStac.sfz", "FHornMute.sfz"])
 })
 
-test("TloqueScore usa el control vibrato existente para elegir grabación física por evento", () => {
+test("TloqueScore selecciona vibrato y expression-vibrato como colores físicos explícitos", () => {
   const source = `TLOQUE_SCORE 2
 title "Recorded vibrato"
 tempo 60
@@ -92,12 +94,11 @@ seed 12
 humanize 0
 quality studio
 module vsco2-ce-trumpet
-track trumpet synth=pad instrument=brass.trumpet program=56 role=melody gain=0.3 pan=0 attack=0.01 release=1 expression=1 brightness=0.5 vibrato=0
+track trumpet synth=pad instrument=brass.trumpet program=56 role=melody gain=0.3 pan=0 attack=0.01 release=1 expression=1 brightness=0.5 vibrato=0 timbre=natural
 section phrase form=custom bars=1 repeat=1 fade=0 tempo=60 rubato=0
 use trumpet
-1:1 C4 1 velocity=0.5
-control 1:2 vibrato=0.7 ramp=0
-1:2 C4 1 velocity=0.5
+1:1 C4 1 velocity=0.5 timbre=natural
+1:2 C4 1 velocity=0.5 timbre=vibrato
 end`
   const compiled = compileTloqueScore(source)
   assert.equal(compiled.ok, true)
@@ -110,14 +111,15 @@ end`
     license: "CC0-1.0",
     sourceName: "fixture",
     sourceUrl: "",
-    zones: [zone("open", url("a")), zone("vib", url("b"), { vibrato: true })],
+    zones: [zone("open", url("a")), zone("vib", url("b"), { vibratoColour: "vibrato" })],
   }
   const plan = buildNativeSampleScorePlan(compiled.recipe, pack)
-  assert.deepEqual(plan.voices.map(voice => voice.vibrato), [false, true])
+  assert.deepEqual(plan.voices.map(voice => voice.timbre), ["natural", "vibrato"])
+  assert.deepEqual(plan.voices.map(voice => voice.vibratoColour), ["none", "vibrato"])
   assert.deepEqual(plan.voices.map(voice => voice.sampleUrl), [url("a"), url("b")])
 })
 
-test("identidad semántica de sordina solicita la grabación real sin cambiar articulación", () => {
+test("timbre=straight-mute solicita la grabación real sin cambiar articulación", () => {
   const source = `TLOQUE_SCORE 2
 title "Straight mute"
 tempo 60
@@ -127,7 +129,7 @@ seed 13
 humanize 0
 quality studio
 module vsco2-ce-trumpet
-track trumpet synth=pad instrument=brass.trumpet.straight-mute program=56 role=melody gain=0.3 pan=0 attack=0.01 release=1 expression=1 brightness=0.5 vibrato=0
+track trumpet synth=pad instrument=brass.trumpet program=56 role=melody gain=0.3 pan=0 attack=0.01 release=1 expression=1 brightness=0.5 vibrato=0 timbre=straight-mute
 section phrase form=custom bars=1 repeat=1 fade=0 tempo=60 rubato=0
 use trumpet
 1:1 C4 1 velocity=0.5 articulation=normal
@@ -146,6 +148,7 @@ end`
     zones: [zone("open", url("a")), zone("straight", url("c"), { mute: "straight" })],
   }
   const plan = buildNativeSampleScorePlan(compiled.recipe, pack)
+  assert.equal(plan.voices[0].timbre, "straight-mute")
   assert.equal(plan.voices[0].mute, "straight")
   assert.equal(plan.voices[0].articulation, "normal")
   assert.equal(plan.voices[0].sampleUrl, url("c"))
