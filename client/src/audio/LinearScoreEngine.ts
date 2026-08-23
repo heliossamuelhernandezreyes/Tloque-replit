@@ -1,9 +1,11 @@
 import processorUrl from "spessasynth_lib/dist/spessasynth_processor.min.js?url"
 import { linearScoreRecipeFor, type LinearScoreTrack } from "@shared/audio"
+import { manifestsForModule } from "@shared/instrument-manifest"
 import { fetchAudioResource } from "./AudioResourceCache"
 import type { MusicCue, MusicState } from "./MusicEngine"
 import { buildPerformancePlan } from "./PerformanceEngine"
 import { buildSamplerEventPlan, spessaSynthActions } from "./SamplerAdapter"
+import { createSampledMixMaster } from "./ScoreMixMaster"
 import {
   articulationDurationFactor, articulationVelocityFactor, midiNotesToFrequencies, scoreBrightnessFrequency, scorePedalReleaseTime,
   scoreMonitorVolume, scoreRenderProfile, scoreTrackBrightness, scoreTrackEnvelope,
@@ -230,33 +232,15 @@ export class LinearScoreEngine {
     ])
     if (!response.ok) throw new Error(`Módulo instrumental ${response.status}`)
     const synth = new WorkletSynthesizer(context)
-    const output = context.createGain()
-    output.gain.value = 0
-    const lowShelf = context.createBiquadFilter()
-    lowShelf.type = "lowshelf"
-    lowShelf.frequency.value = 220
-    lowShelf.gain.value = -1
-    const highShelf = context.createBiquadFilter()
-    highShelf.type = "highshelf"
-    highShelf.frequency.value = 3_600
-    highShelf.gain.value = 1.2
-    const compressor = context.createDynamicsCompressor()
-    compressor.threshold.value = -20
-    compressor.knee.value = 14
-    compressor.ratio.value = 2.6
-    compressor.attack.value = 0.015
-    compressor.release.value = 0.24
-    synth.connect(lowShelf)
-    lowShelf.connect(highShelf)
-    highShelf.connect(compressor)
-    compressor.connect(output)
-    output.connect(context.destination)
+    const mix = createSampledMixMaster(context, 0)
+    synth.connect(mix.input)
+    mix.output.connect(context.destination)
     await synth.soundBankManager.addSoundBank(await response.arrayBuffer(), "tloque-score-module")
     await synth.isReady
 
     this.context = context
     this.soundfont = synth
-    this.output = output
+    this.output = mix.output
     this.cue = cue
     await context.resume()
 
@@ -264,7 +248,7 @@ export class LinearScoreEngine {
     const totalSeconds = "totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * beatSeconds
     const playableTracks = recipe.plan.tracks.slice(0, 16)
     const tracksById = new Map(playableTracks.map(track => [track.id, track]))
-    const performance = buildPerformancePlan(recipe)
+    const performance = buildPerformancePlan(recipe, manifestsForModule(cue.instrumentManifestId))
     const startAt = context.currentTime + 0.08
     for (const { channel, track, program } of performance.channels) {
       const timbre = scoreTrackTimbre(track)
@@ -398,7 +382,7 @@ export class LinearScoreEngine {
         this.listener("paused", this.cue)
       }, (totalSeconds + 0.3) * 1_000)
     }
-    output.gain.linearRampToValueAtTime(this.targetVolume(), context.currentTime + Math.max(0.25, cue.crossfadeSeconds))
+    mix.output.gain.linearRampToValueAtTime(this.targetVolume(), context.currentTime + Math.max(0.25, cue.crossfadeSeconds))
     this.listener("playing", cue)
   }
 
