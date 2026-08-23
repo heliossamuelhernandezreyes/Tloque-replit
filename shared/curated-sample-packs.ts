@@ -117,6 +117,8 @@ export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [
 
 export function curatedSamplePackById(id: string | null | undefined): CuratedSamplePackSource | null {
   if (!id) return null
+  // Historical API id used by the first Solo Violin installer.
+  if (id === "vsco2-ce") return CURATED_SAMPLE_PACKS[0]
   return CURATED_SAMPLE_PACKS.find(pack => pack.id === id) ?? null
 }
 
