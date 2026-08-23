@@ -1,3 +1,13 @@
+import { VSCO2_CE_TUNED_PERCUSSION_MANIFESTS } from "./instrument-manifest-percussion"
+export {
+  VSCO2_CE_GLOCKENSPIEL_MANIFEST,
+  VSCO2_CE_MARIMBA_MANIFEST,
+  VSCO2_CE_TIMPANI_MANIFEST,
+  VSCO2_CE_TUBULAR_BELLS_MANIFEST,
+  VSCO2_CE_XYLOPHONE_MANIFEST,
+  VSCO2_CE_TUNED_PERCUSSION_MANIFESTS,
+} from "./instrument-manifest-percussion"
+
 export type TloqueArticulation =
   | "normal"
   | "legato"
@@ -269,6 +279,7 @@ export const INSTRUMENT_MANIFEST_REGISTRY: readonly InstrumentManifest[] = [
   VSCO2_CE_TENOR_TROMBONE_MANIFEST,
   VSCO2_CE_F_HORN_MANIFEST,
   VSCO2_CE_TUBA_MANIFEST,
+  ...VSCO2_CE_TUNED_PERCUSSION_MANIFESTS,
 ]
 
 export function instrumentManifestById(id: string | null | undefined): InstrumentManifest | null {
