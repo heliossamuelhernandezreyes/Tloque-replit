@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { posix as pathPosix } from "node:path"
 import { AUDIO_MODULE_SOURCES, type AudioModuleSource } from "../shared/audio-module-sources"
 import { curatedSamplePackById, type CuratedSamplePackSource } from "../shared/curated-sample-packs"
 import { compileSfzBundleToTloqueSamplePack, samplePathsFromSfz } from "./sfzSamplePackCompiler"
@@ -18,17 +19,11 @@ export function curatedSamplePackSource(id: string): CuratedSamplePackSource | n
   return curatedSamplePackById(id)
 }
 
-export async function downloadCuratedAudioModule(
-  source: AudioModuleSource,
-  fetcher: typeof fetch = fetch,
-) {
+export async function downloadCuratedAudioModule(source: AudioModuleSource, fetcher: typeof fetch = fetch) {
   if (!source.install) throw new Error("El módulo no tiene una descarga aprobada")
   const response = await fetcher(source.install.sourceUrl, {
     redirect: "error",
-    headers: {
-      Accept: "application/octet-stream",
-      "User-Agent": "Tloque-Audio-Module-Installer/1.0",
-    },
+    headers: { Accept: "application/octet-stream", "User-Agent": "Tloque-Audio-Module-Installer/1.0" },
   })
   if (!response.ok) throw new Error(`La fuente respondió ${response.status}`)
   const declaredBytes = Number(response.headers.get("content-length") || 0)
@@ -38,40 +33,28 @@ export async function downloadCuratedAudioModule(
   if (bytes.length > MAX_CURATED_MODULE_BYTES) throw new Error("El módulo supera el límite de 64 MB")
   const detected = detectSoundBankType(bytes, source.install.fileName)
   if (!detected) throw new Error("La descarga fijada no contiene un banco SF2, SF3 o DLS válido")
-  return {
-    bytes,
-    extension: detected.extension,
-    mimeType: detected.mimeType,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
-  }
+  return { bytes, extension: detected.extension, mimeType: detected.mimeType, sha256: createHash("sha256").update(bytes).digest("hex") }
 }
 
 function rawGitHubUrl(repositoryUrl: string, commit: string, path: string) {
   const repository = new URL(repositoryUrl)
   if (repository.protocol !== "https:" || repository.hostname !== "github.com") throw new Error("Repositorio curado no permitido")
   const parts = repository.pathname.replace(/^\/+|\/+$/g, "").split("/")
-  if (parts.length !== 2 || !/^[A-Za-z0-9_.-]+$/.test(parts[0]) || !/^[A-Za-z0-9_.-]+$/.test(parts[1])) {
-    throw new Error("Repositorio curado inválido")
-  }
+  if (parts.length !== 2 || !/^[A-Za-z0-9_.-]+$/.test(parts[0]) || !/^[A-Za-z0-9_.-]+$/.test(parts[1])) throw new Error("Repositorio curado inválido")
   const safePath = path.replace(/\\/g, "/").replace(/^\/+/, "")
   if (!safePath || safePath.split("/").some(part => !part || part === "." || part === "..")) throw new Error("Ruta curada inválida")
   return `${RAW_GITHUB_ORIGIN}/${parts[0]}/${parts[1]}/${commit}/${safePath.split("/").map(encodeURIComponent).join("/")}`
 }
 
 function assertWav(bytes: Buffer) {
-  const wav = bytes.length >= 44
-    && bytes.subarray(0, 4).toString("ascii") === "RIFF"
-    && bytes.subarray(8, 12).toString("ascii") === "WAVE"
+  const wav = bytes.length >= 44 && bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WAVE"
   if (!wav) throw new Error("La muestra fijada no es un WAV RIFF válido")
 }
 
 async function strictFetch(url: string, maxBytes: number, fetcher: typeof fetch) {
   const response = await fetcher(url, {
     redirect: "error",
-    headers: {
-      Accept: "application/octet-stream,text/plain;q=0.9",
-      "User-Agent": "Tloque-Sample-Pack-Installer/1.0",
-    },
+    headers: { Accept: "application/octet-stream,text/plain;q=0.9", "User-Agent": "Tloque-Sample-Pack-Installer/1.0" },
   })
   if (!response.ok) throw new Error(`La fuente respondió ${response.status}`)
   const declaredBytes = Number(response.headers.get("content-length") || 0)
@@ -82,24 +65,39 @@ async function strictFetch(url: string, maxBytes: number, fetcher: typeof fetch)
   return bytes
 }
 
-export interface DownloadedCuratedSample {
-  sourcePath: string
-  bytes: Buffer
-  sha256: string
+function canonicalRepoPath(basePath: string, value: string) {
+  const cleaned = value.trim().replace(/\\/g, "/")
+  if (!cleaned || /^(?:https?:|file:|\/)/i.test(cleaned)) throw new Error("Ruta SFZ externa o absoluta")
+  const resolved = pathPosix.normalize(pathPosix.join(basePath || ".", cleaned)).replace(/^\.\//, "")
+  if (!resolved || resolved === ".." || resolved.startsWith("../")) throw new Error("Ruta SFZ fuera del repositorio")
+  return resolved
 }
 
-export interface DownloadedCuratedSfz {
-  path: string
-  sha256: string
-  text: string
+/**
+ * Curated repositories may legitimately use ../Samples relative to the top-level
+ * program. Resolve those paths server-side against a fixed base, then feed only
+ * canonical repository-relative paths to the inert parser. This never permits a
+ * runtime SFZ to traverse storage.
+ */
+export function canonicalizeCuratedSfzPaths(sourceText: string, basePath: string) {
+  let text = sourceText.replace(/\bdefault_path\s*=\s*([^\r\n<]+)/gi, (_match, raw: string) => {
+    const value = raw.trim()
+    return `default_path=${canonicalRepoPath(basePath, value)}`
+  })
+  text = text.replace(/\bsample\s*=\s*(.*?)(?=\s+[A-Za-z_][\w]*\s*=|\s*<|\r?$)/gim, (_match, raw: string) => {
+    const value = raw.trim()
+    return `sample=${canonicalRepoPath(basePath, value)}`
+  })
+  return text
 }
 
+export interface DownloadedCuratedSample { sourcePath: string; bytes: Buffer; sha256: string }
+export interface DownloadedCuratedSfz { path: string; sha256: string; text: string }
 export interface DownloadedCuratedSamplePack {
   moduleId: string
   manifestId: string
   version: string
   pinnedCommit: string
-  /** Primary fields retained for the first-generation installer response. */
   sfzSha256: string
   sfzText: string
   sfzSources: readonly DownloadedCuratedSfz[]
@@ -107,10 +105,7 @@ export interface DownloadedCuratedSamplePack {
   source: CuratedSamplePackSource
 }
 
-export async function downloadCuratedSamplePack(
-  source: CuratedSamplePackSource,
-  fetcher: typeof fetch = fetch,
-): Promise<DownloadedCuratedSamplePack> {
+export async function downloadCuratedSamplePack(source: CuratedSamplePackSource, fetcher: typeof fetch = fetch): Promise<DownloadedCuratedSamplePack> {
   const sfzPaths = source.sfzPaths.length ? source.sfzPaths : [source.sfzPath]
   if (sfzPaths.length > 8) throw new Error("El paquete curado contiene demasiados patches SFZ")
 
@@ -121,9 +116,8 @@ export async function downloadCuratedSamplePack(
   for (const sfzPath of sfzPaths) {
     const sfzUrl = rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, sfzPath)
     const sfzBytes = await strictFetch(sfzUrl, 2 * 1024 * 1024, fetcher)
-    const text = sfzBytes.toString("utf8")
-    // Compile once with inert placeholder URLs to validate the full patch before
-    // any WAV is downloaded or published.
+    const defaultBase = sfzPath.includes("/") ? sfzPath.slice(0, sfzPath.lastIndexOf("/")) : ""
+    const text = canonicalizeCuratedSfzPaths(sfzBytes.toString("utf8"), source.sfzSampleBasePath ?? defaultBase)
     compileSfzBundleToTloqueSamplePack([text], {
       id: source.moduleId,
       name: `${source.libraryName} · ${source.displayName}`,
@@ -137,13 +131,11 @@ export async function downloadCuratedSamplePack(
     sfzSources.push({ path: sfzPath, sha256: createHash("sha256").update(sfzBytes).digest("hex"), text })
     totalBytes += sfzBytes.length
 
-    const directory = sfzPath.includes("/") ? sfzPath.slice(0, sfzPath.lastIndexOf("/") + 1) : ""
     for (const sourcePath of samplePathsFromSfz(text)) {
       const normalized = sourcePath.replace(/\\/g, "/")
-      const remotePath = `${directory}${normalized}`
       const previous = sampleRemotePaths.get(normalized)
-      if (previous && previous !== remotePath) throw new Error(`Ruta de muestra ambigua entre patches SFZ: ${normalized}`)
-      sampleRemotePaths.set(normalized, remotePath)
+      if (previous && previous !== normalized) throw new Error(`Ruta de muestra ambigua entre patches SFZ: ${normalized}`)
+      sampleRemotePaths.set(normalized, normalized)
     }
   }
 
@@ -160,8 +152,6 @@ export async function downloadCuratedSamplePack(
     samples.push({ sourcePath, bytes, sha256: createHash("sha256").update(bytes).digest("hex") })
   }
 
-  // Validate the merged semantic result as well; this catches a bundle whose
-  // individual patches are valid but whose combined manifest is not.
   compileSfzBundleToTloqueSamplePack(sfzSources.map(item => item.text), {
     id: source.moduleId,
     name: `${source.libraryName} · ${source.displayName}`,
