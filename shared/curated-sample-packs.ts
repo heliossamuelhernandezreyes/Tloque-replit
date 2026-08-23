@@ -255,6 +255,16 @@ export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [
     estimatedMegabytes: 10,
     tags: ["native-samples", "tuned-percussion", "tubular-bells", "percussion", "cc0"],
   }),
+  vscoPack({
+    id: "vsco2-ce-orchestral-percussion",
+    displayName: "Orchestral Percussion",
+    instrumentId: "percussion.orchestral-kit",
+    moduleId: "vsco2-ce-orchestral-percussion",
+    manifestId: "vsco2-ce-orchestral-percussion",
+    sfzPath: "GM-StylePerc.sfz",
+    estimatedMegabytes: 180,
+    tags: ["native-samples", "orchestral-percussion", "semantic-hits", "percussion", "cc0", "velocity-layers", "round-robin"],
+  }),
 ]
 
 export function curatedSamplePackById(id: string | null | undefined): CuratedSamplePackSource | null {
