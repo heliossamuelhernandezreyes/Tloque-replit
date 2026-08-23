@@ -1,6 +1,6 @@
 import type { LinearScoreRecipe } from "@shared/audio"
 import { manifestsForModule, type TloqueArticulation } from "@shared/instrument-manifest"
-import type { TloqueSamplePack, TloqueSampleZone } from "@shared/native-sample-pack"
+import type { TloqueMute, TloqueSamplePack, TloqueSampleZone } from "@shared/native-sample-pack"
 import { selectNativeSampleZone } from "./NativeSamplePackEngine"
 import { buildPerformancePlan } from "./PerformanceEngine"
 import {
@@ -30,6 +30,8 @@ export interface NativeSampleVoicePlan {
   note: number
   velocity: number
   roundRobin: number
+  vibrato: boolean
+  mute: TloqueMute
   startSeconds: number
   durationSeconds: number
   sampleUrl?: string
@@ -46,11 +48,38 @@ export interface NativeSampleScorePlan {
   totalSeconds: number
 }
 
+function muteForInstrument(instrument: string): TloqueMute {
+  if (instrument.endsWith(".straight-mute")) return "straight"
+  if (instrument.endsWith(".harmon-mute")) return "harmon"
+  if (instrument.endsWith(".mute")) return "mute"
+  return "none"
+}
+
+function vibratoAt(recipe: Extract<LinearScoreRecipe, { version: 2 }>, trackId: string, initial: number, timeSeconds: number) {
+  let value = initial
+  let ramp: { from: number; to: number; start: number; end: number } | null = null
+  const valueAt = (time: number) => {
+    if (!ramp) return value
+    if (time >= ramp.end) return ramp.to
+    if (time <= ramp.start || ramp.end <= ramp.start) return ramp.from
+    const phase = (time - ramp.start) / (ramp.end - ramp.start)
+    return ramp.from + (ramp.to - ramp.from) * phase
+  }
+  for (const control of recipe.plan.controls) {
+    if (control.trackId !== trackId || control.vibrato === null || control.timeSeconds > timeSeconds) continue
+    value = valueAt(control.timeSeconds)
+    ramp = control.rampSeconds > 0
+      ? { from: value, to: control.vibrato, start: control.timeSeconds, end: control.timeSeconds + control.rampSeconds }
+      : null
+    if (!ramp) value = control.vibrato
+  }
+  return valueAt(timeSeconds)
+}
+
 /**
- * Compiles the renderer-neutral decisions for a native sample score once.
- * Live playback and OfflineAudioContext export consume this same plan so that
- * articulation routing, velocity, round-robin, timing and track automation
- * cannot silently diverge between preview and the rendered WAV.
+ * Compiles renderer-neutral acoustic decisions once. Live playback and WAV
+ * export consume the same selected articulation, velocity, RR and recorded
+ * timbre dimensions so they cannot silently diverge.
  */
 export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: TloqueSamplePack): NativeSampleScorePlan {
   if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") {
@@ -91,12 +120,21 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     const track = trackById.get(event.trackId)
     if (!decision || !track) continue
     const oneShot = track.instrument === "percussion.orchestral-kit"
+    const vibrato = vibratoAt(recipe, track.id, track.vibrato, event.timeSeconds) > 0.05
+    const mute = muteForInstrument(track.instrument)
     const velocity = Math.round(
       Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(decision.articulation)) * 127,
     )
     const durationSeconds = event.durationSeconds * articulationDurationFactor(decision.articulation)
     for (const note of event.notes) {
-      const selection = selectNativeSampleZone(pack, decision.articulation, note, velocity, decision.roundRobin)
+      const selection = selectNativeSampleZone(
+        pack,
+        decision.articulation,
+        note,
+        velocity,
+        decision.roundRobin,
+        { vibrato, mute },
+      )
       if (selection) zones.set(selection.zone.id, selection.zone)
       voices.push({
         trackId: event.trackId,
@@ -104,6 +142,8 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
         note,
         velocity,
         roundRobin: decision.roundRobin,
+        vibrato,
+        mute,
         startSeconds: event.timeSeconds,
         durationSeconds,
         sampleUrl: selection?.zone.sampleUrl,
