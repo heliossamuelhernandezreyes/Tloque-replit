@@ -1,7 +1,12 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { compileTloqueScore } from "../shared/audio"
-import { GM_ORCHESTRAL_STRINGS_MANIFEST, type InstrumentManifest } from "../shared/instrument-manifest"
+import {
+  GM_ORCHESTRAL_STRINGS_MANIFEST,
+  VSCO2_CE_SOLO_VIOLIN_MANIFEST,
+  manifestsForModule,
+  type InstrumentManifest,
+} from "../shared/instrument-manifest"
 import {
   buildPerformancePlan,
   buildPerformanceRoutingPlan,
@@ -60,6 +65,32 @@ test("el resolver conserva exactamente el fallback GM actual", () => {
   assert.equal(resolvePerformanceRoute(violin, "tremolo").program, 44)
 })
 
+test("VSCO sólo se activa de forma explícita y conserva el fallback GM global", () => {
+  assert.deepEqual(manifestsForModule(undefined), [GM_ORCHESTRAL_STRINGS_MANIFEST])
+  const selected = manifestsForModule("vsco2-ce-solo-violin")
+  assert.equal(selected[0], VSCO2_CE_SOLO_VIOLIN_MANIFEST)
+  assert.equal(selected[1], GM_ORCHESTRAL_STRINGS_MANIFEST)
+})
+
+test("VSCO enruta sólo técnicas verificadas y resetea técnicas ausentes a sustain", () => {
+  const result = compileTloqueScore(SCORE)
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  const violin = result.recipe.plan.tracks[0]
+  const manifests = manifestsForModule("vsco2-ce-solo-violin")
+  const pizz = resolvePerformanceRoute(violin, "pizzicato", manifests)
+  assert.equal(pizz.manifestId, "vsco2-ce-solo-violin")
+  assert.equal(pizz.source, "dedicated-articulation")
+  assert.equal(pizz.route?.keyswitch, 39)
+  assert.equal(pizz.route?.velocityLayers, 2)
+  assert.equal(pizz.route?.roundRobins, 2)
+  const legato = resolvePerformanceRoute(violin, "legato", manifests)
+  assert.equal(legato.source, "base-program")
+  assert.equal(legato.route?.articulation, "normal")
+  assert.equal(legato.route?.keyswitch, 36)
+  assert.equal(legato.route?.trueLegato, undefined)
+})
+
 test("live y export comparten el mismo routing manifest-aware", () => {
   const result = compileTloqueScore(SCORE)
   assert.equal(result.ok, true)
@@ -81,6 +112,19 @@ test("el PerformancePlan compila decisiones acústicas deterministas por evento"
   assert.deepEqual(plan.events.map(event => event.manifestId), ["gm-orchestral-strings", "gm-orchestral-strings", "gm-orchestral-strings"])
   assert.equal(plan.decisionForEvent(1)?.source, "dedicated-articulation")
   assert.equal(plan.channelForEventIndex(1), plan.channelForEvent("violin", "pizzicato"))
+})
+
+test("VSCO PerformancePlan expone dos capas y RR sólo donde existen", () => {
+  const result = compileTloqueScore(SCORE)
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  const plan = buildPerformancePlan(result.recipe, manifestsForModule("vsco2-ce-solo-violin"))
+  assert.equal(plan.events[0].velocityLayer, 1)
+  assert.equal(plan.events[0].roundRobin, 0)
+  assert.equal(plan.events[0].trueLegato, false)
+  assert.equal(plan.events[1].velocityLayer, 1)
+  assert.ok(plan.events[1].roundRobin === 0 || plan.events[1].roundRobin === 1)
+  assert.equal(plan.events[2].roundRobin, 0)
 })
 
 test("un manifest premium activa velocity layers, RR, true legato y releases sin cambiar TloqueScore", () => {
