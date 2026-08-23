@@ -21,9 +21,9 @@ export interface InstrumentArticulationRoute {
   articulation: TloqueArticulation
   /** General MIDI program or module-local preset used by SF2/SF3/DLS renderers. */
   program?: number
-  /** Optional future keyswitch for samplers that expose articulations in one preset. */
+  /** Sampler keyswitch used before the note when a premium module exposes one. */
   keyswitch?: number
-  /** Optional future CC selector for samplers that expose articulations by controller. */
+  /** Sampler controller selector used before the note when a module exposes one. */
   controller?: { cc: number; value: number }
   /** Number of discrete recorded dynamics, when known. */
   velocityLayers?: number
