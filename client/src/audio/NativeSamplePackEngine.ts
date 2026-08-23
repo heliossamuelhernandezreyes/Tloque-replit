@@ -58,7 +58,7 @@ export class NativeSamplePackPlayer {
     return validateTloqueSamplePack(await response.json())
   }
 
-  preload(pack: TloqueSamplePack, zones: readonly TloqueSampleZone[]) {
+  preload(zones: readonly TloqueSampleZone[]) {
     return Promise.all(zones.map(zone => this.buffer(zone)))
   }
 
