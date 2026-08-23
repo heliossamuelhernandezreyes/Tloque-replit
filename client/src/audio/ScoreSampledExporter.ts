@@ -1,10 +1,12 @@
 import processorUrl from "spessasynth_lib/dist/spessasynth_processor.min.js?url"
 import { MIDIBuilder } from "spessasynth_core"
 import { linearScoreRecipeFor, type LinearScoreRecipe } from "@shared/audio"
+import { BUILTIN_INSTRUMENT_MANIFESTS, type InstrumentManifest } from "@shared/instrument-manifest"
 import { fetchAudioResource } from "./AudioResourceCache"
 import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQuality } from "./ScoreExporter"
 import { buildPerformancePlan } from "./PerformanceEngine"
 import { buildSamplerEventPlan, spessaSynthActions } from "./SamplerAdapter"
+import { createSampledMixMaster } from "./ScoreMixMaster"
 import {
   articulationDurationFactor, articulationVelocityFactor,
   scoreTrackBrightness, scoreTrackExpression, scoreTrackTimbre, scoreTrackVibrato, scoreVelocityGain,
@@ -21,7 +23,10 @@ function midi7(value: number) {
   return Math.max(0, Math.min(127, Math.round(value * 127)))
 }
 
-export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
+export function buildTloqueScoreMidi(
+  value: unknown,
+  manifests: readonly InstrumentManifest[] = BUILTIN_INSTRUMENT_MANIFESTS,
+): MIDIBuilder {
   const recipe = linearScoreRecipeFor(value)
   const midi = new MIDIBuilder({
     format: 1,
@@ -36,7 +41,7 @@ export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
     midi.addTrack(track.id)
     midiTracks.set(track.id, midi.tracks.length - 1)
   }
-  const performance = buildPerformancePlan(recipe)
+  const performance = buildPerformancePlan(recipe, manifests)
   for (const { channel, track, program } of performance.channels) {
     const trackNumber = midiTracks.get(track.id)!
     const timbre = scoreTrackTimbre(track)
@@ -154,6 +159,7 @@ export async function renderTloqueScoreWithModuleToWav(
   value: unknown,
   packUrl: string,
   options: ScoreExportOptions = {},
+  manifests: readonly InstrumentManifest[] = BUILTIN_INSTRUMENT_MANIFESTS,
 ): Promise<Blob> {
   const recipe = linearScoreRecipeFor(value)
   const profile = sampledQuality(recipe, options.quality)
@@ -163,7 +169,7 @@ export async function renderTloqueScoreWithModuleToWav(
   if (!response.ok) throw new Error(`No se pudo cargar el módulo instrumental (${response.status})`)
   const soundBankBuffer = await response.arrayBuffer()
   options.onProgress?.(0.12)
-  const midi = buildTloqueScoreMidi(recipe)
+  const midi = buildTloqueScoreMidi(recipe, manifests)
   const durationSeconds = midi.duration + profile.tail
   const floatBytes = Math.ceil(durationSeconds * profile.sampleRate) * 2 * Float32Array.BYTES_PER_ELEMENT
   if (floatBytes > MAX_OFFLINE_FLOAT_BYTES) {
@@ -173,7 +179,9 @@ export async function renderTloqueScoreWithModuleToWav(
   await context.audioWorklet.addModule(processorUrl)
   const { WorkletSynthesizer } = await import("spessasynth_lib")
   const synth = new WorkletSynthesizer(context, { oneOutput: true })
-  synth.connect(context.destination)
+  const mix = createSampledMixMaster(context, 1)
+  synth.connect(mix.input)
+  mix.output.connect(context.destination)
   await synth.startOfflineRender({
     midiSequence: midi,
     loopCount: 0,
@@ -183,5 +191,6 @@ export async function renderTloqueScoreWithModuleToWav(
   const rendered = await context.startRendering()
   options.onProgress?.(0.82)
   synth.destroy()
+  mix.disconnect()
   return encodeAudioBufferToWav(rendered, profile.bitDepth, progress => options.onProgress?.(0.82 + progress * 0.18))
 }
