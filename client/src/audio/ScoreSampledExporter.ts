@@ -1,7 +1,7 @@
 import processorUrl from "spessasynth_lib/dist/spessasynth_processor.min.js?url"
 import { MIDIBuilder } from "spessasynth_core"
 import { linearScoreRecipeFor, type LinearScoreRecipe } from "@shared/audio"
-import { BUILTIN_INSTRUMENT_MANIFESTS, type InstrumentManifest } from "@shared/instrument-manifest"
+import { manifestsForModule, type InstrumentManifest } from "@shared/instrument-manifest"
 import { fetchAudioResource } from "./AudioResourceCache"
 import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQuality } from "./ScoreExporter"
 import { buildPerformancePlan } from "./PerformanceEngine"
@@ -23,9 +23,14 @@ function midi7(value: number) {
   return Math.max(0, Math.min(127, Math.round(value * 127)))
 }
 
+function scoreManifests(recipe: LinearScoreRecipe, override?: readonly InstrumentManifest[]) {
+  if (override) return override
+  return manifestsForModule(recipe.version === 2 ? recipe.plan.moduleId : null)
+}
+
 export function buildTloqueScoreMidi(
   value: unknown,
-  manifests: readonly InstrumentManifest[] = BUILTIN_INSTRUMENT_MANIFESTS,
+  manifests?: readonly InstrumentManifest[],
 ): MIDIBuilder {
   const recipe = linearScoreRecipeFor(value)
   const midi = new MIDIBuilder({
@@ -41,7 +46,7 @@ export function buildTloqueScoreMidi(
     midi.addTrack(track.id)
     midiTracks.set(track.id, midi.tracks.length - 1)
   }
-  const performance = buildPerformancePlan(recipe, manifests)
+  const performance = buildPerformancePlan(recipe, scoreManifests(recipe, manifests))
   for (const { channel, track, program } of performance.channels) {
     const trackNumber = midiTracks.get(track.id)!
     const timbre = scoreTrackTimbre(track)
@@ -159,9 +164,10 @@ export async function renderTloqueScoreWithModuleToWav(
   value: unknown,
   packUrl: string,
   options: ScoreExportOptions = {},
-  manifests: readonly InstrumentManifest[] = BUILTIN_INSTRUMENT_MANIFESTS,
+  manifests?: readonly InstrumentManifest[],
 ): Promise<Blob> {
   const recipe = linearScoreRecipeFor(value)
+  const selectedManifests = scoreManifests(recipe, manifests)
   const profile = sampledQuality(recipe, options.quality)
   options.onProgress?.(0.02)
   if (options.signal?.aborted) throw new DOMException("Exportación cancelada", "AbortError")
@@ -169,7 +175,7 @@ export async function renderTloqueScoreWithModuleToWav(
   if (!response.ok) throw new Error(`No se pudo cargar el módulo instrumental (${response.status})`)
   const soundBankBuffer = await response.arrayBuffer()
   options.onProgress?.(0.12)
-  const midi = buildTloqueScoreMidi(recipe, manifests)
+  const midi = buildTloqueScoreMidi(recipe, selectedManifests)
   const durationSeconds = midi.duration + profile.tail
   const floatBytes = Math.ceil(durationSeconds * profile.sampleRate) * 2 * Float32Array.BYTES_PER_ELEMENT
   if (floatBytes > MAX_OFFLINE_FLOAT_BYTES) {
