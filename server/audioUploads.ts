@@ -32,6 +32,10 @@ function errorMessage(error: unknown) {
   return String(error || "App Storage no disponible")
 }
 
+function safeModuleId(value: string) {
+  return /^[a-z0-9][a-z0-9._-]{0,79}$/.test(value)
+}
+
 export function registerAudioUploadRoutes(app: Express) {
   app.get("/api/admin/audio/uploads/status", requireAdmin, async (_req, res) => {
     let storage: Client | undefined
@@ -153,11 +157,13 @@ export function registerAudioUploadRoutes(app: Express) {
       if (req.body?.acknowledgement !== install.acknowledgement) {
         return res.status(400).json({ message: "Debes aceptar la licencia y procedencia del paquete" })
       }
+      if (!safeModuleId(install.moduleId)) return res.status(500).json({ message: "El id curado del módulo es inválido" })
       let storage: Client | undefined
       try {
         const downloaded = await downloadCuratedSamplePack(source)
         storage = audioStorage.get()
         const sampleUrlByPath = new Map<string, string>()
+        const sampleShaByPath = new Map<string, string>()
         let bytes = 0
         let uploadedSamples = 0
         for (const sample of downloaded.samples) {
@@ -170,43 +176,42 @@ export function registerAudioUploadRoutes(app: Express) {
             uploadedSamples += 1
           }
           bytes += sample.bytes.length
-          sampleUrlByPath.set(sample.sourcePath.replace(/\\/g, "/"), `/api/audio/sample-packs/samples/${sample.sha256}.wav`)
+          const normalizedPath = sample.sourcePath.replace(/\\/g, "/")
+          sampleUrlByPath.set(normalizedPath, `/api/audio/sample-packs/samples/${sample.sha256}.wav`)
+          sampleShaByPath.set(normalizedPath, sample.sha256)
         }
 
         const pack = compileSfzToTloqueSamplePack(downloaded.sfzText, {
           id: install.moduleId,
           name: `${source.name} · Solo Violin`,
-          instrument: "strings.violin",
+          instrumentManifestId: install.manifestId,
+          license: source.license,
           sourceName: source.name,
-          sourceLicense: source.license,
+          sourceUrl: source.repositoryUrl,
           sourceCommit: install.pinnedCommit,
           sampleUrlForPath: path => {
             const url = sampleUrlByPath.get(path.replace(/\\/g, "/"))
             if (!url) throw new Error(`Muestra no instalada: ${path}`)
             return url
           },
+          sampleSha256ForPath: path => sampleShaByPath.get(path.replace(/\\/g, "/")),
         })
-        const packBytes = Buffer.from(JSON.stringify({
-          ...pack,
-          manifestId: install.manifestId,
-          source: {
-            repositoryUrl: source.repositoryUrl,
-            commit: install.pinnedCommit,
-            sfzPath: install.sfzPath,
-            sfzSha256: downloaded.sfzSha256,
-            license: source.license,
-          },
-        }))
+        const packBytes = Buffer.from(JSON.stringify(pack))
         const packSha256 = createHash("sha256").update(packBytes).digest("hex")
-        const packObjectName = `audio/sample-packs/manifests/${packSha256}.json`
-        const packExists = await storage.exists(packObjectName)
+        const immutableObjectName = `audio/sample-packs/manifests/${packSha256}.json`
+        const moduleObjectName = `audio/sample-packs/modules/${install.moduleId}.json`
+        const packExists = await storage.exists(immutableObjectName)
         if (!packExists.ok) throw packExists.error
         if (!packExists.value) {
-          const uploaded = await storage.uploadFromBytes(packObjectName, packBytes, { compress: false })
+          const uploaded = await storage.uploadFromBytes(immutableObjectName, packBytes, { compress: false })
           if (!uploaded.ok) throw uploaded.error
         }
+        const aliasUploaded = await storage.uploadFromBytes(moduleObjectName, packBytes, { compress: false })
+        if (!aliasUploaded.ok) throw aliasUploaded.error
+
         res.status(201).json({
-          url: `/api/audio/sample-packs/manifests/${packSha256}.json`,
+          url: `/api/audio/sample-packs/modules/${install.moduleId}.json`,
+          immutableUrl: `/api/audio/sample-packs/manifests/${packSha256}.json`,
           sha256: packSha256,
           bytes,
           sampleCount: downloaded.samples.length,
@@ -221,6 +226,7 @@ export function registerAudioUploadRoutes(app: Express) {
             license: source.license,
             repositoryUrl: source.repositoryUrl,
             pinnedCommit: install.pinnedCommit,
+            sfzSha256: downloaded.sfzSha256,
             tags: install.tags,
           },
         })
@@ -351,6 +357,29 @@ export function registerAudioUploadRoutes(app: Express) {
     res.setHeader("Content-Type", "application/json; charset=utf-8")
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable")
     const objectName = `audio/sample-packs/manifests/${match[1]}.json`
+    let storage: Client | undefined
+    try {
+      storage = audioStorage.get()
+      const stream = storage.downloadAsStream(objectName, { decompress: false })
+      stream.once("error", error => {
+        audioStorage.reset(storage)
+        if (!res.headersSent) res.status(404).end()
+        else res.destroy(error)
+      })
+      stream.pipe(res)
+    } catch {
+      audioStorage.reset(storage)
+      res.status(503).end()
+    }
+  })
+
+  app.get("/api/audio/sample-packs/modules/:file", rateLimit(60_000, 240), (req, res) => {
+    const file = Array.isArray(req.params.file) ? req.params.file[0] : req.params.file
+    const match = /^([a-z0-9][a-z0-9._-]{0,79})\.json$/.exec(file || "")
+    if (!match) return res.status(404).end()
+    res.setHeader("Content-Type", "application/json; charset=utf-8")
+    res.setHeader("Cache-Control", "public, max-age=300")
+    const objectName = `audio/sample-packs/modules/${match[1]}.json`
     let storage: Client | undefined
     try {
       storage = audioStorage.get()
