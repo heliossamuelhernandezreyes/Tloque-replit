@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { AUDIO_MODULE_SOURCES, type AudioModuleSource } from "../shared/audio-module-sources"
 import { curatedSamplePackById, type CuratedSamplePackSource } from "../shared/curated-sample-packs"
-import { compileSfzToTloqueSamplePack, samplePathsFromSfz } from "./sfzSamplePackCompiler"
+import { compileSfzBundleToTloqueSamplePack, samplePathsFromSfz } from "./sfzSamplePackCompiler"
 import { detectSoundBankType } from "./soundBankDetection"
 
 export const MAX_CURATED_MODULE_BYTES = 64 * 1024 * 1024
@@ -88,13 +88,21 @@ export interface DownloadedCuratedSample {
   sha256: string
 }
 
+export interface DownloadedCuratedSfz {
+  path: string
+  sha256: string
+  text: string
+}
+
 export interface DownloadedCuratedSamplePack {
   moduleId: string
   manifestId: string
   version: string
   pinnedCommit: string
+  /** Primary fields retained for the first-generation installer response. */
   sfzSha256: string
   sfzText: string
+  sfzSources: readonly DownloadedCuratedSfz[]
   samples: readonly DownloadedCuratedSample[]
   source: CuratedSamplePackSource
 }
@@ -103,10 +111,58 @@ export async function downloadCuratedSamplePack(
   source: CuratedSamplePackSource,
   fetcher: typeof fetch = fetch,
 ): Promise<DownloadedCuratedSamplePack> {
-  const sfzUrl = rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, source.sfzPath)
-  const sfzBytes = await strictFetch(sfzUrl, 2 * 1024 * 1024, fetcher)
-  const sfzText = sfzBytes.toString("utf8")
-  compileSfzToTloqueSamplePack(sfzText, {
+  const sfzPaths = source.sfzPaths.length ? source.sfzPaths : [source.sfzPath]
+  if (sfzPaths.length > 8) throw new Error("El paquete curado contiene demasiados patches SFZ")
+
+  const sfzSources: DownloadedCuratedSfz[] = []
+  const sampleRemotePaths = new Map<string, string>()
+  let totalBytes = 0
+
+  for (const sfzPath of sfzPaths) {
+    const sfzUrl = rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, sfzPath)
+    const sfzBytes = await strictFetch(sfzUrl, 2 * 1024 * 1024, fetcher)
+    const text = sfzBytes.toString("utf8")
+    // Compile once with inert placeholder URLs to validate the full patch before
+    // any WAV is downloaded or published.
+    compileSfzBundleToTloqueSamplePack([text], {
+      id: source.moduleId,
+      name: `${source.libraryName} · ${source.displayName}`,
+      instrumentManifestId: source.manifestId,
+      license: source.license,
+      sourceName: source.libraryName,
+      sourceUrl: source.repositoryUrl,
+      sourceCommit: source.pinnedCommit,
+      sampleUrlForPath: path => `/api/audio/sample-packs/samples/${createHash("sha256").update(path).digest("hex")}.wav`,
+    })
+    sfzSources.push({ path: sfzPath, sha256: createHash("sha256").update(sfzBytes).digest("hex"), text })
+    totalBytes += sfzBytes.length
+
+    const directory = sfzPath.includes("/") ? sfzPath.slice(0, sfzPath.lastIndexOf("/") + 1) : ""
+    for (const sourcePath of samplePathsFromSfz(text)) {
+      const normalized = sourcePath.replace(/\\/g, "/")
+      const remotePath = `${directory}${normalized}`
+      const previous = sampleRemotePaths.get(normalized)
+      if (previous && previous !== remotePath) throw new Error(`Ruta de muestra ambigua entre patches SFZ: ${normalized}`)
+      sampleRemotePaths.set(normalized, remotePath)
+    }
+  }
+
+  if (!sampleRemotePaths.size) throw new Error("El paquete fijado no contiene muestras")
+  if (sampleRemotePaths.size > 768) throw new Error("El paquete curado contiene demasiadas muestras")
+
+  const samples: DownloadedCuratedSample[] = []
+  for (const [sourcePath, remotePath] of sampleRemotePaths) {
+    const url = rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, remotePath)
+    const bytes = await strictFetch(url, MAX_CURATED_SAMPLE_BYTES, fetcher)
+    assertWav(bytes)
+    totalBytes += bytes.length
+    if (totalBytes > MAX_CURATED_SAMPLE_PACK_BYTES) throw new Error("El paquete de muestras supera el límite seguro de 256 MB")
+    samples.push({ sourcePath, bytes, sha256: createHash("sha256").update(bytes).digest("hex") })
+  }
+
+  // Validate the merged semantic result as well; this catches a bundle whose
+  // individual patches are valid but whose combined manifest is not.
+  compileSfzBundleToTloqueSamplePack(sfzSources.map(item => item.text), {
     id: source.moduleId,
     name: `${source.libraryName} · ${source.displayName}`,
     instrumentManifestId: source.manifestId,
@@ -116,30 +172,18 @@ export async function downloadCuratedSamplePack(
     sourceCommit: source.pinnedCommit,
     sampleUrlForPath: path => `/api/audio/sample-packs/samples/${createHash("sha256").update(path).digest("hex")}.wav`,
   })
-  const paths = samplePathsFromSfz(sfzText)
-  if (!paths.length) throw new Error("El SFZ fijado no contiene muestras")
-  if (paths.length > 512) throw new Error("El paquete curado contiene demasiadas muestras")
 
-  const directory = source.sfzPath.includes("/") ? source.sfzPath.slice(0, source.sfzPath.lastIndexOf("/") + 1) : ""
-  const samples: DownloadedCuratedSample[] = []
-  let totalBytes = sfzBytes.length
-  for (const sourcePath of paths) {
-    const relative = sourcePath.replace(/\\/g, "/")
-    const url = rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, `${directory}${relative}`)
-    const bytes = await strictFetch(url, MAX_CURATED_SAMPLE_BYTES, fetcher)
-    assertWav(bytes)
-    totalBytes += bytes.length
-    if (totalBytes > MAX_CURATED_SAMPLE_PACK_BYTES) throw new Error("El paquete de muestras supera el límite seguro de 256 MB")
-    samples.push({ sourcePath, bytes, sha256: createHash("sha256").update(bytes).digest("hex") })
-  }
+  const combinedSfzHash = createHash("sha256")
+  for (const sfz of sfzSources) combinedSfzHash.update(sfz.path).update("\0").update(sfz.text).update("\0")
 
   return {
     moduleId: source.moduleId,
     manifestId: source.manifestId,
     version: source.version,
     pinnedCommit: source.pinnedCommit,
-    sfzSha256: createHash("sha256").update(sfzBytes).digest("hex"),
-    sfzText,
+    sfzSha256: combinedSfzHash.digest("hex"),
+    sfzText: sfzSources[0].text,
+    sfzSources,
     samples,
     source,
   }
