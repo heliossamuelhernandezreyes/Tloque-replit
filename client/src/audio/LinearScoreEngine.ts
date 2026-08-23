@@ -2,16 +2,16 @@ import processorUrl from "spessasynth_lib/dist/spessasynth_processor.min.js?url"
 import { linearScoreRecipeFor, type LinearScoreTrack } from "@shared/audio"
 import { fetchAudioResource } from "./AudioResourceCache"
 import type { MusicCue, MusicState } from "./MusicEngine"
+import { buildPerformancePlan } from "./PerformanceEngine"
+import { buildSamplerEventPlan, spessaSynthActions } from "./SamplerAdapter"
 import {
   articulationDurationFactor, articulationVelocityFactor, midiNotesToFrequencies, scoreBrightnessFrequency, scorePedalReleaseTime,
   scoreMonitorVolume, scoreRenderProfile, scoreTrackBrightness, scoreTrackEnvelope,
-  scoreSampledChannelPlan, scoreSampledProgram, scoreTrackExpression, scoreTrackTimbre, scoreTrackVibrato, scoreVelocityGain,
+  scoreTrackExpression, scoreTrackTimbre, scoreTrackVibrato, scoreVelocityGain,
 } from "./ScoreAudioMath"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 
-// Ejecuta únicamente el plan compilado. El texto TloqueScore nunca llega a
-// eval/Function ni se interpreta como JavaScript en el dispositivo.
 export class LinearScoreEngine {
   private tone: typeof import("tone") | null = null
   private cue: MusicCue | null = null
@@ -264,9 +264,9 @@ export class LinearScoreEngine {
     const totalSeconds = "totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * beatSeconds
     const playableTracks = recipe.plan.tracks.slice(0, 16)
     const tracksById = new Map(playableTracks.map(track => [track.id, track]))
-    const sampledPlan = scoreSampledChannelPlan(playableTracks, recipe.plan.events)
+    const performance = buildPerformancePlan(recipe)
     const startAt = context.currentTime + 0.08
-    for (const { channel, track, program } of sampledPlan.channels) {
+    for (const { channel, track, program } of performance.channels) {
       const timbre = scoreTrackTimbre(track)
       synth.programChange(channel, program, { time: startAt })
       synth.controllerChange(channel, 7 as any, Math.round(Math.min(1, track.gain * timbre.level) * 127), { time: startAt })
@@ -289,7 +289,7 @@ export class LinearScoreEngine {
         pitchBend: 0,
       }]))
       for (const track of playableTracks) {
-        for (const channel of sampledPlan.channelsForTrack(track.id)) {
+        for (const channel of performance.channelsForTrack(track.id)) {
           synth.controllerChange(channel, 11 as any, Math.round(scoreTrackExpression(track) * 127), { time: cycleStart })
           synth.controllerChange(channel, 74 as any, Math.round(scoreTrackBrightness(track) * 127), { time: cycleStart })
           synth.controllerChange(channel, 1 as any, Math.round(scoreTrackVibrato(track) * 127), { time: cycleStart })
@@ -299,7 +299,7 @@ export class LinearScoreEngine {
       }
       if (recipe.version === 2) {
         for (const control of recipe.plan.controls) {
-          const trackChannels = sampledPlan.channelsForTrack(control.trackId)
+          const trackChannels = performance.channelsForTrack(control.trackId)
           const state = states.get(control.trackId)
           if (!trackChannels.length || !state) continue
           const controlAt = cycleStart + control.timeSeconds
@@ -337,17 +337,29 @@ export class LinearScoreEngine {
           }
         }
       }
-      for (const event of recipe.plan.events) {
+      for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
+        const event = recipe.plan.events[eventIndex]
         const track = tracksById.get(event.trackId)
-        if (!track) continue
-        const articulation = "articulation" in event ? event.articulation : "normal"
-        const channel = sampledPlan.channelForEvent(track.id, articulation)
+        const decision = performance.decisionForEvent(eventIndex)
+        if (!track || !decision) continue
+        const channel = performance.channelForEventIndex(eventIndex)
         if (channel === undefined) continue
         const noteAt = cycleStart + ("timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds)
-        const factor = articulationDurationFactor(articulation)
+        const factor = articulationDurationFactor(decision.articulation)
         const baseDuration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds) * factor
-        const velocity = Math.round(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation)) * 127)
-        if (articulation === "tremolo" && scoreSampledProgram(track, articulation) === scoreSampledProgram(track)) {
+        const velocity = Math.round(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(decision.articulation)) * 127)
+        const samplerPlan = buildSamplerEventPlan(decision, decision.route)
+        const setupAt = Math.max(cycleStart, noteAt - 0.01)
+        for (const action of spessaSynthActions(samplerPlan)) {
+          if (action.type === "controller") {
+            synth.controllerChange(channel, action.cc as any, action.value, { time: setupAt })
+          } else if (action.type === "keyswitch") {
+            synth.noteOn(channel, action.note, action.velocity, { time: Math.max(cycleStart, setupAt - 0.015) })
+            synth.noteOff(channel, action.note, { time: setupAt })
+          }
+        }
+        const usesDedicatedTremolo = decision.articulation === "tremolo" && decision.source === "dedicated-articulation"
+        if (decision.articulation === "tremolo" && !usesDedicatedTremolo) {
           const pulseSeconds = 0.12
           const pulses = Math.max(1, Math.ceil(baseDuration / pulseSeconds))
           for (let pulse = 0; pulse < pulses; pulse += 1) {
