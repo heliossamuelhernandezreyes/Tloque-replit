@@ -1,9 +1,15 @@
 import { createHash } from "node:crypto"
 import type { Client } from "@replit/object-storage"
 import express, { type Express } from "express"
+import { compileSfzToTloqueSamplePack } from "./sfzSamplePackCompiler"
 import { requireAdmin } from "./auth"
 import { audioStorage } from "./audioStorage"
-import { curatedAudioModuleSource, downloadCuratedAudioModule } from "./audioModuleInstaller"
+import {
+  curatedAudioModuleSource,
+  curatedSamplePackSource,
+  downloadCuratedAudioModule,
+  downloadCuratedSamplePack,
+} from "./audioModuleInstaller"
 import { rateLimit } from "./rateLimit"
 import { detectSoundBankType } from "./soundBankDetection"
 
@@ -135,6 +141,98 @@ export function registerAudioUploadRoutes(app: Express) {
   )
 
   app.post(
+    "/api/admin/audio/sample-pack-catalog/:sourceId/install",
+    requireAdmin,
+    rateLimit(10 * 60_000, 2),
+    express.json({ limit: "8kb" }),
+    async (req, res) => {
+      const sourceId = Array.isArray(req.params.sourceId) ? req.params.sourceId[0] : req.params.sourceId
+      const source = curatedSamplePackSource(sourceId || "")
+      const install = source?.samplePackInstall
+      if (!source || !install) return res.status(404).json({ message: "El paquete de muestras no está disponible para instalación" })
+      if (req.body?.acknowledgement !== install.acknowledgement) {
+        return res.status(400).json({ message: "Debes aceptar la licencia y procedencia del paquete" })
+      }
+      let storage: Client | undefined
+      try {
+        const downloaded = await downloadCuratedSamplePack(source)
+        storage = audioStorage.get()
+        const sampleUrlByPath = new Map<string, string>()
+        let bytes = 0
+        let uploadedSamples = 0
+        for (const sample of downloaded.samples) {
+          const objectName = `audio/sample-packs/samples/${sample.sha256}.wav`
+          const exists = await storage.exists(objectName)
+          if (!exists.ok) throw exists.error
+          if (!exists.value) {
+            const uploaded = await storage.uploadFromBytes(objectName, sample.bytes, { compress: false })
+            if (!uploaded.ok) throw uploaded.error
+            uploadedSamples += 1
+          }
+          bytes += sample.bytes.length
+          sampleUrlByPath.set(sample.sourcePath.replace(/\\/g, "/"), `/api/audio/sample-packs/samples/${sample.sha256}.wav`)
+        }
+
+        const pack = compileSfzToTloqueSamplePack(downloaded.sfzText, {
+          id: install.moduleId,
+          name: `${source.name} · Solo Violin`,
+          instrument: "strings.violin",
+          sourceName: source.name,
+          sourceLicense: source.license,
+          sourceCommit: install.pinnedCommit,
+          sampleUrlForPath: path => {
+            const url = sampleUrlByPath.get(path.replace(/\\/g, "/"))
+            if (!url) throw new Error(`Muestra no instalada: ${path}`)
+            return url
+          },
+        })
+        const packBytes = Buffer.from(JSON.stringify({
+          ...pack,
+          manifestId: install.manifestId,
+          source: {
+            repositoryUrl: source.repositoryUrl,
+            commit: install.pinnedCommit,
+            sfzPath: install.sfzPath,
+            sfzSha256: downloaded.sfzSha256,
+            license: source.license,
+          },
+        }))
+        const packSha256 = createHash("sha256").update(packBytes).digest("hex")
+        const packObjectName = `audio/sample-packs/manifests/${packSha256}.json`
+        const packExists = await storage.exists(packObjectName)
+        if (!packExists.ok) throw packExists.error
+        if (!packExists.value) {
+          const uploaded = await storage.uploadFromBytes(packObjectName, packBytes, { compress: false })
+          if (!uploaded.ok) throw uploaded.error
+        }
+        res.status(201).json({
+          url: `/api/audio/sample-packs/manifests/${packSha256}.json`,
+          sha256: packSha256,
+          bytes,
+          sampleCount: downloaded.samples.length,
+          uploadedSamples,
+          deduplicated: packExists.value && uploadedSamples === 0,
+          manifestId: install.manifestId,
+          moduleId: install.moduleId,
+          version: install.version,
+          source: {
+            id: source.id,
+            name: source.name,
+            license: source.license,
+            repositoryUrl: source.repositoryUrl,
+            pinnedCommit: install.pinnedCommit,
+            tags: install.tags,
+          },
+        })
+      } catch (error) {
+        audioStorage.reset(storage)
+        console.error("Curated sample-pack installation failed:", error)
+        res.status(502).json({ message: "No se pudo descargar, verificar o publicar el paquete de muestras fijado." })
+      }
+    },
+  )
+
+  app.post(
     "/api/admin/audio/module-uploads",
     requireAdmin,
     rateLimit(60_000, 4),
@@ -219,6 +317,52 @@ export function registerAudioUploadRoutes(app: Express) {
     } catch (error) {
       audioStorage.reset(storage)
       console.error("Sound bank stream initialization failed:", error)
+      res.status(503).end()
+    }
+  })
+
+  app.get("/api/audio/sample-packs/samples/:file", rateLimit(60_000, 480), (req, res) => {
+    const file = Array.isArray(req.params.file) ? req.params.file[0] : req.params.file
+    const match = /^([a-f0-9]{64})\.wav$/.exec(file || "")
+    if (!match) return res.status(404).end()
+    res.setHeader("Content-Type", "audio/wav")
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable")
+    const objectName = `audio/sample-packs/samples/${match[1]}.wav`
+    let storage: Client | undefined
+    try {
+      storage = audioStorage.get()
+      const stream = storage.downloadAsStream(objectName, { decompress: false })
+      stream.once("error", error => {
+        audioStorage.reset(storage)
+        if (!res.headersSent) res.status(404).end()
+        else res.destroy(error)
+      })
+      stream.pipe(res)
+    } catch {
+      audioStorage.reset(storage)
+      res.status(503).end()
+    }
+  })
+
+  app.get("/api/audio/sample-packs/manifests/:file", rateLimit(60_000, 240), (req, res) => {
+    const file = Array.isArray(req.params.file) ? req.params.file[0] : req.params.file
+    const match = /^([a-f0-9]{64})\.json$/.exec(file || "")
+    if (!match) return res.status(404).end()
+    res.setHeader("Content-Type", "application/json; charset=utf-8")
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable")
+    const objectName = `audio/sample-packs/manifests/${match[1]}.json`
+    let storage: Client | undefined
+    try {
+      storage = audioStorage.get()
+      const stream = storage.downloadAsStream(objectName, { decompress: false })
+      stream.once("error", error => {
+        audioStorage.reset(storage)
+        if (!res.headersSent) res.status(404).end()
+        else res.destroy(error)
+      })
+      stream.pipe(res)
+    } catch {
+      audioStorage.reset(storage)
       res.status(503).end()
     }
   })
