@@ -18,10 +18,14 @@ export interface CompiledSfzZone {
 export interface SfzSamplePackCompileOptions {
   id: string
   name: string
-  instrumentManifestId: string
-  license: string
+  instrumentManifestId?: string
+  /** Compatibility alias used by the first installer draft. */
+  instrument?: string
+  license?: string
+  /** Compatibility alias used by the first installer draft. */
+  sourceLicense?: string
   sourceName: string
-  sourceUrl: string
+  sourceUrl?: string
   sourceCommit?: string
   sampleUrlForPath(path: string): string
   sampleSha256ForPath?(path: string): string | undefined
@@ -55,6 +59,13 @@ function normalizeRelativePath(value: string) {
   return path
 }
 
+function normalizeDefaultPath(value: string) {
+  const normalized = value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+/g, "/").replace(/^\/+|\/+$/g, "")
+  const parts = normalized.split("/").filter(Boolean)
+  if (parts.some(part => part === "." || part === "..")) throw new Error("Ruta SFZ insegura")
+  return parts.join("/")
+}
+
 function articulationForSwitch(value: string | undefined): TloqueArticulation {
   if (!value) return "normal"
   const midi = /^\d+$/.test(value) ? Number(value) : sfzNoteToMidi(value)
@@ -79,10 +90,6 @@ function assertSafeSfz(source: string) {
   if (/\b(?:sample|default_path)\s*=\s*(?:https?:|file:|\/)/i.test(source)) throw new Error("El SFZ curado no puede usar rutas externas o absolutas")
 }
 
-/**
- * Parses the deliberately small SFZ subset used by the curated VSCO solo violin.
- * It does not execute macros/includes/scripts and produces inert zone data only.
- */
 export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
   assertSafeSfz(source)
   const chunks = source.split(/(?=<(?:control|group|region)>)/gi)
@@ -96,7 +103,7 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
     const values = opcodes(chunk)
     if (type === "control") {
       const path = values.get("default_path")
-      if (path) defaultPath = normalizeRelativePath(`${path}/placeholder.wav`).replace(/\/placeholder\.wav$/i, "")
+      if (path) defaultPath = normalizeDefaultPath(path)
       continue
     }
     if (type === "group") {
@@ -155,6 +162,9 @@ export function samplePathsFromSfz(source: string): string[] {
 }
 
 export function compileSfzToTloqueSamplePack(source: string, options: SfzSamplePackCompileOptions): TloqueSamplePack {
+  const manifestId = options.instrumentManifestId || options.id
+  const license = options.license || options.sourceLicense
+  if (!license) throw new Error("El paquete curado no declara licencia")
   const zones = compileCuratedSfzZones(source).map((zone, index) => ({
     id: `${index}:${zone.samplePath}`,
     articulation: zone.articulation,
@@ -174,10 +184,10 @@ export function compileSfzToTloqueSamplePack(source: string, options: SfzSampleP
     version: 1,
     id: options.id,
     name: options.name,
-    instrumentManifestId: options.instrumentManifestId,
-    license: options.license,
+    instrumentManifestId: manifestId,
+    license,
     sourceName: options.sourceName,
-    sourceUrl: options.sourceUrl,
+    sourceUrl: options.sourceUrl || "",
     sourceCommit: options.sourceCommit,
     zones,
   })
