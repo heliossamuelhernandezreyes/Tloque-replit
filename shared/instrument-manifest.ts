@@ -80,6 +80,9 @@ export const GM_ORCHESTRAL_STRINGS_MANIFEST: InstrumentManifest = {
  * Sustain/tremolo/spiccato/pizzicato expose two recorded velocity ranges.
  * Spiccato and pizzicato expose two alternate attacks. VSCO CE does not claim
  * recorded interval-legato here, so true-legato remains deliberately false.
+ * Unsupported requested articulations may reset to the normal sustain selector,
+ * but they are never advertised as recorded techniques.
+ *
  * This manifest is NOT part of BUILTIN_INSTRUMENT_MANIFESTS: it must be chosen
  * explicitly for a VSCO-derived module so ordinary GM banks never receive its
  * keyswitch protocol.
@@ -94,11 +97,8 @@ export const VSCO2_CE_SOLO_VIOLIN_MANIFEST: InstrumentManifest = {
   capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
   articulations: [
     { articulation: "normal", keyswitch: 36, velocityLayers: 2 },
-    { articulation: "legato", keyswitch: 36, velocityLayers: 2 },
-    { articulation: "tenuto", keyswitch: 36, velocityLayers: 2 },
     { articulation: "tremolo", keyswitch: 37, velocityLayers: 2 },
     { articulation: "spiccato", keyswitch: 38, velocityLayers: 2, roundRobins: 2 },
-    { articulation: "staccato", keyswitch: 38, velocityLayers: 2, roundRobins: 2 },
     { articulation: "pizzicato", keyswitch: 39, velocityLayers: 2, roundRobins: 2 },
   ],
 }
