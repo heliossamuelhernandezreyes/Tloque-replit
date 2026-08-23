@@ -2,6 +2,8 @@ import { createHash } from "node:crypto"
 import { posix as pathPosix } from "node:path"
 import { AUDIO_MODULE_SOURCES, type AudioModuleSource } from "../shared/audio-module-sources"
 import { curatedSamplePackById, type CuratedSamplePackSource } from "../shared/curated-sample-packs"
+import { curatedRawWavPackById, isCuratedRawWavPackSource } from "../shared/curated-raw-wav-packs"
+import { compileRawWavIndexToSfz } from "./rawWavSamplePackCompiler"
 import { compileSfzBundleToTloqueSamplePack, samplePathsFromSfz } from "./sfzSamplePackCompiler"
 import { detectSoundBankType } from "./soundBankDetection"
 
@@ -16,7 +18,7 @@ export function curatedAudioModuleSource(id: string): AudioModuleSource | null {
 }
 
 export function curatedSamplePackSource(id: string): CuratedSamplePackSource | null {
-  return curatedSamplePackById(id)
+  return curatedRawWavPackById(id) ?? curatedSamplePackById(id)
 }
 
 export async function downloadCuratedAudioModule(source: AudioModuleSource, fetcher: typeof fetch = fetch) {
@@ -105,7 +107,53 @@ export interface DownloadedCuratedSamplePack {
   source: CuratedSamplePackSource
 }
 
+async function downloadRawWavSamplePack(source: CuratedSamplePackSource, fetcher: typeof fetch): Promise<DownloadedCuratedSamplePack> {
+  if (!isCuratedRawWavPackSource(source)) throw new Error("El paquete no es un índice WAV curado")
+  const indexUrl = rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, source.rawWavIndexPath)
+  const indexBytes = await strictFetch(indexUrl, 4 * 1024 * 1024, fetcher)
+  const compiled = compileRawWavIndexToSfz(indexBytes.toString("utf8"), source)
+  if (!compiled.samplePaths.length) throw new Error("El índice WAV no produjo muestras")
+  if (compiled.samplePaths.length > 768) throw new Error("El paquete curado contiene demasiadas muestras")
+
+  let totalBytes = indexBytes.length
+  const samples: DownloadedCuratedSample[] = []
+  for (const sourcePath of compiled.samplePaths) {
+    const url = rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, sourcePath)
+    const bytes = await strictFetch(url, MAX_CURATED_SAMPLE_BYTES, fetcher)
+    assertWav(bytes)
+    totalBytes += bytes.length
+    if (totalBytes > MAX_CURATED_SAMPLE_PACK_BYTES) throw new Error("El paquete de muestras supera el límite seguro de 256 MB")
+    samples.push({ sourcePath, bytes, sha256: createHash("sha256").update(bytes).digest("hex") })
+  }
+
+  compileSfzBundleToTloqueSamplePack([compiled.sfzText], {
+    id: source.moduleId,
+    name: `${source.libraryName} · ${source.displayName}`,
+    instrumentManifestId: source.manifestId,
+    license: source.license,
+    sourceName: source.libraryName,
+    sourceUrl: source.repositoryUrl,
+    sourceCommit: source.pinnedCommit,
+    sampleUrlForPath: path => `/api/audio/sample-packs/samples/${createHash("sha256").update(path).digest("hex")}.wav`,
+  })
+
+  const sfzSha256 = createHash("sha256").update(compiled.sfzText).digest("hex")
+  return {
+    moduleId: source.moduleId,
+    manifestId: source.manifestId,
+    version: source.version,
+    pinnedCommit: source.pinnedCommit,
+    sfzSha256,
+    sfzText: compiled.sfzText,
+    sfzSources: [{ path: `generated:${source.rawWavIndexPath}`, sha256: sfzSha256, text: compiled.sfzText }],
+    samples,
+    source,
+  }
+}
+
 export async function downloadCuratedSamplePack(source: CuratedSamplePackSource, fetcher: typeof fetch = fetch): Promise<DownloadedCuratedSamplePack> {
+  if (isCuratedRawWavPackSource(source)) return downloadRawWavSamplePack(source, fetcher)
+
   const sfzPaths = source.sfzPaths.length ? source.sfzPaths : [source.sfzPath]
   if (sfzPaths.length > 8) throw new Error("El paquete curado contiene demasiados patches SFZ")
 
