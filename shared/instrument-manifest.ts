@@ -191,6 +191,66 @@ export const VSCO2_CE_BASSOON_MANIFEST: InstrumentManifest = {
   ],
 }
 
+/** Open trumpet only. Vibrato, Harmon and straight-mute colours stay upstream. */
+export const VSCO2_CE_TRUMPET_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vsco2-ce-trumpet",
+  family: "brass",
+  name: "VSCO 2 CE Trumpet",
+  instruments: ["brass.trumpet"],
+  basePrograms: [56],
+  capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
+  articulations: [
+    { articulation: "normal", velocityLayers: 2 },
+    { articulation: "staccato", velocityLayers: 3, roundRobins: 2 },
+  ],
+}
+
+/** Upstream root patches point to the Tenor Trombone recording, not OldTrombone. */
+export const VSCO2_CE_TENOR_TROMBONE_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vsco2-ce-tenor-trombone",
+  family: "brass",
+  name: "VSCO 2 CE Tenor Trombone",
+  instruments: ["brass.trombone"],
+  basePrograms: [57],
+  capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
+  articulations: [
+    { articulation: "normal", velocityLayers: 4 },
+    { articulation: "staccato", velocityLayers: 4, roundRobins: 2 },
+  ],
+}
+
+/** Open F horn only. The separate mute patch stays upstream until timbre/mute routing exists. */
+export const VSCO2_CE_F_HORN_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vsco2-ce-f-horn",
+  family: "brass",
+  name: "VSCO 2 CE F Horn",
+  instruments: ["brass.horn"],
+  basePrograms: [60],
+  capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
+  articulations: [
+    { articulation: "normal", velocityLayers: 4 },
+    { articulation: "staccato", velocityLayers: 3, roundRobins: 2 },
+  ],
+}
+
+/** Tuba KS upstream: C6 sustain, C#6 staccato with four round robins. */
+export const VSCO2_CE_TUBA_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vsco2-ce-tuba",
+  family: "brass",
+  name: "VSCO 2 CE Tuba",
+  instruments: ["brass.tuba"],
+  basePrograms: [58],
+  capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
+  articulations: [
+    { articulation: "normal", keyswitch: 84, velocityLayers: 3 },
+    { articulation: "staccato", keyswitch: 85, velocityLayers: 2, roundRobins: 4 },
+  ],
+}
+
 export const BUILTIN_INSTRUMENT_MANIFESTS: readonly InstrumentManifest[] = [
   GM_ORCHESTRAL_STRINGS_MANIFEST,
 ]
@@ -205,6 +265,10 @@ export const INSTRUMENT_MANIFEST_REGISTRY: readonly InstrumentManifest[] = [
   VSCO2_CE_CLARINET_MANIFEST,
   VSCO2_CE_OBOE_MANIFEST,
   VSCO2_CE_BASSOON_MANIFEST,
+  VSCO2_CE_TRUMPET_MANIFEST,
+  VSCO2_CE_TENOR_TROMBONE_MANIFEST,
+  VSCO2_CE_F_HORN_MANIFEST,
+  VSCO2_CE_TUBA_MANIFEST,
 ]
 
 export function instrumentManifestById(id: string | null | undefined): InstrumentManifest | null {
