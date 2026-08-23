@@ -87,13 +87,13 @@ export function compileRawWavIndexToSfz(indexText: string, source: CuratedRawWav
 
   const chunks: string[] = ["<control> default_path="]
   for (const [key, groupZones] of groups) {
-    const [layerText, mic] = key.split(":")
+    const [layerText] = key.split(":")
     const layer = Number(layerText)
     const velocity = velocityRange(layer, source.rawWavProfile)
-    chunks.push(`<group> sw_label=normal tloque_mic=${mic}`)
+    chunks.push("<group> sw_label=normal")
     for (const zone of groupZones.sort((a, b) => a.rootMidi - b.rootMidi)) {
       const range = rootRanges.get(zone.rootMidi)!
-      chunks.push(`<region> sample=${zone.samplePath} pitch_keycenter=${zone.rootMidi} lokey=${range.lo} hikey=${range.hi} lovel=${velocity.lo} hivel=${velocity.hi} seq_length=1 seq_position=${zone.roundRobin + 1}`)
+      chunks.push(`<region> sample=${zone.samplePath} pitch_keycenter=${zone.rootMidi} lokey=${range.lo} hikey=${range.hi} lovel=${velocity.lo} hivel=${velocity.hi} tloque_mic=${zone.mic} seq_length=1 seq_position=${zone.roundRobin + 1}`)
     }
   }
   return { sfzText: chunks.join("\n"), samplePaths: selectedPaths }
