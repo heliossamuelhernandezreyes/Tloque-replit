@@ -14,7 +14,7 @@ export interface NativeSampleVoicePlan {
   articulation: TloqueArticulation
   /** Author-facing value; `natural` remains visible for backwards compatibility. */
   timbre: ScoreTimbre
-  /** Exact verified physical colour selected for this module. */
+  /** Exact physical colour used for zone selection. */
   resolvedTimbre: Exclude<ScoreTimbre, "natural">
   note: number
   velocity: number
@@ -29,6 +29,19 @@ export interface NativeSampleVoicePlan {
   oneShot: boolean
 }
 export interface NativeSampleScorePlan { tracks: readonly NativeSampleTrackPlan[]; controls: readonly NativeSampleControlPlan[]; voices: readonly NativeSampleVoicePlan[]; zones: readonly TloqueSampleZone[]; totalSeconds: number }
+
+/**
+ * `natural` preserves the established sustain colour for normal notes, but an
+ * independently recorded alternate gesture (spiccato, pizzicato, tremolo,
+ * staccato...) uses its own uncoloured physical recording. Explicit timbres
+ * remain strict for every articulation and never silently change colour.
+ */
+function resolvedTimbreForEvent(moduleId: string, requested: ScoreTimbre, articulation: TloqueArticulation): Exclude<ScoreTimbre, "natural"> {
+  if (requested === "natural" && articulation !== "normal" && articulation !== "legato" && articulation !== "tenuto") {
+    return "non-vibrato"
+  }
+  return resolveRecordedTimbre(moduleId, requested)
+}
 
 export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: TloqueSamplePack): NativeSampleScorePlan {
   if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita un paquete nativo")
@@ -58,7 +71,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     if (!decision || !track) continue
     const oneShot = track.instrument === "percussion.orchestral-kit"
     const requestedTimbre = event.timbre ?? track.timbre ?? "natural"
-    const resolvedTimbre = resolveRecordedTimbre(pack.instrumentManifestId, requestedTimbre)
+    const resolvedTimbre = resolvedTimbreForEvent(pack.instrumentManifestId, requestedTimbre, decision.articulation)
     const physical = physicalRecordedTimbre(resolvedTimbre)
     const velocity = Math.round(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(decision.articulation)) * 127)
     const durationSeconds = event.durationSeconds * articulationDurationFactor(decision.articulation)
