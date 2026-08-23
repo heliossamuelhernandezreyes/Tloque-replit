@@ -1,16 +1,8 @@
 import { linearScoreRecipeFor } from "@shared/audio"
-import { manifestsForModule } from "@shared/instrument-manifest"
 import type { MusicCue, MusicState } from "./MusicEngine"
-import { NativeSamplePackPlayer, selectNativeSampleZone } from "./NativeSamplePackEngine"
-import { buildPerformancePlan } from "./PerformanceEngine"
+import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
+import { buildNativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { createSampledMixMaster } from "./ScoreMixMaster"
-import {
-  articulationDurationFactor,
-  articulationVelocityFactor,
-  scoreTrackExpression,
-  scoreTrackTimbre,
-  scoreVelocityGain,
-} from "./ScoreAudioMath"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 
@@ -39,22 +31,20 @@ export class NativeSampleScoreEngine {
         throw new Error("El paquete nativo no corresponde al módulo solicitado")
       }
 
-      const performance = buildPerformancePlan(recipe, manifestsForModule(pack.instrumentManifestId))
+      const plan = buildNativeSampleScorePlan(recipe, pack)
       const mix = createSampledMixMaster(context, 1)
       const output = context.createGain()
       output.gain.value = 0
       mix.output.connect(output)
       output.connect(context.destination)
 
-      const playableTracks = recipe.plan.tracks.slice(0, 16)
       const trackGain = new Map<string, GainNode>()
-      for (const track of playableTracks) {
-        const timbre = scoreTrackTimbre(track)
+      for (const track of plan.tracks) {
         const gain = context.createGain()
-        gain.gain.value = Math.max(0, Math.min(1.5, track.gain * timbre.level * scoreTrackExpression(track)))
+        gain.gain.value = track.gain
         if (typeof context.createStereoPanner === "function") {
           const panner = context.createStereoPanner()
-          panner.pan.value = Math.max(-1, Math.min(1, track.pan))
+          panner.pan.value = track.pan
           gain.connect(panner)
           panner.connect(mix.input)
         } else {
@@ -63,18 +53,7 @@ export class NativeSampleScoreEngine {
         trackGain.set(track.id, gain)
       }
 
-      const zonesNeeded = new Map<string, typeof pack.zones[number]>()
-      for (let index = 0; index < recipe.plan.events.length; index += 1) {
-        const event = recipe.plan.events[index]
-        const decision = performance.decisionForEvent(index)
-        if (!decision) continue
-        const velocity = Math.round(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(decision.articulation)) * 127)
-        for (const note of event.notes) {
-          const selection = selectNativeSampleZone(pack, decision.articulation, note, velocity, decision.roundRobin)
-          if (selection) zonesNeeded.set(selection.zone.id, selection.zone)
-        }
-      }
-      await player.preload([...zonesNeeded.values()])
+      await player.preload(plan.zones)
       await context.resume()
 
       this.context = context
@@ -82,47 +61,36 @@ export class NativeSampleScoreEngine {
       this.cue = cue
       const startAt = context.currentTime + 0.08
 
-      for (const control of recipe.plan.controls) {
+      for (const control of plan.controls) {
         const gain = trackGain.get(control.trackId)
-        if (!gain || control.expression === null) continue
+        if (!gain) continue
         const at = startAt + control.timeSeconds
-        const track = playableTracks.find(item => item.id === control.trackId)
-        if (!track) continue
-        const timbre = scoreTrackTimbre(track)
-        const value = Math.max(0, Math.min(1.5, track.gain * timbre.level * control.expression))
         gain.gain.cancelScheduledValues(at)
-        if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(value, at + control.rampSeconds)
-        else gain.gain.setValueAtTime(value, at)
+        if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds)
+        else gain.gain.setValueAtTime(control.gain, at)
       }
 
       const scheduled: Promise<unknown>[] = []
-      for (let index = 0; index < recipe.plan.events.length; index += 1) {
-        const event = recipe.plan.events[index]
-        const decision = performance.decisionForEvent(index)
-        const destination = trackGain.get(event.trackId)
-        if (!decision || !destination) continue
-        const eventStart = event.timeSeconds
-        const duration = event.durationSeconds * articulationDurationFactor(decision.articulation)
-        const velocity = Math.round(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(decision.articulation)) * 127)
-        for (const note of event.notes) {
-          scheduled.push(player.play({
-            pack,
-            articulation: decision.articulation,
-            note,
-            velocity,
-            roundRobin: decision.roundRobin,
-            startTime: startAt + eventStart,
-            durationSeconds: duration,
-            destination,
-          }))
-        }
+      for (const voice of plan.voices) {
+        const destination = trackGain.get(voice.trackId)
+        if (!destination) continue
+        scheduled.push(player.play({
+          pack,
+          articulation: voice.articulation,
+          note: voice.note,
+          velocity: voice.velocity,
+          roundRobin: voice.roundRobin,
+          startTime: startAt + voice.startSeconds,
+          durationSeconds: voice.durationSeconds,
+          destination,
+        }))
       }
       await Promise.all(scheduled)
 
       output.gain.linearRampToValueAtTime(this.targetVolume(), context.currentTime + Math.max(0.25, cue.crossfadeSeconds))
       this.completionTimer = window.setTimeout(() => {
         this.listener("paused", this.cue)
-      }, (recipe.plan.totalSeconds + 0.5) * 1_000)
+      }, (plan.totalSeconds + 0.5) * 1_000)
       this.listener("playing", cue)
     } catch (error) {
       console.error("Tloque native sample playback failed:", error)
