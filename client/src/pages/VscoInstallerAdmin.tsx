@@ -18,13 +18,27 @@ interface InstallResult {
   instrumentId: string
 }
 
+type VscoFamily = "strings" | "woodwinds" | "brass"
+
+const FAMILY_PRESENTATION: Record<VscoFamily, { title: string; copy: string }> = {
+  strings: {
+    title: "VSCO Strings",
+    copy: "La identidad refleja la grabación original: violín y contrabajo son solistas; viola y cello son secciones.",
+  },
+  woodwinds: {
+    title: "VSCO Woodwinds",
+    copy: "Flauta y clarinete conservan sus patches KS; oboe y fagot combinan sustain y staccato desde SFZ separados sin inventar técnicas.",
+  },
+  brass: {
+    title: "VSCO Brass",
+    copy: "Trompeta, Tenor Trombone y F Horn combinan sus patches abiertos de sustain y staccato. Tuba conserva su KS. Sordinas y colores de vibrato permanecen separados hasta que Tloque modele timbre explícitamente.",
+  },
+}
+
 export default function VscoInstallerAdmin() {
   const [location, setLocation] = useLocation()
-  const family = location.includes("woodwinds") ? "woodwinds" : "strings"
-  const familyTitle = family === "woodwinds" ? "VSCO Woodwinds" : "VSCO Strings"
-  const familyCopy = family === "woodwinds"
-    ? "Flauta y clarinete conservan sus patches KS; oboe y fagot combinan sustain y staccato desde SFZ separados sin inventar técnicas."
-    : "La identidad refleja la grabación original: violín y contrabajo son solistas; viola y cello son secciones."
+  const family: VscoFamily = location.includes("woodwinds") ? "woodwinds" : location.includes("brass") ? "brass" : "strings"
+  const presentation = FAMILY_PRESENTATION[family]
   const packs = CURATED_SAMPLE_PACKS.filter(pack =>
     pack.libraryName === "VSCO 2 Community Edition" && pack.instrumentId.startsWith(`${family}.`),
   )
@@ -62,14 +76,14 @@ export default function VscoInstallerAdmin() {
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/10 bg-zinc-950/95 px-4 py-3">
         <button aria-label="Volver" onClick={() => setLocation("/admin/fonoteca")}><ArrowLeft className="h-4 w-4" /></button>
         <Music2 className="h-4 w-4 text-amber-300" />
-        <div><h1 className="font-semibold">{familyTitle}</h1><p className="text-[10px] text-zinc-500">Familia acústica nativa de Tloque</p></div>
+        <div><h1 className="font-semibold">{presentation.title}</h1><p className="text-[10px] text-zinc-500">Familia acústica nativa de Tloque</p></div>
       </header>
 
       <section className="mx-auto max-w-3xl space-y-4 p-4">
         <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.035] p-4 text-xs leading-5 text-zinc-400">
           <p className="flex items-center gap-2 font-medium text-emerald-200"><ShieldCheck className="h-4 w-4" /> Paquetes independientes y verificados</p>
           <p className="mt-1">Cada instrumento se descarga sólo cuando lo necesitas. Tloque usa el commit fijado de VSCO 2 CE, interpreta los SFZ como datos inertes, valida RIFF/WAVE, calcula SHA-256 y deduplica las muestras en App Storage.</p>
-          <p className="mt-2 text-zinc-500">{familyCopy}</p>
+          <p className="mt-2 text-zinc-500">{presentation.copy}</p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
