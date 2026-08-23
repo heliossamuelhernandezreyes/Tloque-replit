@@ -110,9 +110,10 @@ export async function downloadCuratedSamplePack(
   compileSfzToTloqueSamplePack(sfzText, {
     id: install.moduleId,
     name: `${source.name} · Solo Violin`,
-    instrument: "strings.violin",
+    instrumentManifestId: install.manifestId,
+    license: source.license,
     sourceName: source.name,
-    sourceLicense: source.license,
+    sourceUrl: source.repositoryUrl,
     sourceCommit: install.pinnedCommit,
     sampleUrlForPath: path => `/api/audio/sample-packs/samples/${createHash("sha256").update(path).digest("hex")}.wav`,
   })
