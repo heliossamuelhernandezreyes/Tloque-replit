@@ -20,10 +20,17 @@ Performance Engine
    └─ Release-sample resolver
    ↓
 Renderer-neutral PerformancePlan
-   ├─ full per-event plan → sampled WAV export
-   └─ shared manifest routing → live SoundFont playback
    ↓
-future sampler adapters + unified mix/master
+SamplerAdapter
+   ├─ program change
+   ├─ keyswitch
+   ├─ controller selector
+   └─ capability metadata (velocity/RR/legato/releases)
+   ↓
+Renderer
+   ├─ Tone.js builtin
+   ├─ SpessaSynth SF2/SF3/DLS
+   └─ future premium sampler
 ```
 
 ## Principio de seguridad acústica
@@ -38,11 +45,17 @@ El primer manifest incorporado es `gm-orchestral-strings`. Conserva General MIDI
 
 ## PerformancePlan
 
-`client/src/audio/PerformanceEngine.ts` compila decisiones acústicas por evento. Cada decisión conserva manifest, articulación, programa/preset, origen de la ruta, velocity layer, round robin determinista, posible transición true-legato, release samples e identidad estable del evento.
+`client/src/audio/PerformanceEngine.ts` compila decisiones acústicas por evento. Cada decisión conserva manifest, articulación, ruta concreta, programa/preset, origen de la ruta, velocity layer, round robin determinista, posible transición true-legato, release samples e identidad estable del evento.
 
 También existe `PerformanceRoutingPlan`, que concentra asignación de programas y canales. `ScoreAudioMath.scoreSampledChannelPlan()` delega a esta capa, de modo que el playback SoundFont y la exportación dejan de mantener reglas GM separadas.
 
-`ScoreSampledExporter` ya consume el `PerformancePlan` completo por evento. El playback SoundFont en vivo consume todavía la porción de routing compartida; la metadata RR/velocity/legato/releases se activará en vivo cuando entren los sampler adapters capaces de seleccionar esos recursos.
+## SamplerAdapter
+
+`client/src/audio/SamplerAdapter.ts` traduce una decisión acústica a acciones concretas de sampler. El contrato conserva acciones de programa, keyswitch, controlador, velocity layer, round robin, true-legato y releases.
+
+El adaptador de compatibilidad SpessaSynth sólo deja pasar lo que SF2/SF3/DLS puede expresar explícitamente de manera universal: programa, keyswitch y CC. Las decisiones premium que el backend no entiende permanecen como metadata; Tloque no las aproxima falsamente.
+
+`ScoreSampledExporter` ya consume `PerformancePlan` y `SamplerAdapter`. Cuando una ruta del manifest declara keyswitch o controlador, el MIDI exportado emite esas órdenes inmediatamente antes de la nota. El manifest GM actual no declara esas órdenes, por lo que conserva exactamente el comportamiento anterior.
 
 ## Determinismo
 
@@ -68,9 +81,15 @@ Round robin se selecciona mediante `seed + event identity`. Velocity layer se ob
 - exportación muestreada consumiendo PerformancePlan completo;
 - perfil de audio `tloque-score-audio-v6-performance`.
 
-### Fase 3 — sampler adapters · siguiente
+### Fase 3 — sampler adapters · implementada en el camino MIDI/WAV
 
-Añadir adaptadores de manifest para keyswitches, CC selectors y/o regiones de samples. En esta fase `roundRobin`, `velocityLayer`, `trueLegato` y `releaseSamples` empezarán a seleccionar recursos acústicos reales también en reproducción en vivo.
+- contrato renderer-neutral de acciones de sampler;
+- adapter de compatibilidad SpessaSynth;
+- keyswitches y CC selectors exportables desde el manifest;
+- preservación de metadata RR/velocity/legato/releases sin falsear soporte;
+- pruebas específicas del adapter.
+
+La reproducción SoundFont en vivo sigue usando el routing compartido del Performance Engine. La activación en vivo de keyswitch/CC y un backend premium capaz de seleccionar RR/velocity/legato/releases directamente son el siguiente subpaso antes de incorporar una biblioteca acústica avanzada.
 
 ### Fase 4 — renderer parity y unified mix/master
 
@@ -86,7 +105,7 @@ Un módulo no se considera `premium-solo-string` sólo por usar samples. Debe cu
 
 ## Validación
 
-La rama incorpora pruebas unitarias nuevas de routing GM, PerformancePlan, velocity layers, round robin, true-legato y releases. GitHub no reporta checks automáticos para esta rama, por lo que el PR permanece en borrador hasta ejecutar `npm run check`, `npm test` y `npm run build` en un entorno de proyecto.
+La rama incorpora pruebas unitarias de routing GM, PerformancePlan, velocity layers, round robin, true-legato, releases y sampler adapters. GitHub no reporta checks automáticos para esta rama, por lo que el PR permanece en borrador hasta ejecutar `npm run check`, `npm test` y `npm run build` en un entorno de proyecto.
 
 ## Compatibilidad
 
