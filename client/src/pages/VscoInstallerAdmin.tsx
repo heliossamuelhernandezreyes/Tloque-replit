@@ -34,8 +34,8 @@ const FAMILY_PRESENTATION: Record<VscoFamily, { title: string; copy: string }> =
     copy: "Trompeta, Tenor Trombone y F Horn combinan sus patches abiertos de sustain y staccato. Tuba conserva su KS. Sordinas y colores de vibrato permanecen separados hasta que Tloque modele timbre explícitamente.",
   },
   percussion: {
-    title: "VSCO Tuned Percussion",
-    copy: "Timbales conserva golpes con velocity layers y round-robin físicos, más rolls grabados como tremolo. Glockenspiel, marimba, xilófono y campanas tubulares permanecen como instrumentos afinados independientes. Caja, bombo y platos se reservaron para un evento percusivo explícito en vez de disfrazarlos como notas melódicas.",
+    title: "VSCO Percussion",
+    copy: "Timbales conserva golpes con velocity layers y round-robin físicos, más rolls grabados como tremolo. Glockenspiel, marimba, xilófono y campanas tubulares son instrumentos afinados independientes. Orchestral Percussion publica caja, bombo, platos, triángulo y otros golpes mediante nombres semánticos del comando hit; sus claves MIDI quedan sólo como selectores internos de muestras.",
   },
 }
 
