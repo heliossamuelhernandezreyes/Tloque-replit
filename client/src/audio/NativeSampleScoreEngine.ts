@@ -42,6 +42,7 @@ export class NativeSampleScoreEngine {
 
       const decoded = await player.preload(plan.zones)
       const durationByUrl = new Map(plan.zones.map((zone, index) => [zone.sampleUrl, decoded[index]?.duration ?? 0]))
+      const zoneById = new Map(plan.zones.map(zone => [zone.id, zone]))
       await context.resume()
       this.context = context; this.output = output; this.cue = cue
       const startAt = context.currentTime + 0.08
@@ -54,17 +55,36 @@ export class NativeSampleScoreEngine {
 
       const scheduled: Promise<unknown>[] = []
       for (const voice of plan.voices) {
-        const destination = trackGain.get(voice.trackId); if (!destination) continue
-        scheduled.push(player.play({
-          pack, articulation: voice.articulation, note: voice.note, velocity: voice.velocity, roundRobin: voice.roundRobin,
-          vibrato: voice.vibrato, vibratoColour: voice.vibratoColour, mute: voice.mute,
-          startTime: startAt + voice.startSeconds, durationSeconds: voice.durationSeconds, destination, oneShot: voice.oneShot,
-        }))
+        const destination = trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
+        if (!destination || !zone) continue
+        scheduled.push(player.playSelection(
+          { zone, playbackRate: voice.playbackRate, gain: voice.sampleGain },
+          startAt + voice.startSeconds,
+          voice.durationSeconds,
+          destination,
+          0,
+          voice.oneShot,
+        ))
+      }
+      for (const auxiliary of plan.auxiliaryVoices) {
+        const destination = trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
+        if (!destination || !zone) continue
+        scheduled.push(player.playSelection(
+          { zone, playbackRate: auxiliary.playbackRate, gain: auxiliary.sampleGain },
+          startAt + auxiliary.startSeconds,
+          auxiliary.durationSeconds,
+          destination,
+          0,
+          true,
+        ))
       }
       await Promise.all(scheduled)
 
-      const naturalEnd = plan.voices.reduce((latest, voice) => {
-        if (!voice.oneShot || !voice.sampleUrl) return latest
+      const physicalEvents = [
+        ...plan.voices.filter(voice => voice.oneShot).map(voice => ({ sampleUrl: voice.sampleUrl, startSeconds: voice.startSeconds, playbackRate: voice.playbackRate })),
+        ...plan.auxiliaryVoices.map(voice => ({ sampleUrl: voice.sampleUrl, startSeconds: voice.startSeconds, playbackRate: voice.playbackRate })),
+      ]
+      const naturalEnd = physicalEvents.reduce((latest, voice) => {
         const physical = durationByUrl.get(voice.sampleUrl) ?? 0
         return Math.max(latest, voice.startSeconds + physical / Math.max(0.01, voice.playbackRate))
       }, plan.totalSeconds)
