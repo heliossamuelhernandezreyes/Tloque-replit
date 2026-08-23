@@ -81,6 +81,8 @@ export class NativeSampleScoreEngine {
           note: voice.note,
           velocity: voice.velocity,
           roundRobin: voice.roundRobin,
+          vibrato: voice.vibrato,
+          mute: voice.mute,
           startTime: startAt + voice.startSeconds,
           durationSeconds: voice.durationSeconds,
           destination,
