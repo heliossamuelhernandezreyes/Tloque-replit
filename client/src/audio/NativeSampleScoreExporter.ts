@@ -115,6 +115,8 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
       note: voice.note,
       velocity: voice.velocity,
       roundRobin: voice.roundRobin,
+      vibrato: voice.vibrato,
+      mute: voice.mute,
       startTime: voice.startSeconds,
       durationSeconds: voice.durationSeconds,
       destination,
