@@ -3,6 +3,7 @@ import type { TloqueArticulation } from "./instrument-manifest"
 export const TLOQUE_SAMPLE_PACK_VERSION = 1 as const
 
 export type TloqueMute = "none" | "straight" | "harmon" | "mute"
+export type TloqueVibratoColour = "none" | "vibrato" | "expression"
 
 export interface TloqueSampleZone {
   id: string
@@ -18,8 +19,10 @@ export interface TloqueSampleZone {
   roundRobin: number
   gainDb: number
   tuneCents: number
-  /** True only when the upstream recording is explicitly a vibrato colour. */
+  /** Backwards-compatible marker; true for any explicitly vibrato-coloured recording. */
   vibrato?: boolean
+  /** Physical vibrato colour recorded upstream. */
+  vibratoColour?: TloqueVibratoColour
   /** Physical mute colour recorded upstream; never synthesized from filtering. */
   mute?: TloqueMute
   loopStartSeconds?: number
@@ -55,20 +58,23 @@ export function validateTloqueSamplePack(value: unknown): TloqueSamplePack {
 
   const articulations = new Set(["normal", "legato", "staccato", "tenuto", "accent", "spiccato", "pizzicato", "tremolo", "harmonic"])
   const mutes = new Set<TloqueMute>(["none", "straight", "harmon", "mute"])
+  const vibratoColours = new Set<TloqueVibratoColour>(["none", "vibrato", "expression"])
   const zones: TloqueSampleZone[] = pack.zones.map((raw, index) => {
     if (!raw || typeof raw !== "object") throw new Error(`Zona ${index} inválida`)
     const zone = raw as Record<string, unknown>
     if (typeof zone.id !== "string" || !zone.id) throw new Error(`Zona ${index} sin id`)
     if (typeof zone.articulation !== "string" || !articulations.has(zone.articulation)) throw new Error(`Zona ${index}: articulación inválida`)
-    if (typeof zone.sampleUrl !== "string" || !zone.sampleUrl.startsWith("/api/audio/sample-packs/")) {
-      throw new Error(`Zona ${index}: URL de muestra fuera del almacenamiento interno`)
-    }
+    if (typeof zone.sampleUrl !== "string" || !zone.sampleUrl.startsWith("/api/audio/sample-packs/")) throw new Error(`Zona ${index}: URL de muestra fuera del almacenamiento interno`)
     for (const key of ["rootMidi", "loMidi", "hiMidi", "loVelocity", "hiVelocity", "velocityLayer", "roundRobin", "gainDb", "tuneCents"] as const) {
       if (!finite(zone[key])) throw new Error(`Zona ${index}: ${key} inválido`)
     }
     const mute = zone.mute === undefined ? "none" : zone.mute
     if (typeof mute !== "string" || !mutes.has(mute as TloqueMute)) throw new Error(`Zona ${index}: mute inválido`)
     if (zone.vibrato !== undefined && typeof zone.vibrato !== "boolean") throw new Error(`Zona ${index}: vibrato inválido`)
+    const vibratoColour = zone.vibratoColour === undefined
+      ? (zone.vibrato === true ? "vibrato" : "none")
+      : zone.vibratoColour
+    if (typeof vibratoColour !== "string" || !vibratoColours.has(vibratoColour as TloqueVibratoColour)) throw new Error(`Zona ${index}: color de vibrato inválido`)
     const result: TloqueSampleZone = {
       id: zone.id,
       articulation: zone.articulation as TloqueArticulation,
@@ -83,7 +89,8 @@ export function validateTloqueSamplePack(value: unknown): TloqueSamplePack {
       roundRobin: zone.roundRobin as number,
       gainDb: zone.gainDb as number,
       tuneCents: zone.tuneCents as number,
-      vibrato: zone.vibrato === true,
+      vibrato: vibratoColour !== "none",
+      vibratoColour: vibratoColour as TloqueVibratoColour,
       mute: mute as TloqueMute,
       loopStartSeconds: finite(zone.loopStartSeconds) ? zone.loopStartSeconds : undefined,
       loopEndSeconds: finite(zone.loopEndSeconds) ? zone.loopEndSeconds : undefined,
