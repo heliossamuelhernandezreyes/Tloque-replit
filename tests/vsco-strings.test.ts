@@ -13,15 +13,17 @@ import { compileCuratedSfzZones } from "../server/sfzSamplePackCompiler"
 const COMMIT = "6dd651d55dde97fd4028699be9d4481f26917891"
 
 test("VSCO strings registra cuatro paquetes independientes con identidad real", () => {
-  assert.equal(CURATED_SAMPLE_PACKS.length, 4)
-  assert.equal(new Set(CURATED_SAMPLE_PACKS.map(pack => pack.moduleId)).size, 4)
-  assert.deepEqual(CURATED_SAMPLE_PACKS.map(pack => pack.displayName), [
+  const packs = CURATED_SAMPLE_PACKS.filter(pack => pack.instrumentId.startsWith("strings."))
+  assert.equal(packs.length, 4)
+  assert.equal(new Set(packs.map(pack => pack.moduleId)).size, 4)
+  assert.deepEqual(packs.map(pack => pack.displayName), [
     "Solo Violin", "Viola Section", "Cello Section", "Solo Contrabass",
   ])
-  for (const pack of CURATED_SAMPLE_PACKS) {
+  for (const pack of packs) {
     assert.equal(pack.pinnedCommit, COMMIT)
     assert.equal(pack.license, "CC0-1.0")
     assert.ok(pack.sfzPath.endsWith("-KS.sfz"))
+    assert.deepEqual(pack.sfzPaths, [pack.sfzPath])
     assert.equal(instrumentManifestById(pack.manifestId)?.instruments[0], pack.instrumentId)
   }
 })
