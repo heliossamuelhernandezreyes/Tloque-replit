@@ -74,9 +74,8 @@ function vscoPack(input: VscoInput): CuratedSamplePackSource {
 /**
  * Curated native sample packs are intentionally independent downloads. Mobile
  * devices can keep only the instruments a reader/author actually uses.
- * Names reflect the upstream recording identity; section patches are never
- * presented as solo instruments. Multi-SFZ entries combine upstream patches
- * without inventing techniques that are not present in the recordings.
+ * Multi-SFZ entries combine upstream patches while keeping articulation,
+ * vibrato and physical mute colours as independent sample dimensions.
  */
 export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [
   vscoPack({
@@ -117,7 +116,7 @@ export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [
     manifestId: "vsco2-ce-solo-contrabass",
     sfzPath: "Contrabass-KS.sfz",
     estimatedMegabytes: 120,
-    tags: ["native-samples", "solo", "contrabass", "strings", "cc0", "velocity-layers", "round-robin"],
+    tags: ["native-samples", "solo", "contrabass", "strings", "cc0", "velocity-layers", "round-robin", "recorded-vibrato"],
   }),
   vscoPack({
     id: "vsco2-ce-flute",
@@ -127,7 +126,7 @@ export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [
     manifestId: "vsco2-ce-flute",
     sfzPath: "Flute-KS.sfz",
     estimatedMegabytes: 85,
-    tags: ["native-samples", "solo", "flute", "woodwinds", "cc0", "velocity-layers", "round-robin"],
+    tags: ["native-samples", "solo", "flute", "woodwinds", "cc0", "velocity-layers", "round-robin", "recorded-vibrato"],
   }),
   vscoPack({
     id: "vsco2-ce-clarinet",
@@ -146,9 +145,9 @@ export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [
     moduleId: "vsco2-ce-oboe",
     manifestId: "vsco2-ce-oboe",
     sfzPath: "OboeSusNV.sfz",
-    sfzPaths: ["OboeSusNV.sfz", "OboeStac.sfz"],
-    estimatedMegabytes: 55,
-    tags: ["native-samples", "solo", "oboe", "woodwinds", "cc0", "multi-sfz", "velocity-layers", "round-robin"],
+    sfzPaths: ["OboeSusNV.sfz", "OboeSusVib.sfz", "OboeStac.sfz"],
+    estimatedMegabytes: 70,
+    tags: ["native-samples", "solo", "oboe", "woodwinds", "cc0", "multi-sfz", "velocity-layers", "round-robin", "recorded-vibrato"],
   }),
   vscoPack({
     id: "vsco2-ce-bassoon",
@@ -157,9 +156,9 @@ export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [
     moduleId: "vsco2-ce-bassoon",
     manifestId: "vsco2-ce-bassoon",
     sfzPath: "BassoonSus.sfz",
-    sfzPaths: ["BassoonSus.sfz", "BassoonStac.sfz"],
-    estimatedMegabytes: 50,
-    tags: ["native-samples", "solo", "bassoon", "woodwinds", "cc0", "multi-sfz", "velocity-layers", "round-robin"],
+    sfzPaths: ["BassoonSus.sfz", "BassoonVib.sfz", "BassoonStac.sfz"],
+    estimatedMegabytes: 70,
+    tags: ["native-samples", "solo", "bassoon", "woodwinds", "cc0", "multi-sfz", "velocity-layers", "round-robin", "recorded-vibrato"],
   }),
   vscoPack({
     id: "vsco2-ce-trumpet",
@@ -168,9 +167,9 @@ export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [
     moduleId: "vsco2-ce-trumpet",
     manifestId: "vsco2-ce-trumpet",
     sfzPath: "TrumpetSus.sfz",
-    sfzPaths: ["TrumpetSus.sfz", "TrumpetStac.sfz"],
-    estimatedMegabytes: 65,
-    tags: ["native-samples", "solo", "trumpet", "brass", "cc0", "multi-sfz", "velocity-layers", "round-robin"],
+    sfzPaths: ["TrumpetSus.sfz", "TrumpetSusVib.sfz", "TrumpetStac.sfz", "TrumpetStraightMuteSus.sfz", "TrumpetHarmonMuteSus.sfz"],
+    estimatedMegabytes: 125,
+    tags: ["native-samples", "solo", "trumpet", "brass", "cc0", "multi-sfz", "velocity-layers", "round-robin", "recorded-vibrato", "recorded-mutes"],
   }),
   vscoPack({
     id: "vsco2-ce-tenor-trombone",
@@ -179,9 +178,9 @@ export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [
     moduleId: "vsco2-ce-tenor-trombone",
     manifestId: "vsco2-ce-tenor-trombone",
     sfzPath: "TromboneSus.sfz",
-    sfzPaths: ["TromboneSus.sfz", "TromboneStac.sfz"],
-    estimatedMegabytes: 65,
-    tags: ["native-samples", "solo", "tenor-trombone", "brass", "cc0", "multi-sfz", "velocity-layers", "round-robin"],
+    sfzPaths: ["TromboneSus.sfz", "TromboneVib.sfz", "TromboneStac.sfz"],
+    estimatedMegabytes: 80,
+    tags: ["native-samples", "solo", "tenor-trombone", "brass", "cc0", "multi-sfz", "velocity-layers", "round-robin", "recorded-vibrato"],
   }),
   vscoPack({
     id: "vsco2-ce-f-horn",
@@ -190,9 +189,9 @@ export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [
     moduleId: "vsco2-ce-f-horn",
     manifestId: "vsco2-ce-f-horn",
     sfzPath: "FHornSus.sfz",
-    sfzPaths: ["FHornSus.sfz", "FHornStac.sfz"],
-    estimatedMegabytes: 70,
-    tags: ["native-samples", "solo", "f-horn", "brass", "cc0", "multi-sfz", "velocity-layers", "round-robin"],
+    sfzPaths: ["FHornSus.sfz", "FHornStac.sfz", "FHornMute.sfz"],
+    estimatedMegabytes: 85,
+    tags: ["native-samples", "solo", "f-horn", "brass", "cc0", "multi-sfz", "velocity-layers", "round-robin", "recorded-mutes"],
   }),
   vscoPack({
     id: "vsco2-ce-tuba",
