@@ -95,6 +95,7 @@ function Router() {
         <Route path="/admin/diag"              component={adminPage(FlickerLab)} />
         <Route path="/admin/marcos"            component={adminPage(FrameWorkshop)} />
         <Route path="/admin/fonoteca"          component={adminPage(AudioCatalogAdmin)} />
+        <Route path="/admin/audio/vsco-strings" component={adminPage(VscoInstallerAdmin)} />
         <Route path="/admin/audio/vsco-violin" component={adminPage(VscoInstallerAdmin)} />
         <Route component={NotFound} />
       </Switch>
@@ -180,6 +181,7 @@ function AppContent() {
     }
   }, [bootComplete, hasBootedThisSession, isLoading])
 
+  // Al abrir la app logueado: juntar racha y progreso con la nube (una vez)
   useEffect(() => {
     if (isLoggedIn) {
       void pullAndMerge().catch(error => {
@@ -188,16 +190,22 @@ function AppContent() {
     }
   }, [isLoggedIn])
 
-  const [showOnboarding, setShowOnboarding] = useState(needsOnboarding)
+  const [showOnboarding, setShowOnboarding] = useState(
+    needsOnboarding
+  )
 
   if (!bootComplete) return <BootExperience phase={bootPhase} />
   if (isLoading) return <RouteFallback />
   if (authError) return <AuthUnavailable onRetry={() => { void retryAuth() }} />
+
+  // No está logueado — mostrar pantalla de login
   if (!isLoggedIn) return <LoginScreen />
 
   return (
     <>
-      {showOnboarding && <Onboarding onComplete={() => setShowOnboarding(false)} />}
+      {showOnboarding && (
+        <Onboarding onComplete={() => setShowOnboarding(false)} />
+      )}
       <ExperienceShell>
         <Router />
       </ExperienceShell>
@@ -213,6 +221,8 @@ export default function App() {
           <MotionPreferences>
             <MusicProvider>
              <GenreProvider>
+              {/* El visor de tarjetas vive arriba de todo: cualquier carta,
+                  en cualquier pantalla, se toca y se abre aquí. */}
               <CardViewerProvider>
                 <Toaster />
                 <AppContent />
