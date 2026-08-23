@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import { AUDIO_MODULE_SOURCES, type AudioModuleSource } from "../shared/audio-module-sources"
+import { curatedSamplePackById, type CuratedSamplePackSource } from "../shared/curated-sample-packs"
 import { compileSfzToTloqueSamplePack, samplePathsFromSfz } from "./sfzSamplePackCompiler"
 import { detectSoundBankType } from "./soundBankDetection"
 
@@ -13,8 +14,8 @@ export function curatedAudioModuleSource(id: string): AudioModuleSource | null {
   return AUDIO_MODULE_SOURCES.find(source => source.id === id && source.install) || null
 }
 
-export function curatedSamplePackSource(id: string): AudioModuleSource | null {
-  return AUDIO_MODULE_SOURCES.find(source => source.id === id && source.samplePackInstall) || null
+export function curatedSamplePackSource(id: string): CuratedSamplePackSource | null {
+  return curatedSamplePackById(id)
 }
 
 export async function downloadCuratedAudioModule(
@@ -95,38 +96,36 @@ export interface DownloadedCuratedSamplePack {
   sfzSha256: string
   sfzText: string
   samples: readonly DownloadedCuratedSample[]
-  source: AudioModuleSource
+  source: CuratedSamplePackSource
 }
 
 export async function downloadCuratedSamplePack(
-  source: AudioModuleSource,
+  source: CuratedSamplePackSource,
   fetcher: typeof fetch = fetch,
 ): Promise<DownloadedCuratedSamplePack> {
-  const install = source.samplePackInstall
-  if (!install) throw new Error("La biblioteca no tiene un paquete de muestras aprobado")
-  const sfzUrl = rawGitHubUrl(source.repositoryUrl, install.pinnedCommit, install.sfzPath)
+  const sfzUrl = rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, source.sfzPath)
   const sfzBytes = await strictFetch(sfzUrl, 2 * 1024 * 1024, fetcher)
   const sfzText = sfzBytes.toString("utf8")
   compileSfzToTloqueSamplePack(sfzText, {
-    id: install.moduleId,
-    name: `${source.name} · Solo Violin`,
-    instrumentManifestId: install.manifestId,
+    id: source.moduleId,
+    name: `${source.libraryName} · ${source.displayName}`,
+    instrumentManifestId: source.manifestId,
     license: source.license,
-    sourceName: source.name,
+    sourceName: source.libraryName,
     sourceUrl: source.repositoryUrl,
-    sourceCommit: install.pinnedCommit,
+    sourceCommit: source.pinnedCommit,
     sampleUrlForPath: path => `/api/audio/sample-packs/samples/${createHash("sha256").update(path).digest("hex")}.wav`,
   })
   const paths = samplePathsFromSfz(sfzText)
   if (!paths.length) throw new Error("El SFZ fijado no contiene muestras")
-  if (paths.length > 256) throw new Error("El paquete curado contiene demasiadas muestras")
+  if (paths.length > 512) throw new Error("El paquete curado contiene demasiadas muestras")
 
-  const directory = install.sfzPath.includes("/") ? install.sfzPath.slice(0, install.sfzPath.lastIndexOf("/") + 1) : ""
+  const directory = source.sfzPath.includes("/") ? source.sfzPath.slice(0, source.sfzPath.lastIndexOf("/") + 1) : ""
   const samples: DownloadedCuratedSample[] = []
   let totalBytes = sfzBytes.length
   for (const sourcePath of paths) {
     const relative = sourcePath.replace(/\\/g, "/")
-    const url = rawGitHubUrl(source.repositoryUrl, install.pinnedCommit, `${directory}${relative}`)
+    const url = rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, `${directory}${relative}`)
     const bytes = await strictFetch(url, MAX_CURATED_SAMPLE_BYTES, fetcher)
     assertWav(bytes)
     totalBytes += bytes.length
@@ -135,10 +134,10 @@ export async function downloadCuratedSamplePack(
   }
 
   return {
-    moduleId: install.moduleId,
-    manifestId: install.manifestId,
-    version: install.version,
-    pinnedCommit: install.pinnedCommit,
+    moduleId: source.moduleId,
+    manifestId: source.manifestId,
+    version: source.version,
+    pinnedCommit: source.pinnedCommit,
     sfzSha256: createHash("sha256").update(sfzBytes).digest("hex"),
     sfzText,
     samples,
