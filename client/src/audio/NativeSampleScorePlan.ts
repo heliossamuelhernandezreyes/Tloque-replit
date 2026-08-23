@@ -32,6 +32,9 @@ export interface NativeSampleVoicePlan {
   roundRobin: number
   startSeconds: number
   durationSeconds: number
+  sampleUrl?: string
+  /** Unpitched percussion hits are one-shots: event duration is rhythmic, not a hard sample cutoff. */
+  oneShot: boolean
 }
 
 export interface NativeSampleScorePlan {
@@ -84,7 +87,9 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
     const decision = performance.decisionForEvent(eventIndex)
-    if (!decision || !trackById.has(event.trackId)) continue
+    const track = trackById.get(event.trackId)
+    if (!decision || !track) continue
+    const oneShot = track.instrument === "percussion.orchestral-kit"
     const velocity = Math.round(
       Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(decision.articulation)) * 127,
     )
@@ -100,6 +105,8 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
         roundRobin: decision.roundRobin,
         startSeconds: event.timeSeconds,
         durationSeconds,
+        sampleUrl: selection?.zone.sampleUrl,
+        oneShot,
       })
     }
   }
