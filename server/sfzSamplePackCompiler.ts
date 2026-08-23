@@ -1,4 +1,5 @@
 import type { TloqueArticulation } from "../shared/instrument-manifest"
+import { validateTloqueSamplePack, type TloqueSamplePack } from "../shared/native-sample-pack"
 
 export interface CompiledSfzZone {
   articulation: TloqueArticulation
@@ -12,6 +13,18 @@ export interface CompiledSfzZone {
   velocityLayer: number
   gainDb: number
   tuneCents: number
+}
+
+export interface SfzSamplePackCompileOptions {
+  id: string
+  name: string
+  instrumentManifestId: string
+  license: string
+  sourceName: string
+  sourceUrl: string
+  sourceCommit?: string
+  sampleUrlForPath(path: string): string
+  sampleSha256ForPath?(path: string): string | undefined
 }
 
 interface GroupState {
@@ -37,7 +50,9 @@ function normalizeRelativePath(value: string) {
   const normalized = value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+/g, "/")
   const parts = normalized.split("/").filter(Boolean)
   if (!parts.length || parts.some(part => part === "." || part === "..")) throw new Error("Ruta SFZ insegura")
-  return parts.join("/")
+  const path = parts.join("/")
+  if (!/\.wav$/i.test(path)) throw new Error("El paquete curado sólo admite WAV")
+  return path
 }
 
 function articulationForSwitch(value: string | undefined): TloqueArticulation {
@@ -57,14 +72,19 @@ function opcodes(text: string) {
   return map
 }
 
+function assertSafeSfz(source: string) {
+  if (source.length > 2_000_000) throw new Error("SFZ demasiado grande")
+  if (/^\s*#(?:include|define)/mi.test(source)) throw new Error("El SFZ curado no puede usar preprocesador")
+  if (/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(source)) throw new Error("El SFZ curado no puede navegar fuera del paquete")
+  if (/\b(?:sample|default_path)\s*=\s*(?:https?:|file:|\/)/i.test(source)) throw new Error("El SFZ curado no puede usar rutas externas o absolutas")
+}
+
 /**
  * Parses the deliberately small SFZ subset used by the curated VSCO solo violin.
  * It does not execute macros/includes/scripts and produces inert zone data only.
  */
 export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
-  if (source.length > 2_000_000) throw new Error("SFZ demasiado grande")
-  if (/^\s*#(?:include|define)/mi.test(source)) throw new Error("El SFZ curado no puede usar preprocesador")
-
+  assertSafeSfz(source)
   const chunks = source.split(/(?=<(?:control|group|region)>)/gi)
   let defaultPath = ""
   let group: GroupState = { articulation: "normal", defaultPath: "", seqLength: 1, seqPosition: 1 }
@@ -76,7 +96,7 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
     const values = opcodes(chunk)
     if (type === "control") {
       const path = values.get("default_path")
-      if (path) defaultPath = normalizeRelativePath(path)
+      if (path) defaultPath = normalizeRelativePath(`${path}/placeholder.wav`).replace(/\/placeholder\.wav$/i, "")
       continue
     }
     if (type === "group") {
@@ -128,4 +148,37 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
     ...zone,
     velocityLayer: Math.max(0, (velocityBands.get(zone.articulation) ?? []).findIndex(item => item.lo === zone.loVelocity && item.hi === zone.hiVelocity)),
   }))
+}
+
+export function samplePathsFromSfz(source: string): string[] {
+  return [...new Set(compileCuratedSfzZones(source).map(zone => zone.samplePath))]
+}
+
+export function compileSfzToTloqueSamplePack(source: string, options: SfzSamplePackCompileOptions): TloqueSamplePack {
+  const zones = compileCuratedSfzZones(source).map((zone, index) => ({
+    id: `${index}:${zone.samplePath}`,
+    articulation: zone.articulation,
+    sampleUrl: options.sampleUrlForPath(zone.samplePath),
+    sha256: options.sampleSha256ForPath?.(zone.samplePath),
+    rootMidi: zone.rootMidi,
+    loMidi: zone.loMidi,
+    hiMidi: zone.hiMidi,
+    loVelocity: zone.loVelocity,
+    hiVelocity: zone.hiVelocity,
+    velocityLayer: zone.velocityLayer,
+    roundRobin: zone.roundRobin,
+    gainDb: zone.gainDb,
+    tuneCents: zone.tuneCents,
+  }))
+  return validateTloqueSamplePack({
+    version: 1,
+    id: options.id,
+    name: options.name,
+    instrumentManifestId: options.instrumentManifestId,
+    license: options.license,
+    sourceName: options.sourceName,
+    sourceUrl: options.sourceUrl,
+    sourceCommit: options.sourceCommit,
+    zones,
+  })
 }
