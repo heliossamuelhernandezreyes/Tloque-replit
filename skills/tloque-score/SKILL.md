@@ -14,7 +14,27 @@ Declare global tempo/meter/seed/quality/module, then tracks, then one or more se
 
 A score may reference a verified native module with `module <id>`. Instrument identity belongs in each track through `instrument=<semantic-id>` and its zero-based GM-compatible `program` where applicable.
 
-Velocity is normalized `0.01..1`. Supported articulations are `normal`, `legato`, `staccato`, `tenuto`, `accent`, `spiccato`, `pizzicato`, `tremolo`, and `harmonic`. A renderer must fall back honestly when the selected sample library does not contain a requested technique.
+Velocity is normalized `0.01..1`. Supported articulations are `normal`, `legato`, `staccato`, `tenuto`, `accent`, `spiccato`, `pizzicato`, `tremolo`, and `harmonic`. Articulation describes the played gesture; it must not be used to disguise a different physical colour of the instrument.
+
+## Recorded timbre
+
+`timbre=` is an independent physical-colour axis. It can be declared on a track and overridden on individual note events. Supported values are `natural`, `non-vibrato`, `vibrato`, `expression-vibrato`, `mute`, `harmon-mute`, and `straight-mute`.
+
+A native module may use a timbre only when that exact colour exists in its verified recordings. An explicitly requested unavailable timbre must fail honestly instead of being synthesized with EQ, filtering or an unrelated sample. For example, the VSCO trumpet module contains natural sustain/staccato plus recorded vibrato, straight mute and Harmon mute; `harmonic` remains an articulation and is never inferred from the word Harmon.
+
+```text
+module vsco2-ce-trumpet
+track trumpet synth=pad instrument=brass.trumpet program=56 role=melody gain=0.30 pan=0 attack=0.01 release=1 expression=1 brightness=0.5 vibrato=0 timbre=natural
+section colour form=custom bars=1 repeat=1 fade=0 tempo=72 rubato=0
+use trumpet
+1:1 C4 1 velocity=0.50 timbre=natural
+1:2 D4 1 velocity=0.50 timbre=vibrato
+1:3 E4 1 velocity=0.50 timbre=straight-mute
+1:4 F4 1 velocity=0.50 timbre=harmon-mute
+end
+```
+
+The numeric `vibrato=0..1` track/control parameter remains an expressive performance control. It is not a substitute for `timbre=vibrato`, which requests a distinct recorded sample colour. This separation lets Tloque preserve both continuous expressive direction and physical library provenance.
 
 ## Percusión orquestal
 
@@ -22,7 +42,7 @@ For unpitched orchestral percussion, do not encode the instrument name as a fake
 
 ```text
 module vsco2-ce-orchestral-percussion
-track perc synth=pluck instrument=percussion.orchestral-kit program=0 role=accent gain=0.45 pan=0 attack=0.001 release=2 expression=1 brightness=0.5 vibrato=0
+track perc synth=pluck instrument=percussion.orchestral-kit program=0 role=accent gain=0.45 pan=0 attack=0.001 release=2 expression=1 brightness=0.5 vibrato=0 timbre=natural
 section hits form=custom bars=1 repeat=1 fade=0 tempo=80 rubato=0
 use perc
 hit 1:1 bass-drum 0.5 velocity=0.8
@@ -47,8 +67,8 @@ seed 20260823
 humanize 0.08
 quality studio
 module builtin
-track piano synth=warm instrument=piano.grand program=0 role=harmony gain=0.32 pan=-0.08 attack=0.04 release=1.6 expression=0.9 brightness=0.55 vibrato=0
-track violin synth=pad instrument=strings.violin program=40 role=melody gain=0.24 pan=0.12 attack=0.14 release=1.5 expression=0.76 brightness=0.62 vibrato=0.12
+track piano synth=warm instrument=piano.grand program=0 role=harmony gain=0.32 pan=-0.08 attack=0.04 release=1.6 expression=0.9 brightness=0.55 vibrato=0 timbre=natural
+track violin synth=pad instrument=strings.violin program=40 role=melody gain=0.24 pan=0.12 attack=0.14 release=1.5 expression=0.76 brightness=0.62 vibrato=0.12 timbre=natural
 section opening form=exposition bars=2 repeat=1 fade=1 tempo=72 rubato=0.05
 use piano
 1:1 C3,E3,G3 4 velocity=0.46
