@@ -39,28 +39,42 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   }
 
   const profile = nativeSampleQuality(recipe, options)
-  const durationSeconds = recipe.plan.totalSeconds + profile.tail
+  assertNotAborted(options.signal)
+  options.onProgress?.(0.02)
+
+  // Decode first in a tiny offline context. This lets one-shot percussion use
+  // the physical WAV duration instead of guessing a cymbal/drum tail length.
+  const decodeContext = new OfflineAudioContext(2, 1, profile.sampleRate)
+  const decodePlayer = new NativeSamplePackPlayer(decodeContext)
+  const pack = await decodePlayer.loadPack(packUrl)
+  if (pack.instrumentManifestId !== recipe.plan.moduleId) {
+    throw new Error("El paquete nativo no corresponde al módulo solicitado")
+  }
+  const plan = buildNativeSampleScorePlan(recipe, pack)
+  options.onProgress?.(0.10)
+  const decoded = await decodePlayer.preload(plan.zones)
+  assertNotAborted(options.signal)
+
+  const decodedByUrl = new Map<string, AudioBuffer>()
+  plan.zones.forEach((zone, index) => {
+    const buffer = decoded[index]
+    if (buffer) decodedByUrl.set(zone.sampleUrl, buffer)
+  })
+  const naturalEnd = plan.voices.reduce((latest, voice) => {
+    if (!voice.oneShot || !voice.sampleUrl) return latest
+    const physical = decodedByUrl.get(voice.sampleUrl)?.duration ?? 0
+    return Math.max(latest, voice.startSeconds + physical / Math.max(0.01, voice.playbackRate))
+  }, recipe.plan.totalSeconds)
+  const durationSeconds = Math.max(recipe.plan.totalSeconds, naturalEnd) + profile.tail
   const totalFrames = Math.ceil(durationSeconds * profile.sampleRate)
   const floatBytes = totalFrames * 2 * Float32Array.BYTES_PER_ELEMENT
   if (floatBytes > MAX_OFFLINE_FLOAT_BYTES) {
     throw new Error("La obra muestreada excede la memoria segura del navegador móvil; expórtala por movimientos")
   }
-
-  assertNotAborted(options.signal)
-  options.onProgress?.(0.02)
-  const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate)
-  const player = new NativeSamplePackPlayer(context)
-  const pack = await player.loadPack(packUrl)
-  if (pack.instrumentManifestId !== recipe.plan.moduleId) {
-    throw new Error("El paquete nativo no corresponde al módulo solicitado")
-  }
-  options.onProgress?.(0.10)
-
-  const plan = buildNativeSampleScorePlan(recipe, pack)
-  await player.preload(plan.zones)
-  assertNotAborted(options.signal)
   options.onProgress?.(0.20)
 
+  const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate)
+  const player = new NativeSamplePackPlayer(context, decodedByUrl)
   const mix = createSampledMixMaster(context, 1)
   mix.output.connect(context.destination)
   const trackGain = new Map<string, GainNode>()
@@ -104,6 +118,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
       startTime: voice.startSeconds,
       durationSeconds: voice.durationSeconds,
       destination,
+      oneShot: voice.oneShot,
     }))
   }
   await Promise.all(scheduled)
