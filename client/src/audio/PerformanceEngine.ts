@@ -21,6 +21,7 @@ export interface PerformanceEventDecision {
   program: number
   source: PerformanceRoute["source"]
   manifestId: string | null
+  route: InstrumentArticulationRoute | null
   velocityLayer: number
   roundRobin: number
   trueLegato: boolean
@@ -193,6 +194,7 @@ export function buildPerformancePlan(
       program: resolved.program,
       source: resolved.source,
       manifestId: resolved.manifestId,
+      route: resolved.route,
       velocityLayer: velocityLayerIndex(event.velocity, resolved.route?.velocityLayers ?? 1),
       roundRobin: deterministicRoundRobinIndex(recipe.plan.seed, identity, resolved.route?.roundRobins ?? 1),
       trueLegato: connected,
