@@ -33,6 +33,7 @@ export interface NativeSampleVoicePlan {
   startSeconds: number
   durationSeconds: number
   sampleUrl?: string
+  playbackRate: number
   /** Unpitched percussion hits are one-shots: event duration is rhythmic, not a hard sample cutoff. */
   oneShot: boolean
 }
@@ -106,6 +107,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
         startSeconds: event.timeSeconds,
         durationSeconds,
         sampleUrl: selection?.zone.sampleUrl,
+        playbackRate: selection?.playbackRate ?? 1,
         oneShot,
       })
     }
