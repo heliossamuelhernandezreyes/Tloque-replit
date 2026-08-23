@@ -49,7 +49,9 @@ export function selectNativeSampleZone(
 export class NativeSamplePackPlayer {
   private readonly buffers = new Map<string, Promise<AudioBuffer>>()
 
-  constructor(private readonly context: BaseAudioContext) {}
+  constructor(private readonly context: BaseAudioContext, preloaded?: ReadonlyMap<string, AudioBuffer>) {
+    for (const [url, buffer] of preloaded ?? []) this.buffers.set(url, Promise.resolve(buffer))
+  }
 
   async loadPack(url: string): Promise<TloqueSamplePack> {
     if (!url.startsWith("/api/audio/sample-packs/")) throw new Error("Paquete de muestras fuera del almacenamiento interno")
@@ -72,6 +74,7 @@ export class NativeSamplePackPlayer {
     durationSeconds: number
     destination: AudioNode
     pan?: number
+    oneShot?: boolean
   }): Promise<AudioBufferSourceNode | null> {
     const selection = selectNativeSampleZone(params.pack, params.articulation, params.note, params.velocity, params.roundRobin)
     if (!selection) return null
@@ -103,7 +106,9 @@ export class NativeSamplePackPlayer {
 
     const startAt = Math.max(this.context.currentTime, params.startTime)
     source.start(startAt)
-    source.stop(startAt + Math.max(0.01, params.durationSeconds))
+    // A semantic percussion hit is a one-shot: its written duration is rhythmic
+    // spacing, not permission to cut the physical decay of a cymbal/drum sample.
+    if (!params.oneShot || source.loop) source.stop(startAt + Math.max(0.01, params.durationSeconds))
     source.addEventListener("ended", () => {
       source.disconnect()
       gain.disconnect()
