@@ -1,6 +1,7 @@
 import type { LinearScoreRecipe } from "@shared/audio"
 import { manifestsForModule, type TloqueArticulation } from "@shared/instrument-manifest"
 import type { TloqueMute, TloqueSamplePack, TloqueSampleZone, TloqueVibratoColour } from "@shared/native-sample-pack"
+import { physicalRecordedTimbre, resolveRecordedTimbre } from "@shared/recorded-timbre"
 import type { ScoreTimbre } from "@shared/tloque-score-v2"
 import { selectNativeSampleZone } from "./NativeSamplePackEngine"
 import { buildPerformancePlan } from "./PerformanceEngine"
@@ -11,7 +12,10 @@ export interface NativeSampleControlPlan { trackId: string; timeSeconds: number;
 export interface NativeSampleVoicePlan {
   trackId: string
   articulation: TloqueArticulation
+  /** Author-facing value; `natural` remains visible for backwards compatibility. */
   timbre: ScoreTimbre
+  /** Exact verified physical colour selected for this module. */
+  resolvedTimbre: Exclude<ScoreTimbre, "natural">
   note: number
   velocity: number
   roundRobin: number
@@ -25,19 +29,6 @@ export interface NativeSampleVoicePlan {
   oneShot: boolean
 }
 export interface NativeSampleScorePlan { tracks: readonly NativeSampleTrackPlan[]; controls: readonly NativeSampleControlPlan[]; voices: readonly NativeSampleVoicePlan[]; zones: readonly TloqueSampleZone[]; totalSeconds: number }
-
-function physicalTimbre(timbre: ScoreTimbre): { vibratoColour: TloqueVibratoColour; mute: TloqueMute } {
-  switch (timbre) {
-    case "vibrato": return { vibratoColour: "vibrato", mute: "none" }
-    case "expression-vibrato": return { vibratoColour: "expression", mute: "none" }
-    case "mute": return { vibratoColour: "none", mute: "mute" }
-    case "harmon-mute": return { vibratoColour: "none", mute: "harmon" }
-    case "straight-mute": return { vibratoColour: "none", mute: "straight" }
-    case "non-vibrato":
-    case "natural":
-    default: return { vibratoColour: "none", mute: "none" }
-  }
-}
 
 export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: TloqueSamplePack): NativeSampleScorePlan {
   if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita un paquete nativo")
@@ -67,19 +58,21 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     if (!decision || !track) continue
     const oneShot = track.instrument === "percussion.orchestral-kit"
     const requestedTimbre = event.timbre ?? track.timbre ?? "natural"
-    const physical = physicalTimbre(requestedTimbre)
+    const resolvedTimbre = resolveRecordedTimbre(pack.instrumentManifestId, requestedTimbre)
+    const physical = physicalRecordedTimbre(resolvedTimbre)
     const velocity = Math.round(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(decision.articulation)) * 127)
     const durationSeconds = event.durationSeconds * articulationDurationFactor(decision.articulation)
     for (const note of event.notes) {
       const selection = selectNativeSampleZone(pack, decision.articulation, note, velocity, decision.roundRobin, physical)
       if (!selection) {
-        throw new Error(`El módulo ${pack.instrumentManifestId} no contiene timbre=${requestedTimbre} para ${track.instrument} en MIDI ${note}`)
+        throw new Error(`El módulo ${pack.instrumentManifestId} no contiene timbre=${resolvedTimbre} para ${track.instrument} en MIDI ${note}`)
       }
       zones.set(selection.zone.id, selection.zone)
       voices.push({
         trackId: event.trackId,
         articulation: decision.articulation,
         timbre: requestedTimbre,
+        resolvedTimbre,
         note,
         velocity,
         roundRobin: decision.roundRobin,
