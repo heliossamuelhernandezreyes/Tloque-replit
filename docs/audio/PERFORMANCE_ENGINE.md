@@ -64,6 +64,8 @@ Nombres semánticos iniciales: bass drum, snare taps/hit/roll y variantes, crash
 
 Un nombre desconocido falla al compilar. `hit` en un track melódico también falla, evitando que la percusión no afinada se disfrace como melodía.
 
+La duración declarada del `hit` todavía gobierna el `stop()` de la voz igual que en los demás eventos nativos. Live y WAV son coherentes entre sí, pero preservar automáticamente toda la cola acústica de platos, bombo y otros one-shots requiere una política explícita de one-shot/release y queda como refinamiento posterior; no se finge que ya existe.
+
 ## Instalación nativa
 
 - descarga sólo desde commit fijado
