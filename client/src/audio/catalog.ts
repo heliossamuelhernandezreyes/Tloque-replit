@@ -41,19 +41,12 @@ export interface ChapterAudioAssignment {
   asset: CatalogAudioAsset
 }
 
-export const INSTRUMENT_MANIFEST_TAG_PREFIX = "manifest:"
-
-export function instrumentManifestIdForAsset(asset: Pick<CatalogAudioAsset, "tags">): string | null {
-  const tag = asset.tags.find(value => value.startsWith(INSTRUMENT_MANIFEST_TAG_PREFIX))
-  const id = tag?.slice(INSTRUMENT_MANIFEST_TAG_PREFIX.length).trim()
-  return id || null
-}
-
 export function musicCueFor(asset: CatalogAudioAsset, options?: {
   volume?: number
   loop?: boolean
   crossfadeSeconds?: number
 }): MusicCue {
+  const manifestId = asset.tags.find(tag => tag.startsWith("manifest:"))?.slice("manifest:".length)
   return {
     id: asset.id,
     title: asset.title,
@@ -65,7 +58,7 @@ export function musicCueFor(asset: CatalogAudioAsset, options?: {
     packBytes: asset.packBytes,
     packSha256: asset.packSha256,
     instrumentProgram: asset.instrumentProgram,
-    instrumentManifestId: instrumentManifestIdForAsset(asset),
+    instrumentManifestId: manifestId,
     loop: options?.loop ?? asset.loop,
     volume: options?.volume ?? 0.35,
     crossfadeSeconds: options?.crossfadeSeconds ?? 6,
