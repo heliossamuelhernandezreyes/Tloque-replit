@@ -70,13 +70,15 @@ function normalizeDefaultPath(value: string) {
 /**
  * Keyswitch pitches are library-local, so never infer an articulation from a
  * fixed MIDI number. Prefer sw_label; for older/lean SFZ patches without it,
- * infer only from semantic path names such as /spic/, /pizz/ or /stacc/.
+ * infer only from semantic path names such as /spic/, /pizz/, /stacc/ or a
+ * recorded percussion /rolls/ directory. A roll is exposed as Tloque tremolo
+ * because it is the actual sustained repeated-strike recording, not an effect.
  */
 function articulationForGroup(label: string | undefined, defaultPath = ""): TloqueArticulation {
   const normalized = `${label || ""} ${defaultPath}`.toLowerCase()
   if (/pizz/.test(normalized)) return "pizzicato"
   if (/spic/.test(normalized)) return "spiccato"
-  if (/trem/.test(normalized)) return "tremolo"
+  if (/trem|(?:^|[\s/_-])rolls?(?:$|[\s/_-])/.test(normalized)) return "tremolo"
   if (/stacc?/.test(normalized)) return "staccato"
   if (/harm/.test(normalized)) return "harmonic"
   return "normal"
