@@ -1,5 +1,5 @@
 import type { TloqueArticulation } from "@shared/instrument-manifest"
-import { validateTloqueSamplePack, type TloqueSamplePack, type TloqueSampleZone } from "@shared/native-sample-pack"
+import { validateTloqueSamplePack, type TloqueMute, type TloqueSamplePack, type TloqueSampleZone } from "@shared/native-sample-pack"
 import { fetchAudioResource } from "./AudioResourceCache"
 
 export interface NativeSampleSelection {
@@ -8,8 +8,22 @@ export interface NativeSampleSelection {
   gain: number
 }
 
+export interface NativeSampleTimbreRequest {
+  vibrato?: boolean
+  mute?: TloqueMute
+}
+
 function dbToGain(db: number) {
   return 10 ** (db / 20)
+}
+
+function zoneMatchesRange(zone: TloqueSampleZone, note: number, midiVelocity: number) {
+  return note >= zone.loMidi && note <= zone.hiMidi
+    && midiVelocity >= zone.loVelocity && midiVelocity <= zone.hiVelocity
+}
+
+function zoneTimbre(zone: TloqueSampleZone) {
+  return { vibrato: zone.vibrato === true, mute: zone.mute ?? "none" as TloqueMute }
 }
 
 export function selectNativeSampleZone(
@@ -18,18 +32,25 @@ export function selectNativeSampleZone(
   note: number,
   midiVelocity: number,
   roundRobin: number,
+  timbre: NativeSampleTimbreRequest = {},
 ): NativeSampleSelection | null {
-  const exact = pack.zones.filter(zone =>
-    zone.articulation === articulation
-    && note >= zone.loMidi && note <= zone.hiMidi
-    && midiVelocity >= zone.loVelocity && midiVelocity <= zone.hiVelocity,
-  )
-  const normal = articulation === "normal" ? exact : pack.zones.filter(zone =>
-    zone.articulation === "normal"
-    && note >= zone.loMidi && note <= zone.hiMidi
-    && midiVelocity >= zone.loVelocity && midiVelocity <= zone.hiVelocity,
-  )
-  const candidates = exact.length ? exact : normal
+  const requestedVibrato = timbre.vibrato === true
+  const requestedMute = timbre.mute ?? "none"
+  const inRange = pack.zones.filter(zone => zoneMatchesRange(zone, note, midiVelocity))
+  const by = (targetArticulation: TloqueArticulation, vibrato: boolean, mute: TloqueMute) => inRange.filter(zone => {
+    const colour = zoneTimbre(zone)
+    return zone.articulation === targetArticulation && colour.vibrato === vibrato && colour.mute === mute
+  })
+
+  // Fidelity order: exact request; preserve recorded timbre with neutral attack;
+  // preserve articulation with neutral colour; finally neutral sustain.
+  const pools: TloqueSampleZone[][] = [
+    by(articulation, requestedVibrato, requestedMute),
+    articulation === "normal" ? [] : by("normal", requestedVibrato, requestedMute),
+    by(articulation, false, "none"),
+    articulation === "normal" ? [] : by("normal", false, "none"),
+  ]
+  const candidates = pools.find(pool => pool.length) ?? []
   if (!candidates.length) return null
   const rrCandidates = candidates.filter(zone => zone.roundRobin === roundRobin)
   const pool = rrCandidates.length ? rrCandidates : candidates
@@ -70,13 +91,22 @@ export class NativeSamplePackPlayer {
     note: number
     velocity: number
     roundRobin: number
+    vibrato?: boolean
+    mute?: TloqueMute
     startTime: number
     durationSeconds: number
     destination: AudioNode
     pan?: number
     oneShot?: boolean
   }): Promise<AudioBufferSourceNode | null> {
-    const selection = selectNativeSampleZone(params.pack, params.articulation, params.note, params.velocity, params.roundRobin)
+    const selection = selectNativeSampleZone(
+      params.pack,
+      params.articulation,
+      params.note,
+      params.velocity,
+      params.roundRobin,
+      { vibrato: params.vibrato, mute: params.mute },
+    )
     if (!selection) return null
     const buffer = await this.buffer(selection.zone)
     const source = this.context.createBufferSource()
