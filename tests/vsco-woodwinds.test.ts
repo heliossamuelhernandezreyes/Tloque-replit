@@ -12,7 +12,7 @@ import { compileCuratedSfzZones, compileSfzBundleToTloqueSamplePack } from "../s
 
 const COMMIT = "6dd651d55dde97fd4028699be9d4481f26917891"
 
-test("VSCO woodwinds registra flauta, clarinete, oboe y fagot como módulos independientes", () => {
+test("VSCO woodwinds registra flauta, clarinete, oboe y fagot con colores grabados verificados", () => {
   const packs = CURATED_SAMPLE_PACKS.filter(pack => pack.instrumentId.startsWith("woodwinds."))
   assert.deepEqual(packs.map(pack => pack.displayName), ["Flute", "Clarinet", "Oboe", "Bassoon"])
   assert.equal(new Set(packs.map(pack => pack.moduleId)).size, 4)
@@ -21,8 +21,12 @@ test("VSCO woodwinds registra flauta, clarinete, oboe y fagot como módulos inde
     assert.equal(pack.license, "CC0-1.0")
     assert.equal(instrumentManifestById(pack.manifestId)?.instruments[0], pack.instrumentId)
   }
-  assert.deepEqual(packs.find(pack => pack.id === "vsco2-ce-oboe")?.sfzPaths, ["OboeSusNV.sfz", "OboeStac.sfz"])
-  assert.deepEqual(packs.find(pack => pack.id === "vsco2-ce-bassoon")?.sfzPaths, ["BassoonSus.sfz", "BassoonStac.sfz"])
+  const oboe = packs.find(pack => pack.id === "vsco2-ce-oboe")
+  const bassoon = packs.find(pack => pack.id === "vsco2-ce-bassoon")
+  assert.deepEqual(oboe?.sfzPaths, ["OboeSusNV.sfz", "OboeSusVib.sfz", "OboeStac.sfz"])
+  assert.deepEqual(bassoon?.sfzPaths, ["BassoonSus.sfz", "BassoonVib.sfz", "BassoonStac.sfz"])
+  assert.ok(oboe?.tags.includes("recorded-vibrato"))
+  assert.ok(bassoon?.tags.includes("recorded-vibrato"))
 })
 
 test("manifests de maderas conservan GM base y sólo articulaciones modeladas", () => {
@@ -77,7 +81,7 @@ sample=Oboe_Stacc_D4_v1_rr2.wav lokey=72 hikey=75 pitch_keycenter=74 lovel=0 hiv
   assert.equal(pack.zones.filter(zone => zone.articulation === "normal").length, 2)
 })
 
-test("un patch KS de flauta no convierte variantes de vibrato en técnicas inexistentes", () => {
+test("un patch KS de flauta conserva vibrato como timbre y no como técnica inexistente", () => {
   const source = String.raw`
 <control>
 default_path=Woodwinds\Flute\susNV\
@@ -104,4 +108,5 @@ sample=flute_stac_rr1.wav lokey=60 hikey=72 pitch_keycenter=60 lovel=0 hivel=127
 `
   const zones = compileCuratedSfzZones(source)
   assert.deepEqual(zones.map(zone => zone.articulation), ["normal", "normal", "staccato"])
+  assert.deepEqual(zones.map(zone => zone.vibratoColour), ["none", "vibrato", "none"])
 })
