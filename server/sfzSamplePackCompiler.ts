@@ -1,8 +1,10 @@
 import type { TloqueArticulation } from "../shared/instrument-manifest"
-import { validateTloqueSamplePack, type TloqueSamplePack } from "../shared/native-sample-pack"
+import { validateTloqueSamplePack, type TloqueMute, type TloqueSamplePack } from "../shared/native-sample-pack"
 
 export interface CompiledSfzZone {
   articulation: TloqueArticulation
+  vibrato: boolean
+  mute: TloqueMute
   samplePath: string
   rootMidi: number
   loMidi: number
@@ -33,6 +35,8 @@ export interface SfzSamplePackCompileOptions {
 
 interface GroupState {
   articulation: TloqueArticulation
+  vibrato: boolean
+  mute: TloqueMute
   defaultPath: string
   seqLength: number
   seqPosition: number
@@ -80,8 +84,22 @@ function articulationForGroup(label: string | undefined, defaultPath = ""): Tloq
   if (/spic/.test(normalized)) return "spiccato"
   if (/trem|(?:^|[\s/_-])rolls?(?:$|[\s/_-])/.test(normalized)) return "tremolo"
   if (/stacc?/.test(normalized)) return "staccato"
-  if (/harm/.test(normalized)) return "harmonic"
+  if (/harmonic/.test(normalized)) return "harmonic"
   return "normal"
+}
+
+/** Recorded colour dimensions stay independent from articulation. */
+function timbreForGroup(label: string | undefined, defaultPath = ""): { vibrato: boolean; mute: TloqueMute } {
+  const normalized = `${label || ""} ${defaultPath}`.toLowerCase()
+  const vibrato = /(?:^|[\s/_-])(?:vib|vibrato)(?:$|[\s/_-])|susvib|expression vibrato/.test(normalized)
+  const mute: TloqueMute = /harmonm|harmon[\s/_-]*mute/.test(normalized)
+    ? "harmon"
+    : /straightm|straight[\s/_-]*mute/.test(normalized)
+      ? "straight"
+      : /(?:^|[\s/_-])mute(?:$|[\s/_-])/.test(normalized)
+        ? "mute"
+        : "none"
+  return { vibrato, mute }
 }
 
 /** SFZ opcodes may contain spaces (notably default_path). Read until the next key=. */
@@ -115,7 +133,7 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
   assertSafeSfz(source)
   const chunks = source.split(/(?=<(?:control|group|region)>)/gi)
   let defaultPath = ""
-  let group: GroupState = { articulation: "normal", defaultPath: "", seqLength: 1, seqPosition: 1, groupRoundRobin: 0 }
+  let group: GroupState = { articulation: "normal", vibrato: false, mute: "none", defaultPath: "", seqLength: 1, seqPosition: 1, groupRoundRobin: 0 }
   const rawZones: Omit<CompiledSfzZone, "velocityLayer">[] = []
 
   for (const chunk of chunks) {
@@ -128,8 +146,12 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
       continue
     }
     if (type === "group") {
+      const label = values.get("sw_label")
+      const timbre = timbreForGroup(label, defaultPath)
       group = {
-        articulation: articulationForGroup(values.get("sw_label"), defaultPath),
+        articulation: articulationForGroup(label, defaultPath),
+        vibrato: timbre.vibrato,
+        mute: timbre.mute,
         defaultPath,
         seqLength: Math.max(1, Number(values.get("seq_length") || 1)),
         seqPosition: Math.max(1, Number(values.get("seq_position") || 1)),
@@ -150,6 +172,8 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
     const sampleRoundRobin = rrFromSample(sample)
     rawZones.push({
       articulation: group.articulation,
+      vibrato: group.vibrato,
+      mute: group.mute,
       samplePath,
       rootMidi,
       loMidi,
@@ -165,7 +189,7 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
   if (!rawZones.length) throw new Error("El SFZ no produjo zonas")
   const velocityBands = new Map<string, { lo: number; hi: number }[]>()
   for (const zone of rawZones) {
-    const key = zone.articulation
+    const key = `${zone.articulation}:${zone.vibrato ? "vib" : "nv"}:${zone.mute}`
     const bands = velocityBands.get(key) ?? []
     if (!bands.some(item => item.lo === zone.loVelocity && item.hi === zone.hiVelocity)) {
       bands.push({ lo: zone.loVelocity, hi: zone.hiVelocity })
@@ -174,10 +198,13 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
     }
   }
 
-  return rawZones.map(zone => ({
-    ...zone,
-    velocityLayer: Math.max(0, (velocityBands.get(zone.articulation) ?? []).findIndex(item => item.lo === zone.loVelocity && item.hi === zone.hiVelocity)),
-  }))
+  return rawZones.map(zone => {
+    const key = `${zone.articulation}:${zone.vibrato ? "vib" : "nv"}:${zone.mute}`
+    return {
+      ...zone,
+      velocityLayer: Math.max(0, (velocityBands.get(key) ?? []).findIndex(item => item.lo === zone.loVelocity && item.hi === zone.hiVelocity)),
+    }
+  })
 }
 
 export function samplePathsFromSfz(source: string): string[] {
@@ -197,9 +224,8 @@ export function compileSfzToTloqueSamplePack(source: string, options: SfzSampleP
 
 /**
  * Compiles multiple upstream SFZ patches into one inert TloqueSamplePack.
- * This is used when a real instrument is published as separate sustain and
- * staccato files (e.g. VSCO oboe/bassoon). The semantic articulation still
- * comes from each SFZ's own label/path; no technique is synthesized here.
+ * Articulation and recorded timbre dimensions are extracted independently;
+ * no vibrato or mute is synthesized when the upstream sample is neutral.
  */
 export function compileSfzBundleToTloqueSamplePack(sources: readonly string[], options: SfzSamplePackCompileOptions): TloqueSamplePack {
   if (!sources.length) throw new Error("El paquete curado no contiene SFZ")
@@ -207,6 +233,8 @@ export function compileSfzBundleToTloqueSamplePack(sources: readonly string[], o
   const zones = sources.flatMap((source, sourceIndex) => compileCuratedSfzZones(source).map((zone, zoneIndex) => ({
     id: `${sourceIndex}:${zoneIndex}:${zone.samplePath}`,
     articulation: zone.articulation,
+    vibrato: zone.vibrato,
+    mute: zone.mute,
     sampleUrl: options.sampleUrlForPath(zone.samplePath),
     sha256: options.sampleSha256ForPath?.(zone.samplePath),
     rootMidi: zone.rootMidi,
