@@ -1,4 +1,5 @@
 import { linearScoreRecipeFor, type LinearScoreRecipe, type LinearScoreTrack } from "@shared/audio"
+import { curatedSamplePackByModuleId } from "@shared/curated-sample-packs"
 import {
   TLOQUE_SCORE_AUDIO_PROFILE, articulationDurationFactor, articulationVelocityFactor, midiNoteToFrequency, scoreTrackEnvelope,
   scoreExpressionStateAt, scorePedalReleaseTime, scoreRenderProfile, scoreTrackTimbre, scoreVelocityGain,
@@ -191,6 +192,14 @@ export async function encodeAudioBufferToWav(
 
 export async function renderTloqueScoreToWav(value: unknown, options: ScoreExportOptions = {}): Promise<Blob> {
   const recipe = linearScoreRecipeFor(value)
+  if (recipe.version === 2 && recipe.plan.moduleId !== "builtin" && curatedSamplePackByModuleId(recipe.plan.moduleId)) {
+    const { renderTloqueScoreWithNativeSamplePackToWav } = await import("./NativeSampleScoreExporter")
+    return renderTloqueScoreWithNativeSamplePackToWav(
+      recipe,
+      `/api/audio/sample-packs/modules/${encodeURIComponent(recipe.plan.moduleId)}.json`,
+      options,
+    )
+  }
   const estimate = estimateScoreExport(recipe, options.quality)
   if (estimate.bytes > MAX_EXPORT_BYTES) throw new Error("El WAV superaría 750 MB; exporta la obra por movimientos")
   const { sampleRate, bitDepth } = estimate
