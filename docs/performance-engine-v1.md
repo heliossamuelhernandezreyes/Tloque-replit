@@ -21,16 +21,18 @@ Performance Engine
    ↓
 Renderer-neutral PerformancePlan
    ↓
+SamplerAdapter / native pack selector
+   ↓
 Renderer
    ├─ live SpessaSynth SF2/SF3/DLS
    ├─ sampled WAV export
    ├─ Tone.js builtin
-   └─ Tloque Native Sample Pack
+   └─ Tloque native sample-pack runtime
 ```
 
 ## Principio de seguridad acústica
 
-El manifest no debe inventar capacidades. Si un banco sólo ofrece sustain, Tloque puede modificar duración, dinámica y controladores, pero no debe llamarlo `true-legato`. Si ofrece un programa dedicado de pizzicato, el resolver puede utilizarlo. Si ofrece transiciones grabadas, round robins o releases, esas capacidades deben declararse de forma explícita.
+El manifest no debe inventar capacidades. Si un banco sólo ofrece sustain, Tloque puede modificar duración, dinámica y controladores, pero no debe llamarlo `true-legato`. Si ofrece una técnica dedicada, el resolver puede utilizarla. Si ofrece transiciones grabadas, round robins o releases, esas capacidades se declaran explícitamente.
 
 ## InstrumentManifest V1
 
@@ -38,69 +40,76 @@ El manifest no debe inventar capacidades. Si un banco sólo ofrece sustain, Tloq
 
 `gm-orchestral-strings` conserva General MIDI: programas 40–43 como cuerda base, 44 para tremolo y 45 para pizzicato. No declara legato real, spiccato real, armónicos, round robin ni releases.
 
-### VSCO 2 CE Solo Violin
+## VSCO 2 CE · familia de cuerdas
 
-La primera referencia acústica abierta es `vsco2-ce-solo-violin`, basada en VSCO 2 Community Edition (CC0) y en el patch `SViolin-KS.sfz` fijado al commit `6dd651d55dde97fd4028699be9d4481f26917891`.
+La primera familia acústica abierta se basa en VSCO 2 Community Edition (CC0) y permanece fijada al commit `6dd651d55dde97fd4028699be9d4481f26917891`.
 
-Capacidades verificadas en ese patch: sustain vibrato, tremolo, spiccato y pizzicato; dos rangos de velocity; y ataques alternos donde el SFZ original los define. No se declara true-legato porque el patch no contiene transiciones de intervalo grabadas verificadas.
+Tloque conserva la identidad real de las grabaciones upstream:
 
-VSCO no es fallback global. Sólo se activa cuando el módulo se identifica explícitamente como `vsco2-ce-solo-violin`; los bancos GM siguen usando el manifest GM.
+- `vsco2-ce-solo-violin` → `SViolin-KS.sfz` → `strings.violin`;
+- `vsco2-ce-viola-section` → `ViolaEns-KS.sfz` → `strings.viola`;
+- `vsco2-ce-cello-section` → `CelloEns-KS.sfz` → `strings.cello`;
+- `vsco2-ce-solo-contrabass` → `Contrabass-KS.sfz` → `strings.contrabass`.
 
-## PerformancePlan
+Viola y cello no se presentan como solistas porque los patches de origen son ensembles. El contrabajo sí conserva identidad Solo Contrabass.
+
+Los keyswitches son locales a cada instrumento. El compilador ya no asume que un número MIDI fijo representa siempre la misma técnica. Prefiere `sw_label` y, para patches antiguos sin etiqueta, puede inferir únicamente desde nombres semánticos de ruta (`spic`, `pizz`, `trem`, etc.). Esto permite que viola use C2-D#2 mientras cello y contrabajo usan regiones de C6 en adelante sin contaminar su semántica.
+
+El parser reconoce round robin desde `seq_length/seq_position`, `group_label` y nombres `_rrN`, porque VSCO no usa el mismo mecanismo en todos los patches. Las velocity layers se preservan desde los rangos reales `lovel/hivel` de cada zona; no se obliga a todos los instrumentos a tener el mismo número de capas.
+
+No se declara true-legato en esta familia: estos patches no contienen transiciones de intervalo grabadas verificadas.
+
+## Paquetes independientes
+
+`shared/curated-sample-packs.ts` registra cada instrumento como descarga independiente. Esto evita obligar a un dispositivo móvil a almacenar toda la familia. El catálogo estima aproximadamente 118–125 MB por instrumento antes de deduplicación.
+
+El router canónico `server/nativeSamplePackRoutes.ts` se registra antes del handler legado y realiza:
+
+1. selección exclusiva de una fuente curada conocida;
+2. aceptación explícita de licencia/procedencia;
+3. descarga desde el commit fijado;
+4. compilación inerte del SFZ;
+5. validación RIFF/WAVE;
+6. SHA-256 por muestra;
+7. deduplicación en App Storage;
+8. publicación de un manifest inmutable por SHA;
+9. publicación de un alias estable `/api/audio/sample-packs/modules/<moduleId>.json`.
+
+El alias histórico `vsco2-ce` se conserva apuntando al Solo Violin para no romper integraciones previas.
+
+## PerformancePlan y sampler
 
 `client/src/audio/PerformanceEngine.ts` compila decisiones acústicas por evento: manifest, articulación solicitada, ruta real, programa/preset, velocity layer, round robin determinista, posible true-legato, release samples e identidad estable.
 
+`client/src/audio/SamplerAdapter.ts` traduce una decisión a acciones concretas del sampler. SpessaSynth recibe sólo aquello que SF2/SF3/DLS puede expresar universalmente. Las dimensiones no soportadas por ese backend se conservan como metadata.
+
+`client/src/audio/NativeSamplePackEngine.ts` valida paquetes nativos, selecciona zonas por articulación + nota + velocity + RR, calcula transposición desde root/tune y reproduce el WAV mediante WebAudio. Sólo admite muestras publicadas bajo `/api/audio/sample-packs/...`.
+
+`client/src/audio/NativeSampleScoreEngine.ts` consume estos paquetes en reproducción live y funciona por `moduleId`, por lo que los cuatro instrumentos usan el mismo runtime sin código específico por instrumento.
+
 ## Paridad de mezcla sampled live/offline
 
-`client/src/audio/ScoreMixMaster.ts` define una única cadena WebAudio compartida por el renderer SpessaSynth en vivo y el render offline: low shelf, high shelf, compresión, makeup gain, peak guard rápido y gain de salida. El WAV muestreado ya no va directamente del sampler a `destination`.
+`client/src/audio/ScoreMixMaster.ts` define una única cadena WebAudio compartida por el renderer SpessaSynth en vivo y el render offline: low shelf, high shelf, compresión, makeup gain, peak guard rápido y gain de salida.
 
-## Tloque Native Sample Pack
-
-`shared/native-sample-pack.ts` define un formato inerte de zonas: articulación, URL interna, root key, rango MIDI, velocity layer, round robin, ganancia, afinación y loop points opcionales.
-
-`client/src/audio/NativeSamplePackEngine.ts` valida el paquete, selecciona físicamente la zona por articulación + nota + velocity + RR, calcula transposición desde `rootMidi/tuneCents` y reproduce el WAV con WebAudio. Sólo admite URLs bajo `/api/audio/sample-packs/`.
-
-`server/sfzSamplePackCompiler.ts` compila el subconjunto curado de SFZ a ese contrato. Rechaza preprocesador, traversal y rutas externas; soporta `default_path` y nombres de muestra con espacios, necesarios para VSCO.
-
-## Instalador curado VSCO
-
-`shared/audio-module-sources.ts` fija el paquete Solo Violin al commit y SFZ exactos. `server/audioModuleInstaller.ts` descarga el SFZ desde `raw.githubusercontent.com` usando exclusivamente ese commit, compila primero las rutas, descarga secuencialmente únicamente los WAV referenciados, valida cabecera RIFF/WAVE, calcula SHA-256 y limita tamaño por muestra y paquete.
-
-`server/audioUploads.ts` expone `POST /api/admin/audio/sample-pack-catalog/vsco2-ce/install`. La instalación:
-
-1. deduplica cada WAV por SHA-256 en App Storage;
-2. recompila el SFZ usando URLs internas inmutables;
-3. incorpora SHA-256 por zona;
-4. publica un manifest inmutable por hash;
-5. publica además `/api/audio/sample-packs/modules/vsco2-ce-solo-violin.json` como alias estable del módulo;
-6. sirve los WAV y manifests con rutas separadas y cache control.
-
-El navegador nunca consulta GitHub durante reproducción.
-
-## Reproducción nativa end-to-end
-
-`client/src/audio/NativeSampleScoreEngine.ts` conecta TloqueScore al paquete instalado. Precalcula el `PerformancePlan`, determina las zonas necesarias, precarga únicamente esas muestras, crea una cadena de mezcla compartida y agenda los WAV reales con velocity/RR deterministas.
-
-`HybridMusicEngine` detecta módulos acústicos registrados. Si una partitura usa `module vsco2-ce-solo-violin` y no trae un SoundFont explícito, la envía al renderer nativo en vez del sintetizador base.
-
-La pantalla administrativa `VscoInstallerAdmin.tsx`, disponible en `/admin/audio/vsco-violin`, permite instalar y verificar el paquete desde la app con aceptación explícita de procedencia/licencia y muestra al finalizar cantidad de muestras, bytes y SHA del manifest.
+El WAV muestreado SoundFont ya no va directamente de SpessaSynth a `destination`. Preview muestreada y exportación comparten especificación de EQ/dinámica/headroom. La exportación WAV directamente desde `TloqueSamplePack` sigue siendo el siguiente bloque pendiente.
 
 ## Estado
 
-- Fase 1: manifests + resolver — completada.
-- Fase 2: PerformancePlan — completada.
-- Fase 3: adapters SoundFont — completada.
-- Fase 4: paridad sampled mix/master — completada.
-- Fase 5a: contrato/sample runtime/SFZ compiler — completada.
-- Fase 5b: instalador curado VSCO + reproducción nativa live — completada.
-- Fase 5c: exportación WAV offline usando directamente Native Sample Pack — pendiente; la exportación SoundFont ya conserva la cadena master compartida.
+- Fase 1 · manifest + resolver: completada.
+- Fase 2 · PerformancePlan: completada.
+- Fase 3 · sampler adapters: completada para programa, keyswitch y CC en live/export SoundFont.
+- Fase 4 · sampled mix/master parity: completada.
+- Fase 5a · native pack contract/runtime + SFZ compiler: completada.
+- Fase 5b · instalador curado + live native playback: completada para violín, viola section, cello section y contrabajo solista VSCO.
+- Fase 5c · exportación WAV nativa desde TloqueSamplePack: pendiente.
+- Próxima familia sugerida: maderas, reutilizando el mismo catálogo/compilador sin asumir articulaciones de cuerda.
 
 ## Validación
 
-La rama incluye pruebas de routing GM, PerformancePlan, sampler adapter, manifest VSCO, perfil de master, validación/selección de zonas nativas, parser SFZ con rutas que contienen espacios y registro curado.
+La rama incluye pruebas de GM routing, PerformancePlan, sampler adapters, manifests VSCO, keyswitches heterogéneos, SFZ con rutas/archivos con espacios, seguridad, velocity/RR, compatibilidad del alias histórico y selección nativa.
 
-`.github/workflows/audio-performance-check.yml` ejecuta `npm ci`, TypeScript, tests y build para cambios de audio, instalador, servidor y paquetes nativos. El PR debe permanecer en draft hasta que los checks del head final estén verdes.
+En el head de la expansión a cuerdas, `Audio performance check` y `Core app check` completaron TypeScript, tests y build en verde.
 
 ## Compatibilidad
 
-TloqueScore V1/V2/V2.1 no cambia. `instrument` participa en routing acústico y `program` sigue como fallback. `module <id>` selecciona el protocolo acústico correspondiente sin contaminar módulos GM no relacionados.
+TloqueScore V1/V2/V2.1 no cambia. `instrument` participa en routing acústico y `program` sigue siendo fallback. `module <id>` selecciona explícitamente el protocolo acústico correspondiente; los módulos GM no relacionados conservan su fallback actual.
