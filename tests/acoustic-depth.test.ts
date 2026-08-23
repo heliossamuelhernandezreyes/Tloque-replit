@@ -2,7 +2,8 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { compileTloqueScore } from "../shared/audio"
 import type { InstrumentManifest } from "../shared/instrument-manifest"
-import { validateTloqueSamplePack, type TloqueSamplePack, type TloqueSampleZone } from "../shared/native-sample-pack"
+import { validateTloqueSamplePack, type TloqueSampleZone } from "../shared/native-sample-pack"
+import { compileCuratedSfzZones } from "../server/sfzSamplePackCompiler"
 import { buildNativeSampleScorePlan } from "../client/src/audio/NativeSampleScorePlan"
 import { selectNativeSampleZone } from "../client/src/audio/NativeSamplePackEngine"
 
@@ -123,6 +124,29 @@ test("selector exige el par de transición cuando la librería lo declara", () =
     transitionToMidi: 62,
   })
   assert.equal(exact?.zone.id, "close-leg-c-d")
+})
+
+test("SFZ curado conserva trigger release, true-legato y perspectiva física", () => {
+  const source = String.raw`
+<control>
+default_path=Strings\Violin\Close\
+<group>
+trigger=release
+<region>
+sample=release_C4.wav lokey=60 hikey=60 pitch_keycenter=60 lovel=0 hivel=127
+<group>
+trigger=legato
+tloque_mic=close
+<region>
+sample=leg_C4_D4.wav lokey=62 hikey=62 pitch_keycenter=62 lovel=0 hivel=127 tloque_transition_from=60 tloque_transition_to=62
+`
+  const zones = compileCuratedSfzZones(source)
+  assert.equal(zones[0].trigger, "release")
+  assert.equal(zones[0].micPosition, "close")
+  assert.equal(zones[1].trigger, "legato-transition")
+  assert.equal(zones[1].articulation, "legato")
+  assert.equal(zones[1].transitionFromMidi, 60)
+  assert.equal(zones[1].transitionToMidi, 62)
 })
 
 test("VSCO Community Edition no recibe capacidades premium inventadas", async () => {
