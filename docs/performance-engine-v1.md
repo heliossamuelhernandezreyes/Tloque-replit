@@ -92,7 +92,7 @@ Para no obligar a convertir SFZ/WAV a SoundFont se añadió un formato seguro de
 
 `server/sfzSamplePackCompiler.ts` compila un subconjunto inerte de SFZ a zonas Tloque. Rechaza `#include/#define`, traversal `..` y rutas inseguras. No evalúa código ni macros SFZ en el navegador.
 
-El siguiente bloque de implementación es el instalador curado: descargar el SFZ y WAV de VSCO desde el commit fijado, verificar cada WAV/SHA-256, copiarlos a App Storage y publicar el JSON del pack interno. Hasta completar ese instalador, el manifest y el runtime VSCO están preparados pero las muestras VSCO no se distribuyen todavía desde Tloque.
+El siguiente bloque de implementación es el instalador curado: descargar el SFZ y WAV de VSCO desde el commit fijado, verificar cada WAV/SHA-256, copiarlos a App Storage y publicar el JSON del pack interno. Hasta completar ese instalador, el manifest, selector, runtime y compilador VSCO están preparados pero las muestras VSCO no se distribuyen todavía desde Tloque.
 
 ## Estado
 
