@@ -48,14 +48,12 @@ export class NativeSampleScoreEngine {
 
       const playableTracks = recipe.plan.tracks.slice(0, 16)
       const trackGain = new Map<string, GainNode>()
-      const trackPan = new Map<string, StereoPannerNode | null>()
       for (const track of playableTracks) {
         const timbre = scoreTrackTimbre(track)
         const gain = context.createGain()
         gain.gain.value = Math.max(0, Math.min(1.5, track.gain * timbre.level * scoreTrackExpression(track)))
-        let panner: StereoPannerNode | null = null
         if (typeof context.createStereoPanner === "function") {
-          panner = context.createStereoPanner()
+          const panner = context.createStereoPanner()
           panner.pan.value = Math.max(-1, Math.min(1, track.pan))
           gain.connect(panner)
           panner.connect(mix.input)
@@ -63,7 +61,6 @@ export class NativeSampleScoreEngine {
           gain.connect(mix.input)
         }
         trackGain.set(track.id, gain)
-        trackPan.set(track.id, panner)
       }
 
       const zonesNeeded = new Map<string, typeof pack.zones[number]>()
@@ -77,14 +74,13 @@ export class NativeSampleScoreEngine {
           if (selection) zonesNeeded.set(selection.zone.id, selection.zone)
         }
       }
-      await player.preload(pack, [...zonesNeeded.values()])
+      await player.preload([...zonesNeeded.values()])
       await context.resume()
 
       this.context = context
       this.output = output
       this.cue = cue
       const startAt = context.currentTime + 0.08
-      const beatSeconds = 60 / recipe.plan.bpm
 
       for (const control of recipe.plan.controls) {
         const gain = trackGain.get(control.trackId)
@@ -105,9 +101,8 @@ export class NativeSampleScoreEngine {
         const decision = performance.decisionForEvent(index)
         const destination = trackGain.get(event.trackId)
         if (!decision || !destination) continue
-        const eventStart = "timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds
-        const duration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds)
-          * articulationDurationFactor(decision.articulation)
+        const eventStart = event.timeSeconds
+        const duration = event.durationSeconds * articulationDurationFactor(decision.articulation)
         const velocity = Math.round(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(decision.articulation)) * 127)
         for (const note of event.notes) {
           scheduled.push(player.play({
@@ -124,11 +119,10 @@ export class NativeSampleScoreEngine {
       }
       await Promise.all(scheduled)
 
-      const totalSeconds = recipe.plan.totalSeconds
       output.gain.linearRampToValueAtTime(this.targetVolume(), context.currentTime + Math.max(0.25, cue.crossfadeSeconds))
       this.completionTimer = window.setTimeout(() => {
         this.listener("paused", this.cue)
-      }, (totalSeconds + 0.5) * 1_000)
+      }, (recipe.plan.totalSeconds + 0.5) * 1_000)
       this.listener("playing", cue)
     } catch (error) {
       console.error("Tloque native sample playback failed:", error)
