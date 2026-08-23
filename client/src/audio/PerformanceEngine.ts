@@ -78,11 +78,12 @@ export function resolvePerformanceRoute(
   const baseProgram = baseProgramForTrack(track)
   const manifest = resolveInstrumentManifest(track, manifests)
   const route = manifest?.articulations.find(item => item.articulation === articulation) ?? null
+  const dedicated = Boolean(route && (route.program !== undefined || route.keyswitch !== undefined || route.controller !== undefined))
   return {
     manifestId: manifest?.id ?? null,
     articulation,
     program: route?.program ?? baseProgram,
-    source: route?.program === undefined ? "base-program" : "dedicated-articulation",
+    source: dedicated ? "dedicated-articulation" : "base-program",
     route,
   }
 }
@@ -109,11 +110,6 @@ function eventIdentity(recipe: LinearScoreRecipe, event: LinearScoreRecipe["plan
   return `${recipe.plan.seed}:${index}:${event.trackId}:${time}:${event.notes.join(",")}:${articulation}`
 }
 
-/**
- * Shared channel/program routing used by every sampled renderer. This is the
- * compatibility bridge: GM still behaves as before, but the decision now comes
- * from InstrumentManifest rather than duplicated hard-coded rules.
- */
 export function buildPerformanceRoutingPlan(
   tracks: readonly LinearScoreTrack[],
   events: readonly { trackId: string; articulation?: string }[],
@@ -155,11 +151,6 @@ export function buildPerformanceRoutingPlan(
   }
 }
 
-/**
- * Compiles score semantics into renderer-neutral acoustic decisions. The full
- * plan adds velocity layers, round-robin and true-legato metadata on top of the
- * same routing consumed by live SoundFont playback and sampled WAV export.
- */
 export function buildPerformancePlan(
   recipe: LinearScoreRecipe,
   manifests: readonly InstrumentManifest[] = BUILTIN_INSTRUMENT_MANIFESTS,
