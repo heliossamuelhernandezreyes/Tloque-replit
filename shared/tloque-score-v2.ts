@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { orchestralPercussionMidiFor } from "./orchestral-percussion"
 
 export const TLOQUE_SCORE_COMPILER_V2_LEGACY = "tloque-score-compiler-v2" as const
 export const TLOQUE_SCORE_COMPILER_V2 = "tloque-score-compiler-v2.1" as const
@@ -412,6 +413,28 @@ export function compileTloqueScoreV2(source: string): TloqueScoreV2CompileResult
       continue
     }
 
+    if (command === "hit") {
+      if (!currentSection || !currentTrackId) { add(lineNumber, "Declara una sección y elige un track antes del golpe percusivo"); continue }
+      const track = tracks.find(item => item.id === currentTrackId)
+      if (track?.instrument !== "percussion.orchestral-kit") { add(lineNumber, "hit requiere un track instrument=percussion.orchestral-kit"); continue }
+      const position = parsePosition(parts[1] || "", lineNumber)
+      if (!position) continue
+      const selector = orchestralPercussionMidiFor(parts[2] || "")
+      const durationBeats = Number(parts[3])
+      const values = keyValues(parts.slice(4))
+      const unknown = unknownKeys(values, ["velocity"])
+      if (unknown.length) { add(lineNumber, `Parámetro desconocido en hit: ${unknown.join(", ")}`); continue }
+      const velocity = values.velocity === undefined ? 0.6 : Number(values.velocity)
+      if (selector === null) add(lineNumber, `Golpe percusivo desconocido: ${parts[2] || ""}`)
+      else if (position.bar < 1 || position.bar > currentSection.bars || position.beat < 1 || position.beat > numerator) add(lineNumber, `El golpe debe caer dentro de ${currentSection.bars} compases y ${numerator} tiempos`)
+      else {
+        const candidate = linearScoreEventV2Schema.pick({ durationBeats: true, notes: true, velocity: true, articulation: true }).safeParse({ durationBeats, notes: [selector], velocity, articulation: "normal" })
+        if (!candidate.success) add(lineNumber, "hit necesita nombre conocido, duración 0.03125..64 y velocity=0.01..1")
+        else rawEvents.push({ ...position, durationBeats, notes: [selector], velocity, articulation: "normal", line: lineNumber, trackId: currentTrackId, sectionId: currentSection.id })
+      }
+      continue
+    }
+
     if (command === "control") {
       if (!currentSection || !currentTrackId) { add(lineNumber, "Declara una sección y elige un track antes del control expresivo"); continue }
       const position = parsePosition(parts[1] || "", lineNumber)
@@ -468,7 +491,7 @@ export function compileTloqueScoreV2(source: string): TloqueScoreV2CompileResult
   if (!tracks.length) add(1, "La partitura necesita al menos un track")
   if (tracks.length > 16) add(1, "La partitura admite como máximo 16 tracks")
   if (!sections.length) add(1, "La partitura necesita al menos una sección")
-  if (!rawEvents.length) add(1, "La partitura necesita al menos una nota")
+  if (!rawEvents.length) add(1, "La partitura necesita al menos una nota o golpe")
   if (diagnostics.length) return { ok: false, diagnostics: diagnostics.slice(0, 60) }
 
   const beatUnit = 4 / denominator
