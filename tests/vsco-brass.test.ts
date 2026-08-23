@@ -12,7 +12,7 @@ import { compileCuratedSfzZones, compileSfzBundleToTloqueSamplePack } from "../s
 
 const COMMIT = "6dd651d55dde97fd4028699be9d4481f26917891"
 
-test("VSCO brass registra trompeta, trombón tenor, corno en Fa y tuba como módulos independientes", () => {
+test("VSCO brass registra cuatro módulos con sus colores físicos verificados", () => {
   const packs = CURATED_SAMPLE_PACKS.filter(pack => pack.instrumentId.startsWith("brass."))
   assert.deepEqual(packs.map(pack => pack.displayName), ["Trumpet", "Tenor Trombone", "F Horn", "Tuba"])
   assert.equal(new Set(packs.map(pack => pack.moduleId)).size, 4)
@@ -21,18 +21,19 @@ test("VSCO brass registra trompeta, trombón tenor, corno en Fa y tuba como mód
     assert.equal(pack.license, "CC0-1.0")
     assert.equal(instrumentManifestById(pack.manifestId)?.instruments[0], pack.instrumentId)
   }
-  assert.deepEqual(packs.find(pack => pack.id === "vsco2-ce-trumpet")?.sfzPaths, ["TrumpetSus.sfz", "TrumpetStac.sfz"])
-  assert.deepEqual(packs.find(pack => pack.id === "vsco2-ce-tenor-trombone")?.sfzPaths, ["TromboneSus.sfz", "TromboneStac.sfz"])
-  assert.deepEqual(packs.find(pack => pack.id === "vsco2-ce-f-horn")?.sfzPaths, ["FHornSus.sfz", "FHornStac.sfz"])
+  assert.deepEqual(packs.find(pack => pack.id === "vsco2-ce-trumpet")?.sfzPaths, [
+    "TrumpetSus.sfz", "TrumpetSusVib.sfz", "TrumpetStac.sfz", "TrumpetStraightMuteSus.sfz", "TrumpetHarmonMuteSus.sfz",
+  ])
+  assert.deepEqual(packs.find(pack => pack.id === "vsco2-ce-tenor-trombone")?.sfzPaths, ["TromboneSus.sfz", "TromboneVib.sfz", "TromboneStac.sfz"])
+  assert.deepEqual(packs.find(pack => pack.id === "vsco2-ce-f-horn")?.sfzPaths, ["FHornSus.sfz", "FHornStac.sfz", "FHornMute.sfz"])
   assert.deepEqual(packs.find(pack => pack.id === "vsco2-ce-tuba")?.sfzPaths, ["Tuba-KS.sfz"])
 })
 
-test("manifests de metales conservan sus programas GM y sólo técnicas abiertas modeladas", () => {
+test("manifests de metales conservan sus programas GM y articulaciones reales", () => {
   assert.deepEqual(VSCO2_CE_TRUMPET_MANIFEST.basePrograms, [56])
   assert.deepEqual(VSCO2_CE_TENOR_TROMBONE_MANIFEST.basePrograms, [57])
   assert.deepEqual(VSCO2_CE_TUBA_MANIFEST.basePrograms, [58])
   assert.deepEqual(VSCO2_CE_F_HORN_MANIFEST.basePrograms, [60])
-
   assert.deepEqual(VSCO2_CE_TRUMPET_MANIFEST.articulations.map(a => a.articulation), ["normal", "staccato"])
   assert.deepEqual(VSCO2_CE_TENOR_TROMBONE_MANIFEST.articulations.map(a => a.articulation), ["normal", "staccato"])
   assert.deepEqual(VSCO2_CE_F_HORN_MANIFEST.articulations.map(a => a.articulation), ["normal", "staccato"])
@@ -77,7 +78,7 @@ sample=tuba_stac_rr4.wav lokey=36 hikey=48 pitch_keycenter=41 lovel=0 hivel=127
   assert.deepEqual(zones.filter(zone => zone.articulation === "staccato").map(zone => zone.roundRobin), [0, 3])
 })
 
-test("bundle de trompeta publica sustain y staccato sin mezclar sordinas ni vibrato", () => {
+test("bundle abierto de trompeta conserva sustain y staccato neutrales", () => {
   const sustain = String.raw`
 <control>
 default_path=Brass\Trumpet\sus\
@@ -109,19 +110,20 @@ sample=trumpet_stac_v1_rr2.wav lokey=55 hikey=58 pitch_keycenter=57 lovel=0 hive
     sourceCommit: COMMIT,
     sampleUrlForPath: path => `/api/audio/sample-packs/samples/${path.includes("rr2") ? "b".repeat(64) : "a".repeat(64)}.wav`,
   })
-
   assert.deepEqual([...new Set(pack.zones.map(zone => zone.articulation))], ["normal", "staccato"])
   assert.deepEqual(pack.zones.filter(zone => zone.articulation === "staccato").map(zone => zone.roundRobin), [0, 1])
-  assert.ok(pack.zones.every(zone => !/mute|vib/i.test(zone.sampleUrl)))
+  assert.ok(pack.zones.every(zone => zone.mute === "none" && zone.vibratoColour === "none"))
 })
 
-test("catálogo principal no instala silenciosamente patches mute o vibrato de brass", () => {
-  const brassPaths = CURATED_SAMPLE_PACKS
-    .filter(pack => pack.instrumentId.startsWith("brass."))
-    .flatMap(pack => pack.sfzPaths)
-  assert.ok(!brassPaths.includes("TrumpetHarmonMuteSus.sfz"))
-  assert.ok(!brassPaths.includes("TrumpetStraightMuteSus.sfz"))
-  assert.ok(!brassPaths.includes("TrumpetSusVib.sfz"))
-  assert.ok(!brassPaths.includes("FHornMute.sfz"))
-  assert.ok(!brassPaths.includes("TromboneVib.sfz"))
+test("catálogo declara explícitamente vibrato y sordinas grabadas en lugar de mezclarlas", () => {
+  const trumpet = CURATED_SAMPLE_PACKS.find(pack => pack.id === "vsco2-ce-trumpet")
+  const trombone = CURATED_SAMPLE_PACKS.find(pack => pack.id === "vsco2-ce-tenor-trombone")
+  const horn = CURATED_SAMPLE_PACKS.find(pack => pack.id === "vsco2-ce-f-horn")
+  assert.ok(trumpet?.sfzPaths.includes("TrumpetSusVib.sfz"))
+  assert.ok(trumpet?.sfzPaths.includes("TrumpetStraightMuteSus.sfz"))
+  assert.ok(trumpet?.sfzPaths.includes("TrumpetHarmonMuteSus.sfz"))
+  assert.ok(trombone?.sfzPaths.includes("TromboneVib.sfz"))
+  assert.ok(horn?.sfzPaths.includes("FHornMute.sfz"))
+  assert.ok(trumpet?.tags.includes("recorded-vibrato"))
+  assert.ok(trumpet?.tags.includes("recorded-mutes"))
 })
