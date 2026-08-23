@@ -84,6 +84,10 @@ Prioridades: violín solista, cello solista, piano con capas/pedal/resonancia, c
 
 Un módulo no se considera `premium-solo-string` sólo por usar samples. Debe cubrir sustain en varias dinámicas, short notes con al menos 3 round robins, pizzicato y tremolo dedicados, legato/transiciones reales o ausencia explícita, releases, rango/afinación documentados, licencia/procedencia verificadas y presupuesto de memoria móvil conocido.
 
+## Validación
+
+La rama incorpora pruebas unitarias nuevas de routing GM, PerformancePlan, velocity layers, round robin, true-legato y releases. El repositorio no tiene checks de GitHub Actions asociados a esta rama, así que el PR se mantiene en borrador hasta ejecutar `npm run check`, `npm test` y `npm run build` en un entorno de proyecto.
+
 ## Compatibilidad
 
 TloqueScore V1/V2/V2.1 no cambia. `instrument` participa en el routing acústico, pero `program` continúa como fallback. Los módulos GM actuales conservan sus programas y partituras.
