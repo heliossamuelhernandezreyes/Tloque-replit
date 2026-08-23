@@ -16,15 +16,16 @@ test("TloqueScore compila una partitura instrumental determinista", () => {
   assert.equal(first.recipe.plan.sourceHash, second.recipe.plan.sourceHash)
   assert.deepEqual(first.recipe.plan, second.recipe.plan)
   assert.equal(first.recipe.version, 2)
-  assert.equal(first.recipe.plan.totalBars, 18)
-  assert.equal(first.recipe.plan.tracks.length, 3)
-  assert.equal(first.recipe.plan.events.length, 69)
+  assert.equal(first.recipe.plan.totalBars, 4)
+  assert.equal(first.recipe.plan.tracks.length, 2)
+  assert.equal(first.recipe.plan.events.length, 9)
   if (first.recipe.version === 2) {
-    assert.deepEqual(first.recipe.plan.sections.map(section => section.form), ["exposition", "development", "recapitulation", "coda"])
-    assert.equal(first.recipe.plan.rests.length, 1)
-    assert.equal(first.recipe.plan.controls.length, 4)
+    assert.deepEqual(first.recipe.plan.sections.map(section => section.form), ["exposition"])
+    assert.equal(first.recipe.plan.rests.length, 0)
+    assert.equal(first.recipe.plan.controls.length, 0)
     assert.equal(first.recipe.plan.humanize, 0.12)
     assert.equal(first.recipe.plan.tracks[1].vibrato, 0.16)
+    assert.equal(first.recipe.plan.tracks[0].timbre, "natural")
     assert.equal(first.recipe.plan.sections[0].rubato, 0.08)
     assert.equal(first.recipe.plan.quality, "master")
   }
@@ -94,7 +95,9 @@ test("los planes V2 guardados antes de V2.1 conservan compatibilidad", () => {
     delete track.expression
     delete track.brightness
     delete track.vibrato
+    delete track.timbre
   }
+  for (const event of legacy.plan.events) delete event.timbre
   for (const section of legacy.plan.sections) delete section.rubato
   const parsed = anyLinearScoreRecipeSchema.parse(legacy)
   assert.equal(parsed.version, 2)
@@ -102,6 +105,8 @@ test("los planes V2 guardados antes de V2.1 conservan compatibilidad", () => {
   assert.equal(parsed.plan.humanize, 0)
   assert.deepEqual(parsed.plan.controls, [])
   assert.equal(parsed.plan.tracks[0].expression, 1)
+  assert.equal(parsed.plan.tracks[0].timbre, "natural")
+  assert.equal(parsed.plan.events[0].timbre, "natural")
   assert.equal(parsed.plan.sections[0].rubato, 0)
 })
 
