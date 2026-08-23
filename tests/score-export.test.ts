@@ -5,7 +5,8 @@ import { estimateScoreExport, renderTloqueScoreToWav } from "../client/src/audio
 import {
   TLOQUE_SCORE_AUDIO_PROFILE, articulationDurationFactor, articulationVelocityFactor, midiNoteToFrequency,
   midiNotesToFrequencies, scoreBrightnessFrequency, scoreExpressionStateAt, scoreMonitorVolume,
-  scorePedalReleaseTime, scoreRenderProfile, scoreTrackEnvelope, scoreTrackTimbre, scoreVelocityGain,
+  scorePedalReleaseTime, scoreRenderProfile, scoreSampledChannelPlan, scoreSampledProgram,
+  scoreTrackEnvelope, scoreTrackMidiProgram, scoreTrackTimbre, scoreVelocityGain,
 } from "../client/src/audio/ScoreAudioMath"
 
 const SOURCE = `TLOQUE_SCORE 2
@@ -64,7 +65,7 @@ test("el exportador calcula PCM profesional sin guardar audio durante la edició
 })
 
 test("la preescucha y el WAV comparten afinación, articulación y envolvente", () => {
-  assert.equal(TLOQUE_SCORE_AUDIO_PROFILE, "tloque-score-audio-v4-expression")
+  assert.equal(TLOQUE_SCORE_AUDIO_PROFILE, "tloque-score-audio-v5-sampled")
   assert.equal(midiNoteToFrequency(69), 440)
   assert.ok(Math.abs(midiNoteToFrequency(60) - 261.625565) < 0.000001)
   assert.deepEqual(midiNotesToFrequencies([60, 64, 67]).map(value => Math.round(value)), [262, 330, 392])
@@ -90,6 +91,25 @@ test("la preescucha y el WAV comparten afinación, articulación y envolvente", 
   const track = compiled.recipe.plan.tracks[0]
   assert.deepEqual(scoreTrackEnvelope(track), { attack: 0.01, decay: 0.55, sustain: 0.42, release: 0.1 })
   assert.deepEqual(scoreTrackTimbre(track), { filterHz: 6_000, filterQ: 0.6, level: 1.08 })
+})
+
+test("los bancos GM usan muestras de cuerda dedicadas sin alterar otros instrumentos", () => {
+  const compiled = compileTloqueScore(EXPRESSIVE_SOURCE)
+  assert.equal(compiled.ok, true)
+  if (!compiled.ok) return
+  const violin = compiled.recipe.plan.tracks[0]
+  assert.equal(scoreTrackMidiProgram(violin), 40)
+  assert.equal(scoreSampledProgram(violin, "normal"), 40)
+  assert.equal(scoreSampledProgram(violin, "pizzicato"), 45)
+  assert.equal(scoreSampledProgram(violin, "tremolo"), 44)
+  assert.equal(scoreSampledProgram(violin, "spiccato"), 40)
+  const plan = scoreSampledChannelPlan(compiled.recipe.plan.tracks, [
+    { trackId: violin.id, articulation: "normal" },
+    { trackId: violin.id, articulation: "pizzicato" },
+    { trackId: violin.id, articulation: "tremolo" },
+  ])
+  assert.deepEqual(plan.channels.map(channel => channel.program), [40, 45, 44])
+  assert.notEqual(plan.channelForEvent(violin.id, "pizzicato"), plan.channelForEvent(violin.id, "normal"))
 })
 
 test("la expresión, el pedal y el bend se automatizan con rampas deterministas", async () => {
