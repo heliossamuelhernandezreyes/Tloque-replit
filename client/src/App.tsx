@@ -97,6 +97,7 @@ function Router() {
         <Route path="/admin/fonoteca"          component={adminPage(AudioCatalogAdmin)} />
         <Route path="/admin/audio/vsco-strings" component={adminPage(VscoInstallerAdmin)} />
         <Route path="/admin/audio/vsco-woodwinds" component={adminPage(VscoInstallerAdmin)} />
+        <Route path="/admin/audio/vsco-brass" component={adminPage(VscoInstallerAdmin)} />
         <Route path="/admin/audio/vsco-violin" component={adminPage(VscoInstallerAdmin)} />
         <Route component={NotFound} />
       </Switch>
