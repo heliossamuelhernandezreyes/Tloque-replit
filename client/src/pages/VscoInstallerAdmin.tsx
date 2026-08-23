@@ -23,15 +23,15 @@ type VscoFamily = "strings" | "woodwinds" | "brass" | "percussion"
 const FAMILY_PRESENTATION: Record<VscoFamily, { title: string; copy: string }> = {
   strings: {
     title: "VSCO Strings",
-    copy: "La identidad refleja la grabación original: violín y contrabajo son solistas; viola y cello son secciones.",
+    copy: "La identidad refleja la grabación original: violín y contrabajo son solistas; viola y cello son secciones. Los colores grabados permanecen separados de las articulaciones y sólo se usan cuando el módulo realmente los contiene.",
   },
   woodwinds: {
     title: "VSCO Woodwinds",
-    copy: "Flauta y clarinete conservan sus patches KS; oboe y fagot combinan sustain y staccato desde SFZ separados sin inventar técnicas.",
+    copy: "Flauta conserva sus colores KS; oboe y fagot integran sustain vibrato grabado además de sus ataques abiertos. TloqueScore usa timbre= para escoger el color físico sin convertir vibrato en una articulación falsa.",
   },
   brass: {
     title: "VSCO Brass",
-    copy: "Trompeta, Tenor Trombone y F Horn combinan sus patches abiertos de sustain y staccato. Tuba conserva su KS. Sordinas y colores de vibrato permanecen separados hasta que Tloque modele timbre explícitamente.",
+    copy: "Trompeta integra natural, vibrato, straight mute y Harmon mute; Tenor Trombone integra vibrato y F Horn integra mute. Cada color sigue siendo una grabación física independiente elegida con timbre=; staccato, sustain y demás gestos continúan como articulaciones separadas.",
   },
   percussion: {
     title: "VSCO Percussion",
