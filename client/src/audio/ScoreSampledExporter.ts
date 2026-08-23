@@ -4,6 +4,7 @@ import { linearScoreRecipeFor, type LinearScoreRecipe } from "@shared/audio"
 import { fetchAudioResource } from "./AudioResourceCache"
 import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQuality } from "./ScoreExporter"
 import { buildPerformancePlan } from "./PerformanceEngine"
+import { buildSamplerEventPlan, spessaSynthActions } from "./SamplerAdapter"
 import {
   articulationDurationFactor, articulationVelocityFactor,
   scoreTrackBrightness, scoreTrackExpression, scoreTrackTimbre, scoreTrackVibrato, scoreVelocityGain,
@@ -107,6 +108,18 @@ export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
     const duration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds)
       * articulationDurationFactor(articulation)
     const velocity = midi7(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation)))
+
+    const samplerPlan = buildSamplerEventPlan(decision, decision.route)
+    const setupAt = Math.max(0, start - 0.01)
+    for (const action of spessaSynthActions(samplerPlan)) {
+      if (action.type === "controller") {
+        midi.controllerChange(ticks(setupAt), trackNumber, channel, action.cc, action.value)
+      } else if (action.type === "keyswitch") {
+        midi.noteOn(ticks(Math.max(0, setupAt - 0.015)), trackNumber, channel, action.note, action.velocity)
+        midi.noteOff(ticks(setupAt), trackNumber, channel, action.note)
+      }
+    }
+
     const usesDedicatedTremolo = articulation === "tremolo" && decision.source === "dedicated-articulation"
     if (articulation === "tremolo" && !usesDedicatedTremolo) {
       const pulseSeconds = 0.12
