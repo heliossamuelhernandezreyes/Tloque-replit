@@ -1,5 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { compileTloqueScore } from "../shared/audio"
 import { validateTloqueSamplePack, type TloqueSamplePack } from "../shared/native-sample-pack"
 import { buildNativeSampleScorePlan } from "../client/src/audio/NativeSampleScorePlan"
@@ -69,4 +70,11 @@ test("el plan nativo conserva expresión, velocity y RR deterministas", () => {
 
 test("el exportador WAV nativo queda expuesto como ruta independiente de SoundFont", () => {
   assert.equal(typeof renderTloqueScoreWithNativeSamplePackToWav, "function")
+})
+
+test("el exportador general deriva módulos VSCO curados hacia TloqueSamplePack", () => {
+  const source = readFileSync(new URL("../client/src/audio/ScoreExporter.ts", import.meta.url), "utf8")
+  assert.match(source, /curatedSamplePackByModuleId\(recipe\.plan\.moduleId\)/)
+  assert.match(source, /renderTloqueScoreWithNativeSamplePackToWav/)
+  assert.match(source, /\/api\/audio\/sample-packs\/modules\//)
 })
