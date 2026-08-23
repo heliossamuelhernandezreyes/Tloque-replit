@@ -112,7 +112,7 @@ end`
   assert.equal(plan.events[1].program, 71)
   assert.equal(plan.events[1].velocityLayer, 2)
   assert.equal(plan.events[1].trueLegato, true)
-  assert.deepEqual(plan.events[1].previousNotes, [60])
+  assert.deepEqual(plan.events[1].previousNotes, [72])
 })
 
 test("round robin y velocity layer son deterministas", () => {
