@@ -18,7 +18,7 @@ interface InstallResult {
   instrumentId: string
 }
 
-type VscoFamily = "strings" | "woodwinds" | "brass"
+type VscoFamily = "strings" | "woodwinds" | "brass" | "percussion"
 
 const FAMILY_PRESENTATION: Record<VscoFamily, { title: string; copy: string }> = {
   strings: {
@@ -33,11 +33,19 @@ const FAMILY_PRESENTATION: Record<VscoFamily, { title: string; copy: string }> =
     title: "VSCO Brass",
     copy: "Trompeta, Tenor Trombone y F Horn combinan sus patches abiertos de sustain y staccato. Tuba conserva su KS. Sordinas y colores de vibrato permanecen separados hasta que Tloque modele timbre explícitamente.",
   },
+  percussion: {
+    title: "VSCO Tuned Percussion",
+    copy: "Timbales conserva golpes con velocity layers y round-robin físicos, más rolls grabados como tremolo. Glockenspiel, marimba, xilófono y campanas tubulares permanecen como instrumentos afinados independientes. Caja, bombo y platos se reservaron para un evento percusivo explícito en vez de disfrazarlos como notas melódicas.",
+  },
 }
 
 export default function VscoInstallerAdmin() {
   const [location, setLocation] = useLocation()
-  const family: VscoFamily = location.includes("woodwinds") ? "woodwinds" : location.includes("brass") ? "brass" : "strings"
+  const family: VscoFamily = location.includes("woodwinds")
+    ? "woodwinds"
+    : location.includes("brass")
+      ? "brass"
+      : location.includes("percussion") ? "percussion" : "strings"
   const presentation = FAMILY_PRESENTATION[family]
   const packs = CURATED_SAMPLE_PACKS.filter(pack =>
     pack.libraryName === "VSCO 2 Community Edition" && pack.instrumentId.startsWith(`${family}.`),
