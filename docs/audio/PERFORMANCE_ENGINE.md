@@ -64,7 +64,7 @@ Nombres semánticos iniciales: bass drum, snare taps/hit/roll y variantes, crash
 
 Un nombre desconocido falla al compilar. `hit` en un track melódico también falla, evitando que la percusión no afinada se disfrace como melodía.
 
-La duración declarada del `hit` todavía gobierna el `stop()` de la voz igual que en los demás eventos nativos. Live y WAV son coherentes entre sí, pero preservar automáticamente toda la cola acústica de platos, bombo y otros one-shots requiere una política explícita de one-shot/release y queda como refinamiento posterior; no se finge que ya existe.
+Los `hit` son one-shots físicos. La duración escrita conserva el significado rítmico del evento, pero no corta artificialmente el WAV de un plato, bombo, caja o triángulo. Live mide la duración real de la muestra seleccionada para determinar el final acústico. El exportador decodifica primero sólo las zonas necesarias, calcula la duración física corregida por `playbackRate` y dimensiona el `OfflineAudioContext` hasta el final real del último one-shot más la cola de mastering.
 
 ## Instalación nativa
 
@@ -78,4 +78,4 @@ La duración declarada del `hit` todavía gobierna el `stop()` de la voz igual q
 
 ## Exportación
 
-Los módulos nativos se renderizan con `OfflineAudioContext` usando exactamente el mismo plan acústico del live. El master WAV no imprime ducking ni fades narrativos dependientes de la lectura. Preview usa 32 kHz/16-bit; Studio/Master 48 kHz/24-bit, con límite de 220 MB de buffers float para proteger navegadores móviles.
+Los módulos nativos se renderizan con `OfflineAudioContext` usando exactamente el mismo plan acústico del live. El master WAV no imprime ducking ni fades narrativos dependientes de la lectura. Preview usa 32 kHz/16-bit; Studio/Master 48 kHz/24-bit, con límite de 220 MB de buffers float para proteger navegadores móviles. Para one-shots, el límite de memoria se calcula después de conocer la cola física real de las muestras seleccionadas.
