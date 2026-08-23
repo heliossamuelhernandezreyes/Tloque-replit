@@ -64,7 +64,7 @@ Nombres semánticos iniciales: bass drum, snare taps/hit/roll y variantes, crash
 
 Un nombre desconocido falla al compilar. `hit` en un track melódico también falla, evitando que la percusión no afinada se disfrace como melodía.
 
-Los `hit` son one-shots físicos. La duración escrita conserva el significado rítmico del evento, pero no corta artificialmente el WAV de un plato, bombo, caja o triángulo. Live mide la duración real de la muestra seleccionada para determinar el final acústico. El exportador decodifica primero sólo las zonas necesarias, calcula la duración física corregida por `playbackRate` y dimensiona el `OfflineAudioContext` hasta el final real del último one-shot más la cola de mastering.
+Los `hit` son one-shots físicos. La duración escrita conserva el significado rítmico del evento, pero no corta artificialmente el WAV de un plato, bombo, caja o triángulo. Live mide la duración real de la muestra seleccionada para determinar el final acústico. El exportador decodifica primero sólo las zonas necesarias, calcula la duración física corregida por `playbackRate` y dimensiona el `OfflineAudioContext` hasta el final real del último one-shot más la cola de mastering. Los instrumentos melódicos siguen limitados por su duración musical normal.
 
 ## Instalación nativa
 
