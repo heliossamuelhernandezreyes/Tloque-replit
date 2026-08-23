@@ -19,19 +19,12 @@ export type PerformanceCapability =
 
 export interface InstrumentArticulationRoute {
   articulation: TloqueArticulation
-  /** General MIDI program or module-local preset used by SF2/SF3/DLS renderers. */
   program?: number
-  /** Sampler keyswitch used before the note when a premium module exposes one. */
   keyswitch?: number
-  /** Sampler controller selector used before the note when a module exposes one. */
   controller?: { cc: number; value: number }
-  /** Number of discrete recorded dynamics, when known. */
   velocityLayers?: number
-  /** Number of alternate attacks for repeated notes, when known. */
   roundRobins?: number
-  /** Whether the articulation may use recorded interval transitions. */
   trueLegato?: boolean
-  /** Whether note-off can trigger a dedicated release sample. */
   releaseSamples?: boolean
 }
 
@@ -40,20 +33,12 @@ export interface InstrumentManifest {
   id: string
   family: "strings" | "piano" | "woodwinds" | "brass" | "percussion" | "keys" | "synth" | "other"
   name: string
-  /** Semantic Tloque instrument ids this manifest may satisfy. */
   instruments: readonly string[]
-  /** GM-compatible programs that may fall back to this manifest. */
   basePrograms: readonly number[]
   capabilities: readonly PerformanceCapability[]
   articulations: readonly InstrumentArticulationRoute[]
 }
 
-/**
- * Compatibility manifest for ordinary GM orchestral-string banks.
- * It deliberately claims only what General MIDI really standardizes:
- * sustained strings plus dedicated tremolo (44) and pizzicato (45) programs.
- * Legato, spiccato, harmonics, round-robin and release samples are NOT claimed.
- */
 export const GM_ORCHESTRAL_STRINGS_MANIFEST: InstrumentManifest = {
   version: 1,
   id: "gm-orchestral-strings",
@@ -68,25 +53,7 @@ export const GM_ORCHESTRAL_STRINGS_MANIFEST: InstrumentManifest = {
   ],
 }
 
-/**
- * Verified mapping for the VSCO 2 Community Edition solo-violin keyswitch SFZ.
- * Source: SViolin-KS.sfz on the upstream SFZ branch. The library is CC0.
- *
- * C2  (36) sustain vibrato
- * C#2 (37) tremolo
- * D2  (38) spiccato
- * D#2 (39) pizzicato
- *
- * Sustain/tremolo/spiccato/pizzicato expose two recorded velocity ranges.
- * Spiccato and pizzicato expose two alternate attacks. VSCO CE does not claim
- * recorded interval-legato here, so true-legato remains deliberately false.
- * Unsupported requested articulations may reset to the normal sustain selector,
- * but they are never advertised as recorded techniques.
- *
- * This manifest is NOT part of BUILTIN_INSTRUMENT_MANIFESTS: it must be chosen
- * explicitly for a VSCO-derived module so ordinary GM banks never receive its
- * keyswitch protocol.
- */
+/** Solo violin: C2 sustain, C#2 tremolo, D2 spiccato, D#2 pizzicato. */
 export const VSCO2_CE_SOLO_VIOLIN_MANIFEST: InstrumentManifest = {
   version: 1,
   id: "vsco2-ce-solo-violin",
@@ -103,6 +70,62 @@ export const VSCO2_CE_SOLO_VIOLIN_MANIFEST: InstrumentManifest = {
   ],
 }
 
+/** Upstream recording is a viola section, not a solo viola. C2-D#2 keyswitches. */
+export const VSCO2_CE_VIOLA_SECTION_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vsco2-ce-viola-section",
+  family: "strings",
+  name: "VSCO 2 CE Viola Section",
+  instruments: ["strings.viola"],
+  basePrograms: [41],
+  capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
+  articulations: [
+    { articulation: "normal", keyswitch: 36, velocityLayers: 2 },
+    { articulation: "tremolo", keyswitch: 37, velocityLayers: 2 },
+    { articulation: "spiccato", keyswitch: 38, velocityLayers: 2, roundRobins: 2 },
+    { articulation: "pizzicato", keyswitch: 39, velocityLayers: 2, roundRobins: 2 },
+  ],
+}
+
+/** Upstream recording is a cello section. C6-D#6 keyswitches. */
+export const VSCO2_CE_CELLO_SECTION_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vsco2-ce-cello-section",
+  family: "strings",
+  name: "VSCO 2 CE Cello Section",
+  instruments: ["strings.cello"],
+  basePrograms: [42],
+  capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
+  articulations: [
+    { articulation: "normal", keyswitch: 84, velocityLayers: 2 },
+    { articulation: "tremolo", keyswitch: 85, velocityLayers: 2 },
+    { articulation: "spiccato", keyswitch: 86, velocityLayers: 2, roundRobins: 2 },
+    { articulation: "pizzicato", keyswitch: 87, velocityLayers: 2, roundRobins: 2 },
+  ],
+}
+
+/**
+ * Solo contrabass exposes both non-vibrato and vibrato sustain upstream. Tloque
+ * uses the vibrato sustain (C#6) as its current `normal` voice; C6 remains an
+ * upstream alternate not falsely advertised as a separate articulation.
+ * D6 tremolo, D#6 spiccato, E6 pizzicato.
+ */
+export const VSCO2_CE_SOLO_CONTRABASS_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vsco2-ce-solo-contrabass",
+  family: "strings",
+  name: "VSCO 2 CE Solo Contrabass",
+  instruments: ["strings.contrabass"],
+  basePrograms: [43],
+  capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
+  articulations: [
+    { articulation: "normal", keyswitch: 85, velocityLayers: 2 },
+    { articulation: "tremolo", keyswitch: 86, velocityLayers: 2 },
+    { articulation: "spiccato", keyswitch: 87, velocityLayers: 2, roundRobins: 2 },
+    { articulation: "pizzicato", keyswitch: 88, velocityLayers: 2, roundRobins: 2 },
+  ],
+}
+
 export const BUILTIN_INSTRUMENT_MANIFESTS: readonly InstrumentManifest[] = [
   GM_ORCHESTRAL_STRINGS_MANIFEST,
 ]
@@ -110,6 +133,9 @@ export const BUILTIN_INSTRUMENT_MANIFESTS: readonly InstrumentManifest[] = [
 export const INSTRUMENT_MANIFEST_REGISTRY: readonly InstrumentManifest[] = [
   GM_ORCHESTRAL_STRINGS_MANIFEST,
   VSCO2_CE_SOLO_VIOLIN_MANIFEST,
+  VSCO2_CE_VIOLA_SECTION_MANIFEST,
+  VSCO2_CE_CELLO_SECTION_MANIFEST,
+  VSCO2_CE_SOLO_CONTRABASS_MANIFEST,
 ]
 
 export function instrumentManifestById(id: string | null | undefined): InstrumentManifest | null {
