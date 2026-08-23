@@ -68,6 +68,47 @@ test("el plan nativo conserva expresión, velocity y RR deterministas", () => {
   assert.ok(first.voices[1].roundRobin === 0 || first.voices[1].roundRobin === 1)
 })
 
+test("percusión semántica marca one-shot y conserva la muestra física seleccionada", () => {
+  const source = `TLOQUE_SCORE 2
+tempo 60
+meter 4/4
+loop false
+seed 7
+quality studio
+module vsco2-ce-orchestral-percussion
+track perc synth=pluck instrument=percussion.orchestral-kit program=0 role=accent gain=0.4 pan=0 attack=0.001 release=2 expression=1 brightness=0.5 vibrato=0
+section hits form=custom bars=1 repeat=1 fade=0 tempo=60 rubato=0
+use perc
+hit 1:1 crash-cymbal 0.25 velocity=0.7
+end`
+  const result = compileTloqueScore(source)
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  const pack = validateTloqueSamplePack({
+    version: 1,
+    id: "vsco2-ce-orchestral-percussion",
+    name: "Fixture percussion",
+    instrumentManifestId: "vsco2-ce-orchestral-percussion",
+    license: "CC0-1.0",
+    sourceName: "fixture",
+    sourceUrl: "https://example.invalid",
+    zones: [{
+      id: "crash",
+      articulation: "normal",
+      sampleUrl: "/api/audio/sample-packs/samples/crash.wav",
+      rootMidi: 49, loMidi: 49, hiMidi: 49,
+      loVelocity: 0, hiVelocity: 127, velocityLayer: 0, roundRobin: 0,
+      gainDb: 0, tuneCents: 0,
+    }],
+  })
+  const plan = buildNativeSampleScorePlan(result.recipe, pack)
+  assert.equal(plan.voices.length, 1)
+  assert.equal(plan.voices[0].oneShot, true)
+  assert.equal(plan.voices[0].sampleUrl, "/api/audio/sample-packs/samples/crash.wav")
+  assert.equal(plan.voices[0].playbackRate, 1)
+  assert.ok(plan.voices[0].durationSeconds < 0.3)
+})
+
 test("el exportador WAV nativo queda expuesto como ruta independiente de SoundFont", () => {
   assert.equal(typeof renderTloqueScoreWithNativeSamplePackToWav, "function")
 })
