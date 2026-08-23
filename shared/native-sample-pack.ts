@@ -4,6 +4,8 @@ export const TLOQUE_SAMPLE_PACK_VERSION = 1 as const
 
 export type TloqueMute = "none" | "straight" | "harmon" | "mute"
 export type TloqueVibratoColour = "none" | "vibrato" | "expression"
+export type TloqueSampleTrigger = "attack" | "release" | "legato-transition"
+export type TloqueMicPosition = "default" | "close" | "main" | "room" | "far"
 
 export interface TloqueSampleZone {
   id: string
@@ -25,6 +27,13 @@ export interface TloqueSampleZone {
   vibratoColour?: TloqueVibratoColour
   /** Physical mute colour recorded upstream; never synthesized from filtering. */
   mute?: TloqueMute
+  /** Physical event represented by this WAV. Defaults to the historical attack sample. */
+  trigger?: TloqueSampleTrigger
+  /** Microphone perspective physically recorded in this WAV. */
+  micPosition?: TloqueMicPosition
+  /** Optional exact true-legato transition endpoints. */
+  transitionFromMidi?: number
+  transitionToMidi?: number
   loopStartSeconds?: number
   loopEndSeconds?: number
 }
@@ -38,6 +47,9 @@ export interface TloqueSamplePack {
   sourceName: string
   sourceUrl: string
   sourceCommit?: string
+  /** Available physical microphone perspectives. Omitted legacy packs behave as [default]. */
+  micPositions?: readonly TloqueMicPosition[]
+  defaultMicPosition?: TloqueMicPosition
   zones: readonly TloqueSampleZone[]
 }
 
@@ -59,6 +71,19 @@ export function validateTloqueSamplePack(value: unknown): TloqueSamplePack {
   const articulations = new Set(["normal", "legato", "staccato", "tenuto", "accent", "spiccato", "pizzicato", "tremolo", "harmonic"])
   const mutes = new Set<TloqueMute>(["none", "straight", "harmon", "mute"])
   const vibratoColours = new Set<TloqueVibratoColour>(["none", "vibrato", "expression"])
+  const triggers = new Set<TloqueSampleTrigger>(["attack", "release", "legato-transition"])
+  const microphones = new Set<TloqueMicPosition>(["default", "close", "main", "room", "far"])
+  const declaredMicPositions = pack.micPositions === undefined
+    ? ["default"] as TloqueMicPosition[]
+    : Array.isArray(pack.micPositions) && pack.micPositions.length
+      ? [...new Set(pack.micPositions.map(item => {
+          if (typeof item !== "string" || !microphones.has(item as TloqueMicPosition)) throw new Error("Posición de micrófono inválida")
+          return item as TloqueMicPosition
+        }))]
+      : (() => { throw new Error("micPositions debe contener al menos una posición") })()
+  const defaultMicPosition = pack.defaultMicPosition === undefined ? declaredMicPositions[0] : pack.defaultMicPosition
+  if (typeof defaultMicPosition !== "string" || !microphones.has(defaultMicPosition as TloqueMicPosition) || !declaredMicPositions.includes(defaultMicPosition as TloqueMicPosition)) throw new Error("Micrófono predeterminado inválido")
+
   const zones: TloqueSampleZone[] = pack.zones.map((raw, index) => {
     if (!raw || typeof raw !== "object") throw new Error(`Zona ${index} inválida`)
     const zone = raw as Record<string, unknown>
@@ -71,10 +96,15 @@ export function validateTloqueSamplePack(value: unknown): TloqueSamplePack {
     const mute = zone.mute === undefined ? "none" : zone.mute
     if (typeof mute !== "string" || !mutes.has(mute as TloqueMute)) throw new Error(`Zona ${index}: mute inválido`)
     if (zone.vibrato !== undefined && typeof zone.vibrato !== "boolean") throw new Error(`Zona ${index}: vibrato inválido`)
-    const vibratoColour = zone.vibratoColour === undefined
-      ? (zone.vibrato === true ? "vibrato" : "none")
-      : zone.vibratoColour
+    const vibratoColour = zone.vibratoColour === undefined ? (zone.vibrato === true ? "vibrato" : "none") : zone.vibratoColour
     if (typeof vibratoColour !== "string" || !vibratoColours.has(vibratoColour as TloqueVibratoColour)) throw new Error(`Zona ${index}: color de vibrato inválido`)
+    const trigger = zone.trigger === undefined ? "attack" : zone.trigger
+    if (typeof trigger !== "string" || !triggers.has(trigger as TloqueSampleTrigger)) throw new Error(`Zona ${index}: trigger inválido`)
+    const micPosition = zone.micPosition === undefined ? defaultMicPosition : zone.micPosition
+    if (typeof micPosition !== "string" || !microphones.has(micPosition as TloqueMicPosition) || !declaredMicPositions.includes(micPosition as TloqueMicPosition)) throw new Error(`Zona ${index}: micrófono no declarado`)
+    if (zone.transitionFromMidi !== undefined && (!finite(zone.transitionFromMidi) || zone.transitionFromMidi < 0 || zone.transitionFromMidi > 127)) throw new Error(`Zona ${index}: transitionFromMidi inválido`)
+    if (zone.transitionToMidi !== undefined && (!finite(zone.transitionToMidi) || zone.transitionToMidi < 0 || zone.transitionToMidi > 127)) throw new Error(`Zona ${index}: transitionToMidi inválido`)
+    if (trigger !== "legato-transition" && (zone.transitionFromMidi !== undefined || zone.transitionToMidi !== undefined)) throw new Error(`Zona ${index}: transición declarada fuera de true legato`)
     const result: TloqueSampleZone = {
       id: zone.id,
       articulation: zone.articulation as TloqueArticulation,
@@ -92,6 +122,10 @@ export function validateTloqueSamplePack(value: unknown): TloqueSamplePack {
       vibrato: vibratoColour !== "none",
       vibratoColour: vibratoColour as TloqueVibratoColour,
       mute: mute as TloqueMute,
+      trigger: trigger as TloqueSampleTrigger,
+      micPosition: micPosition as TloqueMicPosition,
+      transitionFromMidi: finite(zone.transitionFromMidi) ? zone.transitionFromMidi : undefined,
+      transitionToMidi: finite(zone.transitionToMidi) ? zone.transitionToMidi : undefined,
       loopStartSeconds: finite(zone.loopStartSeconds) ? zone.loopStartSeconds : undefined,
       loopEndSeconds: finite(zone.loopEndSeconds) ? zone.loopEndSeconds : undefined,
     }
@@ -109,6 +143,8 @@ export function validateTloqueSamplePack(value: unknown): TloqueSamplePack {
     sourceName: pack.sourceName,
     sourceUrl: pack.sourceUrl,
     sourceCommit: typeof pack.sourceCommit === "string" ? pack.sourceCommit : undefined,
+    micPositions: declaredMicPositions,
+    defaultMicPosition: defaultMicPosition as TloqueMicPosition,
     zones,
   }
 }
