@@ -16,16 +16,17 @@ test("TloqueScore compila una partitura instrumental determinista", () => {
   assert.equal(first.recipe.plan.sourceHash, second.recipe.plan.sourceHash)
   assert.deepEqual(first.recipe.plan, second.recipe.plan)
   assert.equal(first.recipe.version, 2)
-  assert.equal(first.recipe.plan.totalBars, 4)
-  assert.equal(first.recipe.plan.tracks.length, 2)
-  assert.equal(first.recipe.plan.events.length, 9)
+  assert.equal(first.recipe.plan.totalBars, 18)
+  assert.equal(first.recipe.plan.tracks.length, 3)
+  assert.equal(first.recipe.plan.events.length, 69)
   if (first.recipe.version === 2) {
-    assert.deepEqual(first.recipe.plan.sections.map(section => section.form), ["exposition"])
-    assert.equal(first.recipe.plan.rests.length, 0)
-    assert.equal(first.recipe.plan.controls.length, 0)
+    assert.deepEqual(first.recipe.plan.sections.map(section => section.form), ["exposition", "development", "recapitulation", "coda"])
+    assert.equal(first.recipe.plan.rests.length, 1)
+    assert.equal(first.recipe.plan.controls.length, 4)
     assert.equal(first.recipe.plan.humanize, 0.12)
     assert.equal(first.recipe.plan.tracks[1].vibrato, 0.16)
     assert.equal(first.recipe.plan.tracks[0].timbre, "natural")
+    assert.equal(first.recipe.plan.events[0].timbre, "natural")
     assert.equal(first.recipe.plan.sections[0].rubato, 0.08)
     assert.equal(first.recipe.plan.quality, "master")
   }
@@ -133,14 +134,8 @@ track motif synth=bell gain=0.2 pan=0
 
 test("UiSoundRecipe limita duración, ganancia y número de voces", () => {
   assert.equal(uiSoundRecipeSchema.safeParse(DEFAULT_UI_SOUND_RECIPE).success, true)
-  assert.equal(uiSoundRecipeSchema.safeParse({
-    ...DEFAULT_UI_SOUND_RECIPE,
-    voices: [{ ...DEFAULT_UI_SOUND_RECIPE.voices[0], duration: 20 }],
-  }).success, false)
-  assert.equal(uiSoundRecipeSchema.safeParse({
-    ...DEFAULT_UI_SOUND_RECIPE,
-    voices: Array.from({ length: 9 }, () => DEFAULT_UI_SOUND_RECIPE.voices[0]),
-  }).success, false)
+  assert.equal(uiSoundRecipeSchema.safeParse({ ...DEFAULT_UI_SOUND_RECIPE, voices: [{ ...DEFAULT_UI_SOUND_RECIPE.voices[0], duration: 20 }] }).success, false)
+  assert.equal(uiSoundRecipeSchema.safeParse({ ...DEFAULT_UI_SOUND_RECIPE, voices: Array.from({ length: 9 }, () => DEFAULT_UI_SOUND_RECIPE.voices[0]) }).success, false)
 })
 
 test("el contrato expone sólo eventos estables conocidos", () => {
