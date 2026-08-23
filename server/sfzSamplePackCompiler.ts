@@ -19,8 +19,10 @@ export interface SfzSamplePackCompileOptions {
   id: string
   name: string
   instrumentManifestId?: string
+  /** Compatibility alias used by the first installer draft. */
   instrument?: string
   license?: string
+  /** Compatibility alias used by the first installer draft. */
   sourceLicense?: string
   sourceName: string
   sourceUrl?: string
@@ -34,6 +36,7 @@ interface GroupState {
   defaultPath: string
   seqLength: number
   seqPosition: number
+  groupRoundRobin: number
 }
 
 const NOTE = /^([a-gA-G])([#b]?)(-?\d+)$/
@@ -64,19 +67,26 @@ function normalizeDefaultPath(value: string) {
   return parts.join("/")
 }
 
-function articulationForSwitch(value: string | undefined): TloqueArticulation {
-  if (!value) return "normal"
-  const midi = /^\d+$/.test(value) ? Number(value) : sfzNoteToMidi(value)
-  if (midi === 37) return "tremolo"
-  if (midi === 38) return "spiccato"
-  if (midi === 39) return "pizzicato"
+/**
+ * Keyswitch pitches are library-local, so never infer an articulation from a
+ * fixed MIDI number. VSCO, for example, uses C2-D#2 for viola but C6-D#6 for
+ * cello. The human-readable sw_label is the stable semantic source.
+ */
+function articulationForGroup(label: string | undefined): TloqueArticulation {
+  const normalized = (label || "").toLowerCase()
+  if (/pizz/.test(normalized)) return "pizzicato"
+  if (/spic/.test(normalized)) return "spiccato"
+  if (/trem/.test(normalized)) return "tremolo"
+  if (/stacc/.test(normalized)) return "staccato"
+  if (/harm/.test(normalized)) return "harmonic"
   return "normal"
 }
 
+/** SFZ opcodes may contain spaces (notably default_path). Read until the next key=. */
 function opcodes(text: string) {
   const map = new Map<string, string>()
-  const cleaned = text.replace(/\/\/.*$/gm, " ").replace(/[\r\n]+/g, " ")
-  const regex = /([A-Za-z_][\w]*)\s*=\s*(.*?)(?=\s+[A-Za-z_][\w]*\s*=|\s*<|$)/g
+  const cleaned = text.replace(/\/\/.*$/gm, " ")
+  const regex = /([A-Za-z_][\w]*)\s*=\s*(.*?)(?=\s+[A-Za-z_][\w]*\s*=|\s*<|$)/gs
   for (const match of cleaned.matchAll(regex)) map.set(match[1].toLowerCase(), match[2].trim())
   return map
 }
@@ -88,11 +98,22 @@ function assertSafeSfz(source: string) {
   if (/\b(?:sample|default_path)\s*=\s*(?:https?:|file:|\/)/i.test(source)) throw new Error("El SFZ curado no puede usar rutas externas o absolutas")
 }
 
+function rrFromGroup(values: Map<string, string>): number {
+  const groupLabel = values.get("group_label")?.match(/(?:^|[_-])(\d+)$/i)
+  if (groupLabel) return Math.max(0, Number(groupLabel[1]) - 1)
+  return 0
+}
+
+function rrFromSample(sample: string): number | null {
+  const match = sample.match(/(?:^|[_-])rr(\d+)(?=\D|$)/i)
+  return match ? Math.max(0, Number(match[1]) - 1) : null
+}
+
 export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
   assertSafeSfz(source)
   const chunks = source.split(/(?=<(?:control|group|region)>)/gi)
   let defaultPath = ""
-  let group: GroupState = { articulation: "normal", defaultPath: "", seqLength: 1, seqPosition: 1 }
+  let group: GroupState = { articulation: "normal", defaultPath: "", seqLength: 1, seqPosition: 1, groupRoundRobin: 0 }
   const rawZones: Omit<CompiledSfzZone, "velocityLayer">[] = []
 
   for (const chunk of chunks) {
@@ -106,10 +127,11 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
     }
     if (type === "group") {
       group = {
-        articulation: articulationForSwitch(values.get("sw_last")),
+        articulation: articulationForGroup(values.get("sw_label")),
         defaultPath,
         seqLength: Math.max(1, Number(values.get("seq_length") || 1)),
         seqPosition: Math.max(1, Number(values.get("seq_position") || 1)),
+        groupRoundRobin: rrFromGroup(values),
       }
       continue
     }
@@ -123,6 +145,7 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
     const hiVelocity = Number(values.get("hivel") || 127)
     if (![loMidi, hiMidi, rootMidi, loVelocity, hiVelocity].every(Number.isFinite)) throw new Error("Región SFZ incompleta")
     const samplePath = normalizeRelativePath(`${group.defaultPath}/${sample}`)
+    const sampleRoundRobin = rrFromSample(sample)
     rawZones.push({
       articulation: group.articulation,
       samplePath,
@@ -131,7 +154,7 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
       hiMidi,
       loVelocity,
       hiVelocity,
-      roundRobin: Math.max(0, group.seqLength > 1 ? group.seqPosition - 1 : 0),
+      roundRobin: sampleRoundRobin ?? (group.seqLength > 1 ? group.seqPosition - 1 : group.groupRoundRobin),
       gainDb: Number(values.get("volume") || 0),
       tuneCents: Number(values.get("tune") || 0),
     })
@@ -140,11 +163,12 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
   if (!rawZones.length) throw new Error("El SFZ no produjo zonas")
   const velocityBands = new Map<string, { lo: number; hi: number }[]>()
   for (const zone of rawZones) {
-    const bands = velocityBands.get(zone.articulation) ?? []
+    const key = zone.articulation
+    const bands = velocityBands.get(key) ?? []
     if (!bands.some(item => item.lo === zone.loVelocity && item.hi === zone.hiVelocity)) {
       bands.push({ lo: zone.loVelocity, hi: zone.hiVelocity })
       bands.sort((a, b) => a.lo - b.lo)
-      velocityBands.set(zone.articulation, bands)
+      velocityBands.set(key, bands)
     }
   }
 
