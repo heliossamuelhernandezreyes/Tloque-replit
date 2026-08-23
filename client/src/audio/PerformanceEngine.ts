@@ -77,8 +77,15 @@ export function resolvePerformanceRoute(
 ): PerformanceRoute {
   const baseProgram = baseProgramForTrack(track)
   const manifest = resolveInstrumentManifest(track, manifests)
-  const route = manifest?.articulations.find(item => item.articulation === articulation) ?? null
-  const dedicated = Boolean(route && (route.program !== undefined || route.keyswitch !== undefined || route.controller !== undefined))
+  const exactRoute = manifest?.articulations.find(item => item.articulation === articulation) ?? null
+  // A keyswitch-based sampler must actively return to its sustain/default state
+  // after pizzicato/spiccato. If the requested technique is unavailable, use the
+  // manifest's normal selector as an explicit reset without claiming that the
+  // unsupported technique was actually recorded.
+  const route = exactRoute ?? manifest?.articulations.find(item => item.articulation === "normal") ?? null
+  const dedicated = Boolean(exactRoute && (
+    exactRoute.program !== undefined || exactRoute.keyswitch !== undefined || exactRoute.controller !== undefined
+  ))
   return {
     manifestId: manifest?.id ?? null,
     articulation,
@@ -172,7 +179,8 @@ export function buildPerformancePlan(
     const durationSeconds = "durationSeconds" in event ? event.durationSeconds : event.durationBeats * 60 / recipe.plan.bpm
     const previous = previousByTrack.get(track.id)
     const connected = Boolean(
-      resolved.route?.trueLegato
+      resolved.route?.articulation === articulation
+      && resolved.route?.trueLegato
       && previous
       && previous.notes.length === 1
       && event.notes.length === 1
@@ -189,7 +197,7 @@ export function buildPerformancePlan(
       velocityLayer: velocityLayerIndex(event.velocity, resolved.route?.velocityLayers ?? 1),
       roundRobin: deterministicRoundRobinIndex(recipe.plan.seed, identity, resolved.route?.roundRobins ?? 1),
       trueLegato: connected,
-      releaseSamples: Boolean(resolved.route?.releaseSamples),
+      releaseSamples: Boolean(resolved.route?.articulation === articulation && resolved.route?.releaseSamples),
       previousNotes: connected && previous ? previous.notes : null,
       identity,
     })
