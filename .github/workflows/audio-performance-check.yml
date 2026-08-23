@@ -4,8 +4,15 @@ on:
   pull_request:
     paths:
       - 'client/src/audio/**'
+      - 'client/src/pages/AudioCatalogAdmin.tsx'
+      - 'client/src/pages/VscoInstallerAdmin.tsx'
       - 'shared/audio.ts'
+      - 'shared/audio-module-sources.ts'
       - 'shared/instrument-manifest.ts'
+      - 'shared/native-sample-pack.ts'
+      - 'server/audioModuleInstaller.ts'
+      - 'server/audioUploads.ts'
+      - 'server/sfzSamplePackCompiler.ts'
       - 'tests/**'
       - 'package.json'
       - '.github/workflows/audio-performance-check.yml'
@@ -14,8 +21,15 @@ on:
       - agent/performance-engine-v1
     paths:
       - 'client/src/audio/**'
+      - 'client/src/pages/AudioCatalogAdmin.tsx'
+      - 'client/src/pages/VscoInstallerAdmin.tsx'
       - 'shared/audio.ts'
+      - 'shared/audio-module-sources.ts'
       - 'shared/instrument-manifest.ts'
+      - 'shared/native-sample-pack.ts'
+      - 'server/audioModuleInstaller.ts'
+      - 'server/audioUploads.ts'
+      - 'server/sfzSamplePackCompiler.ts'
       - 'tests/**'
       - 'package.json'
       - '.github/workflows/audio-performance-check.yml'
@@ -36,10 +50,10 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: package.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm install --ignore-scripts
+        run: npm ci --ignore-scripts
 
       - name: TypeScript
         run: npm run check
