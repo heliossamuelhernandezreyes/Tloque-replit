@@ -31,8 +31,11 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(value: unknown,
 
   const decodedByUrl = new Map<string, AudioBuffer>()
   plan.zones.forEach((zone, index) => { const buffer = decoded[index]; if (buffer) decodedByUrl.set(zone.sampleUrl, buffer) })
-  const naturalEnd = plan.voices.reduce((latest, voice) => {
-    if (!voice.oneShot || !voice.sampleUrl) return latest
+  const physicalEvents = [
+    ...plan.voices.filter(voice => voice.oneShot).map(voice => ({ sampleUrl: voice.sampleUrl, startSeconds: voice.startSeconds, playbackRate: voice.playbackRate })),
+    ...plan.auxiliaryVoices.map(voice => ({ sampleUrl: voice.sampleUrl, startSeconds: voice.startSeconds, playbackRate: voice.playbackRate })),
+  ]
+  const naturalEnd = physicalEvents.reduce((latest, voice) => {
     const physical = decodedByUrl.get(voice.sampleUrl)?.duration ?? 0
     return Math.max(latest, voice.startSeconds + physical / Math.max(0.01, voice.playbackRate))
   }, recipe.plan.totalSeconds)
@@ -56,14 +59,31 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(value: unknown,
     if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds); else gain.gain.setValueAtTime(control.gain, at)
   }
 
+  const zoneById = new Map(plan.zones.map(zone => [zone.id, zone]))
   const scheduled: Promise<unknown>[] = []
   for (const voice of plan.voices) {
-    const destination = trackGain.get(voice.trackId); if (!destination) continue
-    scheduled.push(player.play({
-      pack, articulation: voice.articulation, note: voice.note, velocity: voice.velocity, roundRobin: voice.roundRobin,
-      vibrato: voice.vibrato, vibratoColour: voice.vibratoColour, mute: voice.mute,
-      startTime: voice.startSeconds, durationSeconds: voice.durationSeconds, destination, oneShot: voice.oneShot,
-    }))
+    const destination = trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
+    if (!destination || !zone) continue
+    scheduled.push(player.playSelection(
+      { zone, playbackRate: voice.playbackRate, gain: voice.sampleGain },
+      voice.startSeconds,
+      voice.durationSeconds,
+      destination,
+      0,
+      voice.oneShot,
+    ))
+  }
+  for (const auxiliary of plan.auxiliaryVoices) {
+    const destination = trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
+    if (!destination || !zone) continue
+    scheduled.push(player.playSelection(
+      { zone, playbackRate: auxiliary.playbackRate, gain: auxiliary.sampleGain },
+      auxiliary.startSeconds,
+      auxiliary.durationSeconds,
+      destination,
+      0,
+      true,
+    ))
   }
   await Promise.all(scheduled); assertNotAborted(options.signal); options.onProgress?.(0.28)
   const rendered = await context.startRendering(); options.onProgress?.(0.82)
