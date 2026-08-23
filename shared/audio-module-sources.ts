@@ -1,4 +1,4 @@
-export const AUDIO_SOURCE_REGISTRY_VERSION = "tloque-audio-sources-2026-08-v2" as const
+export const AUDIO_SOURCE_REGISTRY_VERSION = "tloque-audio-sources-2026-08-v3" as const
 
 export type AudioSourceStatus = "integrated" | "approved" | "conversion" | "review" | "excluded"
 export type AudioSourceKind = "runtime" | "theory" | "offline-tool" | "sample-library" | "plugin-standard"
@@ -15,6 +15,7 @@ export interface AudioModuleSource {
   decision: string
   formats: readonly string[]
   install?: CuratedAudioModuleInstall
+  samplePackInstall?: CuratedSamplePackInstall
 }
 
 export interface CuratedAudioModuleInstall {
@@ -26,6 +27,17 @@ export interface CuratedAudioModuleInstall {
   estimatedMegabytes: number
   presetCount: number
   drumKitCount: number
+  acknowledgement: string
+  tags: readonly string[]
+}
+
+export interface CuratedSamplePackInstall {
+  moduleId: string
+  manifestId: string
+  version: string
+  pinnedCommit: string
+  sfzPath: string
+  estimatedMegabytes: number
   acknowledgement: string
   tags: readonly string[]
 }
@@ -132,13 +144,23 @@ export const AUDIO_MODULE_SOURCES: readonly AudioModuleSource[] = [
     id: "vsco2-ce",
     name: "VSCO 2 Community Edition",
     kind: "sample-library",
-    status: "conversion",
+    status: "approved",
     license: "CC0-1.0",
     repositoryUrl: "https://github.com/sgossner/VSCO-2-CE",
     documentationUrl: "https://sfzinstruments.github.io/orchestra/vcso_ce/",
     role: "Cuerdas, metales, maderas, percusión y cámara orquestal.",
-    decision: "Fuente oficial aprobada; requiere empaquetado revisado de SFZ/WAV a SF2/SF3 antes de publicarse.",
-    formats: ["SFZ", "WAV"],
+    decision: "Aprobado para empaquetado nativo seguro; el primer paquete es Solo Violin y conserva capas dinámicas y round-robin del SFZ original.",
+    formats: ["SFZ", "WAV", "TloqueSamplePack"],
+    samplePackInstall: {
+      moduleId: "vsco2-ce-solo-violin",
+      manifestId: "vsco2-ce-solo-violin",
+      version: "SFZ-6dd651d",
+      pinnedCommit: "6dd651d55dde97fd4028699be9d4481f26917891",
+      sfzPath: "SViolin-KS.sfz",
+      estimatedMegabytes: 118,
+      acknowledgement: "VSCO 2 Community Edition se distribuye bajo CC0-1.0. Instalaré únicamente el Solo Violin fijado al commit 6dd651d55dde97fd4028699be9d4481f26917891 y Tloque verificará cada WAV antes de publicarlo.",
+      tags: ["module:vsco2-ce-solo-violin", "manifest:vsco2-ce-solo-violin", "native-samples", "violin", "strings", "cc0", "velocity-layers", "round-robin"],
+    },
   },
   {
     id: "vcsl",

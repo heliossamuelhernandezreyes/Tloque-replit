@@ -13,6 +13,8 @@ export interface MusicCue {
   packSha256?: string
   packBytes?: number | null
   instrumentProgram?: number | null
+  /** Explicit acoustic protocol for a curated module; null/undefined keeps generic GM fallback. */
+  instrumentManifestId?: string | null
   loop: boolean
   volume: number
   crossfadeSeconds: number

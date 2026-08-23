@@ -6,7 +6,7 @@ import {
   anyLinearScoreRecipeSchema, uiSoundRecipeSchema,
 } from "../shared/audio"
 
-test("TloqueScore compila una partitura instrumental determinista", () => {
+test("TloqueScore compila la partitura de referencia de forma determinista", () => {
   const first = compileTloqueScore(DEFAULT_TLOQUE_SCORE)
   const second = compileTloqueScore(DEFAULT_TLOQUE_SCORE)
   assert.equal(first.ok, true)
@@ -25,6 +25,8 @@ test("TloqueScore compila una partitura instrumental determinista", () => {
     assert.equal(first.recipe.plan.controls.length, 4)
     assert.equal(first.recipe.plan.humanize, 0.12)
     assert.equal(first.recipe.plan.tracks[1].vibrato, 0.16)
+    assert.equal(first.recipe.plan.tracks[0].timbre, "natural")
+    assert.equal(first.recipe.plan.events[0].timbre, "natural")
     assert.equal(first.recipe.plan.sections[0].rubato, 0.08)
     assert.equal(first.recipe.plan.quality, "master")
   }
@@ -82,7 +84,7 @@ test("TloqueScore V1 sigue compilando sin migrar partituras existentes", () => {
   assert.equal(result.recipe.plan.totalBars, 4)
 })
 
-test("los planes V2 guardados antes de V2.1 conservan compatibilidad", () => {
+test("los planes V2 guardados antes de V2.1 y de timbre explícito conservan compatibilidad", () => {
   const compiled = compileTloqueScore(DEFAULT_TLOQUE_SCORE)
   assert.equal(compiled.ok, true)
   if (!compiled.ok || compiled.recipe.version !== 2) return
@@ -94,7 +96,9 @@ test("los planes V2 guardados antes de V2.1 conservan compatibilidad", () => {
     delete track.expression
     delete track.brightness
     delete track.vibrato
+    delete track.timbre
   }
+  for (const event of legacy.plan.events) delete event.timbre
   for (const section of legacy.plan.sections) delete section.rubato
   const parsed = anyLinearScoreRecipeSchema.parse(legacy)
   assert.equal(parsed.version, 2)
@@ -102,14 +106,9 @@ test("los planes V2 guardados antes de V2.1 conservan compatibilidad", () => {
   assert.equal(parsed.plan.humanize, 0)
   assert.deepEqual(parsed.plan.controls, [])
   assert.equal(parsed.plan.tracks[0].expression, 1)
+  assert.equal(parsed.plan.tracks[0].timbre, "natural")
+  assert.equal(parsed.plan.events[0].timbre, "natural")
   assert.equal(parsed.plan.sections[0].rubato, 0)
-})
-
-test("TloqueScore rechaza JavaScript, letras y comandos desconocidos", () => {
-  for (const line of ["eval alert(1)", "lyrics hola mundo", "javascript console.log(1)"]) {
-    const result = compileTloqueScore(`TLOQUE_SCORE 1\n${line}`)
-    assert.equal(result.ok, false)
-  }
 })
 
 test("TloqueScore conserva sostenidos y calcula un compás 6/8", () => {

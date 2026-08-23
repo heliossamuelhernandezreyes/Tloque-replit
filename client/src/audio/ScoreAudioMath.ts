@@ -1,6 +1,7 @@
 import type { LinearScoreRecipe, LinearScoreTrack } from "@shared/audio"
+import { baseProgramForTrack, buildPerformanceRoutingPlan, resolvePerformanceRoute } from "./PerformanceEngine"
 
-export const TLOQUE_SCORE_AUDIO_PROFILE = "tloque-score-audio-v5-sampled" as const
+export const TLOQUE_SCORE_AUDIO_PROFILE = "tloque-score-audio-v6-performance" as const
 
 export interface ScoreEnvelope {
   attack: number
@@ -113,57 +114,24 @@ export function scoreTrackVibrato(track: LinearScoreTrack): number {
 }
 
 export function scoreTrackMidiProgram(track: LinearScoreTrack): number {
-  if ("program" in track) return track.program
-  return ({ warm: 0, pad: 48, bell: 8, pluck: 24, bass: 32 } as const)[track.synth]
+  return baseProgramForTrack(track)
 }
 
-// General MIDI reserva muestras específicas para trémolo y pizzicato de cuerda.
-// Un banco compatible puede así cambiar de muestra sin cambiar TloqueScore.
+/** Compatibility facade: sampled routing is now decided by PerformanceEngine. */
 export function scoreSampledProgram(track: LinearScoreTrack, articulation = "normal"): number {
-  const base = scoreTrackMidiProgram(track)
-  const isOrchestralString = base >= 40 && base <= 43
-  if (!isOrchestralString) return base
-  if (articulation === "tremolo") return 44
-  if (articulation === "pizzicato") return 45
-  return base
+  return resolvePerformanceRoute(track, articulation as any).program
 }
 
+/**
+ * Live playback and sampled export both call this function, which delegates to
+ * the same manifest-aware routing plan. Existing GM behavior is preserved.
+ */
 export function scoreSampledChannelPlan(
   tracks: readonly LinearScoreTrack[],
   events: readonly { trackId: string; articulation?: string }[],
   maxChannels = 16,
 ): ScoreSampledChannelPlan {
-  const playableTracks = tracks.slice(0, maxChannels)
-  const tracksById = new Map(playableTracks.map(track => [track.id, track]))
-  const baseChannels = new Map<string, number>()
-  const sampledChannels = new Map<string, number>()
-  const channels: ScoreSampledChannel[] = []
-  const add = (track: LinearScoreTrack, program: number) => {
-    const key = `${track.id}:${program}`
-    const existing = sampledChannels.get(key)
-    if (existing !== undefined) return existing
-    if (channels.length >= maxChannels) return baseChannels.get(track.id)
-    const channel = channels.length
-    sampledChannels.set(key, channel)
-    channels.push({ channel, track, program })
-    if (!baseChannels.has(track.id)) baseChannels.set(track.id, channel)
-    return channel
-  }
-  for (const track of playableTracks) add(track, scoreSampledProgram(track))
-  for (const event of events) {
-    const track = tracksById.get(event.trackId)
-    if (track) add(track, scoreSampledProgram(track, event.articulation))
-  }
-  return {
-    channels,
-    channelsForTrack: trackId => channels.filter(config => config.track.id === trackId).map(config => config.channel),
-    channelForEvent: (trackId, articulation = "normal") => {
-      const track = tracksById.get(trackId)
-      return track
-        ? sampledChannels.get(`${track.id}:${scoreSampledProgram(track, articulation)}`) ?? baseChannels.get(track.id)
-        : undefined
-    },
-  }
+  return buildPerformanceRoutingPlan(tracks, events, undefined, maxChannels)
 }
 
 export function scoreBrightnessFrequency(baseHz: number, brightness: number): number {

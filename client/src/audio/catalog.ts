@@ -46,6 +46,7 @@ export function musicCueFor(asset: CatalogAudioAsset, options?: {
   loop?: boolean
   crossfadeSeconds?: number
 }): MusicCue {
+  const manifestId = asset.tags.find(tag => tag.startsWith("manifest:"))?.slice("manifest:".length)
   return {
     id: asset.id,
     title: asset.title,
@@ -57,6 +58,7 @@ export function musicCueFor(asset: CatalogAudioAsset, options?: {
     packBytes: asset.packBytes,
     packSha256: asset.packSha256,
     instrumentProgram: asset.instrumentProgram,
+    instrumentManifestId: manifestId,
     loop: options?.loop ?? asset.loop,
     volume: options?.volume ?? 0.35,
     crossfadeSeconds: options?.crossfadeSeconds ?? 6,

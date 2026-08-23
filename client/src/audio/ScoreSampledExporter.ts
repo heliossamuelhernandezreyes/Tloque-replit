@@ -1,10 +1,14 @@
 import processorUrl from "spessasynth_lib/dist/spessasynth_processor.min.js?url"
 import { MIDIBuilder } from "spessasynth_core"
 import { linearScoreRecipeFor, type LinearScoreRecipe } from "@shared/audio"
+import { manifestsForModule, type InstrumentManifest } from "@shared/instrument-manifest"
 import { fetchAudioResource } from "./AudioResourceCache"
 import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQuality } from "./ScoreExporter"
+import { buildPerformancePlan } from "./PerformanceEngine"
+import { buildSamplerEventPlan, spessaSynthActions } from "./SamplerAdapter"
+import { createSampledMixMaster } from "./ScoreMixMaster"
 import {
-  articulationDurationFactor, articulationVelocityFactor, scoreSampledChannelPlan, scoreSampledProgram,
+  articulationDurationFactor, articulationVelocityFactor,
   scoreTrackBrightness, scoreTrackExpression, scoreTrackTimbre, scoreTrackVibrato, scoreVelocityGain,
 } from "./ScoreAudioMath"
 
@@ -19,7 +23,15 @@ function midi7(value: number) {
   return Math.max(0, Math.min(127, Math.round(value * 127)))
 }
 
-export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
+function scoreManifests(recipe: LinearScoreRecipe, override?: readonly InstrumentManifest[]) {
+  if (override) return override
+  return manifestsForModule(recipe.version === 2 ? recipe.plan.moduleId : null)
+}
+
+export function buildTloqueScoreMidi(
+  value: unknown,
+  manifests?: readonly InstrumentManifest[],
+): MIDIBuilder {
   const recipe = linearScoreRecipeFor(value)
   const midi = new MIDIBuilder({
     format: 1,
@@ -34,8 +46,8 @@ export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
     midi.addTrack(track.id)
     midiTracks.set(track.id, midi.tracks.length - 1)
   }
-  const sampledPlan = scoreSampledChannelPlan(playableTracks, recipe.plan.events)
-  for (const { channel, track, program } of sampledPlan.channels) {
+  const performance = buildPerformancePlan(recipe, scoreManifests(recipe, manifests))
+  for (const { channel, track, program } of performance.channels) {
     const trackNumber = midiTracks.get(track.id)!
     const timbre = scoreTrackTimbre(track)
     midi.programChange(0, trackNumber, channel, program)
@@ -57,7 +69,7 @@ export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
     }]))
     for (const control of recipe.plan.controls) {
       const trackNumber = midiTracks.get(control.trackId)
-      const channels = sampledPlan.channelsForTrack(control.trackId)
+      const channels = performance.channelsForTrack(control.trackId)
       const state = states.get(control.trackId)
       if (trackNumber === undefined || !channels.length || !state) continue
       const scheduleController = (key: "expression" | "brightness" | "vibrato", controller: number, target: number | null) => {
@@ -67,8 +79,8 @@ export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
         for (let step = 1; step <= steps; step += 1) {
           const fraction = step / steps
           const at = ticks(control.timeSeconds + control.rampSeconds * fraction)
-          const value = midi7(from + (target - from) * fraction)
-          for (const channel of channels) midi.controllerChange(at, trackNumber, channel, controller, value)
+          const controllerValue = midi7(from + (target - from) * fraction)
+          for (const channel of channels) midi.controllerChange(at, trackNumber, channel, controller, controllerValue)
         }
         state[key] = target
       }
@@ -84,8 +96,8 @@ export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
         for (let step = 1; step <= steps; step += 1) {
           const fraction = step / steps
           const bend = from + (control.pitchBend - from) * fraction
-          const value = Math.max(0, Math.min(16_383, Math.round(8_192 + bend / 2 * 8_191)))
-          for (const channel of channels) midi.pitchWheel(ticks(control.timeSeconds + control.rampSeconds * fraction), trackNumber, channel, value)
+          const pitchValue = Math.max(0, Math.min(16_383, Math.round(8_192 + bend / 2 * 8_191)))
+          for (const channel of channels) midi.pitchWheel(ticks(control.timeSeconds + control.rampSeconds * fraction), trackNumber, channel, pitchValue)
         }
         state.pitchBend = control.pitchBend
       }
@@ -93,19 +105,32 @@ export function buildTloqueScoreMidi(value: unknown): MIDIBuilder {
   }
 
   const beatSeconds = 60 / recipe.plan.bpm
-  for (const event of recipe.plan.events) {
+  for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
+    const event = recipe.plan.events[eventIndex]
     const track = tracksById.get(event.trackId)
     const trackNumber = midiTracks.get(event.trackId)
-    if (!track || trackNumber === undefined) continue
-    const articulation = "articulation" in event ? event.articulation : "normal"
-    const channel = sampledPlan.channelForEvent(event.trackId, articulation)
+    const decision = performance.decisionForEvent(eventIndex)
+    if (!track || trackNumber === undefined || !decision) continue
+    const channel = performance.channelForEventIndex(eventIndex)
     if (channel === undefined) continue
+    const articulation = decision.articulation
     const start = "timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds
     const duration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds)
       * articulationDurationFactor(articulation)
     const velocity = midi7(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation)))
-    const usesDedicatedTremolo = articulation === "tremolo"
-      && scoreSampledProgram(track, articulation) !== scoreSampledProgram(track)
+
+    const samplerPlan = buildSamplerEventPlan(decision, decision.route)
+    const setupAt = Math.max(0, start - 0.01)
+    for (const action of spessaSynthActions(samplerPlan)) {
+      if (action.type === "controller") {
+        midi.controllerChange(ticks(setupAt), trackNumber, channel, action.cc, action.value)
+      } else if (action.type === "keyswitch") {
+        midi.noteOn(ticks(Math.max(0, setupAt - 0.015)), trackNumber, channel, action.note, action.velocity)
+        midi.noteOff(ticks(setupAt), trackNumber, channel, action.note)
+      }
+    }
+
+    const usesDedicatedTremolo = articulation === "tremolo" && decision.source === "dedicated-articulation"
     if (articulation === "tremolo" && !usesDedicatedTremolo) {
       const pulseSeconds = 0.12
       const pulses = Math.max(1, Math.ceil(duration / pulseSeconds))
@@ -139,8 +164,10 @@ export async function renderTloqueScoreWithModuleToWav(
   value: unknown,
   packUrl: string,
   options: ScoreExportOptions = {},
+  manifests?: readonly InstrumentManifest[],
 ): Promise<Blob> {
   const recipe = linearScoreRecipeFor(value)
+  const selectedManifests = scoreManifests(recipe, manifests)
   const profile = sampledQuality(recipe, options.quality)
   options.onProgress?.(0.02)
   if (options.signal?.aborted) throw new DOMException("Exportación cancelada", "AbortError")
@@ -148,7 +175,7 @@ export async function renderTloqueScoreWithModuleToWav(
   if (!response.ok) throw new Error(`No se pudo cargar el módulo instrumental (${response.status})`)
   const soundBankBuffer = await response.arrayBuffer()
   options.onProgress?.(0.12)
-  const midi = buildTloqueScoreMidi(recipe)
+  const midi = buildTloqueScoreMidi(recipe, selectedManifests)
   const durationSeconds = midi.duration + profile.tail
   const floatBytes = Math.ceil(durationSeconds * profile.sampleRate) * 2 * Float32Array.BYTES_PER_ELEMENT
   if (floatBytes > MAX_OFFLINE_FLOAT_BYTES) {
@@ -158,7 +185,9 @@ export async function renderTloqueScoreWithModuleToWav(
   await context.audioWorklet.addModule(processorUrl)
   const { WorkletSynthesizer } = await import("spessasynth_lib")
   const synth = new WorkletSynthesizer(context, { oneOutput: true })
-  synth.connect(context.destination)
+  const mix = createSampledMixMaster(context, 1)
+  synth.connect(mix.input)
+  mix.output.connect(context.destination)
   await synth.startOfflineRender({
     midiSequence: midi,
     loopCount: 0,
@@ -168,5 +197,6 @@ export async function renderTloqueScoreWithModuleToWav(
   const rendered = await context.startRendering()
   options.onProgress?.(0.82)
   synth.destroy()
+  mix.disconnect()
   return encodeAudioBufferToWav(rendered, profile.bitDepth, progress => options.onProgress?.(0.82 + progress * 0.18))
 }

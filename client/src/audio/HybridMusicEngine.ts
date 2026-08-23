@@ -1,6 +1,9 @@
+import { linearScoreRecipeFor } from "@shared/audio"
+import { instrumentManifestById } from "@shared/instrument-manifest"
 import { MusicEngine, type MusicCue, type MusicState } from "./MusicEngine"
 import type { MusicBrainScoreV1 } from "@shared/music-brain"
 import { LinearScoreEngine } from "./LinearScoreEngine"
+import { NativeSampleScoreEngine } from "./NativeSampleScoreEngine"
 import { ProceduralMusicEngine } from "./ProceduralMusicEngine"
 import { SoundFontMusicEngine } from "./SoundFontMusicEngine"
 
@@ -12,6 +15,7 @@ export class HybridMusicEngine {
   private readonly procedural: ProceduralMusicEngine
   private readonly soundfont: SoundFontMusicEngine
   private readonly score: LinearScoreEngine
+  private readonly nativeScore: NativeSampleScoreEngine
   private active: Engine | null = null
   private master = 0.35
   private ducked = false
@@ -23,32 +27,52 @@ export class HybridMusicEngine {
     this.procedural = new ProceduralMusicEngine(listener)
     this.soundfont = new SoundFontMusicEngine(listener)
     this.score = new LinearScoreEngine(listener)
+    this.nativeScore = new NativeSampleScoreEngine(listener)
   }
 
   async play(cue: MusicCue): Promise<void> {
+    let resolvedCue = cue
+    if (cue.sourceType === "score" && !cue.instrumentManifestId) {
+      try {
+        const recipe = linearScoreRecipeFor(cue.recipe)
+        if (recipe.version === 2 && recipe.plan.moduleId !== "builtin") {
+          resolvedCue = { ...cue, instrumentManifestId: recipe.plan.moduleId }
+        }
+      } catch {
+        // The concrete score renderer owns malformed recipe reporting.
+      }
+    }
+
     const AudioContextClass = typeof window !== "undefined"
       ? window.AudioContext || (window as any).webkitAudioContext
       : null
-    const needsWorklet = cue.sourceType === "soundfont"
+    const nativeManifest = resolvedCue.sourceType === "score"
+      ? instrumentManifestById(resolvedCue.instrumentManifestId)
+      : null
+    const useNativeSamples = Boolean(nativeManifest && nativeManifest.id !== "gm-orchestral-strings" && !resolvedCue.packUrl)
+    const needsWorklet = resolvedCue.sourceType === "soundfont"
+      || (resolvedCue.sourceType === "score" && Boolean(resolvedCue.packUrl) && !useNativeSamples)
     const canUseRequestedEngine = Boolean(AudioContextClass)
       && (!needsWorklet || Boolean(AudioContextClass && "audioWorklet" in AudioContextClass.prototype))
-    if (cue.sourceType !== "stream" && !canUseRequestedEngine) {
-      if (cue.url) {
-        await this.play({ ...cue, sourceType: "stream" })
+    if (resolvedCue.sourceType !== "stream" && !canUseRequestedEngine) {
+      if (resolvedCue.url) {
+        await this.play({ ...resolvedCue, sourceType: "stream" })
         return
       }
-      this.listener("error", cue)
+      this.listener("error", resolvedCue)
       return
     }
-    const next: Engine = cue.sourceType === "procedural"
+
+    const next: Engine = resolvedCue.sourceType === "procedural"
       ? this.procedural
-      : cue.sourceType === "soundfont" ? this.soundfont
-        : cue.sourceType === "score" ? this.score : this.stream
+      : resolvedCue.sourceType === "soundfont" ? this.soundfont
+        : resolvedCue.sourceType === "score" ? (useNativeSamples ? this.nativeScore : this.score)
+          : this.stream
     if (this.active && this.active !== next) this.active.stop()
     this.active = next
     next.setMasterVolume(this.master)
     next.setDucked(this.ducked)
-    await next.play(cue)
+    await next.play(resolvedCue)
   }
   setMasterVolume(value: number) { this.master = value; this.active?.setMasterVolume(value) }
   setDucked(value: boolean) { this.ducked = value; this.active?.setDucked(value) }
@@ -57,5 +81,12 @@ export class HybridMusicEngine {
   pause() { this.active?.pause() }
   async resume() { await this.active?.resume() }
   stop() { this.active?.stop(); this.active = null }
-  dispose() { this.stream.dispose(); this.procedural.dispose(); this.soundfont.dispose(); this.score.dispose(); this.active = null }
+  dispose() {
+    this.stream.dispose()
+    this.procedural.dispose()
+    this.soundfont.dispose()
+    this.score.dispose()
+    this.nativeScore.dispose()
+    this.active = null
+  }
 }

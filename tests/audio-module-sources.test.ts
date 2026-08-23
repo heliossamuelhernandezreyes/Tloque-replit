@@ -1,7 +1,12 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { AUDIO_MODULE_SOURCES, AUDIO_SOURCE_REGISTRY_VERSION } from "../shared/audio-module-sources"
-import { curatedAudioModuleSource, downloadCuratedAudioModule, MAX_CURATED_MODULE_BYTES } from "../server/audioModuleInstaller"
+import {
+  curatedAudioModuleSource,
+  curatedSamplePackSource,
+  downloadCuratedAudioModule,
+  MAX_CURATED_MODULE_BYTES,
+} from "../server/audioModuleInstaller"
 import { detectSoundBankType } from "../server/soundBankDetection"
 import { isSafeSoundBankSource } from "../shared/media"
 
@@ -19,7 +24,7 @@ function riff(form: "sfbk" | "DLS ", major = 2) {
 }
 
 test("el registro musical conserva procedencia, licencia y decisión explícitas", () => {
-  assert.equal(AUDIO_SOURCE_REGISTRY_VERSION, "tloque-audio-sources-2026-08-v2")
+  assert.equal(AUDIO_SOURCE_REGISTRY_VERSION, "tloque-audio-sources-2026-08-v3")
   assert.equal(new Set(AUDIO_MODULE_SOURCES.map(source => source.id)).size, AUDIO_MODULE_SOURCES.length)
   assert.ok(AUDIO_MODULE_SOURCES.some(source => source.status === "integrated"))
   assert.ok(AUDIO_MODULE_SOURCES.some(source => source.status === "conversion"))
@@ -55,6 +60,16 @@ test("el catálogo instalable sólo admite una fuente fijada y valida su conteni
     })),
     /64 MB/,
   )
+})
+
+test("VSCO Solo Violin queda fijado como paquete nativo y no como SoundFont genérico", () => {
+  const source = curatedSamplePackSource("vsco2-ce")
+  assert.ok(source?.samplePackInstall)
+  assert.equal(source.samplePackInstall.moduleId, "vsco2-ce-solo-violin")
+  assert.equal(source.samplePackInstall.manifestId, "vsco2-ce-solo-violin")
+  assert.equal(source.samplePackInstall.pinnedCommit, "6dd651d55dde97fd4028699be9d4481f26917891")
+  assert.equal(source.samplePackInstall.sfzPath, "SViolin-KS.sfz")
+  assert.equal(curatedAudioModuleSource("vsco2-ce"), null)
 })
 
 test("el importador reconoce bancos por contenido y no sólo por extensión", () => {

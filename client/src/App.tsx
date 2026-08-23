@@ -30,6 +30,8 @@ const CardStudio = lazy(() => import("@/pages/CardStudio"))
 const GachaScreen = lazy(() => import("@/pages/GachaScreen"))
 const FlickerLab = lazy(() => import("@/pages/FlickerLab"))
 const AudioCatalogAdmin = lazy(() => import("@/pages/AudioCatalogAdmin"))
+const VscoInstallerAdmin = lazy(() => import("@/pages/VscoInstallerAdmin"))
+const KeyboardInstallerAdmin = lazy(() => import("@/pages/KeyboardInstallerAdmin"))
 const ProfileHub = lazy(() => import("@/pages/ProfileHub"))
 const Inbox = lazy(() => import("@/pages/Inbox"))
 const Editions = lazy(() => import("@/pages/Editions"))
@@ -94,6 +96,12 @@ function Router() {
         <Route path="/admin/diag"              component={adminPage(FlickerLab)} />
         <Route path="/admin/marcos"            component={adminPage(FrameWorkshop)} />
         <Route path="/admin/fonoteca"          component={adminPage(AudioCatalogAdmin)} />
+        <Route path="/admin/audio/vsco-strings" component={adminPage(VscoInstallerAdmin)} />
+        <Route path="/admin/audio/vsco-woodwinds" component={adminPage(VscoInstallerAdmin)} />
+        <Route path="/admin/audio/vsco-brass" component={adminPage(VscoInstallerAdmin)} />
+        <Route path="/admin/audio/vsco-percussion" component={adminPage(VscoInstallerAdmin)} />
+        <Route path="/admin/audio/vsco-violin" component={adminPage(VscoInstallerAdmin)} />
+        <Route path="/admin/audio/keyboards" component={adminPage(KeyboardInstallerAdmin)} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>

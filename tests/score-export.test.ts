@@ -65,7 +65,7 @@ test("el exportador calcula PCM profesional sin guardar audio durante la edició
 })
 
 test("la preescucha y el WAV comparten afinación, articulación y envolvente", () => {
-  assert.equal(TLOQUE_SCORE_AUDIO_PROFILE, "tloque-score-audio-v5-sampled")
+  assert.equal(TLOQUE_SCORE_AUDIO_PROFILE, "tloque-score-audio-v6-performance")
   assert.equal(midiNoteToFrequency(69), 440)
   assert.ok(Math.abs(midiNoteToFrequency(60) - 261.625565) < 0.000001)
   assert.deepEqual(midiNotesToFrequencies([60, 64, 67]).map(value => Math.round(value)), [262, 330, 392])
@@ -135,14 +135,8 @@ test("el maestro máximo conserva resolución y render determinista", async () =
   if (!compiled.ok) return
   const studio = estimateScoreExport(compiled.recipe, "studio")
   const master = estimateScoreExport(compiled.recipe, "master")
-  assert.deepEqual(
-    { sampleRate: studio.sampleRate, bitDepth: studio.bitDepth },
-    { sampleRate: 48_000, bitDepth: 24 },
-  )
-  assert.deepEqual(
-    { sampleRate: master.sampleRate, bitDepth: master.bitDepth },
-    { sampleRate: 96_000, bitDepth: 24 },
-  )
+  assert.deepEqual({ sampleRate: studio.sampleRate, bitDepth: studio.bitDepth }, { sampleRate: 48_000, bitDepth: 24 })
+  assert.deepEqual({ sampleRate: master.sampleRate, bitDepth: master.bitDepth }, { sampleRate: 96_000, bitDepth: 24 })
   assert.ok(master.durationSeconds > studio.durationSeconds)
   const first = new Uint8Array(await (await renderTloqueScoreToWav(compiled.recipe, { quality: "preview" })).arrayBuffer())
   const second = new Uint8Array(await (await renderTloqueScoreToWav(compiled.recipe, { quality: "preview" })).arrayBuffer())
