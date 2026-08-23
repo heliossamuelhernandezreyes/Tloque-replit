@@ -19,10 +19,8 @@ export interface SfzSamplePackCompileOptions {
   id: string
   name: string
   instrumentManifestId?: string
-  /** Compatibility alias used by the first installer draft. */
   instrument?: string
   license?: string
-  /** Compatibility alias used by the first installer draft. */
   sourceLicense?: string
   sourceName: string
   sourceUrl?: string
@@ -77,9 +75,9 @@ function articulationForSwitch(value: string | undefined): TloqueArticulation {
 
 function opcodes(text: string) {
   const map = new Map<string, string>()
-  const cleaned = text.replace(/\/\/.*$/gm, " ")
-  const regex = /([A-Za-z_][\w]*)\s*=\s*([^\s<]+)/g
-  for (const match of cleaned.matchAll(regex)) map.set(match[1].toLowerCase(), match[2])
+  const cleaned = text.replace(/\/\/.*$/gm, " ").replace(/[\r\n]+/g, " ")
+  const regex = /([A-Za-z_][\w]*)\s*=\s*(.*?)(?=\s+[A-Za-z_][\w]*\s*=|\s*<|$)/g
+  for (const match of cleaned.matchAll(regex)) map.set(match[1].toLowerCase(), match[2].trim())
   return map
 }
 
@@ -142,12 +140,11 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
   if (!rawZones.length) throw new Error("El SFZ no produjo zonas")
   const velocityBands = new Map<string, { lo: number; hi: number }[]>()
   for (const zone of rawZones) {
-    const key = zone.articulation
-    const bands = velocityBands.get(key) ?? []
+    const bands = velocityBands.get(zone.articulation) ?? []
     if (!bands.some(item => item.lo === zone.loVelocity && item.hi === zone.hiVelocity)) {
       bands.push({ lo: zone.loVelocity, hi: zone.hiVelocity })
       bands.sort((a, b) => a.lo - b.lo)
-      velocityBands.set(key, bands)
+      velocityBands.set(zone.articulation, bands)
     }
   }
 
