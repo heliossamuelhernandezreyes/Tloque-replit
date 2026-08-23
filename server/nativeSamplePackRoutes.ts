@@ -6,7 +6,7 @@ import { requireAdmin } from "./auth"
 import { audioStorage } from "./audioStorage"
 import { curatedSamplePackSource, downloadCuratedSamplePack } from "./audioModuleInstaller"
 import { rateLimit } from "./rateLimit"
-import { compileSfzToTloqueSamplePack } from "./sfzSamplePackCompiler"
+import { compileSfzBundleToTloqueSamplePack } from "./sfzSamplePackCompiler"
 
 function safeModuleId(value: string) {
   return /^[a-z0-9][a-z0-9._-]{0,79}$/.test(value)
@@ -60,7 +60,7 @@ export function registerNativeSamplePackRoutes(app: Express) {
           sampleShaByPath.set(normalizedPath, sample.sha256)
         }
 
-        const pack = compileSfzToTloqueSamplePack(downloaded.sfzText, {
+        const pack = compileSfzBundleToTloqueSamplePack(downloaded.sfzSources.map(item => item.text), {
           id: source.moduleId,
           name: `${source.libraryName} · ${source.displayName}`,
           instrumentManifestId: source.manifestId,
@@ -110,7 +110,9 @@ export function registerNativeSamplePackRoutes(app: Express) {
             repositoryUrl: source.repositoryUrl,
             pinnedCommit: source.pinnedCommit,
             sfzPath: source.sfzPath,
+            sfzPaths: source.sfzPaths,
             sfzSha256: downloaded.sfzSha256,
+            sfzSources: downloaded.sfzSources.map(item => ({ path: item.path, sha256: item.sha256 })),
             tags: source.tags,
           },
         })
