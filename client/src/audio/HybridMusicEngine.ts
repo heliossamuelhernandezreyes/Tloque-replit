@@ -1,7 +1,9 @@
 import { linearScoreRecipeFor } from "@shared/audio"
+import { instrumentManifestById } from "@shared/instrument-manifest"
 import { MusicEngine, type MusicCue, type MusicState } from "./MusicEngine"
 import type { MusicBrainScoreV1 } from "@shared/music-brain"
 import { LinearScoreEngine } from "./LinearScoreEngine"
+import { NativeSampleScoreEngine } from "./NativeSampleScoreEngine"
 import { ProceduralMusicEngine } from "./ProceduralMusicEngine"
 import { SoundFontMusicEngine } from "./SoundFontMusicEngine"
 
@@ -13,6 +15,7 @@ export class HybridMusicEngine {
   private readonly procedural: ProceduralMusicEngine
   private readonly soundfont: SoundFontMusicEngine
   private readonly score: LinearScoreEngine
+  private readonly nativeScore: NativeSampleScoreEngine
   private active: Engine | null = null
   private master = 0.35
   private ducked = false
@@ -24,6 +27,7 @@ export class HybridMusicEngine {
     this.procedural = new ProceduralMusicEngine(listener)
     this.soundfont = new SoundFontMusicEngine(listener)
     this.score = new LinearScoreEngine(listener)
+    this.nativeScore = new NativeSampleScoreEngine(listener)
   }
 
   async play(cue: MusicCue): Promise<void> {
@@ -35,15 +39,19 @@ export class HybridMusicEngine {
           resolvedCue = { ...cue, instrumentManifestId: recipe.plan.moduleId }
         }
       } catch {
-        // LinearScoreEngine owns validation/error reporting for malformed score recipes.
+        // The concrete score renderer owns malformed recipe reporting.
       }
     }
 
     const AudioContextClass = typeof window !== "undefined"
       ? window.AudioContext || (window as any).webkitAudioContext
       : null
+    const nativeManifest = resolvedCue.sourceType === "score"
+      ? instrumentManifestById(resolvedCue.instrumentManifestId)
+      : null
+    const useNativeSamples = Boolean(nativeManifest && nativeManifest.id !== "gm-orchestral-strings" && !resolvedCue.packUrl)
     const needsWorklet = resolvedCue.sourceType === "soundfont"
-      || (resolvedCue.sourceType === "score" && Boolean(resolvedCue.packUrl))
+      || (resolvedCue.sourceType === "score" && Boolean(resolvedCue.packUrl) && !useNativeSamples)
     const canUseRequestedEngine = Boolean(AudioContextClass)
       && (!needsWorklet || Boolean(AudioContextClass && "audioWorklet" in AudioContextClass.prototype))
     if (resolvedCue.sourceType !== "stream" && !canUseRequestedEngine) {
@@ -54,10 +62,12 @@ export class HybridMusicEngine {
       this.listener("error", resolvedCue)
       return
     }
+
     const next: Engine = resolvedCue.sourceType === "procedural"
       ? this.procedural
       : resolvedCue.sourceType === "soundfont" ? this.soundfont
-        : resolvedCue.sourceType === "score" ? this.score : this.stream
+        : resolvedCue.sourceType === "score" ? (useNativeSamples ? this.nativeScore : this.score)
+          : this.stream
     if (this.active && this.active !== next) this.active.stop()
     this.active = next
     next.setMasterVolume(this.master)
@@ -71,5 +81,12 @@ export class HybridMusicEngine {
   pause() { this.active?.pause() }
   async resume() { await this.active?.resume() }
   stop() { this.active?.stop(); this.active = null }
-  dispose() { this.stream.dispose(); this.procedural.dispose(); this.soundfont.dispose(); this.score.dispose(); this.active = null }
+  dispose() {
+    this.stream.dispose()
+    this.procedural.dispose()
+    this.soundfont.dispose()
+    this.score.dispose()
+    this.nativeScore.dispose()
+    this.active = null
+  }
 }
