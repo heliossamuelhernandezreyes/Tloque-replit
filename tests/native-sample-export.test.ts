@@ -54,6 +54,7 @@ test("live y WAV comparten un único plan de voces nativas", () => {
   assert.deepEqual(plan.voices.map(voice => voice.startSeconds), [0, 1])
   assert.equal(plan.voices[0].durationSeconds, 0.96)
   assert.ok(plan.voices[1].durationSeconds < 0.5)
+  assert.ok(plan.voices.every(voice => voice.oneShot === false))
   assert.ok(plan.zones.some(zone => zone.id === "sus"))
   assert.ok(plan.zones.some(zone => zone.id === "spic0" || zone.id === "spic1"))
 })
