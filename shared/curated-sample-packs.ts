@@ -22,7 +22,10 @@ export interface CuratedSamplePackSource {
   license: string
   repositoryUrl: string
   pinnedCommit: string
+  /** Primary SFZ kept for backwards compatibility and provenance displays. */
   sfzPath: string
+  /** One or more SFZ patches compiled into the same native instrument. */
+  sfzPaths: readonly string[]
   estimatedMegabytes: number
   acknowledgement: string
   tags: readonly string[]
@@ -37,11 +40,12 @@ const VSCO_LICENSE = "CC0-1.0"
 
 type VscoInput = Omit<
   CuratedSamplePackSource,
-  "name" | "libraryName" | "version" | "license" | "repositoryUrl" | "pinnedCommit" | "acknowledgement" | "samplePackInstall"
->
+  "name" | "libraryName" | "version" | "license" | "repositoryUrl" | "pinnedCommit" | "acknowledgement" | "samplePackInstall" | "sfzPaths"
+> & { sfzPaths?: readonly string[] }
 
 function vscoPack(input: VscoInput): CuratedSamplePackSource {
   const libraryName = "VSCO 2 Community Edition"
+  const sfzPaths = input.sfzPaths?.length ? [...input.sfzPaths] : [input.sfzPath]
   const acknowledgement = `VSCO 2 Community Edition se distribuye bajo CC0-1.0. Tloque instalará únicamente ${input.displayName} desde el commit ${VSCO_COMMIT}, verificará cada WAV y lo copiará a App Storage antes de reproducirlo.`
   const samplePackInstall: CuratedSamplePackInstallCompat = {
     moduleId: input.moduleId,
@@ -55,6 +59,7 @@ function vscoPack(input: VscoInput): CuratedSamplePackSource {
   }
   return {
     ...input,
+    sfzPaths,
     name: libraryName,
     libraryName,
     version: VSCO_VERSION,
@@ -70,7 +75,8 @@ function vscoPack(input: VscoInput): CuratedSamplePackSource {
  * Curated native sample packs are intentionally independent downloads. Mobile
  * devices can keep only the instruments a reader/author actually uses.
  * Names reflect the upstream recording identity; section patches are never
- * presented as solo instruments.
+ * presented as solo instruments. Multi-SFZ entries combine upstream patches
+ * without inventing techniques that are not present in the recordings.
  */
 export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [
   vscoPack({
@@ -112,6 +118,48 @@ export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [
     sfzPath: "Contrabass-KS.sfz",
     estimatedMegabytes: 120,
     tags: ["native-samples", "solo", "contrabass", "strings", "cc0", "velocity-layers", "round-robin"],
+  }),
+  vscoPack({
+    id: "vsco2-ce-flute",
+    displayName: "Flute",
+    instrumentId: "woodwinds.flute",
+    moduleId: "vsco2-ce-flute",
+    manifestId: "vsco2-ce-flute",
+    sfzPath: "Flute-KS.sfz",
+    estimatedMegabytes: 85,
+    tags: ["native-samples", "solo", "flute", "woodwinds", "cc0", "velocity-layers", "round-robin"],
+  }),
+  vscoPack({
+    id: "vsco2-ce-clarinet",
+    displayName: "Clarinet",
+    instrumentId: "woodwinds.clarinet",
+    moduleId: "vsco2-ce-clarinet",
+    manifestId: "vsco2-ce-clarinet",
+    sfzPath: "Clarinet-KS.sfz",
+    estimatedMegabytes: 70,
+    tags: ["native-samples", "solo", "clarinet", "woodwinds", "cc0", "velocity-layers", "round-robin"],
+  }),
+  vscoPack({
+    id: "vsco2-ce-oboe",
+    displayName: "Oboe",
+    instrumentId: "woodwinds.oboe",
+    moduleId: "vsco2-ce-oboe",
+    manifestId: "vsco2-ce-oboe",
+    sfzPath: "OboeSusNV.sfz",
+    sfzPaths: ["OboeSusNV.sfz", "OboeStac.sfz"],
+    estimatedMegabytes: 55,
+    tags: ["native-samples", "solo", "oboe", "woodwinds", "cc0", "multi-sfz", "velocity-layers", "round-robin"],
+  }),
+  vscoPack({
+    id: "vsco2-ce-bassoon",
+    displayName: "Bassoon",
+    instrumentId: "woodwinds.bassoon",
+    moduleId: "vsco2-ce-bassoon",
+    manifestId: "vsco2-ce-bassoon",
+    sfzPath: "BassoonSus.sfz",
+    sfzPaths: ["BassoonSus.sfz", "BassoonStac.sfz"],
+    estimatedMegabytes: 50,
+    tags: ["native-samples", "solo", "bassoon", "woodwinds", "cc0", "multi-sfz", "velocity-layers", "round-robin"],
   }),
 ]
 
