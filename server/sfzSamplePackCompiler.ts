@@ -70,14 +70,14 @@ function normalizeDefaultPath(value: string) {
 /**
  * Keyswitch pitches are library-local, so never infer an articulation from a
  * fixed MIDI number. Prefer sw_label; for older/lean SFZ patches without it,
- * infer only from semantic path names such as /spic/ or /pizz/.
+ * infer only from semantic path names such as /spic/, /pizz/ or /stacc/.
  */
 function articulationForGroup(label: string | undefined, defaultPath = ""): TloqueArticulation {
   const normalized = `${label || ""} ${defaultPath}`.toLowerCase()
   if (/pizz/.test(normalized)) return "pizzicato"
   if (/spic/.test(normalized)) return "spiccato"
   if (/trem/.test(normalized)) return "tremolo"
-  if (/stacc/.test(normalized)) return "staccato"
+  if (/stacc?/.test(normalized)) return "staccato"
   if (/harm/.test(normalized)) return "harmonic"
   return "normal"
 }
@@ -182,12 +182,28 @@ export function samplePathsFromSfz(source: string): string[] {
   return [...new Set(compileCuratedSfzZones(source).map(zone => zone.samplePath))]
 }
 
-export function compileSfzToTloqueSamplePack(source: string, options: SfzSamplePackCompileOptions): TloqueSamplePack {
+function packMetadata(options: SfzSamplePackCompileOptions) {
   const manifestId = options.instrumentManifestId || options.id
   const license = options.license || options.sourceLicense
   if (!license) throw new Error("El paquete curado no declara licencia")
-  const zones = compileCuratedSfzZones(source).map((zone, index) => ({
-    id: `${index}:${zone.samplePath}`,
+  return { manifestId, license }
+}
+
+export function compileSfzToTloqueSamplePack(source: string, options: SfzSamplePackCompileOptions): TloqueSamplePack {
+  return compileSfzBundleToTloqueSamplePack([source], options)
+}
+
+/**
+ * Compiles multiple upstream SFZ patches into one inert TloqueSamplePack.
+ * This is used when a real instrument is published as separate sustain and
+ * staccato files (e.g. VSCO oboe/bassoon). The semantic articulation still
+ * comes from each SFZ's own label/path; no technique is synthesized here.
+ */
+export function compileSfzBundleToTloqueSamplePack(sources: readonly string[], options: SfzSamplePackCompileOptions): TloqueSamplePack {
+  if (!sources.length) throw new Error("El paquete curado no contiene SFZ")
+  const { manifestId, license } = packMetadata(options)
+  const zones = sources.flatMap((source, sourceIndex) => compileCuratedSfzZones(source).map((zone, zoneIndex) => ({
+    id: `${sourceIndex}:${zoneIndex}:${zone.samplePath}`,
     articulation: zone.articulation,
     sampleUrl: options.sampleUrlForPath(zone.samplePath),
     sha256: options.sampleSha256ForPath?.(zone.samplePath),
@@ -200,7 +216,7 @@ export function compileSfzToTloqueSamplePack(source: string, options: SfzSampleP
     roundRobin: zone.roundRobin,
     gainDb: zone.gainDb,
     tuneCents: zone.tuneCents,
-  }))
+  })))
   return validateTloqueSamplePack({
     version: 1,
     id: options.id,
