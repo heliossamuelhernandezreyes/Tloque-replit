@@ -20,10 +20,10 @@ Performance Engine
    └─ Release-sample resolver
    ↓
 Renderer-neutral PerformancePlan
-   ├─ shared sampled routing → live SoundFont playback
-   └─ shared sampled routing → sampled WAV export
+   ├─ full per-event plan → sampled WAV export
+   └─ shared manifest routing → live SoundFont playback
    ↓
-future unified mix/master
+future sampler adapters + unified mix/master
 ```
 
 ## Principio de seguridad acústica
@@ -38,23 +38,15 @@ El primer manifest incorporado es `gm-orchestral-strings`. Conserva General MIDI
 
 ## PerformancePlan
 
-`client/src/audio/PerformanceEngine.ts` ya compila decisiones acústicas por evento. Cada decisión conserva:
+`client/src/audio/PerformanceEngine.ts` compila decisiones acústicas por evento. Cada decisión conserva manifest, articulación, programa/preset, origen de la ruta, velocity layer, round robin determinista, posible transición true-legato, release samples e identidad estable del evento.
 
-- manifest resuelto;
-- articulación solicitada;
-- programa/preset seleccionado;
-- si la ruta es base o articulación dedicada;
-- velocity layer;
-- round robin determinista;
-- posible transición true-legato y nota previa;
-- presencia de release samples;
-- identidad estable del evento.
+También existe `PerformanceRoutingPlan`, que concentra asignación de programas y canales. `ScoreAudioMath.scoreSampledChannelPlan()` delega a esta capa, de modo que el playback SoundFont y la exportación dejan de mantener reglas GM separadas.
 
-También existe `PerformanceRoutingPlan`, que concentra la asignación de programas y canales. `ScoreAudioMath.scoreSampledChannelPlan()` delega a este plan, por lo que el playback SoundFont y el exportador WAV muestreado dejan de mantener reglas GM separadas.
+`ScoreSampledExporter` ya consume el `PerformancePlan` completo por evento. El playback SoundFont en vivo consume todavía la porción de routing compartida; la metadata RR/velocity/legato/releases se activará en vivo cuando entren los sampler adapters capaces de seleccionar esos recursos.
 
 ## Determinismo
 
-Round robin se selecciona mediante `seed + event identity`. Velocity layer se obtiene de la velocidad compilada. Una misma obra, semilla y manifest generan las mismas decisiones acústicas. Esto conserva la reproducibilidad de TloqueScore.
+Round robin se selecciona mediante `seed + event identity`. Velocity layer se obtiene de la velocidad compilada. Una misma obra, semilla y manifest generan las mismas decisiones acústicas.
 
 ## Estado de integración
 
@@ -65,20 +57,19 @@ Round robin se selecciona mediante `seed + event identity`. Velocity layer se ob
 - Round-robin determinista.
 - Pruebas de compatibilidad 40/44/45.
 
-### Fase 2 — PerformancePlan · completada en contrato y routing
+### Fase 2 — PerformancePlan · completada
 
 - decisiones por evento;
 - velocity layer;
 - round robin;
 - detección de transición true-legato monofónica;
 - release-sample metadata;
-- routing compartido entre preview SoundFont y WAV muestreado.
-
-Las bibliotecas actuales todavía no exponen RR/legato/releases reales, por lo que esos campos permanecen metadata hasta instalar un sampler/banco que pueda consumirlos.
+- routing compartido;
+- exportación muestreada consumiendo PerformancePlan completo.
 
 ### Fase 3 — sampler adapters · siguiente
 
-Añadir adaptadores de manifest para keyswitches, CC selectors y/o regiones de samples. En esta fase `PerformancePlan.roundRobin`, `velocityLayer`, `trueLegato` y `releaseSamples` empezarán a seleccionar recursos acústicos reales, no sólo describirlos.
+Añadir adaptadores de manifest para keyswitches, CC selectors y/o regiones de samples. En esta fase `roundRobin`, `velocityLayer`, `trueLegato` y `releaseSamples` empezarán a seleccionar recursos acústicos reales también en reproducción en vivo.
 
 ### Fase 4 — renderer parity y unified mix/master
 
@@ -86,20 +77,12 @@ Extraer la cadena de mezcla a una especificación compartida. El renderer muestr
 
 ### Fase 5 — módulos premium
 
-Prioridades:
-
-1. violín solista con múltiples dinámicas, RR, legato y releases;
-2. cello solista;
-3. piano con capas de velocidad y pedal/resonancia;
-4. cuerdas de sección;
-5. maderas y metales.
+Prioridades: violín solista, cello solista, piano con capas/pedal/resonancia, cuerdas de sección, maderas y metales.
 
 ## Criterio de calidad para violín premium
 
-Un módulo no se considera `premium-solo-string` sólo por usar samples. Debe cubrir como mínimo sustain en varias dinámicas, short notes con al menos 3 round robins, pizzicato y tremolo dedicados, legato/transiciones reales o ausencia explícita, releases, rango/afinación documentados, licencia/procedencia verificadas y presupuesto de memoria móvil conocido.
-
-Spiccato, harmonics y otras técnicas sólo se declaran cuando existen como recursos reales o cuando el manifest indica explícitamente el fallback.
+Un módulo no se considera `premium-solo-string` sólo por usar samples. Debe cubrir sustain en varias dinámicas, short notes con al menos 3 round robins, pizzicato y tremolo dedicados, legato/transiciones reales o ausencia explícita, releases, rango/afinación documentados, licencia/procedencia verificadas y presupuesto de memoria móvil conocido.
 
 ## Compatibilidad
 
-TloqueScore V1/V2/V2.1 no cambia. `instrument` ahora participa en el routing acústico, pero `program` continúa siendo fallback. Los módulos GM actuales conservan sus programas y partituras.
+TloqueScore V1/V2/V2.1 no cambia. `instrument` participa en el routing acústico, pero `program` continúa como fallback. Los módulos GM actuales conservan sus programas y partituras.
