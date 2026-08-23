@@ -39,7 +39,6 @@ export interface SfzSamplePackCompileOptions {
   sourceName: string
   sourceUrl?: string
   sourceCommit?: string
-  /** Optional curated declaration; otherwise mic perspective is inferred from paths. */
   micPositions?: readonly TloqueMicPosition[]
   defaultMicPosition?: TloqueMicPosition
   sampleUrlForPath(path: string): string
@@ -94,11 +93,10 @@ function articulationForGroup(label: string | undefined, defaultPath = ""): Tloq
   if (/trem|(?:^|[\s/_-])rolls?(?:$|[\s/_-])/.test(normalized)) return "tremolo"
   if (/stacc?/.test(normalized)) return "staccato"
   if (/harmonic/.test(normalized)) return "harmonic"
-  if (/legato/.test(normalized)) return "legato"
+  if (/legato|transition/.test(normalized)) return "legato"
   return "normal"
 }
 
-/** Recorded colour dimensions stay independent from articulation. */
 function timbreForGroup(label: string | undefined, defaultPath = ""): { vibratoColour: TloqueVibratoColour; mute: TloqueMute } {
   const normalized = `${label || ""} ${defaultPath}`.toLowerCase()
   const vibratoColour: TloqueVibratoColour = /expression[\s_-]*vibrato|expvib/.test(normalized)
@@ -138,6 +136,11 @@ function optionalMidi(value: string | undefined): number | undefined {
   const numeric = Number(value)
   if (Number.isInteger(numeric) && numeric >= 0 && numeric <= 127) return numeric
   try { const midi = sfzNoteToMidi(value); return midi >= 0 && midi <= 127 ? midi : undefined } catch { return undefined }
+}
+function requiredMidi(value: string | undefined, label: string): number {
+  const midi = optionalMidi(value)
+  if (midi === undefined) throw new Error(`Región SFZ incompleta: ${label}`)
+  return midi
 }
 
 function opcodes(text: string) {
@@ -200,11 +203,18 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
 
     const sample = values.get("sample")
     if (!sample) continue
-    const loMidi = Number(values.get("lokey")), hiMidi = Number(values.get("hikey")), rootMidi = Number(values.get("pitch_keycenter")), loVelocity = Number(values.get("lovel") || 0), hiVelocity = Number(values.get("hivel") || 127)
-    if (![loMidi, hiMidi, rootMidi, loVelocity, hiVelocity].every(Number.isFinite)) throw new Error("Región SFZ incompleta")
+    const key = values.get("key")
+    const loMidi = key ? requiredMidi(key, "key") : requiredMidi(values.get("lokey"), "lokey")
+    const hiMidi = key ? loMidi : requiredMidi(values.get("hikey"), "hikey")
+    const rootMidi = values.get("pitch_keycenter") ? requiredMidi(values.get("pitch_keycenter"), "pitch_keycenter") : loMidi
+    const loVelocity = Number(values.get("lovel") || 0), hiVelocity = Number(values.get("hivel") || 127)
+    if (![loVelocity, hiVelocity].every(Number.isFinite)) throw new Error("Región SFZ incompleta: velocity")
     const samplePath = normalizeRelativePath(`${group.defaultPath}/${sample}`)
     const sampleRoundRobin = rrFromSample(sample)
-    const trigger = triggerFor(values.get("trigger"), group.trigger)
+    const transitionFromMidi = optionalMidi(values.get("tloque_transition_from") ?? values.get("sw_previous"))
+    const transitionToMidi = optionalMidi(values.get("tloque_transition_to") ?? values.get("key"))
+    const inferredLegato = transitionFromMidi !== undefined && transitionToMidi !== undefined
+    const trigger = inferredLegato ? "legato-transition" : triggerFor(values.get("trigger"), group.trigger)
     const micPosition = micPositionFor(values.get("tloque_mic") ?? values.get("mic_position"), group.defaultPath)
     rawZones.push({
       articulation: trigger === "legato-transition" ? "legato" : group.articulation,
@@ -213,8 +223,8 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
       mute: group.mute,
       trigger,
       micPosition,
-      transitionFromMidi: trigger === "legato-transition" ? optionalMidi(values.get("tloque_transition_from")) : undefined,
-      transitionToMidi: trigger === "legato-transition" ? optionalMidi(values.get("tloque_transition_to")) : undefined,
+      transitionFromMidi: trigger === "legato-transition" ? transitionFromMidi : undefined,
+      transitionToMidi: trigger === "legato-transition" ? transitionToMidi : undefined,
       samplePath,
       rootMidi,
       loMidi,
@@ -230,14 +240,11 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
   if (!rawZones.length) throw new Error("El SFZ no produjo zonas")
   const velocityBands = new Map<string, { lo: number; hi: number }[]>()
   for (const zone of rawZones) {
-    const key = `${zone.articulation}:${zone.vibratoColour}:${zone.mute}:${zone.trigger}:${zone.micPosition}:${zone.transitionFromMidi ?? ""}:${zone.transitionToMidi ?? ""}`
+    const key = `${zone.articulation}:${zone.vibratoColour}:${zone.mute}:${zone.trigger}:${zone.micPosition}`
     const bands = velocityBands.get(key) ?? []
     if (!bands.some(item => item.lo === zone.loVelocity && item.hi === zone.hiVelocity)) { bands.push({ lo: zone.loVelocity, hi: zone.hiVelocity }); bands.sort((a, b) => a.lo - b.lo); velocityBands.set(key, bands) }
   }
-  return rawZones.map(zone => {
-    const key = `${zone.articulation}:${zone.vibratoColour}:${zone.mute}:${zone.trigger}:${zone.micPosition}:${zone.transitionFromMidi ?? ""}:${zone.transitionToMidi ?? ""}`
-    return { ...zone, velocityLayer: Math.max(0, (velocityBands.get(key) ?? []).findIndex(item => item.lo === zone.loVelocity && item.hi === zone.hiVelocity)) }
-  })
+  return rawZones.map(zone => ({ ...zone, velocityLayer: Math.max(0, (velocityBands.get(`${zone.articulation}:${zone.vibratoColour}:${zone.mute}:${zone.trigger}:${zone.micPosition}`) ?? []).findIndex(item => item.lo === zone.loVelocity && item.hi === zone.hiVelocity)) }))
 }
 
 export function samplePathsFromSfz(source: string): string[] { return [...new Set(compileCuratedSfzZones(source).map(zone => zone.samplePath))] }
@@ -247,12 +254,8 @@ export function compileSfzToTloqueSamplePack(source: string, options: SfzSampleP
 export function compileSfzBundleToTloqueSamplePack(sources: readonly string[], options: SfzSamplePackCompileOptions): TloqueSamplePack {
   if (!sources.length) throw new Error("El paquete curado no contiene SFZ")
   const { manifestId, license } = packMetadata(options)
-  const compiled = sources.flatMap(source => compileCuratedSfzZones(source))
-  const inferredMics = [...new Set(compiled.map(zone => zone.micPosition))]
-  const declaredMics = options.micPositions ?? inferredMics
-  const defaultMicPosition = options.defaultMicPosition ?? (declaredMics.includes("default") ? "default" : declaredMics[0])
-  const zones = compiled.map((zone, zoneIndex) => ({
-    id: `${zoneIndex}:${zone.samplePath}`,
+  const zones = sources.flatMap((source, sourceIndex) => compileCuratedSfzZones(source).map((zone, zoneIndex) => ({
+    id: `${sourceIndex}:${zoneIndex}:${zone.samplePath}`,
     articulation: zone.articulation,
     vibrato: zone.vibrato,
     vibratoColour: zone.vibratoColour,
@@ -265,18 +268,13 @@ export function compileSfzBundleToTloqueSamplePack(sources: readonly string[], o
     sha256: options.sampleSha256ForPath?.(zone.samplePath),
     rootMidi: zone.rootMidi, loMidi: zone.loMidi, hiMidi: zone.hiMidi, loVelocity: zone.loVelocity, hiVelocity: zone.hiVelocity,
     velocityLayer: zone.velocityLayer, roundRobin: zone.roundRobin, gainDb: zone.gainDb, tuneCents: zone.tuneCents,
-  }))
+  })))
+  const inferredMics = [...new Set(zones.map(zone => zone.micPosition ?? "default"))]
   return validateTloqueSamplePack({
-    version: 1,
-    id: options.id,
-    name: options.name,
-    instrumentManifestId: manifestId,
-    license,
-    sourceName: options.sourceName,
-    sourceUrl: options.sourceUrl || "",
-    sourceCommit: options.sourceCommit,
-    micPositions: declaredMics,
-    defaultMicPosition,
+    version: 1, id: options.id, name: options.name, instrumentManifestId: manifestId, license,
+    sourceName: options.sourceName, sourceUrl: options.sourceUrl || "", sourceCommit: options.sourceCommit,
+    micPositions: options.micPositions ?? inferredMics,
+    defaultMicPosition: options.defaultMicPosition ?? (inferredMics.includes("default") ? "default" : inferredMics[0] ?? "default"),
     zones,
   })
 }
