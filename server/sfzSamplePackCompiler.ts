@@ -69,11 +69,11 @@ function normalizeDefaultPath(value: string) {
 
 /**
  * Keyswitch pitches are library-local, so never infer an articulation from a
- * fixed MIDI number. VSCO, for example, uses C2-D#2 for viola but C6-D#6 for
- * cello. The human-readable sw_label is the stable semantic source.
+ * fixed MIDI number. Prefer sw_label; for older/lean SFZ patches without it,
+ * infer only from semantic path names such as /spic/ or /pizz/.
  */
-function articulationForGroup(label: string | undefined): TloqueArticulation {
-  const normalized = (label || "").toLowerCase()
+function articulationForGroup(label: string | undefined, defaultPath = ""): TloqueArticulation {
+  const normalized = `${label || ""} ${defaultPath}`.toLowerCase()
   if (/pizz/.test(normalized)) return "pizzicato"
   if (/spic/.test(normalized)) return "spiccato"
   if (/trem/.test(normalized)) return "tremolo"
@@ -127,7 +127,7 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
     }
     if (type === "group") {
       group = {
-        articulation: articulationForGroup(values.get("sw_label")),
+        articulation: articulationForGroup(values.get("sw_label"), defaultPath),
         defaultPath,
         seqLength: Math.max(1, Number(values.get("seq_length") || 1)),
         seqPosition: Math.max(1, Number(values.get("seq_position") || 1)),
