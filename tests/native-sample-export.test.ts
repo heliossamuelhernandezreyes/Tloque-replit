@@ -31,16 +31,16 @@ const PACK: TloqueSamplePack = {
   sourceName: "fixture",
   sourceUrl: "https://example.invalid",
   zones: [
-    { id: "sus", articulation: "normal", sampleUrl: "/api/audio/sample-packs/samples/a.wav", rootMidi: 72, loMidi: 60, hiMidi: 84, loVelocity: 0, hiVelocity: 127, velocityLayer: 0, roundRobin: 0, gainDb: 0, tuneCents: 0 },
-    { id: "spic0", articulation: "spiccato", sampleUrl: "/api/audio/sample-packs/samples/b.wav", rootMidi: 74, loMidi: 60, hiMidi: 84, loVelocity: 0, hiVelocity: 127, velocityLayer: 0, roundRobin: 0, gainDb: -2, tuneCents: 0 },
-    { id: "spic1", articulation: "spiccato", sampleUrl: "/api/audio/sample-packs/samples/c.wav", rootMidi: 74, loMidi: 60, hiMidi: 84, loVelocity: 0, hiVelocity: 127, velocityLayer: 0, roundRobin: 1, gainDb: -2, tuneCents: 0 },
+    { id: "sus", articulation: "normal", sampleUrl: "/api/audio/sample-packs/samples/a.wav", rootMidi: 72, loMidi: 60, hiMidi: 84, loVelocity: 0, hiVelocity: 127, velocityLayer: 0, roundRobin: 0, gainDb: 0, tuneCents: 0, vibrato: true, vibratoColour: "vibrato", mute: "none" },
+    { id: "spic0", articulation: "spiccato", sampleUrl: "/api/audio/sample-packs/samples/b.wav", rootMidi: 74, loMidi: 60, hiMidi: 84, loVelocity: 0, hiVelocity: 127, velocityLayer: 0, roundRobin: 0, gainDb: -2, tuneCents: 0, vibrato: false, vibratoColour: "none", mute: "none" },
+    { id: "spic1", articulation: "spiccato", sampleUrl: "/api/audio/sample-packs/samples/c.wav", rootMidi: 74, loMidi: 60, hiMidi: 84, loVelocity: 0, hiVelocity: 127, velocityLayer: 0, roundRobin: 1, gainDb: -2, tuneCents: 0, vibrato: false, vibratoColour: "none", mute: "none" },
   ],
 }
 
 function recipe() {
   const result = compileTloqueScore(SCORE)
   assert.equal(result.ok, true)
-  if (!result.ok) throw new Error(result.errors.join("\n"))
+  if (!result.ok) throw new Error(result.diagnostics.map(item => item.message).join("\n"))
   return result.recipe
 }
 
@@ -52,6 +52,7 @@ test("live y WAV comparten un único plan de voces nativas", () => {
   assert.equal(plan.voices.length, 2)
   assert.deepEqual(plan.voices.map(voice => voice.articulation), ["normal", "spiccato"])
   assert.deepEqual(plan.voices.map(voice => voice.startSeconds), [0, 1])
+  assert.deepEqual(plan.voices.map(voice => voice.resolvedTimbre), ["vibrato", "non-vibrato"])
   assert.equal(plan.voices[0].durationSeconds, 0.96)
   assert.ok(plan.voices[1].durationSeconds < 0.5)
   assert.ok(plan.voices.every(voice => voice.oneShot === false))
