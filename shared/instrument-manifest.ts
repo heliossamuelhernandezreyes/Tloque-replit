@@ -1,9 +1,11 @@
 import { KARORYFER_EMILY_GUITAR_MANIFEST } from "./instrument-manifest-guitar"
+import { VCSL_CONCERT_HARP_MANIFEST } from "./instrument-manifest-harp"
 import { VCSL_ESTUARY_KEYS_MANIFESTS } from "./instrument-manifest-keys"
 import { VCSL_ESTUARY_WORLD_WIND_MANIFESTS } from "./instrument-manifest-worldwinds"
 import { VSCO2_CE_PERCUSSION_MANIFESTS } from "./instrument-manifest-percussion"
 import { VSCO2_CE_STRING_SECTION_MANIFESTS } from "./instrument-manifest-string-sections"
 export { KARORYFER_EMILY_GUITAR_MANIFEST } from "./instrument-manifest-guitar"
+export { VCSL_CONCERT_HARP_MANIFEST } from "./instrument-manifest-harp"
 export {
   VCSL_ESTUARY_GRAND_PIANO_MANIFEST,
   VCSL_ESTUARY_PIPE_ORGAN_MANIFEST,
@@ -105,20 +107,9 @@ export const VSCO2_CE_TUBA_MANIFEST: InstrumentManifest = {
   version: 1, id: "vsco2-ce-tuba", family: "brass", name: "VSCO 2 CE Tuba", instruments: ["brass.tuba"], basePrograms: [58], capabilities: ["dedicated-articulation", "velocity-layers", "round-robin"],
   articulations: [{ articulation: "normal", keyswitch: 84, velocityLayers: 3 }, { articulation: "staccato", keyswitch: 85, velocityLayers: 2, roundRobins: 4 }],
 }
-
-/** CC0 reference bank with physically recorded note-to-note transitions. */
 export const SFZINSTRUMENTS_LEGATO_VOCAL_A_MANIFEST: InstrumentManifest = {
-  version: 1,
-  id: "sfzinstruments-legato-vocal-a",
-  family: "other",
-  name: "SFZ Instruments Legato Vocal A",
-  instruments: ["voice.legato-a"],
-  basePrograms: [52],
-  capabilities: ["dedicated-articulation", "true-legato"],
-  articulations: [
-    { articulation: "normal" },
-    { articulation: "legato", trueLegato: true },
-  ],
+  version: 1, id: "sfzinstruments-legato-vocal-a", family: "other", name: "SFZ Instruments Legato Vocal A", instruments: ["voice.legato-a"], basePrograms: [52], capabilities: ["dedicated-articulation", "true-legato"],
+  articulations: [{ articulation: "normal" }, { articulation: "legato", trueLegato: true }],
 }
 
 export const BUILTIN_INSTRUMENT_MANIFESTS: readonly InstrumentManifest[] = [GM_ORCHESTRAL_STRINGS_MANIFEST]
@@ -130,6 +121,7 @@ export const INSTRUMENT_MANIFEST_REGISTRY: readonly InstrumentManifest[] = [
   VSCO2_CE_VIOLA_SECTION_MANIFEST,
   VSCO2_CE_CELLO_SECTION_MANIFEST,
   VSCO2_CE_SOLO_CONTRABASS_MANIFEST,
+  VCSL_CONCERT_HARP_MANIFEST,
   VSCO2_CE_FLUTE_MANIFEST,
   VSCO2_CE_CLARINET_MANIFEST,
   VSCO2_CE_OBOE_MANIFEST,
