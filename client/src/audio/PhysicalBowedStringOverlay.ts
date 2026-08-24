@@ -1,4 +1,5 @@
 import type { NativeHybridSource } from "@shared/native-hybrid-source"
+import { physicalPerformanceStateAt } from "@shared/physical-performance-control"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 
 type LinearScoreEventV2 = LinearScoreRecipeV2["plan"]["events"][number]
@@ -44,12 +45,7 @@ function noiseBuffer(context: BaseAudioContext, seconds = 0.18) {
   return buffer
 }
 
-/**
- * Hybrid Strings v1.
- * This layer is intentionally quieter than the sampled source. It models
- * continuous bow friction, string feedback and body resonances so dynamics and
- * legato can move between recorded sample states without replacing their real attack/timbre.
- */
+/** Hybrid Strings v1.1: sample identity + shared physical performance controls. */
 export function scheduleBowedStringOverlay(
   context: BaseAudioContext,
   source: NativeHybridSource,
@@ -58,49 +54,53 @@ export function scheduleBowedStringOverlay(
   const { event, track, midi, destination, startAt, controls = [], legatoFromPrevious = false } = options
   if (midi < source.midiMin || midi > source.midiMax) return null
   const profile = profileFor(source)
+  const physical = physicalPerformanceStateAt(track, controls, event.timeSeconds)
   const hz = midiHz(midi)
   const start = startAt + event.timeSeconds
   const duration = Math.max(0.04, event.durationSeconds)
   const release = event.articulation === "legato" ? 0.22 : 0.14
   const stop = start + duration + release
-  const pressure = clamp01(event.velocity * 0.62 + track.expression * 0.38)
+  const pressure = clamp01(event.velocity * 0.45 + physical.pressure * 0.55)
+  const bowPosition = physical.bowPosition
+  const coupling = physical.sympatheticCoupling
   const brightness = clamp01(track.brightness)
   const vibrato = clamp01(track.vibrato)
+  const bridgeFactor = 0.72 + bowPosition * 0.58
 
   const excitation = context.createGain(); excitation.gain.value = 1
-  const bowPressure = context.createGain(); bowPressure.gain.value = 0.45 + pressure * 0.55
+  const bowPressure = context.createGain(); bowPressure.gain.value = 0.42 + pressure * 0.58
   excitation.connect(bowPressure)
 
   const fundamental = context.createOscillator(); fundamental.type = "sawtooth"; fundamental.frequency.value = hz
-  const core = context.createGain(); core.gain.value = 0.18 + pressure * 0.18
+  const core = context.createGain(); core.gain.value = 0.16 + pressure * 0.19
   fundamental.connect(core); core.connect(excitation)
 
   const harmonic = context.createOscillator(); harmonic.type = "triangle"; harmonic.frequency.value = hz * 2
-  const harmonicGain = context.createGain(); harmonicGain.gain.value = 0.055 + brightness * 0.05
+  const harmonicGain = context.createGain(); harmonicGain.gain.value = (0.045 + brightness * 0.05) * bridgeFactor
   harmonic.connect(harmonicGain); harmonicGain.connect(excitation)
 
   const bow = context.createBufferSource(); bow.buffer = noiseBuffer(context); bow.loop = true
-  const bowBand = context.createBiquadFilter(); bowBand.type = "bandpass"; bowBand.frequency.value = profile.brightness * (0.62 + brightness * 0.72); bowBand.Q.value = 0.65
-  const bowGain = context.createGain(); bowGain.gain.value = profile.bowNoise * (0.42 + pressure * 0.58)
+  const bowBand = context.createBiquadFilter(); bowBand.type = "bandpass"; bowBand.frequency.value = profile.brightness * (0.5 + bowPosition * 0.9); bowBand.Q.value = 0.65
+  const bowGain = context.createGain(); bowGain.gain.value = profile.bowNoise * (0.38 + pressure * 0.62) * (0.78 + bowPosition * 0.35)
   bow.connect(bowBand); bowBand.connect(bowGain); bowGain.connect(excitation)
 
   const waveguide = context.createDelay(0.09)
   const baseDelay = Math.min(0.08, Math.max(1 / 18_000, 1 / hz))
   waveguide.delayTime.value = baseDelay
-  const damping = context.createBiquadFilter(); damping.type = "lowpass"; damping.frequency.value = profile.brightness * (0.75 + brightness * 0.45); damping.Q.value = 0.28
-  const feedback = context.createGain(); feedback.gain.value = profile.feedback * (0.92 + pressure * 0.06)
+  const damping = context.createBiquadFilter(); damping.type = "lowpass"; damping.frequency.value = profile.brightness * (0.68 + brightness * 0.36 + bowPosition * 0.22); damping.Q.value = 0.28
+  const feedback = context.createGain(); feedback.gain.value = profile.feedback * (0.9 + pressure * 0.055) * (0.92 + coupling * 0.08)
   excitation.connect(waveguide); waveguide.connect(damping); damping.connect(feedback); feedback.connect(waveguide)
 
   const bodyBus = context.createGain(); bodyBus.gain.value = 1
-  const delayTap = context.createGain(); delayTap.gain.value = profile.delayMix
+  const delayTap = context.createGain(); delayTap.gain.value = profile.delayMix * (0.78 + coupling * 0.42)
   damping.connect(delayTap); delayTap.connect(bodyBus)
   for (const frequency of profile.body) {
     const resonance = context.createBiquadFilter(); resonance.type = "bandpass"; resonance.frequency.value = frequency; resonance.Q.value = profile.bodyQ
-    const gain = context.createGain(); gain.gain.value = 0.13
+    const gain = context.createGain(); gain.gain.value = 0.11 * (0.75 + coupling * 0.5)
     damping.connect(resonance); resonance.connect(gain); gain.connect(bodyBus)
   }
 
-  const air = context.createBiquadFilter(); air.type = "lowpass"; air.frequency.value = profile.brightness * (0.72 + brightness * 0.72); air.Q.value = 0.4
+  const air = context.createBiquadFilter(); air.type = "lowpass"; air.frequency.value = profile.brightness * (0.64 + brightness * 0.62 + bowPosition * 0.18); air.Q.value = 0.4
   const output = context.createGain(); output.gain.value = 0
   bodyBus.connect(air); air.connect(output); output.connect(destination)
 
@@ -113,18 +113,14 @@ export function scheduleBowedStringOverlay(
   for (const control of controls) {
     if (control.trackId !== event.trackId || control.timeSeconds <= event.timeSeconds || control.timeSeconds > event.timeSeconds + duration) continue
     const at = startAt + control.timeSeconds
-    if (control.expression !== null) {
-      const p = clamp01(event.velocity * 0.62 + control.expression * 0.38)
-      scheduleParam(bowPressure.gain, at, 0.45 + p * 0.55, control.rampSeconds)
-      scheduleParam(feedback.gain, at, profile.feedback * (0.92 + p * 0.06), control.rampSeconds)
-      scheduleParam(bowGain.gain, at, profile.bowNoise * (0.42 + p * 0.58), control.rampSeconds)
-    }
-    if (control.brightness !== null) {
-      const b = clamp01(control.brightness)
-      scheduleParam(damping.frequency, at, profile.brightness * (0.75 + b * 0.45), control.rampSeconds, true)
-      scheduleParam(air.frequency, at, profile.brightness * (0.72 + b * 0.72), control.rampSeconds, true)
-      scheduleParam(bowBand.frequency, at, profile.brightness * (0.62 + b * 0.72), control.rampSeconds, true)
-    }
+    const state = physicalPerformanceStateAt(track, controls, control.timeSeconds)
+    const p = clamp01(event.velocity * 0.45 + state.pressure * 0.55)
+    scheduleParam(bowPressure.gain, at, 0.42 + p * 0.58, control.rampSeconds)
+    scheduleParam(feedback.gain, at, profile.feedback * (0.9 + p * 0.055) * (0.92 + state.sympatheticCoupling * 0.08), control.rampSeconds)
+    scheduleParam(delayTap.gain, at, profile.delayMix * (0.78 + state.sympatheticCoupling * 0.42), control.rampSeconds)
+    scheduleParam(bowBand.frequency, at, profile.brightness * (0.5 + state.bowPosition * 0.9), control.rampSeconds, true)
+    scheduleParam(bowGain.gain, at, profile.bowNoise * (0.38 + p * 0.62) * (0.78 + state.bowPosition * 0.35), control.rampSeconds)
+    if (control.brightness !== null) scheduleParam(air.frequency, at, profile.brightness * (0.64 + clamp01(control.brightness) * 0.62 + state.bowPosition * 0.18), control.rampSeconds, true)
     if (control.vibrato !== null) scheduleParam(lfoDepth.gain, at, clamp01(control.vibrato) * (source.instrumentId === "strings.contrabass" ? 7 : 13), control.rampSeconds)
     if (control.pitchBend !== null) {
       const cents = control.pitchBend * 100
@@ -136,7 +132,7 @@ export function scheduleBowedStringOverlay(
   }
 
   const attack = legatoFromPrevious ? 0.01 : Math.max(0.018, Math.min(0.075, track.attack * 0.42))
-  const peak = source.wet * (0.66 + pressure * 0.34)
+  const peak = source.wet * (0.64 + pressure * 0.31 + coupling * 0.05)
   output.gain.setValueAtTime(0.0001, start)
   output.gain.exponentialRampToValueAtTime(Math.max(0.001, peak), start + attack)
   output.gain.setValueAtTime(Math.max(0.001, peak * 0.9), Math.max(start + attack, start + duration - 0.012))
