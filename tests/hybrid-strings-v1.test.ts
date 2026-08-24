@@ -5,13 +5,7 @@ describe("Hybrid Strings v1", () => {
   it("covers the bowed orchestral string family without replacing the sample base", () => {
     const bowed = NATIVE_HYBRID_SOURCES.filter(source => source.physicalLayer === "bowed-string-resonator")
     const ids = new Set(bowed.map(source => source.instrumentId))
-    expect(ids).toEqual(new Set([
-      "strings.violin",
-      "strings.violin-section",
-      "strings.viola",
-      "strings.cello",
-      "strings.contrabass",
-    ]))
+    expect(ids).toEqual(new Set(["strings.violin", "strings.violin-section", "strings.viola", "strings.cello", "strings.contrabass"]))
     for (const source of bowed) {
       expect(source.kind).toBe("hybrid")
       expect(source.baseSource).toBe("sample-pack")
@@ -32,7 +26,7 @@ describe("Hybrid Strings v1", () => {
     expect(hybridEnabledForArticulation("strings.contrabass", "staccato")).toBe(false)
   })
 
-  it("does not claim unrelated instruments", () => {
-    expect(nativeHybridForInstrument("piano.grand")).toBeNull()
+  it("does not claim unrelated non-hybrid instruments", () => {
+    expect(nativeHybridForInstrument("keys.pipe-organ")).toBeNull()
   })
 })
