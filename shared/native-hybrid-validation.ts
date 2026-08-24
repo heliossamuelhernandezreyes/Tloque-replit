@@ -34,21 +34,21 @@ const TARGETS: Record<NativeHybridPhysicalLayer, Record<HybridAbMetricId, Metric
   "bowed-string-resonator": {
     "transient-preservation": { min: 0.9, max: 1 },
     "sustain-continuity": { min: 0.08, max: 1 },
-    "dynamic-response": { min: 0.05, max: 1 },
+    "dynamic-response": { min: 0.9, max: 1 },
     "spectral-deviation": { min: 0, max: 0.18 },
     "tail-naturalness": { min: 0.02, max: 1 },
   },
   "air-column-resonator": {
     "transient-preservation": { min: 0.92, max: 1 },
     "sustain-continuity": { min: 0.07, max: 1 },
-    "dynamic-response": { min: 0.06, max: 1 },
+    "dynamic-response": { min: 0.92, max: 1 },
     "spectral-deviation": { min: 0, max: 0.16 },
     "tail-naturalness": { min: 0.015, max: 1 },
   },
   "sympathetic-resonance": {
     "transient-preservation": { min: 0.96, max: 1 },
     "sustain-continuity": { min: 0.03, max: 1 },
-    "dynamic-response": { min: 0, max: 1 },
+    "dynamic-response": { min: 0.94, max: 1 },
     "spectral-deviation": { min: 0, max: 0.12 },
     "tail-naturalness": { min: 0.08, max: 1 },
   },
@@ -66,9 +66,9 @@ export function buildHybridAbReport(
   const labels: Record<HybridAbMetricId, string> = {
     "transient-preservation": "Preservación del ataque sampleado",
     "sustain-continuity": "Ganancia de continuidad sostenida",
-    "dynamic-response": "Ganancia de respuesta dinámica",
+    "dynamic-response": "Preservación del contraste dinámico",
     "spectral-deviation": "Desviación espectral vs sample",
-    "tail-naturalness": "Ganancia de naturalidad de cola",
+    "tail-naturalness": "Extensión controlada de cola",
   }
   const metrics = (Object.keys(targets) as HybridAbMetricId[]).map(id => {
     const target = targets[id], value = values[id]
