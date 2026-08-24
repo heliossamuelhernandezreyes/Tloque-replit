@@ -28,6 +28,19 @@ function readableInstallerError(error: unknown) {
   return { status: 502, message: `No se pudo instalar el banco acústico: ${detail}` }
 }
 
+async function probeAudioStorage() {
+  let storage: Client | undefined
+  try {
+    storage = audioStorage.get()
+    const probe = await storage.list({ maxResults: 1, prefix: "audio/sample-packs/" })
+    if (!probe.ok) throw probe.error
+    return { ready: true as const, storage }
+  } catch (error) {
+    audioStorage.reset(storage)
+    return { ready: false as const, error }
+  }
+}
+
 const NATIVE_SAMPLE_PACK_CATALOG = [...CURATED_SAMPLE_PACKS, ...CURATED_RAW_WAV_PACKS] as const
 
 /**
@@ -40,10 +53,25 @@ export function registerNativeSamplePackRoutes(app: Express) {
     res.json({ packs: NATIVE_SAMPLE_PACK_CATALOG })
   })
 
+  app.get("/api/admin/audio/sample-pack-storage-status", requireAdmin, async (_req, res) => {
+    const probe = await probeAudioStorage()
+    if (probe.ready) return res.json({ ready: true })
+    res.locals.publicErrorMessage = true
+    return res.status(503).json({
+      ready: false,
+      message: "App Storage no está disponible. Conecta o reactiva el bucket de Replit antes de instalar bancos acústicos.",
+    })
+  })
+
   app.post(
     "/api/admin/audio/sample-pack-catalog/:sourceId/install",
     requireAdmin,
-    rateLimit(10 * 60_000, 2),
+    // El instalador es una herramienta exclusiva de administración y los bundles
+    // premium pueden requerir más de diez bancos consecutivos. Mantener un límite
+    // compartido de 2/10 min hacía que la propia UI se bloqueara durante una
+    // instalación legítima. Seguimos limitando abusos, pero permitimos una sesión
+    // completa de aprovisionamiento acústico.
+    rateLimit(10 * 60_000, 24, "native-sample-pack-install"),
     express.json({ limit: "8kb" }),
     async (req, res) => {
       const sourceId = Array.isArray(req.params.sourceId) ? req.params.sourceId[0] : req.params.sourceId
@@ -58,9 +86,9 @@ export function registerNativeSamplePackRoutes(app: Express) {
       try {
         // Falla rápido si App Storage no está operativo: evita gastar datos y tiempo
         // descargando decenas de WAV que luego no podrían publicarse.
-        storage = audioStorage.get()
-        const storageProbe = await storage.list({ maxResults: 1, prefix: "audio/sample-packs/" })
-        if (!storageProbe.ok) throw storageProbe.error
+        const storageProbe = await probeAudioStorage()
+        if (!storageProbe.ready) throw storageProbe.error
+        storage = storageProbe.storage
 
         const downloaded = await downloadCuratedSamplePack(source)
         const sampleUrlByPath = new Map<string, string>()
