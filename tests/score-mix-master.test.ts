@@ -18,7 +18,11 @@ test("sampled live y offline comparten un único perfil de mezcla/master", () =>
     limiterRatio: 20,
     limiterAttack: 0.002,
     limiterRelease: 0.075,
+    roomSeconds: 2.35,
+    roomDecay: 3.05,
+    roomMix: 0.16,
   })
   assert.ok(SAMPLED_MIX_MASTER_PROFILE.limiterThreshold < 0)
   assert.ok(SAMPLED_MIX_MASTER_PROFILE.limiterRatio >= 10)
+  assert.ok(SAMPLED_MIX_MASTER_PROFILE.roomMix > 0 && SAMPLED_MIX_MASTER_PROFILE.roomMix < 0.3)
 })
