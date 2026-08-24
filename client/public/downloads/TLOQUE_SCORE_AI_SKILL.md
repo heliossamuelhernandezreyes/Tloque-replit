@@ -11,7 +11,7 @@ Create only instrumental music. The TloqueScore code is the master work: Tloque 
 
 - Audio contract: `tloque-audio-2026-08-v2`
 - Compiler: `tloque-score-compiler-v2.1`
-- Skill version: `1.4.0`
+- Skill version: `1.5.0`
 - Built-in module: `builtin`
 - Native multi-instrument router: `native-auto`
 - Premium native master: physical verified sample packs required
@@ -20,28 +20,19 @@ Never invent commands or execute JavaScript. Never add lyrics, sung words, audio
 
 ## Required workflow
 
-1. Determine purpose, approximate duration, mood, musical form, instruments and whether the piece loops. If omitted, choose conservative defaults.
-2. Translate musical terms into supported musical constraints. `adagio` becomes tempo; an arpeggio is written as note events; a crescendo uses velocity/expression structure.
-3. Plan form and bar count before writing notes. Keep recognizable motifs and vary contour, rhythm, harmony, register or orchestration.
-4. Declare every track before the first section.
-5. Use `module native-auto` for a work that should use several installed native acoustic instruments. Use `module builtin` only when portability without installed sample packs matters more than acoustic quality. A concrete native module ID is appropriate for a deliberately single-library score.
-6. Never claim an articulation, timbre, true-legato transition, release layer or other physical feature that the selected library does not contain.
-7. If the user asks for premium/master acoustic output, design only for semantic instruments that have native packs and do not treat a synthesis fallback as equivalent to the requested master.
-8. Validate the complete score against the grammar and limits below.
-9. Return exactly one code block containing the complete score when the user asks for code to paste into Tloque.
+1. Determine purpose, duration, mood, form, instruments and whether the piece loops.
+2. Plan form and bar count before writing notes; keep motifs recognizable but developed.
+3. Declare every track before the first section.
+4. Use `module native-auto` for multi-instrument premium work. Use `builtin` only when portability matters more than acoustic quality.
+5. Never claim a physical articulation, timbre, true-legato transition, release layer, stop or microphone that the installed library does not contain.
+6. For `quality master`, use only native semantic instruments expected to have their physical packs installed.
+7. Validate the full score and return one complete code block when code is requested.
 
 ## Grammar
 
-The first line must be:
-
 ```text
 TLOQUE_SCORE 2
-```
-
-Global commands:
-
-```text
-title "Title up to 160 characters"
+title "Title"
 tempo 32..180
 meter 2..12/4 or 2..12/8
 loop true|false
@@ -49,17 +40,7 @@ seed 0..2147483647
 humanize 0..1
 quality core|studio|master
 module builtin|native-auto|installed-module-id
-```
-
-Track declarations come before all sections:
-
-```text
 track id synth=warm|pad|bell|pluck|bass instrument=instrument.id program=0..127 role=melody|harmony|bass|pulse|texture|accent gain=0..1 pan=-1..1 attack=0.001..8 release=0.01..12 expression=0..1 brightness=0..1 vibrato=0..1 timbre=natural|non-vibrato|vibrato|expression-vibrato|mute|harmon-mute|straight-mute
-```
-
-Sections and pitched events:
-
-```text
 section id form=exposition|development|recapitulation|coda|interlude|custom bars=1..128 repeat=1..4 fade=0..16 tempo=32..180 rubato=0..0.35
 use track-id
 control bar:beat expression=0..1 brightness=0..1 vibrato=0..1 pedal=down|up bend=-2..2 ramp=0..16
@@ -68,26 +49,13 @@ rest bar:beat duration
 end
 ```
 
-`timbre=` on an event is optional and overrides the track timbre for that event.
+`timbre=` on an event overrides the track default. Fractional beat positions are valid throughout the whole beat: in 4/4, `4:4.25`, `4:4.5`, and `4:4.75` are valid; `4:5` is outside the bar.
 
-Fractional beat positions are valid throughout the whole beat. In 4/4, for example, `4:4.25`, `4:4.5` and `4:4.75` are valid positions inside the fourth beat; `4:5` is outside the bar. Use these positions for sixteenth/eighth subdivisions instead of shifting notes into the next bar.
-
-Unpitched orchestral percussion uses semantic hits, never fake pitch names:
-
-```text
-use perc
-hit 1:1 bass-drum 0.5 velocity=0.8
-hit 1:2 snare-hit 0.25 velocity=0.6
-hit 1:3 crash-cymbal 1 velocity=0.7
-```
-
-`hit` is valid only on a track with `instrument=percussion.orchestral-kit`. Supported names include `bass-drum`, `snare-taps`, `snare-hit`, `snare-roll`, `snare-hit-alt`, `snare-roll-alt`, `crash-cymbal`, `suspended-cymbal`, `suspended-cymbal-stick`, `tambourine-shake`, `tambourine-hit`, `tambourine-roll`, `cowbell`, `triangle-muted-small`, `triangle-open-small`, `triangle-muted-large`, `triangle-open-large`, and `sleigh-bells`.
+Unpitched orchestral percussion uses semantic `hit` events on `instrument=percussion.orchestral-kit`, for example `hit 1:1 bass-drum 0.5 velocity=0.8`. Do not encode percussion names as fake pitches.
 
 ## Native acoustic routing
 
-With `module native-auto`, each track is resolved from its semantic `instrument=` identity to the preferred verified native package. Do not write storage package IDs on individual tracks.
-
-Useful semantic identities currently include:
+With `module native-auto`, every semantic `instrument=` resolves independently to a verified physical package. Useful native identities include:
 
 ```text
 strings.violin
@@ -99,6 +67,8 @@ woodwinds.flute
 woodwinds.oboe
 woodwinds.clarinet
 woodwinds.bassoon
+woodwinds.ocarina
+woodwinds.alto-recorder
 brass.trumpet
 brass.trombone
 brass.horn
@@ -108,27 +78,12 @@ percussion.timpani
 percussion.orchestral-kit
 piano.grand
 keys.pipe-organ
+keys.pipe-organ-soft
+keys.pipe-organ-pedal
 keys.harpsichord
 ```
 
-Use `strings.violin` for a solo/concertino line and `strings.violin-section` for tutti/section writing. They intentionally resolve to different physical VSCO packs.
-
-`guitar.electric-clean` resolves to the curated CC0 Karoryfer Emilyguitar bank: four recorded velocity layers, three note round robins and physical release/noise samples. Treat it as a clean electric guitar. Do not claim nylon-string classical guitar, acoustic body resonance, strumming, palm mute, harmonics or other techniques unless a future installed bank explicitly provides them.
-
-For brass, `brass.trumpet`, `brass.trombone`, `brass.horn` and `brass.tuba` resolve independently. Trumpet has recorded natural/vibrato, straight mute and Harmon mute colours; horn has a recorded mute; trombone has recorded vibrato. Use `timbre=` only for colours physically declared by the selected bank.
-
-The renderer loads the required packs independently but sends them through one common mixer/master. Live native playback and native WAV export resolve the same physical zones when those packs are installed.
-
-### Preview versus premium master
-
-Tloque intentionally distinguishes availability from authorship:
-
-- Live preview may fall back to Tloque base synthesis when a required native package is not installed. The application must surface that state; the fallback is for auditioning the composition, not proof of acoustic fidelity.
-- `quality master` with a native module is a premium request. A master native WAV must use all physical packs required by the score. Missing packs must be installed; synthesis base must never be described as a native/premium master.
-- `core` or `studio` may be used when portability or memory constraints matter more than full native fidelity.
-- Never silently swap one semantic instrument for another merely because a pack is unavailable.
-
-For the curated Baroque Premium set currently used by Tloque, the preferred routing is:
+Use `strings.violin` for a solo/concertino line and `strings.violin-section` for tutti. The preferred Baroque routing remains:
 
 ```text
 strings.violin   -> VSCO 2 CE Solo Violin
@@ -137,7 +92,7 @@ strings.cello    -> VSCO 2 CE Cello Section
 keys.harpsichord -> VCSL Italian Harpsichord · Stop 1
 ```
 
-For a complete premium brass palette, install:
+The complete brass palette is:
 
 ```text
 brass.trumpet  -> VSCO 2 CE Trumpet
@@ -146,50 +101,50 @@ brass.horn     -> VSCO 2 CE F Horn
 brass.tuba     -> VSCO 2 CE Tuba
 ```
 
-This is the recommended minimum native set for Vivaldi-like solo violin + strings + continuo writing, while the brass bundle is intended for symphonic, martial, ceremonial and cinematic colour.
+Trumpet includes recorded natural/vibrato, straight mute and Harmon mute colours; horn has a recorded mute; trombone has recorded vibrato. Use those colours only when physically declared.
+
+`guitar.electric-clean` uses Karoryfer Emilyguitar: four recorded velocity layers, three note round robins and physical release/noise samples. Write realistic guitar voicings and do not invent nylon body, strumming, palm mute or harmonics.
+
+### Colour winds
+
+`woodwinds.ocarina` uses the CC0 VCSL Estuary ocarina selection. Tloque currently curates physical natural sustain and physical staccato. The source library also contains vibrato recordings, but they are deliberately not author-facing until the timbre routing is explicitly modeled. Never fake the missing vibrato colour.
+
+`woodwinds.alto-recorder` uses VCSL Estuary alto recorder. Tloque currently curates physical sustain and staccato. Write breath-shaped monophonic phrases, leave room between exposed phrases, and do not write impossible polyphonic chords for a single recorder or ocarina track.
+
+### Cinematic pipe organ
+
+The current organ is no longer treated as one generic preset. Three semantic tracks expose three independent physical VCSL layers:
+
+```text
+keys.pipe-organ       -> Rode Man3 Open manual
+keys.pipe-organ-soft  -> NT5 Man3 Quiet manual
+keys.pipe-organ-pedal -> Rode Pedal low register
+```
+
+For monumental/cinematic organ writing, combine these as separate tracks: the soft manual can establish a restrained bed, the open manual can carry the principal harmony/ostinato, and the pedal layer can supply long low fundamentals. Build crescendos by orchestration and expression rather than pretending there is a continuous swell pedal or arbitrary stop automation. These three identities are physical recorded colours, not a complete virtual pipe-organ registration system.
+
+A suitable original cosmic/cinematic texture may combine sustained organ pedal, repeating manual figures, strings and restrained brass, but never copy a copyrighted score or claim stops that Tloque has not sampled.
+
+### Preview versus premium master
+
+- Live preview may fall back to Tloque base synthesis when a required package is absent. That fallback is for auditioning, not proof of acoustic fidelity.
+- `quality master` with native instruments requires every physical pack used by the score. A synthesis fallback is never described as a premium/native master.
+- `core` or `studio` may prioritize portability or memory.
+- Never silently substitute an unrelated semantic instrument because a pack is unavailable.
 
 ## Physical capability rules
 
-Articulation and recorded timbre are different axes. `articulation=spiccato` asks for the played gesture. `timbre=vibrato` asks for a separately recorded colour when the manifest actually contains one.
+Articulation and recorded timbre are independent. `articulation=staccato` asks for a played gesture; `timbre=vibrato` asks for a separately recorded colour when the manifest actually contains one. Numeric `vibrato=0..1` is an expressive control and is not the same as recorded `timbre=vibrato`.
 
-The numeric `vibrato=0..1` expressive control is not the same thing as `timbre=vibrato`.
+`articulation=legato` is semantic. True legato is used only when a manifest declares recorded note-to-note transitions. Release samples are automatic when declared. Mic positions are internal and are not currently author-facing; never invent `mic=`.
 
-`articulation=legato` is semantic. True legato is used only when a manifest declares recorded note-to-note transitions and the requested transition exists. Do not invent a `true-legato` command.
+## Performance guidance
 
-Release samples are automatic when a package declares them. Do not invent a `release` articulation. The CC0 Italian harpsichord and Emilyguitar, for example, contain physical release/key-off information handled by the engine rather than by a fake author-facing articulation.
+Write phrasing rather than a MIDI grid. Shape small velocity and expression arcs, use accents at structural destinations, and keep deterministic humanization restrained. For exposed Baroque strings, avoid permanent high vibrato. For brass, keep low brass from masking bass fundamentals and reserve trumpet brightness for peaks.
 
-Mic positions exist internally in TloqueSamplePack but are not currently part of author-facing TloqueScore syntax. Do not write `mic=` in a score.
+For ocarina and recorder, prefer singable monophonic contours, realistic breath-length phrases, modest registers and intentional rests. Their current sparse physical sampling is best for exposed colour lines, not dense virtuoso chromatic writing across huge ranges.
 
-## Notes, time and expression
-
-- Valid notes run from `C1` through `C8`. Use `#` or `b` accidentals.
-- Simultaneous notes use commas and no spaces: `C3,E3,G3`.
-- Duration is measured in quarter-note beats: `1` quarter, `0.5` eighth, `0.25` sixteenth, `4` whole note in 4/4.
-- A section must end with `end`; select a track with `use` before events.
-- `expression` shapes phrase loudness inside track gain; `brightness` shapes the supported spectral direction; `vibrato` is continuous expressive pitch modulation; `pedal` sustains notes where meaningful; `bend` is semitones.
-- Use deterministic `humanize` conservatively. For exposed Baroque writing prefer roughly `0.02..0.08`; do not smear rapid rhythmic figures.
-- Use `rubato` structurally and sparingly in music that requires a strong pulse.
-- Keep a stable `seed` so the same code identifies the same work.
-
-Hard limits after repeats: 16 tracks, 32 sections, 256 bars, 8,192 note events, 4,096 controls, 12 simultaneous notes per event, and 30 minutes total.
-
-## Quality and performance guidance
-
-For standalone listening use `quality master` only when the required native packs are expected to be installed. High quality comes primarily from correct source samples, orchestration and performance decisions, not from simply maximizing gain or sample rate.
-
-For fast strings, let staccato/spiccato and velocity variation activate physical layers and round-robin where available. Avoid perfectly identical velocities on long repeated-note passages. Preserve ensemble hierarchy: solo violin foreground, violin sections/viola middle, cello/bass foundation, continuo below the solo line.
-
-Write phrasing rather than a MIDI grid. Use small intentional velocity arcs across sequences, expression controls at phrase boundaries, restrained deterministic humanization, and accents at harmonic/metrical destinations. Do not randomize every note independently.
-
-For exposed bowed strings, avoid permanent high vibrato. Use `timbre=vibrato` only when that recorded colour exists and the musical role calls for it; use numeric vibrato controls as expressive shaping, not as a substitute for physical recorded vibrato.
-
-For brass, stagger attacks in chords by tiny musical offsets only when the style benefits from a human ensemble entrance. Keep low brass from masking cello/bass fundamentals; reserve trumpet brightness and accents for structural peaks. Use physical mutes as colour changes, not as gain controls.
-
-For `guitar.electric-clean`, write idiomatically: arpeggios, broken chords, melodic single-note lines and realistically voiced chords. Avoid impossible six-string pitch stacks and machine-identical repeated attacks. Let physical velocity layers and round robin create variation instead of randomizing timing aggressively.
-
-For Baroque music, prefer `keys.harpsichord` for continuo when its native pack is installed. Keep reverberation/decay restrained compared with modern cinematic orchestration. Do not turn every string line into continuous vibrato.
-
-For reading/audiobooks, use sparser foreground attacks and more silence than in standalone concert music.
+For cinematic pipe organ, long held notes and repeating figures are strengths. Use `keys.pipe-organ-pedal` sparingly below the orchestra, layer `keys.pipe-organ-soft` before `keys.pipe-organ` for growth, and let strings/brass widen the spectrum instead of simply maximizing organ gain.
 
 ## Native multi-instrument example
 
@@ -243,14 +198,11 @@ end
 
 ## Final self-check
 
-- First line is exactly `TLOQUE_SCORE 2`.
-- Work is instrumental and contains no unsupported command.
-- All tracks precede sections; every `use` names an existing track; every section has `end`.
-- Values are in range, fractional last-beat positions stay inside the bar, and repeats remain under hard limits.
-- `native-auto` uses only semantic instrument identities that have verified native packages available for the intended premium installation.
-- Requested timbres/articulations exist physically; unavailable capabilities are not approximated dishonestly.
-- Guitar writing stays within the capabilities of the installed guitar bank; brass mutes/colours are used only where physically recorded.
+- First line is exactly `TLOQUE_SCORE 2`; the work is instrumental.
+- Tracks precede sections; every `use` is declared; every section has `end`.
+- Bars, beats, fractional positions, repeats and values are in range.
+- Native identities have verified physical packages for the intended master.
+- Requested timbres/articulations exist physically and unavailable capabilities are not approximated dishonestly.
+- Guitar, colour winds and organ writing stays within their installed physical capabilities.
 - A synthesis fallback is never described as a premium/native master.
-- Pedal and pitch bend gestures are intentionally closed/reset.
-- Fast passages have deliberate phrasing and dynamic variation rather than machine-identical events.
-- Final response contains one complete score ready to paste into Tloque.
+- Fast passages have deliberate phrasing rather than machine-identical events.
