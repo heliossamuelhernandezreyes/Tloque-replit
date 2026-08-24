@@ -66,15 +66,38 @@ export function trueLegatoCrossfadeSeconds(noteDurationSeconds: number) {
 
 const NATURAL_OPEN_TIMBRES: readonly ExplicitRecordedTimbre[] = ["non-vibrato", "vibrato", "expression-vibrato"]
 
-function naturalTimbreCandidates(moduleId: string): readonly ExplicitRecordedTimbre[] {
+function naturalTimbreCandidates(moduleId: string, vibratoAmount: number): readonly ExplicitRecordedTimbre[] {
   const profile = recordedTimbreProfileFor(moduleId)
   const preferred = resolveRecordedTimbre(moduleId, "natural")
   const available = profile?.availableTimbres.filter(timbre => NATURAL_OPEN_TIMBRES.includes(timbre)) ?? NATURAL_OPEN_TIMBRES
-  return [...new Set([preferred, ...available])]
+  const desired: ExplicitRecordedTimbre = vibratoAmount < 0.18
+    ? "non-vibrato"
+    : vibratoAmount < 0.72
+      ? "vibrato"
+      : "expression-vibrato"
+  return [...new Set([desired, preferred, ...available])]
 }
 
-function timbreCandidates(moduleId: string, requested: ScoreTimbre): readonly ExplicitRecordedTimbre[] {
-  return requested === "natural" ? naturalTimbreCandidates(moduleId) : [resolveRecordedTimbre(moduleId, requested)]
+function timbreCandidates(moduleId: string, requested: ScoreTimbre, vibratoAmount: number): readonly ExplicitRecordedTimbre[] {
+  return requested === "natural" ? naturalTimbreCandidates(moduleId, vibratoAmount) : [resolveRecordedTimbre(moduleId, requested)]
+}
+
+function vibratoAtTime(recipe: LinearScoreRecipe, trackId: string, timeSeconds: number, initial: number) {
+  const controls = recipe.plan.controls
+    .filter(control => control.trackId === trackId && control.vibrato !== null)
+    .sort((a, b) => a.timeSeconds - b.timeSeconds)
+  let value = Math.max(0, Math.min(1, initial))
+  for (const control of controls) {
+    if (control.timeSeconds > timeSeconds) break
+    const target = control.vibrato
+    if (target === null) continue
+    if (control.rampSeconds > 0 && timeSeconds < control.timeSeconds + control.rampSeconds) {
+      const t = Math.max(0, Math.min(1, (timeSeconds - control.timeSeconds) / control.rampSeconds))
+      return value + (target - value) * t
+    }
+    value = target
+  }
+  return Math.max(0, Math.min(1, value))
 }
 
 export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: TloqueSamplePack, options: NativeSampleScorePlanOptions = {}): NativeSampleScorePlan {
@@ -121,7 +144,8 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     )
     const oneShot = track.instrument === "percussion.orchestral-kit"
     const requestedTimbre = event.timbre ?? track.timbre ?? "natural"
-    const candidates = timbreCandidates(pack.instrumentManifestId, requestedTimbre)
+    const performedVibrato = vibratoAtTime(recipe, track.id, event.timeSeconds, track.vibrato ?? 0)
+    const candidates = timbreCandidates(pack.instrumentManifestId, requestedTimbre, performedVibrato)
     const performedVelocity = Math.max(0.01, Math.min(1, event.velocity * decision.velocityScale))
     const velocity = Math.round(Math.min(1, scoreVelocityGain(performedVelocity) * articulationVelocityFactor(decision.articulation)) * 127)
     const durationSeconds = Math.max(0.01, event.durationSeconds * articulationDurationFactor(decision.articulation) * decision.durationScale)
