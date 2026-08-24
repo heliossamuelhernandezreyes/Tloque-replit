@@ -90,7 +90,7 @@ function premiumPreflightError(preflight: NativeSamplePackPreflight) {
     return `• ${instruments} → module:${item.moduleId}`
   })
   return [
-    `Master premium no puede exportarse: faltan ${preflight.missing.length} banco${preflight.missing.length === 1 ? "" : "s"} acústico${preflight.missing.length === 1 ? "" : "s"}.`,
+    `Master premium requiere todos los bancos acústicos nativos. Faltan ${preflight.missing.length} banco${preflight.missing.length === 1 ? "" : "s"} acústico${preflight.missing.length === 1 ? "" : "s"}.`,
     ...rows,
     "Abre Instrumentos premium e instala los bancos faltantes. Tloque no sustituirá silenciosamente estos instrumentos por síntesis base.",
   ].join("\n")
