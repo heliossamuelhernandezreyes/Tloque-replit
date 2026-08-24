@@ -2,7 +2,9 @@ import { Client } from "@replit/object-storage"
 
 type AudioStorageClientFactory = () => Client
 
-type AudioStorageEnvironment = Pick<NodeJS.ProcessEnv, "TLOQUE_AUDIO_BUCKET_ID">
+type AudioStorageEnvironment = {
+  TLOQUE_AUDIO_BUCKET_ID?: string
+}
 
 export function configuredAudioBucketId(env: AudioStorageEnvironment = process.env): string | undefined {
   const value = env.TLOQUE_AUDIO_BUCKET_ID?.trim()
