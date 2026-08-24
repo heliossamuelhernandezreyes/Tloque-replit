@@ -6,7 +6,7 @@ import { compileCuratedSfzZones } from "../server/sfzSamplePackCompiler"
 import { validateTloqueSamplePack } from "../shared/native-sample-pack"
 import { summarizeNativeSamplePackCoverage } from "../client/src/audio/NativeSampleCoverageAudit"
 
-test("Martin HD28 no deja huecos MIDI dentro de su mapa generado", () => {
+test("Martin HD28 declara únicamente su registro físico y no deja huecos internos", () => {
   const { sfzText } = compileRawWavPathsToSfz(DISCORD_MARTIN_HD28_PACK.rawWavStaticPaths ?? [], DISCORD_MARTIN_HD28_PACK)
   const parsed = compileCuratedSfzZones(sfzText)
   const pack = validateTloqueSamplePack({
@@ -20,6 +20,9 @@ test("Martin HD28 no deja huecos MIDI dentro de su mapa generado", () => {
     zones: parsed.map((zone, index) => ({ ...zone, id: `z${index}`, sampleUrl: `/api/audio/sample-packs/samples/${String(index).padStart(64, "0")}.wav` })),
   })
   const summary = summarizeNativeSamplePackCoverage(pack)
+  assert.equal(summary.midiMin, 40)
+  assert.equal(summary.midiMax, 83)
   assert.deepEqual(summary.uncoveredMidi, [])
-  assert.ok((summary.maxTransposeNeed ?? 99) <= 3)
+  assert.ok((summary.maxTransposeNeed ?? 99) <= 2)
+  assert.notEqual(summary.density, "risk")
 })
