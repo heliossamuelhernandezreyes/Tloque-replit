@@ -3,7 +3,8 @@ import { hybridEnabledForArticulation, nativeHybridForInstrument, NATIVE_HYBRID_
 
 describe("Hybrid Strings v1", () => {
   it("covers the bowed orchestral string family without replacing the sample base", () => {
-    const ids = new Set(NATIVE_HYBRID_SOURCES.map(source => source.instrumentId))
+    const bowed = NATIVE_HYBRID_SOURCES.filter(source => source.physicalLayer === "bowed-string-resonator")
+    const ids = new Set(bowed.map(source => source.instrumentId))
     expect(ids).toEqual(new Set([
       "strings.violin",
       "strings.violin-section",
@@ -11,10 +12,9 @@ describe("Hybrid Strings v1", () => {
       "strings.cello",
       "strings.contrabass",
     ]))
-    for (const source of NATIVE_HYBRID_SOURCES) {
+    for (const source of bowed) {
       expect(source.kind).toBe("hybrid")
       expect(source.baseSource).toBe("sample-pack")
-      expect(source.physicalLayer).toBe("bowed-string-resonator")
       expect(source.engineVersion).toBe("bowed-string-overlay-v1")
       expect(source.approval).toBe("studio")
       expect(source.masterApproved).toBe(false)
@@ -32,8 +32,7 @@ describe("Hybrid Strings v1", () => {
     expect(hybridEnabledForArticulation("strings.contrabass", "staccato")).toBe(false)
   })
 
-  it("does not claim unsupported instruments", () => {
-    expect(nativeHybridForInstrument("woodwinds.flute")).toBeNull()
+  it("does not claim unrelated instruments", () => {
     expect(nativeHybridForInstrument("piano.grand")).toBeNull()
   })
 })
