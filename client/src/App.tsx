@@ -32,6 +32,7 @@ const FlickerLab = lazy(() => import("@/pages/FlickerLab"))
 const AudioCatalogAdmin = lazy(() => import("@/pages/AudioCatalogAdmin"))
 const VscoInstallerAdmin = lazy(() => import("@/pages/VscoInstallerAdmin"))
 const KeyboardInstallerAdmin = lazy(() => import("@/pages/KeyboardInstallerAdmin"))
+const PhysicalModelLab = lazy(() => import("@/pages/PhysicalModelLab"))
 const ProfileHub = lazy(() => import("@/pages/ProfileHub"))
 const Inbox = lazy(() => import("@/pages/Inbox"))
 const Editions = lazy(() => import("@/pages/Editions"))
@@ -102,6 +103,7 @@ function Router() {
         <Route path="/admin/audio/vsco-percussion" component={adminPage(VscoInstallerAdmin)} />
         <Route path="/admin/audio/vsco-violin" component={adminPage(VscoInstallerAdmin)} />
         <Route path="/admin/audio/keyboards" component={adminPage(KeyboardInstallerAdmin)} />
+        <Route path="/admin/audio/physical-models" component={adminPage(PhysicalModelLab)} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>

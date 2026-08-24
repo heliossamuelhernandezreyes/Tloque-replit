@@ -1,6 +1,7 @@
 import { useState } from "react"
 import {
   ChevronRight,
+  FlaskConical,
   Headphones,
   Import,
   Loader2,
@@ -110,6 +111,7 @@ export default function AdminHub() {
     { label: copy("frames"), Icon: Sparkles, action: () => setLocation("/admin/marcos") },
     { label: copy("phonotheque"), Icon: Headphones, action: () => setLocation("/admin/fonoteca") },
     { label: "Instrumentos premium", Icon: PackageCheck, action: () => setLocation("/admin/audio/keyboards") },
+    { label: "Laboratorio acústico", Icon: FlaskConical, action: () => setLocation("/admin/audio/physical-models") },
     { label: copy("diagnostics"), Icon: MonitorCog, action: () => setLocation("/admin/diag") },
   ]
 
@@ -120,7 +122,7 @@ export default function AdminHub() {
         <h1 className="mt-1 text-2xl text-white">{copy("adminCenter")}</h1>
         <p className="mt-2 text-sm text-zinc-500">{copy("adminCenterHint")}</p>
 
-        <div className="my-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="my-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
           {tools.map(({ label, Icon, action }) => (
             <button
               key={label}
@@ -219,7 +221,7 @@ export default function AdminHub() {
                   />
                   <button
                     onClick={addAdmin}
-                    disabled={working || !email.includes("@")}
+                    disabled={working || !email.includes("@")} 
                     className="tloque-primary-button disabled:cursor-not-allowed disabled:opacity-40"
                     style={{ background: cfg.color }}
                   >
