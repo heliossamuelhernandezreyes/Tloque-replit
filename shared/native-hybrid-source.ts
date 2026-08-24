@@ -1,10 +1,10 @@
 export type NativeHybridApproval = "studio" | "master"
-export type NativeHybridPhysicalLayer = "bowed-string-resonator" | "air-column-resonator"
+export type NativeHybridPhysicalLayer = "bowed-string-resonator" | "air-column-resonator" | "sympathetic-resonance"
 
 export interface NativeHybridSource {
   kind: "hybrid"
   instrumentId: string
-  engineVersion: "bowed-string-overlay-v1" | "air-column-overlay-v1"
+  engineVersion: "bowed-string-overlay-v1" | "air-column-overlay-v1" | "sympathetic-resonance-v1"
   approval: NativeHybridApproval
   masterApproved: boolean
   baseSource: "sample-pack"
@@ -34,6 +34,11 @@ export const NATIVE_HYBRID_SOURCES: readonly NativeHybridSource[] = [
   { kind: "hybrid", instrumentId: "brass.trombone", engineVersion: "air-column-overlay-v1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "air-column-resonator", midiMin: 40, midiMax: 72, wet: 0.085, notes: "Sample real dominante + continuidad de bore." },
   { kind: "hybrid", instrumentId: "brass.bass-trombone", engineVersion: "air-column-overlay-v1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "air-column-resonator", midiMin: 25, midiMax: 51, wet: 0.1, notes: "Iowa real domina; overlay refuerza presión y resonancia grave." },
   { kind: "hybrid", instrumentId: "brass.tuba", engineVersion: "air-column-overlay-v1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "air-column-resonator", midiMin: 28, midiMax: 58, wet: 0.105, notes: "Capa física grave y contenida bajo el sample." },
+
+  { kind: "hybrid", instrumentId: "piano.grand", engineVersion: "sympathetic-resonance-v1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "sympathetic-resonance", midiMin: 21, midiMax: 108, wet: 0.08, notes: "Ataque y dinámica quedan sampleados; overlay añade tabla armónica, resonancia simpática y cola física. Pedal CC64 explícito queda pendiente de TloqueScore." },
+  { kind: "hybrid", instrumentId: "keys.celesta", engineVersion: "sympathetic-resonance-v1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "sympathetic-resonance", midiMin: 48, midiMax: 96, wet: 0.055, notes: "La Mustel real conserva el golpe; resonancia metálica/caja se añade a nivel muy bajo." },
+  { kind: "hybrid", instrumentId: "strings.harp", engineVersion: "sympathetic-resonance-v1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "sympathetic-resonance", midiMin: 24, midiMax: 103, wet: 0.075, notes: "Pluck sampleado dominante; cuerdas simpáticas y caja prolongan la respuesta sin duplicar el ataque." },
+  { kind: "hybrid", instrumentId: "guitar.acoustic", engineVersion: "sympathetic-resonance-v1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "sympathetic-resonance", midiMin: 40, midiMax: 83, wet: 0.065, notes: "Martin HD28 sampleada conserva púa/dedo; overlay modela cuerpo y resonancias simpáticas." },
 ]
 
 export function nativeHybridForInstrument(instrumentId: string | null | undefined): NativeHybridSource | null {
@@ -45,5 +50,6 @@ export function hybridEnabledForArticulation(instrumentId: string, articulation:
   const source = nativeHybridForInstrument(instrumentId)
   if (!source) return false
   if (source.physicalLayer === "bowed-string-resonator") return articulation !== "pizzicato" && articulation !== "spiccato" && articulation !== "staccato"
-  return articulation !== "staccato" && articulation !== "spiccato" && articulation !== "pizzicato"
+  if (source.physicalLayer === "air-column-resonator") return articulation !== "staccato" && articulation !== "spiccato" && articulation !== "pizzicato"
+  return articulation === "normal" || articulation === "legato" || articulation === "tenuto" || articulation === "accent"
 }
