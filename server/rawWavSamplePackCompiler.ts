@@ -62,10 +62,17 @@ function concertHarpZones(paths: readonly string[]): ParsedRawZone[] {
   return paths.flatMap((samplePath): ParsedRawZone[] => {
     const match=/KSHarp_([A-Ga-g](?:#|b)?-?\d+)_(p|mp|mf|f)(\d+)\.wav$/i.exec(samplePath)
     if(!match)return[]
-    // The source is irregular at the extreme registers. p/mp/mf are the softer physical colour;
-    // f is the hard-pluck layer. Layer ranges are generated independently so missing roots do not create holes.
     const dynamic=match[2].toLowerCase()
     return [{samplePath,rootMidi:sfzNoteToMidi(match[1]),velocityLayer:dynamic==="f"?1:0,roundRobin:Math.max(0,Number(match[3])-1),mic:"default",trigger:"attack",articulation:"normal"}]
+  })
+}
+function martinHd28Zones(paths: readonly string[]): ParsedRawZone[] {
+  return paths.flatMap((samplePath): ParsedRawZone[] => {
+    const match = /MartinGM2_(\d{3})_[^/]*_1\.wav$/i.exec(samplePath)
+    if (!match) return []
+    const rootMidi = Number(match[1])
+    if (!Number.isInteger(rootMidi) || rootMidi < 0 || rootMidi > 127) return []
+    return [{ samplePath, rootMidi, velocityLayer: 0, roundRobin: 0, mic: "default", trigger: "attack", articulation: "normal" }]
   })
 }
 
@@ -75,7 +82,7 @@ function velocityRange(layer:number, profile:CuratedRawWavPackSource["rawWavProf
   return{lo:0,hi:127}
 }
 function rangesForRoots(roots:readonly number[]){const unique=[...new Set(roots)].sort((a,b)=>a-b),map=new Map<number,{lo:number;hi:number}>();for(let i=0;i<unique.length;i++){const root=unique[i],previous=unique[i-1],next=unique[i+1],lo=previous===undefined?0:Math.floor((previous+root)/2)+1,hi=next===undefined?127:Math.floor((root+next)/2);map.set(root,{lo:Math.max(0,lo),hi:Math.min(127,hi)})}return map}
-function zonesForProfile(paths:readonly string[],profile:CuratedRawWavPackSource["rawWavProfile"]):ParsedRawZone[]{switch(profile){case"vcsl-grand-piano-sus-close":return pianoZones(paths);case"vcsl-pipe-organ-rode-man3-open":return organManualOpenZones(paths);case"vcsl-pipe-organ-nt5-man3-quiet":return organManualQuietZones(paths);case"vcsl-pipe-organ-rode-pedal":return organPedalZones(paths);case"vcsl-ocarina":return ocarinaZones(paths);case"vcsl-alto-recorder":return altoRecorderZones(paths);case"vcsl-italian-harpsichord-stop1":return harpsichordZones(paths);case"vcsl-concert-harp":return concertHarpZones(paths)}}
+function zonesForProfile(paths:readonly string[],profile:CuratedRawWavPackSource["rawWavProfile"]):ParsedRawZone[]{switch(profile){case"vcsl-grand-piano-sus-close":return pianoZones(paths);case"vcsl-pipe-organ-rode-man3-open":return organManualOpenZones(paths);case"vcsl-pipe-organ-nt5-man3-quiet":return organManualQuietZones(paths);case"vcsl-pipe-organ-rode-pedal":return organPedalZones(paths);case"vcsl-ocarina":return ocarinaZones(paths);case"vcsl-alto-recorder":return altoRecorderZones(paths);case"vcsl-italian-harpsichord-stop1":return harpsichordZones(paths);case"vcsl-concert-harp":return concertHarpZones(paths);case"discord-martin-hd28":return martinHd28Zones(paths)}}
 
 export function compileRawWavPathsToSfz(paths:readonly string[],source:CuratedRawWavPackSource){
   const zones=zonesForProfile(paths,source.rawWavProfile);if(!zones.length)throw new Error(`El perfil ${source.rawWavProfile} no encontró WAV compatibles`)
