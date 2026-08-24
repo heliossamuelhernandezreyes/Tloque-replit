@@ -5,11 +5,7 @@ import { buildNativeSampleScorePlan } from "./NativeSampleScorePlan"
 
 export type NativeCoverageDensity = "dense" | "good" | "sparse" | "risk" | "missing"
 
-export interface NativeCoverageItem {
-  moduleId: string
-  trackIds: readonly string[]
-  instruments: readonly string[]
-  status: "ready" | "missing" | "invalid"
+export interface NativeCoverageSummary {
   density: NativeCoverageDensity
   zones: number
   roots: number
@@ -26,6 +22,13 @@ export interface NativeCoverageItem {
   roundRobins: number
   releaseZones: number
   trueLegatoTransitions: number
+}
+
+export interface NativeCoverageItem extends NativeCoverageSummary {
+  moduleId: string
+  trackIds: readonly string[]
+  instruments: readonly string[]
+  status: "ready" | "missing" | "invalid"
   message?: string
 }
 
@@ -47,7 +50,7 @@ function attackZones(pack: TloqueSamplePack) {
   return pack.zones.filter(zone => (zone.trigger ?? "attack") === "attack")
 }
 
-function coverageStats(pack: TloqueSamplePack) {
+export function summarizeNativeSamplePackCoverage(pack: TloqueSamplePack): NativeCoverageSummary {
   const attacks = attackZones(pack)
   const roots = [...new Set(attacks.map(zone => zone.rootMidi))].sort((a, b) => a - b)
   const midiMin = attacks.length ? Math.min(...attacks.map(zone => zone.loMidi)) : null
@@ -108,6 +111,14 @@ function coverageStats(pack: TloqueSamplePack) {
   }
 }
 
+function emptyCoverage(): NativeCoverageSummary {
+  return {
+    density: "missing", zones: 0, roots: 0, midiMin: null, midiMax: null, maxRootGap: null, maxTransposeNeed: null,
+    uncoveredMidi: [], articulations: [], vibratoColours: [], mutes: [], microphones: [], velocityLayers: 0,
+    roundRobins: 0, releaseZones: 0, trueLegatoTransitions: 0,
+  }
+}
+
 export async function auditNativeSampleCoverage(value: unknown, signal?: AbortSignal): Promise<NativeCoverageAudit> {
   const recipe = linearScoreRecipeFor(value)
   if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") {
@@ -125,17 +136,12 @@ export async function auditNativeSampleCoverage(value: unknown, signal?: AbortSi
       const response = await fetch(packUrl(group.moduleId), { credentials: "include", cache: "no-store", signal })
       if (!response.ok) {
         scorePlayable = false
-        items.push({
-          moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "missing", density: "missing",
-          zones: 0, roots: 0, midiMin: null, midiMax: null, maxRootGap: null, maxTransposeNeed: null,
-          uncoveredMidi: [], articulations: [], vibratoColours: [], mutes: [], microphones: [], velocityLayers: 0,
-          roundRobins: 0, releaseZones: 0, trueLegatoTransitions: 0, message: `HTTP ${response.status}`,
-        })
+        items.push({ moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "missing", ...emptyCoverage(), message: `HTTP ${response.status}` })
         continue
       }
       const pack = validateTloqueSamplePack(await response.json())
       if (pack.instrumentManifestId !== group.moduleId) throw new Error("El manifest publicado no corresponde al módulo indexado")
-      const stats = coverageStats(pack)
+      const stats = summarizeNativeSamplePackCoverage(pack)
       let message: string | undefined
       try {
         buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack)
@@ -147,10 +153,7 @@ export async function auditNativeSampleCoverage(value: unknown, signal?: AbortSi
     } catch (error) {
       scorePlayable = false
       items.push({
-        moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "invalid", density: "missing",
-        zones: 0, roots: 0, midiMin: null, midiMax: null, maxRootGap: null, maxTransposeNeed: null,
-        uncoveredMidi: [], articulations: [], vibratoColours: [], mutes: [], microphones: [], velocityLayers: 0,
-        roundRobins: 0, releaseZones: 0, trueLegatoTransitions: 0,
+        moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "invalid", ...emptyCoverage(),
         message: error instanceof Error ? error.message : "No se pudo auditar el banco",
       })
     }
