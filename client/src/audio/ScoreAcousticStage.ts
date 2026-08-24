@@ -28,16 +28,16 @@ function deterministicNoise(index: number) {
   return (x - Math.floor(x)) * 2 - 1
 }
 
-function createRoomImpulse(context: BaseAudioContext, seconds = 2.35) {
+function createEarlyReflectionImpulse(context: BaseAudioContext, seconds = 0.46) {
   const length = Math.max(1, Math.floor(context.sampleRate * seconds))
   const impulse = context.createBuffer(2, length, context.sampleRate)
   for (let channel = 0; channel < 2; channel += 1) {
     const data = impulse.getChannelData(channel)
     for (let i = 0; i < length; i += 1) {
       const t = i / context.sampleRate
-      const envelope = Math.exp(-t * 3.05)
-      const early = t < 0.11 ? (1 - t / 0.11) * 0.20 : 0
-      data[i] = deterministicNoise(i * 2 + channel * 7919) * envelope * (0.13 + early)
+      const envelope = Math.exp(-t * 8.4)
+      const early = t < 0.12 ? (1 - t / 0.12) * 0.28 : 0
+      data[i] = deterministicNoise(i * 2 + channel * 7919) * envelope * (0.08 + early)
     }
   }
   return impulse
@@ -48,17 +48,16 @@ export interface AcousticStage {
   disconnect(): void
 }
 
-/** Shared live/offline orchestral stage. It adds deterministic depth, early delay,
- * family placement and one common room so native instruments sound like an ensemble
- * rather than isolated samples. No external IR is required and both renderers use
- * exactly the same topology. */
+/** Shared live/offline orchestral stage. It adds family placement, distance,
+ * air absorption and short early reflections before the shared concert-room master.
+ * The stage intentionally avoids a second long reverb tail: the master owns that tail. */
 export function createAcousticStage(context: BaseAudioContext, destination: AudioNode): AcousticStage {
-  const room = context.createConvolver()
-  room.normalize = true
-  room.buffer = createRoomImpulse(context)
-  const roomReturn = context.createGain(); roomReturn.gain.value = 0.58
-  room.connect(roomReturn); roomReturn.connect(destination)
-  const nodes: AudioNode[] = [room, roomReturn]
+  const earlyRoom = context.createConvolver()
+  earlyRoom.normalize = true
+  earlyRoom.buffer = createEarlyReflectionImpulse(context)
+  const earlyReturn = context.createGain(); earlyReturn.gain.value = 0.46
+  earlyRoom.connect(earlyReturn); earlyReturn.connect(destination)
+  const nodes: AudioNode[] = [earlyRoom, earlyReturn]
 
   function createTrackInput(instrument: string, scorePan: number) {
     const placement = acousticPlacementForInstrument(instrument)
@@ -73,7 +72,7 @@ export function createAcousticStage(context: BaseAudioContext, destination: Audi
       const panner = context.createStereoPanner(); panner.pan.value = Math.max(-1, Math.min(1, scorePan + placement.panOffset))
       delay.connect(panner); panner.connect(dry); panner.connect(send); nodes.push(panner)
     } else { delay.connect(dry); delay.connect(send) }
-    dry.connect(destination); send.connect(room)
+    dry.connect(destination); send.connect(earlyRoom)
     nodes.push(input, distance, air, delay, dry, send)
     return input
   }
