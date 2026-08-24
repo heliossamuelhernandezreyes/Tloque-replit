@@ -203,5 +203,5 @@ export function schedulePhysicalReedVoice(
   noise.start(noteStart); noise.stop(stopAt)
   lfo.start(noteStart); lfo.stop(stopAt)
 
-  return { startSeconds: event.timeSeconds, endSeconds: stopAt - startAt, sourceKind: source.kind as const }
+  return { startSeconds: event.timeSeconds, endSeconds: stopAt - startAt, sourceKind: source.kind }
 }
