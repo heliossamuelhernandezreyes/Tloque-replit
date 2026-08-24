@@ -4,6 +4,7 @@ import type { TloqueMicPosition, TloqueMute, TloqueSamplePack, TloqueSampleZone,
 import { physicalRecordedTimbre, recordedTimbreProfileFor, resolveRecordedTimbre, type ExplicitRecordedTimbre } from "@shared/recorded-timbre"
 import type { ScoreTimbre } from "@shared/tloque-score-v2"
 import { selectNativeSampleZone } from "./NativeSamplePackEngine"
+import { selectNativeSampleVelocityBlend } from "./NativeSampleVelocityBlend"
 import { buildPerformancePlan } from "./PerformanceEngine"
 import { articulationDurationFactor, articulationVelocityFactor, scoreTrackExpression, scoreTrackTimbre, scoreVelocityGain } from "./ScoreAudioMath"
 
@@ -104,11 +105,20 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
   const voices: NativeSampleVoicePlan[] = []
   const auxiliaryVoices: NativeSampleAuxiliaryVoicePlan[] = []
   const zones = new Map<string, TloqueSampleZone>()
+  const previousEventByTrack = new Map<string, LinearScoreRecipe["plan"]["events"][number]>()
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
     const decision = performance.decisionForEvent(eventIndex)
     const track = trackById.get(event.trackId)
     if (!decision || !track) continue
+    const previousEvent = previousEventByTrack.get(event.trackId)
+    const connectedPerformancePhrase = Boolean(
+      previousEvent
+      && previousEvent.notes.length === 1
+      && event.notes.length === 1
+      && event.timeSeconds - (previousEvent.timeSeconds + previousEvent.durationSeconds) <= 0.09
+      && event.timeSeconds - (previousEvent.timeSeconds + previousEvent.durationSeconds) >= -0.12,
+    )
     const oneShot = track.instrument === "percussion.orchestral-kit"
     const requestedTimbre = event.timbre ?? track.timbre ?? "natural"
     const candidates = timbreCandidates(pack.instrumentManifestId, requestedTimbre)
@@ -118,45 +128,48 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     const startSeconds = Math.max(0, event.timeSeconds + decision.startOffsetSeconds)
     const micPosition = micForTrack(track.id)
     for (const note of event.notes) {
-      let selected: ReturnType<typeof selectNativeSampleZone> = null
+      let selections: ReturnType<typeof selectNativeSampleVelocityBlend> = []
       let resolvedTimbre: ExplicitRecordedTimbre | null = null
       for (const candidate of candidates) {
         const physical = physicalRecordedTimbre(candidate)
-        const selection = selectNativeSampleZone(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "attack", micPosition })
-        if (selection) {
-          selected = selection
+        const blend = selectNativeSampleVelocityBlend(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "attack", micPosition })
+        if (blend.length) {
+          selections = blend
           resolvedTimbre = candidate
           break
         }
       }
-      if (!selected || !resolvedTimbre) {
+      if (!selections.length || !resolvedTimbre) {
         const attempted = candidates.join("|")
         throw new Error(`El módulo ${pack.instrumentManifestId} no contiene timbre=${attempted}, mic=${micPosition} para ${track.instrument} en MIDI ${note}`)
       }
       const physical = physicalRecordedTimbre(resolvedTimbre)
-      zones.set(selected.zone.id, selected.zone)
-      const voice: NativeSampleVoicePlan = {
-        trackId: event.trackId,
-        articulation: decision.articulation,
-        timbre: requestedTimbre,
-        resolvedTimbre,
-        note,
-        velocity,
-        roundRobin: decision.roundRobin,
-        vibrato: physical.vibratoColour !== "none",
-        vibratoColour: physical.vibratoColour,
-        mute: physical.mute,
-        micPosition,
-        startSeconds,
-        durationSeconds,
-        zoneId: selected.zone.id,
-        sampleUrl: selected.zone.sampleUrl,
-        playbackRate: selected.playbackRate,
-        sampleGain: selected.gain,
-        oneShot,
-        fadeInSeconds: 0,
-      }
-      voices.push(voice)
+      const noteVoices: NativeSampleVoicePlan[] = selections.map(selected => {
+        zones.set(selected.zone.id, selected.zone)
+        const voice: NativeSampleVoicePlan = {
+          trackId: event.trackId,
+          articulation: decision.articulation,
+          timbre: requestedTimbre,
+          resolvedTimbre,
+          note,
+          velocity,
+          roundRobin: decision.roundRobin,
+          vibrato: physical.vibratoColour !== "none",
+          vibratoColour: physical.vibratoColour,
+          mute: physical.mute,
+          micPosition,
+          startSeconds,
+          durationSeconds,
+          zoneId: selected.zone.id,
+          sampleUrl: selected.zone.sampleUrl,
+          playbackRate: selected.playbackRate,
+          sampleGain: selected.gain,
+          oneShot,
+          fadeInSeconds: 0,
+        }
+        voices.push(voice)
+        return voice
+      })
 
       if (decision.trueLegato && decision.previousNotes?.length === 1) {
         const from = decision.previousNotes[0]
@@ -169,7 +182,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
         })
         if (!transition) throw new Error(`El módulo ${pack.instrumentManifestId} declara true-legato pero no contiene transición ${from}->${note} en mic=${micPosition}`)
         const crossfadeSeconds = trueLegatoCrossfadeSeconds(durationSeconds)
-        voice.fadeInSeconds = crossfadeSeconds
+        for (const voice of noteVoices) voice.fadeInSeconds = crossfadeSeconds
         zones.set(transition.zone.id, transition.zone)
         auxiliaryVoices.push({
           kind: "legato-transition",
@@ -187,6 +200,9 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           transitionFromMidi: from,
           fadeOutSeconds: crossfadeSeconds,
         })
+      } else if (connectedPerformancePhrase && (decision.articulation === "legato" || decision.articulation === "tenuto" || decision.articulation === "normal")) {
+        const performanceCrossfade = Math.max(0.018, Math.min(0.065, durationSeconds * 0.12))
+        for (const voice of noteVoices) voice.fadeInSeconds = Math.max(voice.fadeInSeconds, performanceCrossfade)
       }
 
       if (decision.releaseSamples) {
@@ -210,6 +226,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
         })
       }
     }
+    previousEventByTrack.set(event.trackId, event)
   }
 
   return { tracks, controls, voices, auxiliaryVoices, zones: [...zones.values()], totalSeconds: recipe.plan.totalSeconds }
