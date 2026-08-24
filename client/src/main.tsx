@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
+import { installTloqueScoreFileBridge } from "./lib/tloqueScoreFileBridge"
 
 interface BoundaryState { failed: boolean }
 
@@ -45,6 +46,8 @@ function BootFailure() {
 const rootElement = document.getElementById("root")
 if (!rootElement) throw new Error("No se encontró el contenedor principal")
 const root = createRoot(rootElement)
+
+installTloqueScoreFileBridge()
 
 // La importación diferida permite mostrar una recuperación legible si un
 // módulo de la aplicación falla durante su evaluación inicial.
