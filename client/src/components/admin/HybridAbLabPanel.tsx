@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { Download, FlaskConical, Loader2, Pause, Play, ShieldCheck } from "lucide-react"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
 import { NATIVE_HYBRID_SOURCES, type NativeHybridSource } from "@shared/native-hybrid-source"
@@ -30,8 +30,6 @@ export function HybridAbLabPanel() {
   const [playing, setPlaying] = useState<string | null>(null)
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null)
   const [error, setError] = useState("")
-
-  useEffect(() => () => { audio?.pause(); Object.values(urls).forEach(pair => { URL.revokeObjectURL(pair.sampled); URL.revokeObjectURL(pair.hybrid) }) }, [audio, urls])
 
   async function run(source: NativeHybridSource) {
     if (running) return
