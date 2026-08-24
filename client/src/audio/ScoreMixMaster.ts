@@ -16,26 +16,30 @@ export interface SampledMixMasterProfile {
   roomSeconds: number
   roomDecay: number
   roomMix: number
+  roomPredelaySeconds: number
+  roomLowpassHz: number
 }
 
 export const SAMPLED_MIX_MASTER_PROFILE: Readonly<SampledMixMasterProfile> = {
   lowShelfHz: 220,
-  lowShelfDb: -1,
-  highShelfHz: 3_600,
-  highShelfDb: 1.2,
-  compressorThreshold: -20,
-  compressorKnee: 14,
-  compressorRatio: 2.6,
-  compressorAttack: 0.015,
-  compressorRelease: 0.24,
-  makeupGain: 1.08,
+  lowShelfDb: -0.7,
+  highShelfHz: 3_800,
+  highShelfDb: 0.7,
+  compressorThreshold: -22,
+  compressorKnee: 16,
+  compressorRatio: 2.15,
+  compressorAttack: 0.026,
+  compressorRelease: 0.34,
+  makeupGain: 1.05,
   limiterThreshold: -1.2,
   limiterRatio: 20,
   limiterAttack: 0.002,
-  limiterRelease: 0.075,
-  roomSeconds: 2.35,
-  roomDecay: 3.05,
-  roomMix: 0.16,
+  limiterRelease: 0.09,
+  roomSeconds: 3.15,
+  roomDecay: 2.35,
+  roomMix: 0.245,
+  roomPredelaySeconds: 0.024,
+  roomLowpassHz: 8_800,
 }
 
 export interface SampledMixMasterChain {
@@ -58,8 +62,11 @@ function createConcertRoomImpulse(context: BaseAudioContext, seconds: number, de
     for (let i = 0; i < length; i += 1) {
       const t = i / context.sampleRate
       const tail = Math.exp(-t * decay)
-      const early = t < 0.095 ? (1 - t / 0.095) * 0.18 : 0
-      data[i] = deterministicNoise(i * 2 + channel * 7919) * tail * (0.12 + early)
+      const earlyWindow = t < 0.14 ? (1 - t / 0.14) : 0
+      const lateBloom = Math.min(1, t / 0.32)
+      const early = deterministicNoise(i * 2 + channel * 7919) * earlyWindow * 0.16
+      const late = deterministicNoise(i * 5 + channel * 3571) * tail * (0.055 + lateBloom * 0.085)
+      data[i] = early + late
     }
   }
   return impulse
@@ -67,8 +74,10 @@ function createConcertRoomImpulse(context: BaseAudioContext, seconds: number, de
 
 /**
  * Shared native-WebAudio mastering chain for live and offline sampled renderers.
- * The deterministic stereo room is generated locally: it adds one coherent acoustic
- * space without downloading an IR and, crucially, preview and WAV hear the same room.
+ * The room is intentionally longer and softer than the old test-room: the goal is
+ * orchestral glue, not an audible reverb effect. Predelay preserves articulation,
+ * damping keeps brass/strings from becoming brittle, and gentler compression leaves
+ * musical dynamics intact.
  */
 export function createSampledMixMaster(
   context: BaseAudioContext,
@@ -87,8 +96,10 @@ export function createSampledMixMaster(
 
   const dry = context.createGain(); dry.gain.value = 1
   const roomSend = context.createGain(); roomSend.gain.value = profile.roomMix
+  const predelay = context.createDelay(0.12); predelay.delayTime.value = profile.roomPredelaySeconds
+  const roomDamping = context.createBiquadFilter(); roomDamping.type = "lowpass"; roomDamping.frequency.value = profile.roomLowpassHz; roomDamping.Q.value = 0.15
   const room = context.createConvolver(); room.normalize = true; room.buffer = createConcertRoomImpulse(context, profile.roomSeconds, profile.roomDecay)
-  const roomReturn = context.createGain(); roomReturn.gain.value = 0.72
+  const roomReturn = context.createGain(); roomReturn.gain.value = 0.84
 
   const compressor = context.createDynamicsCompressor()
   compressor.threshold.value = profile.compressorThreshold
@@ -112,12 +123,12 @@ export function createSampledMixMaster(
 
   lowShelf.connect(highShelf)
   highShelf.connect(dry); dry.connect(compressor)
-  highShelf.connect(roomSend); roomSend.connect(room); room.connect(roomReturn); roomReturn.connect(compressor)
+  highShelf.connect(roomSend); roomSend.connect(predelay); predelay.connect(roomDamping); roomDamping.connect(room); room.connect(roomReturn); roomReturn.connect(compressor)
   compressor.connect(makeup)
   makeup.connect(limiter)
   limiter.connect(output)
 
-  const nodes = [lowShelf, highShelf, dry, roomSend, room, roomReturn, compressor, makeup, limiter, output] as const
+  const nodes = [lowShelf, highShelf, dry, roomSend, predelay, roomDamping, room, roomReturn, compressor, makeup, limiter, output] as const
   return {
     input: lowShelf,
     output,
