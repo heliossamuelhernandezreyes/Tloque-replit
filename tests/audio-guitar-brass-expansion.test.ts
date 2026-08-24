@@ -29,8 +29,10 @@ test("premium UI makes guitar and full brass easy to install", () => {
   assert.match(installer, /family === "guitar"/)
 })
 
-test("AI skill 1.4 documents guitar and brass physical capabilities", () => {
-  assert.match(skill, /Skill version: `1\.4\.0`/)
+test("AI skill documents guitar and brass physical capabilities", () => {
+  const version = /Skill version: `(\d+)\.(\d+)\.(\d+)`/.exec(skill)
+  assert.ok(version)
+  assert.ok(Number(version![1]) > 1 || Number(version![2]) >= 4)
   assert.match(skill, /guitar\.electric-clean/)
   assert.match(skill, /VSCO 2 CE Trumpet/)
   assert.match(skill, /straight mute and Harmon mute/)
