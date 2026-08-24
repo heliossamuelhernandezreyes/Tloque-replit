@@ -76,11 +76,6 @@ export class NativeSampleScoreEngine {
         }
       }
 
-      // On mobile, scheduling hundreds of BufferSource nodes after resume can consume
-      // more than the old 80 ms lead and collapse early notes onto `currentTime`.
-      // Freeze the audio clock, schedule the complete graph, then resume it as one
-      // deterministic performance. This makes live native playback much closer to
-      // the OfflineAudioContext master render.
       if (context.state === "running") await context.suspend()
       this.context = context; this.output = output; this.cue = cue
       const startAt = context.currentTime + 0.12
@@ -106,6 +101,7 @@ export class NativeSampleScoreEngine {
             destination,
             0,
             voice.oneShot,
+            voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : undefined,
           ))
           if (voice.oneShot) {
             const physical = durationByUrl.get(voice.sampleUrl) ?? 0
@@ -122,6 +118,7 @@ export class NativeSampleScoreEngine {
             destination,
             0,
             true,
+            auxiliary.fadeOutSeconds > 0 ? { fadeOutSeconds: auxiliary.fadeOutSeconds } : undefined,
           ))
           const physical = durationByUrl.get(auxiliary.sampleUrl) ?? 0
           naturalEnd = Math.max(naturalEnd, auxiliary.startSeconds + physical / Math.max(0.01, auxiliary.playbackRate))
