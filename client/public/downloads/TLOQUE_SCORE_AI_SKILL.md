@@ -11,7 +11,7 @@ Create only instrumental music. The TloqueScore code is the master work: Tloque 
 
 - Audio contract: `tloque-audio-2026-08-v2`
 - Compiler: `tloque-score-compiler-v2.1`
-- Skill version: `1.3.0`
+- Skill version: `1.4.0`
 - Built-in module: `builtin`
 - Native multi-instrument router: `native-auto`
 - Premium native master: physical verified sample packs required
@@ -103,6 +103,7 @@ brass.trumpet
 brass.trombone
 brass.horn
 brass.tuba
+guitar.electric-clean
 percussion.timpani
 percussion.orchestral-kit
 piano.grand
@@ -111,6 +112,10 @@ keys.harpsichord
 ```
 
 Use `strings.violin` for a solo/concertino line and `strings.violin-section` for tutti/section writing. They intentionally resolve to different physical VSCO packs.
+
+`guitar.electric-clean` resolves to the curated CC0 Karoryfer Emilyguitar bank: four recorded velocity layers, three note round robins and physical release/noise samples. Treat it as a clean electric guitar. Do not claim nylon-string classical guitar, acoustic body resonance, strumming, palm mute, harmonics or other techniques unless a future installed bank explicitly provides them.
+
+For brass, `brass.trumpet`, `brass.trombone`, `brass.horn` and `brass.tuba` resolve independently. Trumpet has recorded natural/vibrato, straight mute and Harmon mute colours; horn has a recorded mute; trombone has recorded vibrato. Use `timbre=` only for colours physically declared by the selected bank.
 
 The renderer loads the required packs independently but sends them through one common mixer/master. Live native playback and native WAV export resolve the same physical zones when those packs are installed.
 
@@ -132,7 +137,16 @@ strings.cello    -> VSCO 2 CE Cello Section
 keys.harpsichord -> VCSL Italian Harpsichord · Stop 1
 ```
 
-This is the recommended minimum native set for Vivaldi-like solo violin + strings + continuo writing.
+For a complete premium brass palette, install:
+
+```text
+brass.trumpet  -> VSCO 2 CE Trumpet
+brass.trombone -> VSCO 2 CE Tenor Trombone
+brass.horn     -> VSCO 2 CE F Horn
+brass.tuba     -> VSCO 2 CE Tuba
+```
+
+This is the recommended minimum native set for Vivaldi-like solo violin + strings + continuo writing, while the brass bundle is intended for symphonic, martial, ceremonial and cinematic colour.
 
 ## Physical capability rules
 
@@ -142,7 +156,7 @@ The numeric `vibrato=0..1` expressive control is not the same thing as `timbre=v
 
 `articulation=legato` is semantic. True legato is used only when a manifest declares recorded note-to-note transitions and the requested transition exists. Do not invent a `true-legato` command.
 
-Release samples are automatic when a package declares them. Do not invent a `release` articulation. The CC0 Italian harpsichord, for example, contains physical sustain attacks plus key-off/release samples.
+Release samples are automatic when a package declares them. Do not invent a `release` articulation. The CC0 Italian harpsichord and Emilyguitar, for example, contain physical release/key-off information handled by the engine rather than by a fake author-facing articulation.
 
 Mic positions exist internally in TloqueSamplePack but are not currently part of author-facing TloqueScore syntax. Do not write `mic=` in a score.
 
@@ -168,6 +182,10 @@ For fast strings, let staccato/spiccato and velocity variation activate physical
 Write phrasing rather than a MIDI grid. Use small intentional velocity arcs across sequences, expression controls at phrase boundaries, restrained deterministic humanization, and accents at harmonic/metrical destinations. Do not randomize every note independently.
 
 For exposed bowed strings, avoid permanent high vibrato. Use `timbre=vibrato` only when that recorded colour exists and the musical role calls for it; use numeric vibrato controls as expressive shaping, not as a substitute for physical recorded vibrato.
+
+For brass, stagger attacks in chords by tiny musical offsets only when the style benefits from a human ensemble entrance. Keep low brass from masking cello/bass fundamentals; reserve trumpet brightness and accents for structural peaks. Use physical mutes as colour changes, not as gain controls.
+
+For `guitar.electric-clean`, write idiomatically: arpeggios, broken chords, melodic single-note lines and realistically voiced chords. Avoid impossible six-string pitch stacks and machine-identical repeated attacks. Let physical velocity layers and round robin create variation instead of randomizing timing aggressively.
 
 For Baroque music, prefer `keys.harpsichord` for continuo when its native pack is installed. Keep reverberation/decay restrained compared with modern cinematic orchestration. Do not turn every string line into continuous vibrato.
 
@@ -231,6 +249,7 @@ end
 - Values are in range, fractional last-beat positions stay inside the bar, and repeats remain under hard limits.
 - `native-auto` uses only semantic instrument identities that have verified native packages available for the intended premium installation.
 - Requested timbres/articulations exist physically; unavailable capabilities are not approximated dishonestly.
+- Guitar writing stays within the capabilities of the installed guitar bank; brass mutes/colours are used only where physically recorded.
 - A synthesis fallback is never described as a premium/native master.
 - Pedal and pitch bend gestures are intentionally closed/reset.
 - Fast passages have deliberate phrasing and dynamic variation rather than machine-identical events.
