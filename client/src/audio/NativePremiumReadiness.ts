@@ -1,4 +1,6 @@
 import { linearScoreRecipeFor } from "@shared/audio"
+import { masterApprovalEvidenceValid, masterApprovalForModule } from "@shared/native-acoustic-approval-registry"
+import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
 import { auditNativeSampleCoverage, type NativeCoverageAudit, type NativeCoverageItem } from "./NativeSampleCoverageAudit"
 import { auditNativeScoreDemand, type NativeModuleDemandAudit } from "./NativeSampleDemandAudit"
 
@@ -32,12 +34,13 @@ function blockerFor(item: NativeCoverageItem): NativePremiumBlocker | null {
 
 function demandBlocker(item: NativeModuleDemandAudit): NativePremiumBlocker | null {
   if (item.risk !== "high") return null
-  return {
-    moduleId: item.moduleId,
-    instruments: item.instruments,
-    reason: "pitch-shift-risk",
-    message: `${item.shiftedOverThreeSemitones} voces superan 3 semitonos · máximo ${item.maxShiftSemitones.toFixed(2)} · media ${item.meanShiftSemitones.toFixed(2)}`,
-  }
+  return { moduleId: item.moduleId, instruments: item.instruments, reason: "pitch-shift-risk", message: `${item.shiftedOverThreeSemitones} voces superan 3 semitonos · máximo ${item.maxShiftSemitones.toFixed(2)} · media ${item.meanShiftSemitones.toFixed(2)}` }
+}
+
+function physicalModelMasterApproved(moduleId: string) {
+  const model = nativePhysicalModelByModuleId(moduleId)
+  if (!model) return true
+  return masterApprovalEvidenceValid(masterApprovalForModule(moduleId, model.engineVersion))
 }
 
 export async function assessNativePremiumReadiness(value: unknown, signal?: AbortSignal): Promise<NativePremiumReadiness> {
@@ -46,17 +49,17 @@ export async function assessNativePremiumReadiness(value: unknown, signal?: Abor
   if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") return { ready: true, audit, demand: [], blockers: [], warnings: [] }
   const coverageBlockers = audit.items.map(blockerFor).filter((item): item is NativePremiumBlocker => Boolean(item))
   const modelValidationBlockers: NativePremiumBlocker[] = recipe.plan.quality === "master"
-    ? audit.items.filter(item => item.sourceKind === "physical-model" && item.status === "ready" && !item.masterApproved).map(item => ({
+    ? audit.items.filter(item => item.sourceKind === "physical-model" && item.status === "ready" && !physicalModelMasterApproved(item.moduleId)).map(item => ({
         moduleId: item.moduleId,
         instruments: item.instruments,
         reason: "model-validation" as const,
-        message: "Modelo físico disponible en Studio, pero todavía no ha pasado la calibración A/B exigida para Master.",
+        message: "Modelo físico disponible en Studio, pero Master exige reporte acústico objetivo aprobado y revisión A/B humana versionada para esta versión del motor.",
       }))
     : []
   const fatalCoverage = coverageBlockers.some(item => item.reason === "missing" || item.reason === "invalid" || item.reason === "score-unplayable")
   const demand = fatalCoverage ? [] : await auditNativeScoreDemand(recipe, signal)
   const blockers = [...coverageBlockers, ...modelValidationBlockers, ...demand.map(demandBlocker).filter((item): item is NativePremiumBlocker => Boolean(item))]
-  const warnings = audit.items.filter(item => item.status === "ready" && ((item.sourceKind === "sample-pack" && item.density === "sparse" && !item.message) || (item.sourceKind === "physical-model" && !item.masterApproved)))
+  const warnings = audit.items.filter(item => item.status === "ready" && ((item.sourceKind === "sample-pack" && item.density === "sparse" && !item.message) || (item.sourceKind === "physical-model" && !physicalModelMasterApproved(item.moduleId))))
   return { ready: blockers.length === 0 && audit.scorePlayable, audit, demand, blockers, warnings }
 }
 
@@ -65,6 +68,6 @@ export function premiumReadinessError(readiness: NativePremiumReadiness) {
   return [
     "Master premium detenido: una o más fuentes acústicas todavía no alcanzan el umbral de fidelidad de esta obra.",
     ...rows,
-    "Tloque acepta samples, modelos físicos y fuentes híbridas, pero Master sólo se habilita cuando la fuente concreta supera su control de calidad; no ocultará huecos con pitch-shift agresivo ni con síntesis base genérica.",
+    "Tloque acepta samples, modelos físicos y fuentes híbridas, pero Master sólo se habilita con evidencia versionada; no ocultará huecos con pitch-shift agresivo ni síntesis base genérica.",
   ].join("\n")
 }
