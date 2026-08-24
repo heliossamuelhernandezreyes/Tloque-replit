@@ -23,7 +23,7 @@ export function fixedExternalPcmUrl(source: CuratedExternalPcmPackSource, path: 
   return url.toString()
 }
 
-function assertFixedExternalResponse(response: Response, source: CuratedExternalPcmPackSource) {
+export function assertFixedExternalResponse(response: Response, source: CuratedExternalPcmPackSource) {
   const base = new URL(source.externalBaseUrl)
   const finalUrl = new URL(response.url)
   if (finalUrl.protocol !== "https:" || finalUrl.origin !== base.origin) throw new Error(`La fuente PCM redirigió fuera del origen permitido: ${finalUrl.hostname}`)
@@ -56,16 +56,16 @@ export async function downloadCuratedExternalPcmPack(
 ): Promise<DownloadedCuratedSamplePack> {
   if (!source.externalPaths.length || source.externalPaths.length > 256) throw new Error("El paquete PCM externo tiene una cantidad inválida de muestras")
   const compiled = compileExternalPcmPathsToSfz(source.externalPaths, source.mappingProfile)
-  if (compiled.samplePaths.length !== source.externalPaths.length) throw new Error("El mapping PCM no reconoció todas las muestras fijadas")
+  if (compiled.samples.length !== source.externalPaths.length) throw new Error("El mapping PCM no reconoció todas las muestras fijadas")
 
   let totalBytes = 0
   const samples: DownloadedCuratedSample[] = []
-  for (const sourcePath of compiled.samplePaths) {
-    const original = await fetchFixedExternal(source, sourcePath, fetcher)
+  for (const mapped of compiled.samples) {
+    const original = await fetchFixedExternal(source, mapped.sourcePath, fetcher)
     const wav = source.inputFormat === "aiff-pcm" ? convertAiffPcmToWav(original) : original
     totalBytes += wav.length
     if (totalBytes > MAX_EXTERNAL_PACK_BYTES) throw new Error("El paquete PCM externo supera 128 MB")
-    samples.push({ sourcePath, bytes: wav, sha256: createHash("sha256").update(wav).digest("hex") })
+    samples.push({ sourcePath: mapped.samplePath, bytes: wav, sha256: createHash("sha256").update(wav).digest("hex") })
   }
 
   compileSfzBundleToTloqueSamplePack([compiled.sfzText], {
