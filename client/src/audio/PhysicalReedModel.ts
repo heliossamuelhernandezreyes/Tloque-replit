@@ -1,5 +1,7 @@
 import type { NativePhysicalModelSource } from "@shared/native-acoustic-source"
-import type { LinearScoreEventV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
+import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
+
+type LinearScoreEventV2 = LinearScoreRecipeV2["plan"]["events"][number]
 
 export interface PhysicalModelVoiceOptions {
   startAt: number
