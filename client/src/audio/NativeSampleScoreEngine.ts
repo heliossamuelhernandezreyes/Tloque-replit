@@ -1,10 +1,18 @@
 import { linearScoreRecipeFor } from "@shared/audio"
 import type { MusicCue, MusicState } from "./MusicEngine"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
-import { buildNativeSampleScorePlan } from "./NativeSampleScorePlan"
+import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { createSampledMixMaster } from "./ScoreMixMaster"
+import { nativeModuleGroupsForRecipe, recipeForNativeModule } from "./NativeAutoModule"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
+
+interface LoadedNativePlan {
+  moduleId: string
+  plan: NativeSampleScorePlan
+  player: NativeSamplePackPlayer
+  durationByUrl: Map<string, number>
+}
 
 export class NativeSampleScoreEngine {
   private context: AudioContext | null = null
@@ -22,72 +30,89 @@ export class NativeSampleScoreEngine {
     this.stopRuntime()
     try {
       const recipe = linearScoreRecipeFor(cue.recipe)
-      if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita un paquete nativo")
+      if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita paquetes nativos")
       const context = new AudioContext({ latencyHint: "playback" })
-      const player = new NativeSamplePackPlayer(context)
-      const packUrl = `/api/audio/sample-packs/modules/${encodeURIComponent(recipe.plan.moduleId)}.json`
-      const pack = await player.loadPack(packUrl)
-      if (pack.instrumentManifestId !== recipe.plan.moduleId && cue.instrumentManifestId !== pack.instrumentManifestId) throw new Error("El paquete nativo no corresponde al módulo solicitado")
+      const groups = nativeModuleGroupsForRecipe(recipe)
+      const loaded: LoadedNativePlan[] = []
 
-      const plan = buildNativeSampleScorePlan(recipe, pack)
-      const mix = createSampledMixMaster(context, 1)
-      const output = context.createGain(); output.gain.value = 0; mix.output.connect(output); output.connect(context.destination)
-
-      const trackGain = new Map<string, GainNode>()
-      for (const track of plan.tracks) {
-        const gain = context.createGain(); gain.gain.value = track.gain
-        if (typeof context.createStereoPanner === "function") { const panner = context.createStereoPanner(); panner.pan.value = track.pan; gain.connect(panner); panner.connect(mix.input) } else gain.connect(mix.input)
-        trackGain.set(track.id, gain)
+      for (const group of groups) {
+        const player = new NativeSamplePackPlayer(context)
+        const packUrl = `/api/audio/sample-packs/modules/${encodeURIComponent(group.moduleId)}.json`
+        const pack = await player.loadPack(packUrl)
+        if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde a su manifest`)
+        const subRecipe = recipeForNativeModule(recipe, group)
+        const plan = buildNativeSampleScorePlan(subRecipe, pack)
+        const decoded = await player.preload(plan.zones)
+        loaded.push({
+          moduleId: group.moduleId,
+          plan,
+          player,
+          durationByUrl: new Map(plan.zones.map((zone, index) => [zone.sampleUrl, decoded[index]?.duration ?? 0])),
+        })
       }
 
-      const decoded = await player.preload(plan.zones)
-      const durationByUrl = new Map(plan.zones.map((zone, index) => [zone.sampleUrl, decoded[index]?.duration ?? 0]))
-      const zoneById = new Map(plan.zones.map(zone => [zone.id, zone]))
+      const mix = createSampledMixMaster(context, 1)
+      const output = context.createGain(); output.gain.value = 0; mix.output.connect(output); output.connect(context.destination)
+      const trackGain = new Map<string, GainNode>()
+      for (const { plan } of loaded) {
+        for (const track of plan.tracks) {
+          if (trackGain.has(track.id)) continue
+          const gain = context.createGain(); gain.gain.value = track.gain
+          if (typeof context.createStereoPanner === "function") {
+            const panner = context.createStereoPanner(); panner.pan.value = track.pan; gain.connect(panner); panner.connect(mix.input)
+          } else gain.connect(mix.input)
+          trackGain.set(track.id, gain)
+        }
+      }
+
       await context.resume()
       this.context = context; this.output = output; this.cue = cue
       const startAt = context.currentTime + 0.08
-
-      for (const control of plan.controls) {
-        const gain = trackGain.get(control.trackId); if (!gain) continue
-        const at = startAt + control.timeSeconds; gain.gain.cancelScheduledValues(at)
-        if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds); else gain.gain.setValueAtTime(control.gain, at)
-      }
-
+      let naturalEnd = recipe.plan.totalSeconds
       const scheduled: Promise<unknown>[] = []
-      for (const voice of plan.voices) {
-        const destination = trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
-        if (!destination || !zone) continue
-        scheduled.push(player.playSelection(
-          { zone, playbackRate: voice.playbackRate, gain: voice.sampleGain },
-          startAt + voice.startSeconds,
-          voice.durationSeconds,
-          destination,
-          0,
-          voice.oneShot,
-        ))
-      }
-      for (const auxiliary of plan.auxiliaryVoices) {
-        const destination = trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
-        if (!destination || !zone) continue
-        scheduled.push(player.playSelection(
-          { zone, playbackRate: auxiliary.playbackRate, gain: auxiliary.sampleGain },
-          startAt + auxiliary.startSeconds,
-          auxiliary.durationSeconds,
-          destination,
-          0,
-          true,
-        ))
+
+      for (const { plan, player, durationByUrl } of loaded) {
+        for (const control of plan.controls) {
+          const gain = trackGain.get(control.trackId); if (!gain) continue
+          const at = startAt + control.timeSeconds; gain.gain.cancelScheduledValues(at)
+          if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds)
+          else gain.gain.setValueAtTime(control.gain, at)
+        }
+
+        const zoneById = new Map(plan.zones.map(zone => [zone.id, zone]))
+        for (const voice of plan.voices) {
+          const destination = trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
+          if (!destination || !zone) continue
+          scheduled.push(player.playSelection(
+            { zone, playbackRate: voice.playbackRate, gain: voice.sampleGain },
+            startAt + voice.startSeconds,
+            voice.durationSeconds,
+            destination,
+            0,
+            voice.oneShot,
+          ))
+          if (voice.oneShot) {
+            const physical = durationByUrl.get(voice.sampleUrl) ?? 0
+            naturalEnd = Math.max(naturalEnd, voice.startSeconds + physical / Math.max(0.01, voice.playbackRate))
+          }
+        }
+        for (const auxiliary of plan.auxiliaryVoices) {
+          const destination = trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
+          if (!destination || !zone) continue
+          scheduled.push(player.playSelection(
+            { zone, playbackRate: auxiliary.playbackRate, gain: auxiliary.sampleGain },
+            startAt + auxiliary.startSeconds,
+            auxiliary.durationSeconds,
+            destination,
+            0,
+            true,
+          ))
+          const physical = durationByUrl.get(auxiliary.sampleUrl) ?? 0
+          naturalEnd = Math.max(naturalEnd, auxiliary.startSeconds + physical / Math.max(0.01, auxiliary.playbackRate))
+        }
       }
       await Promise.all(scheduled)
 
-      const physicalEvents = [
-        ...plan.voices.filter(voice => voice.oneShot).map(voice => ({ sampleUrl: voice.sampleUrl, startSeconds: voice.startSeconds, playbackRate: voice.playbackRate })),
-        ...plan.auxiliaryVoices.map(voice => ({ sampleUrl: voice.sampleUrl, startSeconds: voice.startSeconds, playbackRate: voice.playbackRate })),
-      ]
-      const naturalEnd = physicalEvents.reduce((latest, voice) => {
-        const physical = durationByUrl.get(voice.sampleUrl) ?? 0
-        return Math.max(latest, voice.startSeconds + physical / Math.max(0.01, voice.playbackRate))
-      }, plan.totalSeconds)
       output.gain.linearRampToValueAtTime(this.targetVolume(), context.currentTime + Math.max(0.25, cue.crossfadeSeconds))
       this.completionTimer = window.setTimeout(() => { this.listener("paused", this.cue) }, (naturalEnd + 0.5) * 1_000)
       this.listener("playing", cue)

@@ -22,7 +22,14 @@ function capabilityCopy(pack: CuratedRawWavPackSource) {
   if (pack.id === "vcsl-estuary-grand-piano") {
     return "Grand Piano: sustain grabado con micrófono close y tres capas físicas de velocidad. Este módulo no afirma pedal, resonancia simpática, release samples ni true legato porque esas capacidades no están presentes en la selección curada."
   }
-  return "Pipe Organ: selección Rode Man3 Open. Es un color físico de órgano de tubos, no una emulación General MIDI. Los registros/stops y pedal independiente se mantendrán como una ampliación posterior cuando estén modelados explícitamente."
+  if (pack.id === "vcsl-estuary-pipe-organ") {
+    return "Pipe Organ: selección Rode Man3 Open. Es un color físico de órgano de tubos, no una emulación General MIDI. Los registros/stops y pedal independiente se mantendrán como una ampliación posterior cuando estén modelados explícitamente."
+  }
+  return "Italian Harpsichord · Stop 1: ataques acústicos y key-off/release samples físicos separados. Es el continuo barroco nativo recomendado para pruebas como Vivaldi; no se inventan capas dinámicas que el instrumento no contiene."
+}
+
+function sourceKindCopy(pack: CuratedRawWavPackSource) {
+  return pack.sourceKind === "raw-wav-index" ? "RAW WAV index" : "RAW WAV pinned list"
 }
 
 export default function KeyboardInstallerAdmin() {
@@ -61,17 +68,17 @@ export default function KeyboardInstallerAdmin() {
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/10 bg-zinc-950/95 px-4 py-3">
         <button aria-label="Volver" onClick={() => setLocation("/admin/fonoteca")}><ArrowLeft className="h-4 w-4" /></button>
         <Music2 className="h-4 w-4 text-amber-300" />
-        <div><h1 className="font-semibold">VCSL Piano & Organ</h1><p className="text-[10px] text-zinc-500">Teclados acústicos nativos · CC0</p></div>
+        <div><h1 className="font-semibold">VCSL Keyboards</h1><p className="text-[10px] text-zinc-500">Piano · órgano · clavecín · CC0</p></div>
       </header>
 
-      <section className="mx-auto max-w-3xl space-y-4 p-4">
+      <section className="mx-auto max-w-4xl space-y-4 p-4">
         <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.035] p-4 text-xs leading-5 text-zinc-400">
           <p className="flex items-center gap-2 font-medium text-emerald-200"><ShieldCheck className="h-4 w-4" /> WAV curados, fijados y verificados</p>
-          <p className="mt-1">Tloque lee el índice fijado de VCSL for Estuary, selecciona únicamente las grabaciones aprobadas, valida RIFF/WAVE, calcula SHA-256 y copia los WAV a App Storage. El navegador nunca reproduce desde GitHub.</p>
+          <p className="mt-1">Tloque usa únicamente listas o índices fijados a commits concretos, valida cada archivo RIFF/WAVE, calcula SHA-256 y copia las muestras a App Storage. El navegador nunca reproduce directamente desde GitHub.</p>
           <p className="mt-2 text-zinc-500">El importador genera un SFZ inerte interno sólo para reutilizar el mismo TloqueSamplePack y el mismo Performance Engine de la orquesta.</p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {CURATED_RAW_WAV_PACKS.map(pack => {
             const result = results[pack.id]
             const error = errors[pack.id]
@@ -82,7 +89,7 @@ export default function KeyboardInstallerAdmin() {
                   <div className="rounded-xl bg-amber-300/10 p-3"><Music2 className="h-6 w-6 text-amber-200" /></div>
                   <div className="min-w-0 flex-1">
                     <h2 className="font-semibold">{pack.displayName}</h2>
-                    <p className="mt-1 text-[11px] text-zinc-500">{pack.instrumentId} · RAW WAV index</p>
+                    <p className="mt-1 text-[11px] text-zinc-500">{pack.instrumentId} · {sourceKindCopy(pack)}</p>
                   </div>
                 </div>
 
@@ -108,15 +115,13 @@ export default function KeyboardInstallerAdmin() {
                 )}
 
                 {error && <p role="alert" className="rounded-xl border border-red-400/20 bg-red-950/30 p-3 text-xs text-red-200">{error}</p>}
+                <a href={pack.repositoryUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-[10px] text-sky-300">Procedencia <ExternalLink className="h-3.5 w-3.5" /></a>
               </article>
             )
           })}
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
-          <button onClick={() => setLocation("/admin/fonoteca")} className="rounded-lg bg-white/10 px-4 py-2 text-xs">Ir al compositor</button>
-          <a href="https://github.com/carltesta/vcsl_for_estuary" target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 px-3 py-2 text-xs text-sky-300">Ver repositorio y procedencia <ExternalLink className="h-3.5 w-3.5" /></a>
-        </div>
+        <button onClick={() => setLocation("/admin/fonoteca")} className="rounded-lg bg-white/10 px-4 py-2 text-xs">Ir al compositor</button>
       </section>
     </main>
   )

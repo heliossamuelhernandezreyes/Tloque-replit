@@ -1,7 +1,7 @@
 import type { InstrumentManifest } from "./instrument-manifest"
 
 /**
- * CC0 keyboard references sourced from the VCSL-derived Estuary sample set.
+ * CC0 keyboard references sourced from VCSL and its Estuary adaptation.
  * These manifests deliberately declare only capabilities visible in the physical files.
  */
 export const VCSL_ESTUARY_GRAND_PIANO_MANIFEST: InstrumentManifest = {
@@ -26,7 +26,19 @@ export const VCSL_ESTUARY_PIPE_ORGAN_MANIFEST: InstrumentManifest = {
   articulations: [{ articulation: "normal" }],
 }
 
+export const VCSL_ITALIAN_HARPSICHORD_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vcsl-italian-harpsichord-stop1",
+  family: "keys",
+  name: "VCSL Italian Harpsichord · Stop 1",
+  instruments: ["keys.harpsichord"],
+  basePrograms: [6],
+  capabilities: ["release-samples"],
+  articulations: [{ articulation: "normal", releaseSamples: true }],
+}
+
 export const VCSL_ESTUARY_KEYS_MANIFESTS = [
   VCSL_ESTUARY_GRAND_PIANO_MANIFEST,
   VCSL_ESTUARY_PIPE_ORGAN_MANIFEST,
+  VCSL_ITALIAN_HARPSICHORD_MANIFEST,
 ] as const

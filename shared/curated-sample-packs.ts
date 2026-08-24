@@ -76,6 +76,7 @@ function vscoPack(input: VscoInput): CuratedSamplePackSource {
 
 const VSCO_PACKS: readonly CuratedSamplePackSource[] = [
   vscoPack({ id: "vsco2-ce-solo-violin", displayName: "Solo Violin", instrumentId: "strings.violin", moduleId: "vsco2-ce-solo-violin", manifestId: "vsco2-ce-solo-violin", sfzPath: "SViolin-KS.sfz", estimatedMegabytes: 118, tags: ["native-samples", "solo", "violin", "strings", "cc0", "velocity-layers", "round-robin"] }),
+  vscoPack({ id: "vsco2-ce-violin-section", displayName: "Violin Section", instrumentId: "strings.violin-section", moduleId: "vsco2-ce-violin-section", manifestId: "vsco2-ce-violin-section", sfzPath: "ViolinEns-KS.sfz", estimatedMegabytes: 120, tags: ["native-samples", "section", "violin", "strings", "cc0", "velocity-layers", "round-robin"] }),
   vscoPack({ id: "vsco2-ce-viola-section", displayName: "Viola Section", instrumentId: "strings.viola", moduleId: "vsco2-ce-viola-section", manifestId: "vsco2-ce-viola-section", sfzPath: "ViolaEns-KS.sfz", estimatedMegabytes: 120, tags: ["native-samples", "section", "viola", "strings", "cc0", "velocity-layers", "round-robin"] }),
   vscoPack({ id: "vsco2-ce-cello-section", displayName: "Cello Section", instrumentId: "strings.cello", moduleId: "vsco2-ce-cello-section", manifestId: "vsco2-ce-cello-section", sfzPath: "CelloEns-KS.sfz", estimatedMegabytes: 125, tags: ["native-samples", "section", "cello", "strings", "cc0", "velocity-layers", "round-robin"] }),
   vscoPack({ id: "vsco2-ce-solo-contrabass", displayName: "Solo Contrabass", instrumentId: "strings.contrabass", moduleId: "vsco2-ce-solo-contrabass", manifestId: "vsco2-ce-solo-contrabass", sfzPath: "Contrabass-KS.sfz", estimatedMegabytes: 120, tags: ["native-samples", "solo", "contrabass", "strings", "cc0", "velocity-layers", "round-robin", "recorded-vibrato"] }),
@@ -127,5 +128,9 @@ export function curatedSamplePackById(id: string | null | undefined): CuratedSam
 
 export function curatedSamplePackByModuleId(moduleId: string | null | undefined): CuratedSamplePackSource | null {
   if (!moduleId) return null
+  // `native-auto` is a virtual routing module. Returning any curated native pack here
+  // only marks the score as native for the export router; the native exporter resolves
+  // the real package independently for every semantic instrument track.
+  if (moduleId === "native-auto") return VSCO_PACKS[0]
   return CURATED_SAMPLE_PACKS.find(pack => pack.moduleId === moduleId) ?? null
 }

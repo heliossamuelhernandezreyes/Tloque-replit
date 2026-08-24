@@ -1,10 +1,12 @@
 import { VCSL_ESTUARY_KEYS_MANIFESTS } from "./instrument-manifest-keys"
 import { VSCO2_CE_PERCUSSION_MANIFESTS } from "./instrument-manifest-percussion"
+import { VSCO2_CE_STRING_SECTION_MANIFESTS } from "./instrument-manifest-string-sections"
 export {
   VCSL_ESTUARY_GRAND_PIANO_MANIFEST,
   VCSL_ESTUARY_PIPE_ORGAN_MANIFEST,
   VCSL_ESTUARY_KEYS_MANIFESTS,
 } from "./instrument-manifest-keys"
+export { VSCO2_CE_VIOLIN_SECTION_MANIFEST, VSCO2_CE_STRING_SECTION_MANIFESTS } from "./instrument-manifest-string-sections"
 export {
   VSCO2_CE_GLOCKENSPIEL_MANIFEST,
   VSCO2_CE_MARIMBA_MANIFEST,
@@ -113,6 +115,7 @@ export const BUILTIN_INSTRUMENT_MANIFESTS: readonly InstrumentManifest[] = [GM_O
 export const INSTRUMENT_MANIFEST_REGISTRY: readonly InstrumentManifest[] = [
   GM_ORCHESTRAL_STRINGS_MANIFEST,
   VSCO2_CE_SOLO_VIOLIN_MANIFEST,
+  ...VSCO2_CE_STRING_SECTION_MANIFESTS,
   VSCO2_CE_VIOLA_SECTION_MANIFEST,
   VSCO2_CE_CELLO_SECTION_MANIFEST,
   VSCO2_CE_SOLO_CONTRABASS_MANIFEST,
