@@ -19,11 +19,8 @@ interface LoadedNativePlan {
 }
 
 function createRealtimeAudioContext() {
-  try {
-    return new AudioContext({ latencyHint: "playback", sampleRate: 48_000 })
-  } catch {
-    return new AudioContext({ latencyHint: "playback" })
-  }
+  try { return new AudioContext({ latencyHint: "playback", sampleRate: 48_000 }) }
+  catch { return new AudioContext({ latencyHint: "playback" }) }
 }
 
 function brightnessCutoff(value: number) {
@@ -32,9 +29,7 @@ function brightnessCutoff(value: number) {
 }
 
 function trackAtEvent(recipe: LinearScoreRecipeV2, track: LinearScoreTrackV2, timeSeconds: number): LinearScoreTrackV2 {
-  let expression = track.expression
-  let brightness = track.brightness
-  let vibrato = track.vibrato
+  let expression = track.expression, brightness = track.brightness, vibrato = track.vibrato
   for (const control of recipe.plan.controls) {
     if (control.trackId !== track.id || control.timeSeconds > timeSeconds) continue
     if (control.expression !== null) expression = control.expression
@@ -63,12 +58,8 @@ export class NativeSampleScoreEngine {
       if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita fuentes acústicas nativas")
       const context = createRealtimeAudioContext()
       const groups = nativeModuleGroupsForRecipe(recipe)
-      const sampleGroups: NativeModuleGroup[] = []
-      const physicalGroups: NativeModuleGroup[] = []
-      for (const group of groups) {
-        if (nativePhysicalModelByModuleId(group.moduleId)) physicalGroups.push(group)
-        else sampleGroups.push(group)
-      }
+      const sampleGroups: NativeModuleGroup[] = [], physicalGroups: NativeModuleGroup[] = []
+      for (const group of groups) (nativePhysicalModelByModuleId(group.moduleId) ? physicalGroups : sampleGroups).push(group)
 
       const loaded: LoadedNativePlan[] = []
       for (const group of sampleGroups) {
@@ -76,42 +67,29 @@ export class NativeSampleScoreEngine {
         const packUrl = `/api/audio/sample-packs/modules/${encodeURIComponent(group.moduleId)}.json`
         const pack = await player.loadPack(packUrl)
         if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde a su manifest`)
-        const subRecipe = recipeForNativeModule(recipe, group)
-        const plan = buildNativeSampleScorePlan(subRecipe, pack)
+        const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack)
         const decoded = await player.preload(plan.zones)
-        loaded.push({
-          moduleId: group.moduleId,
-          plan,
-          player,
-          durationByUrl: new Map(plan.zones.map((zone, index) => [zone.sampleUrl, decoded[index]?.duration ?? 0])),
-        })
+        loaded.push({ moduleId: group.moduleId, plan, player, durationByUrl: new Map(plan.zones.map((zone, index) => [zone.sampleUrl, decoded[index]?.duration ?? 0])) })
       }
 
       const mix = createSampledMixMaster(context, 1)
       const stage = createAcousticStage(context, mix.input)
       const output = context.createGain(); output.gain.value = 0; mix.output.connect(output); output.connect(context.destination)
-      const trackGain = new Map<string, GainNode>()
-      const trackTone = new Map<string, BiquadFilterNode>()
+      const trackGain = new Map<string, GainNode>(), trackTone = new Map<string, BiquadFilterNode>()
       const recipeTrackById = new Map(recipe.plan.tracks.map(track => [track.id, track]))
-
       const createTrackPath = (trackId: string, gainValue: number, brightness: number, pan: number) => {
         if (trackGain.has(trackId)) return
         const semanticTrack = recipeTrackById.get(trackId)
         const gain = context.createGain(); gain.gain.value = gainValue
         const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = brightnessCutoff(brightness); tone.Q.value = 0.12
         const stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", pan)
-        gain.connect(tone); tone.connect(stageInput)
-        trackGain.set(trackId, gain); trackTone.set(trackId, tone)
+        gain.connect(tone); tone.connect(stageInput); trackGain.set(trackId, gain); trackTone.set(trackId, tone)
       }
 
-      for (const { plan } of loaded) {
-        for (const track of plan.tracks) createTrackPath(track.id, track.gain, track.brightness, track.pan)
-      }
-      for (const group of physicalGroups) {
-        for (const trackId of group.trackIds) {
-          const track = recipeTrackById.get(trackId)
-          if (track) createTrackPath(track.id, track.gain * track.expression, track.brightness, track.pan)
-        }
+      for (const { plan } of loaded) for (const track of plan.tracks) createTrackPath(track.id, track.gain, track.brightness, track.pan)
+      for (const group of physicalGroups) for (const trackId of group.trackIds) {
+        const track = recipeTrackById.get(trackId)
+        if (track) createTrackPath(track.id, track.gain * track.expression, track.brightness, track.pan)
       }
 
       if (context.state === "running") await context.suspend()
@@ -122,54 +100,28 @@ export class NativeSampleScoreEngine {
 
       for (const { plan, player, durationByUrl } of loaded) {
         for (const control of plan.controls) {
-          const gain = trackGain.get(control.trackId)
-          const tone = trackTone.get(control.trackId)
-          const at = startAt + control.timeSeconds
+          const gain = trackGain.get(control.trackId), tone = trackTone.get(control.trackId), at = startAt + control.timeSeconds
           if (gain && control.gain !== null) {
             gain.gain.cancelScheduledValues(at)
-            if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds)
-            else gain.gain.setValueAtTime(control.gain, at)
+            if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds); else gain.gain.setValueAtTime(control.gain, at)
           }
           if (tone && control.brightness !== null) {
-            const cutoff = brightnessCutoff(control.brightness)
-            tone.frequency.cancelScheduledValues(at)
-            if (control.rampSeconds > 0) tone.frequency.exponentialRampToValueAtTime(cutoff, at + control.rampSeconds)
-            else tone.frequency.setValueAtTime(cutoff, at)
+            const cutoff = brightnessCutoff(control.brightness); tone.frequency.cancelScheduledValues(at)
+            if (control.rampSeconds > 0) tone.frequency.exponentialRampToValueAtTime(cutoff, at + control.rampSeconds); else tone.frequency.setValueAtTime(cutoff, at)
           }
         }
-
         const zoneById = new Map(plan.zones.map(zone => [zone.id, zone]))
         for (const voice of plan.voices) {
           const destination = trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
           if (!destination || !zone) continue
-          scheduled.push(player.playSelection(
-            { zone, playbackRate: voice.playbackRate, gain: voice.sampleGain },
-            startAt + voice.startSeconds,
-            voice.durationSeconds,
-            destination,
-            0,
-            voice.oneShot,
-            voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : undefined,
-          ))
-          if (voice.oneShot) {
-            const physical = durationByUrl.get(voice.sampleUrl) ?? 0
-            naturalEnd = Math.max(naturalEnd, voice.startSeconds + physical / Math.max(0.01, voice.playbackRate))
-          }
+          scheduled.push(player.playSelection({ zone, playbackRate: voice.playbackRate, gain: voice.sampleGain }, startAt + voice.startSeconds, voice.durationSeconds, destination, 0, voice.oneShot, voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : undefined))
+          if (voice.oneShot) naturalEnd = Math.max(naturalEnd, voice.startSeconds + (durationByUrl.get(voice.sampleUrl) ?? 0) / Math.max(0.01, voice.playbackRate))
         }
         for (const auxiliary of plan.auxiliaryVoices) {
           const destination = trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
           if (!destination || !zone) continue
-          scheduled.push(player.playSelection(
-            { zone, playbackRate: auxiliary.playbackRate, gain: auxiliary.sampleGain },
-            startAt + auxiliary.startSeconds,
-            auxiliary.durationSeconds,
-            destination,
-            0,
-            true,
-            auxiliary.fadeOutSeconds > 0 ? { fadeOutSeconds: auxiliary.fadeOutSeconds } : undefined,
-          ))
-          const physical = durationByUrl.get(auxiliary.sampleUrl) ?? 0
-          naturalEnd = Math.max(naturalEnd, auxiliary.startSeconds + physical / Math.max(0.01, auxiliary.playbackRate))
+          scheduled.push(player.playSelection({ zone, playbackRate: auxiliary.playbackRate, gain: auxiliary.sampleGain }, startAt + auxiliary.startSeconds, auxiliary.durationSeconds, destination, 0, true, auxiliary.fadeOutSeconds > 0 ? { fadeOutSeconds: auxiliary.fadeOutSeconds } : undefined))
+          naturalEnd = Math.max(naturalEnd, auxiliary.startSeconds + (durationByUrl.get(auxiliary.sampleUrl) ?? 0) / Math.max(0.01, auxiliary.playbackRate))
         }
       }
 
@@ -179,40 +131,37 @@ export class NativeSampleScoreEngine {
         const groupTrackIds = new Set(group.trackIds)
         for (const control of recipe.plan.controls) {
           if (!groupTrackIds.has(control.trackId)) continue
-          const track = recipeTrackById.get(control.trackId)
-          const gain = trackGain.get(control.trackId)
-          const tone = trackTone.get(control.trackId)
-          const at = startAt + control.timeSeconds
+          const track = recipeTrackById.get(control.trackId), gain = trackGain.get(control.trackId), tone = trackTone.get(control.trackId), at = startAt + control.timeSeconds
           if (gain && track && control.expression !== null) {
-            const target = track.gain * control.expression
-            gain.gain.cancelScheduledValues(at)
-            if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(target, at + control.rampSeconds)
-            else gain.gain.setValueAtTime(target, at)
+            const target = track.gain * control.expression; gain.gain.cancelScheduledValues(at)
+            if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(target, at + control.rampSeconds); else gain.gain.setValueAtTime(target, at)
           }
           if (tone && control.brightness !== null) {
-            const cutoff = brightnessCutoff(control.brightness)
-            tone.frequency.cancelScheduledValues(at)
-            if (control.rampSeconds > 0) tone.frequency.exponentialRampToValueAtTime(cutoff, at + control.rampSeconds)
-            else tone.frequency.setValueAtTime(cutoff, at)
+            const cutoff = brightnessCutoff(control.brightness); tone.frequency.cancelScheduledValues(at)
+            if (control.rampSeconds > 0) tone.frequency.exponentialRampToValueAtTime(cutoff, at + control.rampSeconds); else tone.frequency.setValueAtTime(cutoff, at)
           }
         }
-        for (const event of recipe.plan.events) {
-          if (!groupTrackIds.has(event.trackId)) continue
-          const track = recipeTrackById.get(event.trackId)
-          const destination = trackGain.get(event.trackId)
+
+        const previousEndByTrack = new Map<string, number>()
+        const physicalEvents = recipe.plan.events.filter(event => groupTrackIds.has(event.trackId)).sort((a, b) => a.timeSeconds - b.timeSeconds)
+        for (const event of physicalEvents) {
+          const track = recipeTrackById.get(event.trackId), destination = trackGain.get(event.trackId)
           if (!track || !destination) continue
           const effectiveTrack = trackAtEvent(recipe, track, event.timeSeconds)
+          const previousEnd = previousEndByTrack.get(event.trackId)
+          const legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
+          const controls = recipe.plan.controls.filter(control => control.trackId === event.trackId)
           for (const midi of event.notes) {
-            const voice = schedulePhysicalReedVoice(context, model, { startAt, event, track: effectiveTrack, midi, destination })
+            const voice = schedulePhysicalReedVoice(context, model, { startAt, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
             naturalEnd = Math.max(naturalEnd, voice.endSeconds)
           }
+          previousEndByTrack.set(event.trackId, event.timeSeconds + event.durationSeconds)
         }
       }
 
       await Promise.all(scheduled)
       const fadeSeconds = Math.max(0.08, Math.min(0.35, cue.crossfadeSeconds || 0.12))
-      output.gain.setValueAtTime(0, startAt)
-      output.gain.linearRampToValueAtTime(this.targetVolume(), startAt + fadeSeconds)
+      output.gain.setValueAtTime(0, startAt); output.gain.linearRampToValueAtTime(this.targetVolume(), startAt + fadeSeconds)
       await context.resume()
       this.completionTimer = window.setTimeout(() => { this.listener("paused", this.cue) }, (naturalEnd + 0.5) * 1_000)
       this.listener("playing", cue)
