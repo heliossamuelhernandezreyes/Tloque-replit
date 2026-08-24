@@ -19,8 +19,30 @@ export const VCSL_ESTUARY_PIPE_ORGAN_MANIFEST: InstrumentManifest = {
   version: 1,
   id: "vcsl-estuary-pipe-organ",
   family: "keys",
-  name: "VCSL Pipe Organ (Estuary WAV set)",
+  name: "VCSL Pipe Organ · Rode Man3 Open",
   instruments: ["keys.pipe-organ"],
+  basePrograms: [19],
+  capabilities: [],
+  articulations: [{ articulation: "normal" }],
+}
+
+export const VCSL_ESTUARY_PIPE_ORGAN_SOFT_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vcsl-estuary-pipe-organ-soft",
+  family: "keys",
+  name: "VCSL Pipe Organ · NT5 Man3 Quiet",
+  instruments: ["keys.pipe-organ-soft"],
+  basePrograms: [19],
+  capabilities: [],
+  articulations: [{ articulation: "normal" }],
+}
+
+export const VCSL_ESTUARY_PIPE_ORGAN_PEDAL_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "vcsl-estuary-pipe-organ-pedal",
+  family: "keys",
+  name: "VCSL Pipe Organ · Rode Pedal",
+  instruments: ["keys.pipe-organ-pedal"],
   basePrograms: [19],
   capabilities: [],
   articulations: [{ articulation: "normal" }],
@@ -40,5 +62,7 @@ export const VCSL_ITALIAN_HARPSICHORD_MANIFEST: InstrumentManifest = {
 export const VCSL_ESTUARY_KEYS_MANIFESTS = [
   VCSL_ESTUARY_GRAND_PIANO_MANIFEST,
   VCSL_ESTUARY_PIPE_ORGAN_MANIFEST,
+  VCSL_ESTUARY_PIPE_ORGAN_SOFT_MANIFEST,
+  VCSL_ESTUARY_PIPE_ORGAN_PEDAL_MANIFEST,
   VCSL_ITALIAN_HARPSICHORD_MANIFEST,
 ] as const
