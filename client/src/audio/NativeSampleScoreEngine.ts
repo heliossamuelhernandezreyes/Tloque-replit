@@ -14,6 +14,14 @@ interface LoadedNativePlan {
   durationByUrl: Map<string, number>
 }
 
+function createRealtimeAudioContext() {
+  try {
+    return new AudioContext({ latencyHint: "playback", sampleRate: 48_000 })
+  } catch {
+    return new AudioContext({ latencyHint: "playback" })
+  }
+}
+
 export class NativeSampleScoreEngine {
   private context: AudioContext | null = null
   private cue: MusicCue | null = null
@@ -31,7 +39,7 @@ export class NativeSampleScoreEngine {
     try {
       const recipe = linearScoreRecipeFor(cue.recipe)
       if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita paquetes nativos")
-      const context = new AudioContext({ latencyHint: "playback" })
+      const context = createRealtimeAudioContext()
       const groups = nativeModuleGroupsForRecipe(recipe)
       const loaded: LoadedNativePlan[] = []
 
@@ -65,9 +73,14 @@ export class NativeSampleScoreEngine {
         }
       }
 
-      await context.resume()
+      // On mobile, scheduling hundreds of BufferSource nodes after resume can consume
+      // more than the old 80 ms lead and collapse early notes onto `currentTime`.
+      // Freeze the audio clock, schedule the complete graph, then resume it as one
+      // deterministic performance. This makes live native playback much closer to
+      // the OfflineAudioContext master render.
+      if (context.state === "running") await context.suspend()
       this.context = context; this.output = output; this.cue = cue
-      const startAt = context.currentTime + 0.08
+      const startAt = context.currentTime + 0.12
       let naturalEnd = recipe.plan.totalSeconds
       const scheduled: Promise<unknown>[] = []
 
@@ -113,7 +126,10 @@ export class NativeSampleScoreEngine {
       }
       await Promise.all(scheduled)
 
-      output.gain.linearRampToValueAtTime(this.targetVolume(), context.currentTime + Math.max(0.25, cue.crossfadeSeconds))
+      const fadeSeconds = Math.max(0.08, Math.min(0.35, cue.crossfadeSeconds || 0.12))
+      output.gain.setValueAtTime(0, startAt)
+      output.gain.linearRampToValueAtTime(this.targetVolume(), startAt + fadeSeconds)
+      await context.resume()
       this.completionTimer = window.setTimeout(() => { this.listener("paused", this.cue) }, (naturalEnd + 0.5) * 1_000)
       this.listener("playing", cue)
     } catch (error) {

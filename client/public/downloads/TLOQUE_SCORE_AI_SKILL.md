@@ -1,6 +1,6 @@
 ---
 name: compose-tloque-score
-description: Compose, revise, or repair instrumental TloqueScore 2 code for Tloque Audio Studio, including multi-instrument native orchestration.
+description: Compose, revise, or repair instrumental TloqueScore 2 code for Tloque Audio Studio, including multi-instrument native orchestration and premium acoustic rendering.
 ---
 
 # Compose TloqueScore 2
@@ -11,9 +11,10 @@ Create only instrumental music. The TloqueScore code is the master work: Tloque 
 
 - Audio contract: `tloque-audio-2026-08-v2`
 - Compiler: `tloque-score-compiler-v2.1`
-- Skill version: `1.2.1`
+- Skill version: `1.3.0`
 - Built-in module: `builtin`
 - Native multi-instrument router: `native-auto`
+- Premium native master: physical verified sample packs required
 
 Never invent commands or execute JavaScript. Never add lyrics, sung words, audio URLs, Markdown, or explanations inside a score.
 
@@ -25,8 +26,9 @@ Never invent commands or execute JavaScript. Never add lyrics, sung words, audio
 4. Declare every track before the first section.
 5. Use `module native-auto` for a work that should use several installed native acoustic instruments. Use `module builtin` only when portability without installed sample packs matters more than acoustic quality. A concrete native module ID is appropriate for a deliberately single-library score.
 6. Never claim an articulation, timbre, true-legato transition, release layer or other physical feature that the selected library does not contain.
-7. Validate the complete score against the grammar and limits below.
-8. Return exactly one code block containing the complete score when the user asks for code to paste into Tloque.
+7. If the user asks for premium/master acoustic output, design only for semantic instruments that have native packs and do not treat a synthesis fallback as equivalent to the requested master.
+8. Validate the complete score against the grammar and limits below.
+9. Return exactly one code block containing the complete score when the user asks for code to paste into Tloque.
 
 ## Grammar
 
@@ -68,6 +70,8 @@ end
 
 `timbre=` on an event is optional and overrides the track timbre for that event.
 
+Fractional beat positions are valid throughout the whole beat. In 4/4, for example, `4:4.25`, `4:4.5` and `4:4.75` are valid positions inside the fourth beat; `4:5` is outside the bar. Use these positions for sixteenth/eighth subdivisions instead of shifting notes into the next bar.
+
 Unpitched orchestral percussion uses semantic hits, never fake pitch names:
 
 ```text
@@ -108,9 +112,27 @@ keys.harpsichord
 
 Use `strings.violin` for a solo/concertino line and `strings.violin-section` for tutti/section writing. They intentionally resolve to different physical VSCO packs.
 
-The renderer loads the required packs independently but sends them through one common mixer/master. Live and native WAV export must resolve the same physical zones.
+The renderer loads the required packs independently but sends them through one common mixer/master. Live native playback and native WAV export resolve the same physical zones when those packs are installed.
 
-If `native-auto` cannot find a verified native package for an instrument, the operation must fail instead of silently swapping in a different instrument.
+### Preview versus premium master
+
+Tloque intentionally distinguishes availability from authorship:
+
+- Live preview may fall back to Tloque base synthesis when a required native package is not installed. The application must surface that state; the fallback is for auditioning the composition, not proof of acoustic fidelity.
+- `quality master` with a native module is a premium request. A master native WAV must use all physical packs required by the score. Missing packs must be installed; synthesis base must never be described as a native/premium master.
+- `core` or `studio` may be used when portability or memory constraints matter more than full native fidelity.
+- Never silently swap one semantic instrument for another merely because a pack is unavailable.
+
+For the curated Baroque Premium set currently used by Tloque, the preferred routing is:
+
+```text
+strings.violin   -> VSCO 2 CE Solo Violin
+strings.viola    -> VSCO 2 CE Viola Section
+strings.cello    -> VSCO 2 CE Cello Section
+keys.harpsichord -> VCSL Italian Harpsichord · Stop 1
+```
+
+This is the recommended minimum native set for Vivaldi-like solo violin + strings + continuo writing.
 
 ## Physical capability rules
 
@@ -137,11 +159,15 @@ Mic positions exist internally in TloqueSamplePack but are not currently part of
 
 Hard limits after repeats: 16 tracks, 32 sections, 256 bars, 8,192 note events, 4,096 controls, 12 simultaneous notes per event, and 30 minutes total.
 
-## Quality guidance
+## Quality and performance guidance
 
-For standalone listening use `quality master` unless memory constraints require `studio`. High quality comes primarily from correct source samples, orchestration and performance decisions, not from simply maximizing gain.
+For standalone listening use `quality master` only when the required native packs are expected to be installed. High quality comes primarily from correct source samples, orchestration and performance decisions, not from simply maximizing gain or sample rate.
 
 For fast strings, let staccato/spiccato and velocity variation activate physical layers and round-robin where available. Avoid perfectly identical velocities on long repeated-note passages. Preserve ensemble hierarchy: solo violin foreground, violin sections/viola middle, cello/bass foundation, continuo below the solo line.
+
+Write phrasing rather than a MIDI grid. Use small intentional velocity arcs across sequences, expression controls at phrase boundaries, restrained deterministic humanization, and accents at harmonic/metrical destinations. Do not randomize every note independently.
+
+For exposed bowed strings, avoid permanent high vibrato. Use `timbre=vibrato` only when that recorded colour exists and the musical role calls for it; use numeric vibrato controls as expressive shaping, not as a substitute for physical recorded vibrato.
 
 For Baroque music, prefer `keys.harpsichord` for continuo when its native pack is installed. Keep reverberation/decay restrained compared with modern cinematic orchestration. Do not turn every string line into continuous vibrato.
 
@@ -202,9 +228,10 @@ end
 - First line is exactly `TLOQUE_SCORE 2`.
 - Work is instrumental and contains no unsupported command.
 - All tracks precede sections; every `use` names an existing track; every section has `end`.
-- Values are in range and repeats remain under hard limits.
-- `native-auto` uses only semantic instrument identities that have verified native packages available for the intended installation.
+- Values are in range, fractional last-beat positions stay inside the bar, and repeats remain under hard limits.
+- `native-auto` uses only semantic instrument identities that have verified native packages available for the intended premium installation.
 - Requested timbres/articulations exist physically; unavailable capabilities are not approximated dishonestly.
+- A synthesis fallback is never described as a premium/native master.
 - Pedal and pitch bend gestures are intentionally closed/reset.
 - Fast passages have deliberate phrasing and dynamic variation rather than machine-identical events.
 - Final response contains one complete score ready to paste into Tloque.
