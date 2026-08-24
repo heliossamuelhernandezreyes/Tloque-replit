@@ -1,5 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import fs from "node:fs"
 import { acousticPlacementForInstrument } from "../client/src/audio/ScoreAcousticStage"
 import { SAMPLED_MIX_MASTER_PROFILE } from "../client/src/audio/ScoreMixMaster"
 
@@ -18,4 +19,13 @@ test("master nativo usa una sala de concierto determinista y conservadora", () =
   assert.ok(SAMPLED_MIX_MASTER_PROFILE.roomMix > 0)
   assert.ok(SAMPLED_MIX_MASTER_PROFILE.roomMix < 0.3)
   assert.ok(SAMPLED_MIX_MASTER_PROFILE.limiterThreshold < 0)
+})
+
+test("preview y WAV enrutan cada instrumento semántico por el mismo stage", () => {
+  const live = fs.readFileSync("client/src/audio/NativeSampleScoreEngine.ts", "utf8")
+  const offline = fs.readFileSync("client/src/audio/NativeSampleScoreExporter.ts", "utf8")
+  for (const source of [live, offline]) {
+    assert.match(source, /createAcousticStage\(context, mix\.input\)/)
+    assert.match(source, /stage\.createTrackInput\(semanticTrack\?\.instrument \?\? "unknown", track\.pan\)/)
+  }
 })

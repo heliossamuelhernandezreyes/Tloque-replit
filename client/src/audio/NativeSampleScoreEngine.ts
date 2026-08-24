@@ -3,6 +3,7 @@ import type { MusicCue, MusicState } from "./MusicEngine"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { createSampledMixMaster } from "./ScoreMixMaster"
+import { createAcousticStage } from "./ScoreAcousticStage"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule } from "./NativeAutoModule"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
@@ -60,15 +61,17 @@ export class NativeSampleScoreEngine {
       }
 
       const mix = createSampledMixMaster(context, 1)
+      const stage = createAcousticStage(context, mix.input)
       const output = context.createGain(); output.gain.value = 0; mix.output.connect(output); output.connect(context.destination)
       const trackGain = new Map<string, GainNode>()
+      const recipeTrackById = new Map(recipe.plan.tracks.map(track => [track.id, track]))
       for (const { plan } of loaded) {
         for (const track of plan.tracks) {
           if (trackGain.has(track.id)) continue
           const gain = context.createGain(); gain.gain.value = track.gain
-          if (typeof context.createStereoPanner === "function") {
-            const panner = context.createStereoPanner(); panner.pan.value = track.pan; gain.connect(panner); panner.connect(mix.input)
-          } else gain.connect(mix.input)
+          const semanticTrack = recipeTrackById.get(track.id)
+          const stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", track.pan)
+          gain.connect(stageInput)
           trackGain.set(track.id, gain)
         }
       }

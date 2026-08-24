@@ -3,6 +3,7 @@ import { encodeAudioBufferToWav, type ScoreExportOptions } from "./ScoreExporter
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { createSampledMixMaster } from "./ScoreMixMaster"
+import { createAcousticStage } from "./ScoreAcousticStage"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
 
 const MAX_OFFLINE_FLOAT_BYTES = 220 * 1024 * 1024
@@ -100,14 +101,16 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(value: unknown,
 
   const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate)
   const mix = createSampledMixMaster(context, 1); mix.output.connect(context.destination)
+  const stage = createAcousticStage(context, mix.input)
   const trackGain = new Map<string, GainNode>(), trackNodes: AudioNode[] = []
+  const recipeTrackById = new Map(recipe.plan.tracks.map(track => [track.id, track]))
   for (const { plan } of loaded) {
     for (const track of plan.tracks) {
       if (trackGain.has(track.id)) continue
       const gain = context.createGain(); gain.gain.value = track.gain; trackNodes.push(gain)
-      if (typeof context.createStereoPanner === "function") {
-        const panner = context.createStereoPanner(); panner.pan.value = track.pan; gain.connect(panner); panner.connect(mix.input); trackNodes.push(panner)
-      } else gain.connect(mix.input)
+      const semanticTrack = recipeTrackById.get(track.id)
+      const stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", track.pan)
+      gain.connect(stageInput)
       trackGain.set(track.id, gain)
     }
   }
@@ -153,6 +156,6 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(value: unknown,
 
   await Promise.all(scheduled); assertNotAborted(options.signal); options.onProgress?.(0.28)
   const rendered = await context.startRendering(); options.onProgress?.(0.82)
-  for (const node of trackNodes) node.disconnect(); mix.disconnect()
+  for (const node of trackNodes) node.disconnect(); stage.disconnect(); mix.disconnect()
   return encodeAudioBufferToWav(rendered, profile.bitDepth, progress => { options.onProgress?.(0.82 + progress * 0.18) })
 }
