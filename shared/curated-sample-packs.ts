@@ -127,5 +127,9 @@ export function curatedSamplePackById(id: string | null | undefined): CuratedSam
 
 export function curatedSamplePackByModuleId(moduleId: string | null | undefined): CuratedSamplePackSource | null {
   if (!moduleId) return null
+  // `native-auto` is a virtual routing module. Returning any curated native pack here
+  // only marks the score as native for the export router; the native exporter resolves
+  // the real package independently for every semantic instrument track.
+  if (moduleId === "native-auto") return VSCO_PACKS[0]
   return CURATED_SAMPLE_PACKS.find(pack => pack.moduleId === moduleId) ?? null
 }
