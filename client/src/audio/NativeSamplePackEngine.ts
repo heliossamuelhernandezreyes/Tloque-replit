@@ -25,9 +25,18 @@ export interface NativeSamplePlaybackEnvelope {
   fadeOutSeconds?: number
 }
 
+const MAX_EDGE_TRANSPOSE_SEMITONES = 4
+
 function dbToGain(db: number) { return 10 ** (db / 20) }
-function zoneMatchesRange(zone: TloqueSampleZone, note: number, midiVelocity: number) {
-  return note >= zone.loMidi && note <= zone.hiMidi && midiVelocity >= zone.loVelocity && midiVelocity <= zone.hiVelocity
+function zoneMatchesVelocity(zone: TloqueSampleZone, midiVelocity: number) {
+  return midiVelocity >= zone.loVelocity && midiVelocity <= zone.hiVelocity
+}
+function zoneContainsNote(zone: TloqueSampleZone, note: number) {
+  return note >= zone.loMidi && note <= zone.hiMidi
+}
+function noteDistanceToZone(zone: TloqueSampleZone, note: number) {
+  if (zoneContainsNote(zone, note)) return 0
+  return note < zone.loMidi ? zone.loMidi - note : note - zone.hiMidi
 }
 function zoneTimbre(zone: TloqueSampleZone) {
   return {
@@ -56,10 +65,16 @@ export function selectNativeSampleZone(
   const requestedMute = timbre.mute ?? "none"
   const requestedTrigger = timbre.trigger ?? "attack"
   const requestedMic = timbre.micPosition ?? pack.defaultMicPosition ?? pack.micPositions?.[0] ?? "default"
-  const inRange = pack.zones.filter(zone => zoneMatchesRange(zone, note, midiVelocity))
-  const by = (targetArticulation: TloqueArticulation) => inRange.filter(zone => {
+
+  const by = (targetArticulation: TloqueArticulation, allowEdgeTranspose: boolean) => pack.zones.filter(zone => {
     const colour = zoneTimbre(zone)
-    return zone.articulation === targetArticulation
+    const noteMatches = zoneContainsNote(zone, note)
+      || (allowEdgeTranspose
+        && requestedTrigger === "attack"
+        && noteDistanceToZone(zone, note) <= MAX_EDGE_TRANSPOSE_SEMITONES)
+    return noteMatches
+      && zoneMatchesVelocity(zone, midiVelocity)
+      && zone.articulation === targetArticulation
       && colour.vibratoColour === requestedVibrato
       && colour.mute === requestedMute
       && (zone.trigger ?? "attack") === requestedTrigger
@@ -67,11 +82,21 @@ export function selectNativeSampleZone(
       && transitionMatches(zone, timbre)
   })
 
-  // Articulation may fall back to neutral attack, but physical timbre, trigger and mic never do.
-  const exact = by(articulation)
-  const neutralAttack = articulation === "normal" || requestedTrigger !== "attack" ? [] : by("normal")
-  const candidates = exact.length ? exact : neutralAttack
+  // First preserve the physical mapping declared by the source pack. Sparse public
+  // sample libraries sometimes end a mapped zone a few semitones before the playable
+  // range. For attack samples only, a bounded edge transposition is preferable to
+  // rejecting a valid orchestral note; true-legato, release, timbre, mute and mic
+  // semantics remain strict.
+  const exact = by(articulation, false)
+  const neutralAttack = articulation === "normal" || requestedTrigger !== "attack" ? [] : by("normal", false)
+  let candidates = exact.length ? exact : neutralAttack
+  if (!candidates.length && requestedTrigger === "attack") {
+    const edgeExact = by(articulation, true)
+    const edgeNeutral = articulation === "normal" ? [] : by("normal", true)
+    candidates = edgeExact.length ? edgeExact : edgeNeutral
+  }
   if (!candidates.length) return null
+
   const rrCandidates = candidates.filter(zone => zone.roundRobin === roundRobin)
   const pool = rrCandidates.length ? rrCandidates : candidates
   const zone = pool.reduce((best, candidate) => {
@@ -80,6 +105,9 @@ export function selectNativeSampleZone(
       const candidateExact = Number(candidate.transitionFromMidi === timbre.transitionFromMidi) + Number(candidate.transitionToMidi === timbre.transitionToMidi)
       if (candidateExact !== bestExact) return candidateExact > bestExact ? candidate : best
     }
+    const bestRangeDistance = noteDistanceToZone(best, note)
+    const candidateRangeDistance = noteDistanceToZone(candidate, note)
+    if (candidateRangeDistance !== bestRangeDistance) return candidateRangeDistance < bestRangeDistance ? candidate : best
     return Math.abs(note - candidate.rootMidi) < Math.abs(note - best.rootMidi) ? candidate : best
   })
   const semitones = note - zone.rootMidi + zone.tuneCents / 100
