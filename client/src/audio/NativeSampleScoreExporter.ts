@@ -16,6 +16,10 @@ function nativeSampleQuality(value: unknown, options: ScoreExportOptions) {
     : { quality: requested, sampleRate: 48_000, bitDepth: 24 as const, tail: requested === "master" ? 8 : 5 }
 }
 function assertNotAborted(signal?: AbortSignal) { if (signal?.aborted) throw new DOMException("Exportación cancelada", "AbortError") }
+function brightnessCutoff(value: number) {
+  const amount = Math.max(0, Math.min(1, value))
+  return 3_400 + Math.pow(amount, 0.72) * 16_000
+}
 
 interface LoadedOfflinePlan { moduleId: string; plan: NativeSampleScorePlan }
 
@@ -159,24 +163,36 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(value: unknown,
   const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate)
   const mix = createSampledMixMaster(context, 1); mix.output.connect(context.destination)
   const stage = createAcousticStage(context, mix.input)
-  const trackGain = new Map<string, GainNode>(), trackNodes: AudioNode[] = []
+  const trackGain = new Map<string, GainNode>(), trackTone = new Map<string, BiquadFilterNode>(), trackNodes: AudioNode[] = []
   const recipeTrackById = new Map(recipe.plan.tracks.map(track => [track.id, track]))
   for (const { plan } of loaded) {
     for (const track of plan.tracks) {
       if (trackGain.has(track.id)) continue
-      const gain = context.createGain(); gain.gain.value = track.gain; trackNodes.push(gain)
+      const gain = context.createGain(); gain.gain.value = track.gain
+      const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = brightnessCutoff(track.brightness); tone.Q.value = 0.12
+      trackNodes.push(gain, tone)
       const semanticTrack = recipeTrackById.get(track.id)
       const stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", track.pan)
-      gain.connect(stageInput); trackGain.set(track.id, gain)
+      gain.connect(tone); tone.connect(stageInput); trackGain.set(track.id, gain); trackTone.set(track.id, tone)
     }
   }
 
   for (const { plan } of loaded) {
     for (const control of plan.controls) {
-      const gain = trackGain.get(control.trackId); if (!gain) continue
-      const at = control.timeSeconds; gain.gain.cancelScheduledValues(at)
-      if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds)
-      else gain.gain.setValueAtTime(control.gain, at)
+      const gain = trackGain.get(control.trackId)
+      const tone = trackTone.get(control.trackId)
+      const at = control.timeSeconds
+      if (gain && control.gain !== null) {
+        gain.gain.cancelScheduledValues(at)
+        if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds)
+        else gain.gain.setValueAtTime(control.gain, at)
+      }
+      if (tone && control.brightness !== null) {
+        const cutoff = brightnessCutoff(control.brightness)
+        tone.frequency.cancelScheduledValues(at)
+        if (control.rampSeconds > 0) tone.frequency.exponentialRampToValueAtTime(cutoff, at + control.rampSeconds)
+        else tone.frequency.setValueAtTime(cutoff, at)
+      }
     }
   }
 
