@@ -1,11 +1,13 @@
 import { DISCORD_MARTIN_HD28_MANIFEST, KARORYFER_EMILY_GUITAR_MANIFEST } from "./instrument-manifest-guitar"
 import { VCSL_CONCERT_HARP_MANIFEST } from "./instrument-manifest-harp"
+import { IOWA_MIS_MANIFESTS } from "./instrument-manifest-iowa"
 import { VCSL_ESTUARY_KEYS_MANIFESTS } from "./instrument-manifest-keys"
 import { VCSL_ESTUARY_WORLD_WIND_MANIFESTS } from "./instrument-manifest-worldwinds"
 import { VSCO2_CE_PERCUSSION_MANIFESTS } from "./instrument-manifest-percussion"
 import { VSCO2_CE_STRING_SECTION_MANIFESTS } from "./instrument-manifest-string-sections"
 export { DISCORD_MARTIN_HD28_MANIFEST, FREEPATS_SPANISH_CLASSICAL_GUITAR_MANIFEST, KARORYFER_EMILY_GUITAR_MANIFEST, NATIVE_GUITAR_MANIFESTS } from "./instrument-manifest-guitar"
 export { VCSL_CONCERT_HARP_MANIFEST } from "./instrument-manifest-harp"
+export { IOWA_BASS_CLARINET_FF_MANIFEST, IOWA_BASS_TROMBONE_FF_MANIFEST, IOWA_MIS_MANIFESTS } from "./instrument-manifest-iowa"
 export {
   VCSL_ESTUARY_GRAND_PIANO_MANIFEST,
   VCSL_ESTUARY_PIPE_ORGAN_MANIFEST,
@@ -127,6 +129,7 @@ export const INSTRUMENT_MANIFEST_REGISTRY: readonly InstrumentManifest[] = [
   VSCO2_CE_CLARINET_MANIFEST,
   VSCO2_CE_OBOE_MANIFEST,
   VSCO2_CE_BASSOON_MANIFEST,
+  ...IOWA_MIS_MANIFESTS,
   ...VCSL_ESTUARY_WORLD_WIND_MANIFESTS,
   VSCO2_CE_TRUMPET_MANIFEST,
   VSCO2_CE_TENOR_TROMBONE_MANIFEST,
