@@ -45,9 +45,13 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
   // aborte antes de montar la aplicación y también bloquea el visor de errores:
   // el único síntoma visible termina siendo una pantalla negra. Producción no
   // necesita ese preámbulo y conserva la política estricta.
+  //
+  // El motor de audio puede cargar módulos WebAssembly. `wasm-unsafe-eval`
+  // autoriza únicamente la compilación/instanciación de WASM y evita abrir la
+  // política a `unsafe-eval`, que también permitiría evaluación dinámica de JS.
   const scriptPolicy = isWorkshop || !isProduction
-    ? "script-src 'self' 'unsafe-inline'"
-    : "script-src 'self'"
+    ? "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'"
+    : "script-src 'self' 'wasm-unsafe-eval'"
   const connectPolicy = isProduction
     ? "connect-src 'self'"
     : "connect-src 'self' ws: wss: https:"
