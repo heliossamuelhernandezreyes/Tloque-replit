@@ -1,13 +1,21 @@
 import { KARORYFER_EMILY_GUITAR_MANIFEST } from "./instrument-manifest-guitar"
 import { VCSL_ESTUARY_KEYS_MANIFESTS } from "./instrument-manifest-keys"
+import { VCSL_ESTUARY_WORLD_WIND_MANIFESTS } from "./instrument-manifest-worldwinds"
 import { VSCO2_CE_PERCUSSION_MANIFESTS } from "./instrument-manifest-percussion"
 import { VSCO2_CE_STRING_SECTION_MANIFESTS } from "./instrument-manifest-string-sections"
 export { KARORYFER_EMILY_GUITAR_MANIFEST } from "./instrument-manifest-guitar"
 export {
   VCSL_ESTUARY_GRAND_PIANO_MANIFEST,
   VCSL_ESTUARY_PIPE_ORGAN_MANIFEST,
+  VCSL_ESTUARY_PIPE_ORGAN_SOFT_MANIFEST,
+  VCSL_ESTUARY_PIPE_ORGAN_PEDAL_MANIFEST,
   VCSL_ESTUARY_KEYS_MANIFESTS,
 } from "./instrument-manifest-keys"
+export {
+  VCSL_ESTUARY_OCARINA_MANIFEST,
+  VCSL_ESTUARY_ALTO_RECORDER_MANIFEST,
+  VCSL_ESTUARY_WORLD_WIND_MANIFESTS,
+} from "./instrument-manifest-worldwinds"
 export { VSCO2_CE_VIOLIN_SECTION_MANIFEST, VSCO2_CE_STRING_SECTION_MANIFESTS } from "./instrument-manifest-string-sections"
 export {
   VSCO2_CE_GLOCKENSPIEL_MANIFEST,
@@ -126,6 +134,7 @@ export const INSTRUMENT_MANIFEST_REGISTRY: readonly InstrumentManifest[] = [
   VSCO2_CE_CLARINET_MANIFEST,
   VSCO2_CE_OBOE_MANIFEST,
   VSCO2_CE_BASSOON_MANIFEST,
+  ...VCSL_ESTUARY_WORLD_WIND_MANIFESTS,
   VSCO2_CE_TRUMPET_MANIFEST,
   VSCO2_CE_TENOR_TROMBONE_MANIFEST,
   VSCO2_CE_F_HORN_MANIFEST,
