@@ -1,5 +1,6 @@
 import { linearScoreRecipeFor } from "@shared/audio"
 import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
+import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
 import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared/native-hybrid-source"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import type { MusicCue, MusicState } from "./MusicEngine"
@@ -128,14 +129,14 @@ export class NativeSampleScoreEngine {
         }
       }
 
-      // Hybrid acoustic overlays: samples keep the instrument identity and attack;
-      // a quiet physical layer supplies continuous bow/air behaviour on sustained notes.
+      // Hybrid acoustic overlays are experimental in Studio. Master playback keeps
+      // the verified sample base unless the exact overlay engineVersion has A/B evidence.
       const previousHybridEndByTrack = new Map<string, number>()
       for (const event of [...recipe.plan.events].sort((a, b) => a.timeSeconds - b.timeSeconds)) {
         const track = recipeTrackById.get(event.trackId), destination = trackGain.get(event.trackId)
         if (!track || !destination || !hybridEnabledForArticulation(track.instrument, event.articulation)) continue
         const hybrid = nativeHybridForInstrument(track.instrument)
-        if (!hybrid) continue
+        if (!hybrid || (recipe.plan.quality === "master" && !hybridSourceMasterApproved(hybrid))) continue
         const effectiveTrack = trackAtEvent(recipe, track, event.timeSeconds)
         const previousEnd = previousHybridEndByTrack.get(event.trackId)
         const legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
