@@ -26,6 +26,7 @@ export interface NativeSamplePlaybackEnvelope {
 }
 
 const MAX_EDGE_TRANSPOSE_SEMITONES = 4
+const NEIGHBOUR_ROOT_WINDOW_SEMITONES = 2
 
 function dbToGain(db: number) { return 10 ** (db / 20) }
 function zoneMatchesVelocity(zone: TloqueSampleZone, midiVelocity: number) {
@@ -64,12 +65,10 @@ export function selectNativeSampleZone(
   const requestedTrigger = timbre.trigger ?? "attack"
   const requestedMic = timbre.micPosition ?? pack.defaultMicPosition ?? pack.micPositions?.[0] ?? "default"
 
-  const by = (targetArticulation: TloqueArticulation, allowEdgeTranspose: boolean) => pack.zones.filter(zone => {
+  const by = (targetArticulation: TloqueArticulation, maxOutsideRange: number) => pack.zones.filter(zone => {
     const colour = zoneTimbre(zone)
     const noteMatches = zoneContainsNote(zone, note)
-      || (allowEdgeTranspose
-        && requestedTrigger === "attack"
-        && noteDistanceToZone(zone, note) <= MAX_EDGE_TRANSPOSE_SEMITONES)
+      || (requestedTrigger === "attack" && noteDistanceToZone(zone, note) <= maxOutsideRange)
     return noteMatches
       && zoneMatchesVelocity(zone, midiVelocity)
       && zone.articulation === targetArticulation
@@ -80,12 +79,21 @@ export function selectNativeSampleZone(
       && transitionMatches(zone, timbre)
   })
 
-  const exact = by(articulation, false)
-  const neutralAttack = articulation === "normal" || requestedTrigger !== "attack" ? [] : by("normal", false)
+  // For ordinary attacks, consider the immediately neighbouring mapped zones even
+  // when the current zone technically contains the note. Public multisample maps
+  // often use broad lo/hi ranges around sparse roots; choosing purely by range can
+  // suddenly jump several semitones of playbackRate at a boundary. A narrow 2-semitone
+  // neighbour window lets the nearest recorded root win and makes tone changes smoother.
+  const exact = by(articulation, requestedTrigger === "attack" ? NEIGHBOUR_ROOT_WINDOW_SEMITONES : 0)
+  const neutralAttack = articulation === "normal" || requestedTrigger !== "attack"
+    ? []
+    : by("normal", NEIGHBOUR_ROOT_WINDOW_SEMITONES)
   let candidates = exact.length ? exact : neutralAttack
+
+  // Only when no nearby recording exists do we use the wider 4-semitone safety net.
   if (!candidates.length && requestedTrigger === "attack") {
-    const edgeExact = by(articulation, true)
-    const edgeNeutral = articulation === "normal" ? [] : by("normal", true)
+    const edgeExact = by(articulation, MAX_EDGE_TRANSPOSE_SEMITONES)
+    const edgeNeutral = articulation === "normal" ? [] : by("normal", MAX_EDGE_TRANSPOSE_SEMITONES)
     candidates = edgeExact.length ? edgeExact : edgeNeutral
   }
   if (!candidates.length) return null
@@ -98,10 +106,13 @@ export function selectNativeSampleZone(
       const candidateExact = Number(candidate.transitionFromMidi === timbre.transitionFromMidi) + Number(candidate.transitionToMidi === timbre.transitionToMidi)
       if (candidateExact !== bestExact) return candidateExact > bestExact ? candidate : best
     }
+    const bestPitchShift = Math.abs(note - best.rootMidi + best.tuneCents / 100)
+    const candidatePitchShift = Math.abs(note - candidate.rootMidi + candidate.tuneCents / 100)
+    if (Math.abs(candidatePitchShift - bestPitchShift) > 1e-9) return candidatePitchShift < bestPitchShift ? candidate : best
     const bestRangeDistance = noteDistanceToZone(best, note)
     const candidateRangeDistance = noteDistanceToZone(candidate, note)
     if (candidateRangeDistance !== bestRangeDistance) return candidateRangeDistance < bestRangeDistance ? candidate : best
-    return Math.abs(note - candidate.rootMidi) < Math.abs(note - best.rootMidi) ? candidate : best
+    return best
   })
   const semitones = note - zone.rootMidi + zone.tuneCents / 100
   return { zone, playbackRate: 2 ** (semitones / 12), gain: dbToGain(zone.gainDb) * Math.max(0, Math.min(1, midiVelocity / 127)) }

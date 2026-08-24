@@ -60,7 +60,20 @@ test("la extensión de borde queda acotada y no inventa registros lejanos", () =
   assert.equal(selectNativeSampleZone(pack, "spiccato", 66, 40, 0), null)
 })
 
-test("true-legato nunca usa transposición de borde para inventar una transición", () => {
+test("prefiere la raíz vecina más cercana aunque la zona anterior todavía cubra la nota", () => {
+  const pack = validateTloqueSamplePack({
+    ...PACK,
+    zones: [
+      { id: "root60", articulation: "normal", sampleUrl: "/api/audio/sample-packs/root60.wav", rootMidi: 60, loMidi: 58, hiMidi: 63, loVelocity: 0, hiVelocity: 127, velocityLayer: 0, roundRobin: 0, gainDb: 0, tuneCents: 0 },
+      { id: "root64", articulation: "normal", sampleUrl: "/api/audio/sample-packs/root64.wav", rootMidi: 64, loMidi: 64, hiMidi: 66, loVelocity: 0, hiVelocity: 127, velocityLayer: 0, roundRobin: 0, gainDb: 0, tuneCents: 0 },
+    ],
+  })
+  const selection = selectNativeSampleZone(pack, "normal", 63, 90, 0)
+  assert.equal(selection?.zone.id, "root64")
+  assert.ok(Math.abs((selection?.playbackRate ?? 0) - 2 ** (-1 / 12)) < 1e-12)
+})
+
+test("true-legato nunca usa vecinos ni transposición de borde para inventar una transición", () => {
   const pack = validateTloqueSamplePack({
     ...PACK,
     zones: [{
