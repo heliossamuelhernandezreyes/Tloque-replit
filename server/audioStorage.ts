@@ -2,7 +2,19 @@ import { Client } from "@replit/object-storage"
 
 type AudioStorageClientFactory = () => Client
 
-export function createLazyAudioStorage(factory: AudioStorageClientFactory = () => new Client()) {
+type AudioStorageEnvironment = Pick<NodeJS.ProcessEnv, "TLOQUE_AUDIO_BUCKET_ID">
+
+export function configuredAudioBucketId(env: AudioStorageEnvironment = process.env): string | undefined {
+  const value = env.TLOQUE_AUDIO_BUCKET_ID?.trim()
+  return value || undefined
+}
+
+export function createAudioStorageClient(env: AudioStorageEnvironment = process.env): Client {
+  const bucketId = configuredAudioBucketId(env)
+  return new Client(bucketId ? { bucketId } : undefined)
+}
+
+export function createLazyAudioStorage(factory: AudioStorageClientFactory = () => createAudioStorageClient()) {
   let client: Client | null = null
 
   return {
