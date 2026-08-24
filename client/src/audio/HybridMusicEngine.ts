@@ -6,6 +6,7 @@ import { LinearScoreEngine } from "./LinearScoreEngine"
 import { NativeSampleScoreEngine } from "./NativeSampleScoreEngine"
 import { ProceduralMusicEngine } from "./ProceduralMusicEngine"
 import { SoundFontMusicEngine } from "./SoundFontMusicEngine"
+import { NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 type Engine = Pick<MusicEngine, "play" | "pause" | "resume" | "stop" | "dispose" | "setMasterVolume" | "setDucked" | "setNarrativeDirection">
@@ -32,11 +33,15 @@ export class HybridMusicEngine {
 
   async play(cue: MusicCue): Promise<void> {
     let resolvedCue = cue
-    if (cue.sourceType === "score" && !cue.instrumentManifestId) {
+    let nativeAuto = false
+    if (cue.sourceType === "score") {
       try {
         const recipe = linearScoreRecipeFor(cue.recipe)
-        if (recipe.version === 2 && recipe.plan.moduleId !== "builtin") {
-          resolvedCue = { ...cue, instrumentManifestId: recipe.plan.moduleId }
+        if (recipe.version === 2) {
+          nativeAuto = recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID
+          if (recipe.plan.moduleId !== "builtin" && !nativeAuto && !cue.instrumentManifestId) {
+            resolvedCue = { ...cue, instrumentManifestId: recipe.plan.moduleId }
+          }
         }
       } catch {
         // The concrete score renderer owns malformed recipe reporting.
@@ -49,7 +54,8 @@ export class HybridMusicEngine {
     const nativeManifest = resolvedCue.sourceType === "score"
       ? instrumentManifestById(resolvedCue.instrumentManifestId)
       : null
-    const useNativeSamples = Boolean(nativeManifest && nativeManifest.id !== "gm-orchestral-strings" && !resolvedCue.packUrl)
+    const useNativeSamples = resolvedCue.sourceType === "score"
+      && (nativeAuto || Boolean(nativeManifest && nativeManifest.id !== "gm-orchestral-strings" && !resolvedCue.packUrl))
     const needsWorklet = resolvedCue.sourceType === "soundfont"
       || (resolvedCue.sourceType === "score" && Boolean(resolvedCue.packUrl) && !useNativeSamples)
     const canUseRequestedEngine = Boolean(AudioContextClass)
