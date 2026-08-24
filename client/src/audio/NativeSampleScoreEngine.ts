@@ -1,10 +1,12 @@
 import { linearScoreRecipeFor } from "@shared/audio"
 import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
+import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared/native-hybrid-source"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import type { MusicCue, MusicState } from "./MusicEngine"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { schedulePhysicalReedVoice } from "./PhysicalReedModel"
+import { scheduleBowedStringOverlay } from "./PhysicalBowedStringOverlay"
 import { createSampledMixMaster } from "./ScoreMixMaster"
 import { createAcousticStage } from "./ScoreAcousticStage"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, type NativeModuleGroup } from "./NativeAutoModule"
@@ -123,6 +125,25 @@ export class NativeSampleScoreEngine {
           scheduled.push(player.playSelection({ zone, playbackRate: auxiliary.playbackRate, gain: auxiliary.sampleGain }, startAt + auxiliary.startSeconds, auxiliary.durationSeconds, destination, 0, true, auxiliary.fadeOutSeconds > 0 ? { fadeOutSeconds: auxiliary.fadeOutSeconds } : undefined))
           naturalEnd = Math.max(naturalEnd, auxiliary.startSeconds + (durationByUrl.get(auxiliary.sampleUrl) ?? 0) / Math.max(0.01, auxiliary.playbackRate))
         }
+      }
+
+      // Hybrid Strings v1: preserve the real sampled attack/timbre and add a quiet,
+      // continuous bowed-string layer only where sustained bow behaviour helps.
+      const previousHybridEndByTrack = new Map<string, number>()
+      for (const event of [...recipe.plan.events].sort((a, b) => a.timeSeconds - b.timeSeconds)) {
+        const track = recipeTrackById.get(event.trackId), destination = trackGain.get(event.trackId)
+        if (!track || !destination || !hybridEnabledForArticulation(track.instrument, event.articulation)) continue
+        const hybrid = nativeHybridForInstrument(track.instrument)
+        if (!hybrid) continue
+        const effectiveTrack = trackAtEvent(recipe, track, event.timeSeconds)
+        const previousEnd = previousHybridEndByTrack.get(event.trackId)
+        const legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
+        const controls = recipe.plan.controls.filter(control => control.trackId === event.trackId)
+        for (const midi of event.notes) {
+          const overlay = scheduleBowedStringOverlay(context, hybrid, { startAt, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
+          if (overlay) naturalEnd = Math.max(naturalEnd, overlay.endSeconds)
+        }
+        previousHybridEndByTrack.set(event.trackId, event.timeSeconds + event.durationSeconds)
       }
 
       for (const group of physicalGroups) {
