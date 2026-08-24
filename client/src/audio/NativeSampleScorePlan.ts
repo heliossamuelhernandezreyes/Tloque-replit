@@ -1,7 +1,7 @@
 import type { LinearScoreRecipe } from "@shared/audio"
 import { manifestsForModule, type InstrumentManifest, type TloqueArticulation } from "@shared/instrument-manifest"
 import type { TloqueMicPosition, TloqueMute, TloqueSamplePack, TloqueSampleZone, TloqueVibratoColour } from "@shared/native-sample-pack"
-import { physicalRecordedTimbre, resolveRecordedTimbre } from "@shared/recorded-timbre"
+import { physicalRecordedTimbre, recordedTimbreProfileFor, resolveRecordedTimbre, type ExplicitRecordedTimbre } from "@shared/recorded-timbre"
 import type { ScoreTimbre } from "@shared/tloque-score-v2"
 import { selectNativeSampleZone } from "./NativeSamplePackEngine"
 import { buildPerformancePlan } from "./PerformanceEngine"
@@ -63,6 +63,19 @@ export function trueLegatoCrossfadeSeconds(noteDurationSeconds: number) {
   return Math.max(0.025, Math.min(0.12, noteDurationSeconds * 0.18))
 }
 
+const NATURAL_OPEN_TIMBRES: readonly ExplicitRecordedTimbre[] = ["non-vibrato", "vibrato", "expression-vibrato"]
+
+function naturalTimbreCandidates(moduleId: string): readonly ExplicitRecordedTimbre[] {
+  const profile = recordedTimbreProfileFor(moduleId)
+  const preferred = resolveRecordedTimbre(moduleId, "natural")
+  const available = profile?.availableTimbres.filter(timbre => NATURAL_OPEN_TIMBRES.includes(timbre)) ?? NATURAL_OPEN_TIMBRES
+  return [...new Set([preferred, ...available])]
+}
+
+function timbreCandidates(moduleId: string, requested: ScoreTimbre): readonly ExplicitRecordedTimbre[] {
+  return requested === "natural" ? naturalTimbreCandidates(moduleId) : [resolveRecordedTimbre(moduleId, requested)]
+}
+
 export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: TloqueSamplePack, options: NativeSampleScorePlanOptions = {}): NativeSampleScorePlan {
   if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita un paquete nativo")
 
@@ -98,18 +111,30 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     if (!decision || !track) continue
     const oneShot = track.instrument === "percussion.orchestral-kit"
     const requestedTimbre = event.timbre ?? track.timbre ?? "natural"
-    const naturalUsesNeutralAttack = requestedTimbre === "natural" && decision.articulation !== "normal" && decision.articulation !== "legato"
-    const resolvedTimbre = naturalUsesNeutralAttack ? "non-vibrato" : resolveRecordedTimbre(pack.instrumentManifestId, requestedTimbre)
-    const physical = physicalRecordedTimbre(resolvedTimbre)
+    const candidates = timbreCandidates(pack.instrumentManifestId, requestedTimbre)
     const performedVelocity = Math.max(0.01, Math.min(1, event.velocity * decision.velocityScale))
     const velocity = Math.round(Math.min(1, scoreVelocityGain(performedVelocity) * articulationVelocityFactor(decision.articulation)) * 127)
     const durationSeconds = Math.max(0.01, event.durationSeconds * articulationDurationFactor(decision.articulation) * decision.durationScale)
     const startSeconds = Math.max(0, event.timeSeconds + decision.startOffsetSeconds)
     const micPosition = micForTrack(track.id)
     for (const note of event.notes) {
-      const selection = selectNativeSampleZone(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "attack", micPosition })
-      if (!selection) throw new Error(`El módulo ${pack.instrumentManifestId} no contiene timbre=${resolvedTimbre}, mic=${micPosition} para ${track.instrument} en MIDI ${note}`)
-      zones.set(selection.zone.id, selection.zone)
+      let selected: ReturnType<typeof selectNativeSampleZone> = null
+      let resolvedTimbre: ExplicitRecordedTimbre | null = null
+      for (const candidate of candidates) {
+        const physical = physicalRecordedTimbre(candidate)
+        const selection = selectNativeSampleZone(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "attack", micPosition })
+        if (selection) {
+          selected = selection
+          resolvedTimbre = candidate
+          break
+        }
+      }
+      if (!selected || !resolvedTimbre) {
+        const attempted = candidates.join("|")
+        throw new Error(`El módulo ${pack.instrumentManifestId} no contiene timbre=${attempted}, mic=${micPosition} para ${track.instrument} en MIDI ${note}`)
+      }
+      const physical = physicalRecordedTimbre(resolvedTimbre)
+      zones.set(selected.zone.id, selected.zone)
       const voice: NativeSampleVoicePlan = {
         trackId: event.trackId,
         articulation: decision.articulation,
@@ -124,10 +149,10 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
         micPosition,
         startSeconds,
         durationSeconds,
-        zoneId: selection.zone.id,
-        sampleUrl: selection.zone.sampleUrl,
-        playbackRate: selection.playbackRate,
-        sampleGain: selection.gain,
+        zoneId: selected.zone.id,
+        sampleUrl: selected.zone.sampleUrl,
+        playbackRate: selected.playbackRate,
+        sampleGain: selected.gain,
         oneShot,
         fadeInSeconds: 0,
       }
