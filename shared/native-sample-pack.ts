@@ -31,7 +31,7 @@ export interface TloqueSampleZone {
   trigger?: TloqueSampleTrigger
   /** Microphone perspective physically recorded in this WAV. */
   micPosition?: TloqueMicPosition
-  /** Optional exact true-legato transition endpoints. */
+  /** Exact true-legato transition endpoints; both are mandatory for transition zones. */
   transitionFromMidi?: number
   transitionToMidi?: number
   loopStartSeconds?: number
@@ -105,6 +105,7 @@ export function validateTloqueSamplePack(value: unknown): TloqueSamplePack {
     if (zone.transitionFromMidi !== undefined && (!finite(zone.transitionFromMidi) || zone.transitionFromMidi < 0 || zone.transitionFromMidi > 127)) throw new Error(`Zona ${index}: transitionFromMidi inválido`)
     if (zone.transitionToMidi !== undefined && (!finite(zone.transitionToMidi) || zone.transitionToMidi < 0 || zone.transitionToMidi > 127)) throw new Error(`Zona ${index}: transitionToMidi inválido`)
     if (trigger !== "legato-transition" && (zone.transitionFromMidi !== undefined || zone.transitionToMidi !== undefined)) throw new Error(`Zona ${index}: transición declarada fuera de true legato`)
+    if (trigger === "legato-transition" && (!finite(zone.transitionFromMidi) || !finite(zone.transitionToMidi))) throw new Error(`Zona ${index}: true legato requiere transitionFromMidi y transitionToMidi exactos`)
     const result: TloqueSampleZone = {
       id: zone.id,
       articulation: zone.articulation as TloqueArticulation,
