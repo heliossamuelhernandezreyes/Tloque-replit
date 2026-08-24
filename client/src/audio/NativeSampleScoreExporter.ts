@@ -19,9 +19,81 @@ function assertNotAborted(signal?: AbortSignal) { if (signal?.aborted) throw new
 
 interface LoadedOfflinePlan { moduleId: string; plan: NativeSampleScorePlan }
 
-function missingSamplePack(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error || "")
-  return /(?:paquete de muestras|sample pack|\b404\b|no se pudo cargar el paquete)/i.test(message)
+export interface NativeSamplePackPreflightItem {
+  moduleId: string
+  trackIds: readonly string[]
+  instruments: readonly string[]
+  status: "ready" | "missing" | "invalid"
+  message?: string
+}
+
+export interface NativeSamplePackPreflight {
+  ready: boolean
+  items: readonly NativeSamplePackPreflightItem[]
+  missing: readonly NativeSamplePackPreflightItem[]
+}
+
+function modulePackUrlFor(recipe: ReturnType<typeof linearScoreRecipeFor>, moduleId: string, packUrl?: string) {
+  if (recipe.version !== 2) throw new Error("La partitura no usa módulos nativos")
+  if (recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID) return `/api/audio/sample-packs/modules/${encodeURIComponent(moduleId)}.json`
+  if (!packUrl?.startsWith("/api/audio/sample-packs/modules/")) throw new Error("El módulo nativo debe provenir del almacenamiento interno de Tloque")
+  return packUrl
+}
+
+export async function preflightNativeSamplePacks(
+  value: unknown,
+  packUrl?: string,
+  signal?: AbortSignal,
+): Promise<NativeSamplePackPreflight> {
+  const recipe = linearScoreRecipeFor(value)
+  if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") return { ready: true, items: [], missing: [] }
+
+  const groups = nativeModuleGroupsForRecipe(recipe)
+  const trackById = new Map(recipe.plan.tracks.map(track => [track.id, track]))
+  const items: NativeSamplePackPreflightItem[] = []
+
+  for (const group of groups) {
+    assertNotAborted(signal)
+    const instruments = [...new Set(group.trackIds.map(id => trackById.get(id)?.instrument).filter((value): value is string => Boolean(value)))]
+    const url = modulePackUrlFor(recipe, group.moduleId, packUrl)
+    try {
+      const response = await fetch(url, { credentials: "include", signal, cache: "no-store" })
+      if (!response.ok) {
+        items.push({ moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "missing", message: `HTTP ${response.status}` })
+        continue
+      }
+      const manifest = await response.json().catch(() => null) as { instrumentManifestId?: string } | null
+      if (!manifest || manifest.instrumentManifestId !== group.moduleId) {
+        items.push({ moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "invalid", message: "El manifest publicado no corresponde al módulo solicitado" })
+        continue
+      }
+      items.push({ moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "ready" })
+    } catch (error) {
+      if (signal?.aborted) throw error
+      items.push({
+        moduleId: group.moduleId,
+        trackIds: group.trackIds,
+        instruments,
+        status: "missing",
+        message: error instanceof Error ? error.message : "No se pudo comprobar el banco",
+      })
+    }
+  }
+
+  const missing = items.filter(item => item.status !== "ready")
+  return { ready: missing.length === 0, items, missing }
+}
+
+function premiumPreflightError(preflight: NativeSamplePackPreflight) {
+  const rows = preflight.missing.map(item => {
+    const instruments = item.instruments.length ? item.instruments.join(", ") : "instrumento sin identificar"
+    return `• ${instruments} → module:${item.moduleId}`
+  })
+  return [
+    `Master premium requiere todos los bancos acústicos nativos. Faltan ${preflight.missing.length} banco${preflight.missing.length === 1 ? "" : "s"} acústico${preflight.missing.length === 1 ? "" : "s"}.`,
+    ...rows,
+    "Abre Instrumentos premium e instala los bancos faltantes. Tloque no sustituirá silenciosamente estos instrumentos por síntesis base.",
+  ].join("\n")
 }
 
 async function renderBaseFallback(recipe: ReturnType<typeof linearScoreRecipeFor>, options: ScoreExportOptions) {
@@ -37,32 +109,33 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(value: unknown,
   if (recipe.plan.moduleId !== NATIVE_AUTO_MODULE_ID && !packUrl.startsWith("/api/audio/sample-packs/modules/")) throw new Error("El módulo nativo debe provenir del almacenamiento interno de Tloque")
 
   const profile = nativeSampleQuality(recipe, options)
-  assertNotAborted(options.signal); options.onProgress?.(0.02)
+  assertNotAborted(options.signal); options.onProgress?.(0.01)
+
+  const preflight = await preflightNativeSamplePacks(recipe, packUrl, options.signal)
+  if (!preflight.ready) {
+    if (profile.quality === "master") throw new Error(premiumPreflightError(preflight))
+    options.onProgress?.(0)
+    return renderBaseFallback(recipe, options)
+  }
+
+  options.onProgress?.(0.03)
   const decodeContext = new OfflineAudioContext(2, 1, profile.sampleRate)
   const decodedByUrl = new Map<string, AudioBuffer>()
   const loaded: LoadedOfflinePlan[] = []
   const groups = nativeModuleGroupsForRecipe(recipe)
 
-  try {
-    for (let index = 0; index < groups.length; index += 1) {
-      const group = groups[index]
-      const decodePlayer = new NativeSamplePackPlayer(decodeContext, decodedByUrl)
-      const modulePackUrl = recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID ? `/api/audio/sample-packs/modules/${encodeURIComponent(group.moduleId)}.json` : packUrl
-      const pack = await decodePlayer.loadPack(modulePackUrl)
-      if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde al módulo solicitado`)
-      const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack)
-      const decoded = await decodePlayer.preload(plan.zones)
-      plan.zones.forEach((zone, zoneIndex) => { const buffer = decoded[zoneIndex]; if (buffer) decodedByUrl.set(zone.sampleUrl, buffer) })
-      loaded.push({ moduleId: group.moduleId, plan })
-      options.onProgress?.(0.04 + ((index + 1) / Math.max(1, groups.length)) * 0.08)
-      assertNotAborted(options.signal)
-    }
-  } catch (error) {
-    if (missingSamplePack(error)) {
-      if (profile.quality === "master") throw new Error("Master premium requiere todos los bancos acústicos nativos de la partitura. Instala los módulos faltantes antes de exportar; Tloque no etiquetará síntesis base como master nativo.")
-      options.onProgress?.(0); return renderBaseFallback(recipe, options)
-    }
-    throw error
+  for (let index = 0; index < groups.length; index += 1) {
+    const group = groups[index]
+    const decodePlayer = new NativeSamplePackPlayer(decodeContext, decodedByUrl)
+    const modulePackUrl = modulePackUrlFor(recipe, group.moduleId, packUrl)
+    const pack = await decodePlayer.loadPack(modulePackUrl)
+    if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde al módulo solicitado`)
+    const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack)
+    const decoded = await decodePlayer.preload(plan.zones)
+    plan.zones.forEach((zone, zoneIndex) => { const buffer = decoded[zoneIndex]; if (buffer) decodedByUrl.set(zone.sampleUrl, buffer) })
+    loaded.push({ moduleId: group.moduleId, plan })
+    options.onProgress?.(0.04 + ((index + 1) / Math.max(1, groups.length)) * 0.08)
+    assertNotAborted(options.signal)
   }
 
   let naturalEnd = recipe.plan.totalSeconds
