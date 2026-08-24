@@ -1,10 +1,13 @@
 import { linearScoreRecipeFor } from "@shared/audio"
+import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
+import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import type { MusicCue, MusicState } from "./MusicEngine"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
+import { schedulePhysicalReedVoice } from "./PhysicalReedModel"
 import { createSampledMixMaster } from "./ScoreMixMaster"
 import { createAcousticStage } from "./ScoreAcousticStage"
-import { nativeModuleGroupsForRecipe, recipeForNativeModule } from "./NativeAutoModule"
+import { nativeModuleGroupsForRecipe, recipeForNativeModule, type NativeModuleGroup } from "./NativeAutoModule"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 
@@ -28,6 +31,19 @@ function brightnessCutoff(value: number) {
   return 3_400 + Math.pow(amount, 0.72) * 16_000
 }
 
+function trackAtEvent(recipe: LinearScoreRecipeV2, track: LinearScoreTrackV2, timeSeconds: number): LinearScoreTrackV2 {
+  let expression = track.expression
+  let brightness = track.brightness
+  let vibrato = track.vibrato
+  for (const control of recipe.plan.controls) {
+    if (control.trackId !== track.id || control.timeSeconds > timeSeconds) continue
+    if (control.expression !== null) expression = control.expression
+    if (control.brightness !== null) brightness = control.brightness
+    if (control.vibrato !== null) vibrato = control.vibrato
+  }
+  return { ...track, expression, brightness, vibrato }
+}
+
 export class NativeSampleScoreEngine {
   private context: AudioContext | null = null
   private cue: MusicCue | null = null
@@ -44,12 +60,18 @@ export class NativeSampleScoreEngine {
     this.stopRuntime()
     try {
       const recipe = linearScoreRecipeFor(cue.recipe)
-      if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita paquetes nativos")
+      if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita fuentes acústicas nativas")
       const context = createRealtimeAudioContext()
       const groups = nativeModuleGroupsForRecipe(recipe)
-      const loaded: LoadedNativePlan[] = []
-
+      const sampleGroups: NativeModuleGroup[] = []
+      const physicalGroups: NativeModuleGroup[] = []
       for (const group of groups) {
+        if (nativePhysicalModelByModuleId(group.moduleId)) physicalGroups.push(group)
+        else sampleGroups.push(group)
+      }
+
+      const loaded: LoadedNativePlan[] = []
+      for (const group of sampleGroups) {
         const player = new NativeSamplePackPlayer(context)
         const packUrl = `/api/audio/sample-packs/modules/${encodeURIComponent(group.moduleId)}.json`
         const pack = await player.loadPack(packUrl)
@@ -71,15 +93,24 @@ export class NativeSampleScoreEngine {
       const trackGain = new Map<string, GainNode>()
       const trackTone = new Map<string, BiquadFilterNode>()
       const recipeTrackById = new Map(recipe.plan.tracks.map(track => [track.id, track]))
+
+      const createTrackPath = (trackId: string, gainValue: number, brightness: number, pan: number) => {
+        if (trackGain.has(trackId)) return
+        const semanticTrack = recipeTrackById.get(trackId)
+        const gain = context.createGain(); gain.gain.value = gainValue
+        const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = brightnessCutoff(brightness); tone.Q.value = 0.12
+        const stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", pan)
+        gain.connect(tone); tone.connect(stageInput)
+        trackGain.set(trackId, gain); trackTone.set(trackId, tone)
+      }
+
       for (const { plan } of loaded) {
-        for (const track of plan.tracks) {
-          if (trackGain.has(track.id)) continue
-          const gain = context.createGain(); gain.gain.value = track.gain
-          const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = brightnessCutoff(track.brightness); tone.Q.value = 0.12
-          const semanticTrack = recipeTrackById.get(track.id)
-          const stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", track.pan)
-          gain.connect(tone); tone.connect(stageInput)
-          trackGain.set(track.id, gain); trackTone.set(track.id, tone)
+        for (const track of plan.tracks) createTrackPath(track.id, track.gain, track.brightness, track.pan)
+      }
+      for (const group of physicalGroups) {
+        for (const trackId of group.trackIds) {
+          const track = recipeTrackById.get(trackId)
+          if (track) createTrackPath(track.id, track.gain * track.expression, track.brightness, track.pan)
         }
       }
 
@@ -141,8 +172,44 @@ export class NativeSampleScoreEngine {
           naturalEnd = Math.max(naturalEnd, auxiliary.startSeconds + physical / Math.max(0.01, auxiliary.playbackRate))
         }
       }
-      await Promise.all(scheduled)
 
+      for (const group of physicalGroups) {
+        const model = nativePhysicalModelByModuleId(group.moduleId)
+        if (!model) continue
+        const groupTrackIds = new Set(group.trackIds)
+        for (const control of recipe.plan.controls) {
+          if (!groupTrackIds.has(control.trackId)) continue
+          const track = recipeTrackById.get(control.trackId)
+          const gain = trackGain.get(control.trackId)
+          const tone = trackTone.get(control.trackId)
+          const at = startAt + control.timeSeconds
+          if (gain && track && control.expression !== null) {
+            const target = track.gain * control.expression
+            gain.gain.cancelScheduledValues(at)
+            if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(target, at + control.rampSeconds)
+            else gain.gain.setValueAtTime(target, at)
+          }
+          if (tone && control.brightness !== null) {
+            const cutoff = brightnessCutoff(control.brightness)
+            tone.frequency.cancelScheduledValues(at)
+            if (control.rampSeconds > 0) tone.frequency.exponentialRampToValueAtTime(cutoff, at + control.rampSeconds)
+            else tone.frequency.setValueAtTime(cutoff, at)
+          }
+        }
+        for (const event of recipe.plan.events) {
+          if (!groupTrackIds.has(event.trackId)) continue
+          const track = recipeTrackById.get(event.trackId)
+          const destination = trackGain.get(event.trackId)
+          if (!track || !destination) continue
+          const effectiveTrack = trackAtEvent(recipe, track, event.timeSeconds)
+          for (const midi of event.notes) {
+            const voice = schedulePhysicalReedVoice(context, model, { startAt, event, track: effectiveTrack, midi, destination })
+            naturalEnd = Math.max(naturalEnd, voice.endSeconds)
+          }
+        }
+      }
+
+      await Promise.all(scheduled)
       const fadeSeconds = Math.max(0.08, Math.min(0.35, cue.crossfadeSeconds || 0.12))
       output.gain.setValueAtTime(0, startAt)
       output.gain.linearRampToValueAtTime(this.targetVolume(), startAt + fadeSeconds)
@@ -150,7 +217,7 @@ export class NativeSampleScoreEngine {
       this.completionTimer = window.setTimeout(() => { this.listener("paused", this.cue) }, (naturalEnd + 0.5) * 1_000)
       this.listener("playing", cue)
     } catch (error) {
-      console.error("Tloque native sample playback failed:", error)
+      console.error("Tloque native acoustic playback failed:", error)
       this.stopRuntime(); this.listener("error", cue)
     }
   }
