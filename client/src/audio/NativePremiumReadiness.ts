@@ -1,12 +1,10 @@
 import { linearScoreRecipeFor } from "@shared/audio"
 import { masterApprovalEvidenceValid, masterApprovalForModule } from "@shared/native-acoustic-approval-registry"
 import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
-import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
-import { nativeHybridForInstrument } from "@shared/native-hybrid-source"
 import { auditNativeSampleCoverage, type NativeCoverageAudit, type NativeCoverageItem } from "./NativeSampleCoverageAudit"
 import { auditNativeScoreDemand, type NativeModuleDemandAudit } from "./NativeSampleDemandAudit"
 
-export type NativePremiumBlockReason = "missing" | "invalid" | "coverage-risk" | "score-unplayable" | "pitch-shift-risk" | "model-validation" | "hybrid-validation"
+export type NativePremiumBlockReason = "missing" | "invalid" | "coverage-risk" | "score-unplayable" | "pitch-shift-risk" | "model-validation"
 
 export interface NativePremiumBlocker {
   moduleId: string
@@ -58,21 +56,9 @@ export async function assessNativePremiumReadiness(value: unknown, signal?: Abor
         message: "Modelo físico disponible en Studio, pero Master exige reporte acústico objetivo aprobado y revisión A/B humana versionada para esta versión del motor.",
       }))
     : []
-  const hybridValidationBlockers: NativePremiumBlocker[] = recipe.plan.quality === "master"
-    ? recipe.plan.tracks.flatMap(track => {
-        const source = nativeHybridForInstrument(track.instrument)
-        if (!source || hybridSourceMasterApproved(source)) return []
-        return [{
-          moduleId: `hybrid:${source.instrumentId}`,
-          instruments: [source.instrumentId],
-          reason: "hybrid-validation" as const,
-          message: `La capa híbrida ${source.engineVersion} permanece en Studio. Master exige comparación sampled-vs-hybrid objetiva y preferencia A/B humana por la versión híbrida.`,
-        }]
-      }).filter((item, index, all) => all.findIndex(other => other.moduleId === item.moduleId) === index)
-    : []
   const fatalCoverage = coverageBlockers.some(item => item.reason === "missing" || item.reason === "invalid" || item.reason === "score-unplayable")
   const demand = fatalCoverage ? [] : await auditNativeScoreDemand(recipe, signal)
-  const blockers = [...coverageBlockers, ...modelValidationBlockers, ...hybridValidationBlockers, ...demand.map(demandBlocker).filter((item): item is NativePremiumBlocker => Boolean(item))]
+  const blockers = [...coverageBlockers, ...modelValidationBlockers, ...demand.map(demandBlocker).filter((item): item is NativePremiumBlocker => Boolean(item))]
   const warnings = audit.items.filter(item => item.status === "ready" && ((item.sourceKind === "sample-pack" && item.density === "sparse" && !item.message) || (item.sourceKind === "physical-model" && !physicalModelMasterApproved(item.moduleId))))
   return { ready: blockers.length === 0 && audit.scorePlayable, audit, demand, blockers, warnings }
 }
@@ -82,6 +68,6 @@ export function premiumReadinessError(readiness: NativePremiumReadiness) {
   return [
     "Master premium detenido: una o más fuentes acústicas todavía no alcanzan el umbral de fidelidad de esta obra.",
     ...rows,
-    "Tloque acepta samples, modelos físicos y fuentes híbridas, pero Master sólo se habilita con evidencia versionada; no ocultará huecos con pitch-shift agresivo ni utilizará overlays híbridos no validados.",
+    "Tloque acepta samples, modelos físicos y fuentes híbridas. Un overlay híbrido sin aprobación A/B queda fuera de Master y conserva el sample base verificado; los modelos físicos completos sí requieren evidencia Master propia.",
   ].join("\n")
 }
