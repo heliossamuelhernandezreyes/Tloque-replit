@@ -8,8 +8,8 @@ import { selectNativeSampleVelocityBlend } from "./NativeSampleVelocityBlend"
 import { buildPerformancePlan } from "./PerformanceEngine"
 import { articulationDurationFactor, articulationVelocityFactor, scoreTrackExpression, scoreTrackTimbre, scoreVelocityGain } from "./ScoreAudioMath"
 
-export interface NativeSampleTrackPlan { id: string; gain: number; pan: number; micPosition: TloqueMicPosition }
-export interface NativeSampleControlPlan { trackId: string; timeSeconds: number; rampSeconds: number; gain: number }
+export interface NativeSampleTrackPlan { id: string; gain: number; pan: number; micPosition: TloqueMicPosition; brightness: number }
+export interface NativeSampleControlPlan { trackId: string; timeSeconds: number; rampSeconds: number; gain: number | null; brightness: number | null }
 export interface NativeSampleVoicePlan {
   trackId: string
   articulation: TloqueArticulation
@@ -114,15 +114,27 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
   }
   const tracks: NativeSampleTrackPlan[] = playableTracks.map(track => {
     const timbre = scoreTrackTimbre(track)
-    return { id: track.id, gain: Math.max(0, Math.min(1.5, track.gain * timbre.level * scoreTrackExpression(track))), pan: Math.max(-1, Math.min(1, track.pan)), micPosition: micForTrack(track.id) }
+    return {
+      id: track.id,
+      gain: Math.max(0, Math.min(1.5, track.gain * timbre.level * scoreTrackExpression(track))),
+      pan: Math.max(-1, Math.min(1, track.pan)),
+      micPosition: micForTrack(track.id),
+      brightness: Math.max(0, Math.min(1, track.brightness ?? 0.5)),
+    }
   })
 
   const controls: NativeSampleControlPlan[] = []
   for (const control of recipe.plan.controls) {
-    if (control.expression === null) continue
+    if (control.expression === null && control.brightness === null) continue
     const track = trackById.get(control.trackId); if (!track) continue
     const timbre = scoreTrackTimbre(track)
-    controls.push({ trackId: control.trackId, timeSeconds: control.timeSeconds, rampSeconds: Math.max(0, control.rampSeconds), gain: Math.max(0, Math.min(1.5, track.gain * timbre.level * control.expression)) })
+    controls.push({
+      trackId: control.trackId,
+      timeSeconds: control.timeSeconds,
+      rampSeconds: Math.max(0, control.rampSeconds),
+      gain: control.expression === null ? null : Math.max(0, Math.min(1.5, track.gain * timbre.level * control.expression)),
+      brightness: control.brightness === null ? null : Math.max(0, Math.min(1, control.brightness)),
+    })
   }
 
   const voices: NativeSampleVoicePlan[] = []
