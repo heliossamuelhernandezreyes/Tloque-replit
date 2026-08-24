@@ -1,3 +1,5 @@
+import type { LinearScoreControlV2, LinearScoreTrackV2 } from "./tloque-score-v2"
+
 export type PhysicalPerformanceControlKey =
   | "pedal"
   | "damper"
@@ -45,4 +47,39 @@ export function physicalControlSupportedByInstrument(instrumentId: string, key: 
     return key === "pluckPosition" || key === "damper" || key === "sympatheticCoupling"
   }
   return false
+}
+
+/**
+ * Compatibility bridge for TLOQUE_SCORE 2.1.
+ * Until 2.2 exposes dedicated physical-control tokens, the existing expressive
+ * controls are translated to a stable physical state. This keeps old scores
+ * valid while giving every hybrid engine the same semantic performance model.
+ */
+export function physicalPerformanceStateAt(
+  track: LinearScoreTrackV2,
+  controls: readonly LinearScoreControlV2[],
+  timeSeconds: number,
+): PhysicalPerformanceState {
+  let expression = clampPhysicalControl(track.expression)
+  let brightness = clampPhysicalControl(track.brightness)
+  let pedal = 0
+
+  for (const control of controls) {
+    if (control.trackId !== track.id || control.timeSeconds > timeSeconds) continue
+    if (control.expression !== null) expression = clampPhysicalControl(control.expression)
+    if (control.brightness !== null) brightness = clampPhysicalControl(control.brightness)
+    if (control.pedal !== null) pedal = control.pedal ? 1 : 0
+  }
+
+  const state: PhysicalPerformanceState = {
+    pedal,
+    damper: 1 - pedal,
+    bowPosition: brightness,
+    pluckPosition: brightness,
+    pressure: expression,
+    embouchure: brightness,
+    sympatheticCoupling: clampPhysicalControl(0.22 + expression * 0.28 + pedal * 0.42),
+  }
+
+  return state
 }
