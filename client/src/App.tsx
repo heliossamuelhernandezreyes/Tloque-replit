@@ -49,13 +49,28 @@ const BOOT_SESSION_KEY = "tloque_boot_seen_v1"
 const LEGACY_SPLASH_KEY = "novareads_splash_shown"
 
 function hasSessionValue(key: string): boolean {
-  try { return sessionStorage.getItem(key) === "1" } catch { return false }
+  try {
+    return sessionStorage.getItem(key) === "1"
+  } catch {
+    return false
+  }
 }
+
 function rememberBoot(): void {
-  try { sessionStorage.setItem(BOOT_SESSION_KEY, "1"); sessionStorage.setItem(LEGACY_SPLASH_KEY, "1") } catch {}
+  try {
+    sessionStorage.setItem(BOOT_SESSION_KEY, "1")
+    sessionStorage.setItem(LEGACY_SPLASH_KEY, "1")
+  } catch {
+    // La app también debe abrir si el navegador bloquea el almacenamiento.
+  }
 }
+
 function needsOnboarding(): boolean {
-  try { return !localStorage.getItem("novareads_onboarding_done") } catch { return true }
+  try {
+    return !localStorage.getItem("novareads_onboarding_done")
+  } catch {
+    return true
+  }
 }
 
 function Router() {
@@ -63,25 +78,25 @@ function Router() {
   return (
     <Suspense fallback={<RouteFallback />}>
       <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/library" component={Library} />
-        <Route path="/book/:id" component={BookPage} />
-        <Route path="/read/:bookId/:chapterId" component={Reader} />
-        <Route path="/editor/direction" component={EditorDirection} />
-        <Route path="/editor" component={Editor} />
-        <Route path="/profile" component={ProfileHub} />
-        <Route path="/inbox" component={Inbox} />
-        <Route path="/editions" component={Editions} />
-        <Route path="/author/:name" component={AuthorPage} />
-        <Route path="/claim/:folio" component={ClaimPage} />
-        <Route path="/sorteo" component={GachaScreen} />
-        <Route path="/tarjetas" component={CardStudio} />
-        <Route path="/tarjetas/:bookId" component={CardStudio} />
-        <Route path="/marcos" component={FrameGallery} />
-        <Route path="/admin" component={adminPage(AdminHub)} />
-        <Route path="/admin/diag" component={adminPage(FlickerLab)} />
-        <Route path="/admin/marcos" component={adminPage(FrameWorkshop)} />
-        <Route path="/admin/fonoteca" component={adminPage(AudioCatalogAdmin)} />
+        <Route path="/"                        component={Home}     />
+        <Route path="/library"                 component={Library}  />
+        <Route path="/book/:id"                component={BookPage} />
+        <Route path="/read/:bookId/:chapterId" component={Reader}   />
+        <Route path="/editor/direction"        component={EditorDirection} />
+        <Route path="/editor"                  component={Editor}     />
+        <Route path="/profile"                 component={ProfileHub} />
+        <Route path="/inbox"                   component={Inbox} />
+        <Route path="/editions"                component={Editions} />
+        <Route path="/author/:name"            component={AuthorPage} />
+        <Route path="/claim/:folio"            component={ClaimPage} />
+        <Route path="/sorteo"                  component={GachaScreen} />
+        <Route path="/tarjetas"                component={CardStudio} />
+        <Route path="/tarjetas/:bookId"        component={CardStudio} />
+        <Route path="/marcos"                  component={FrameGallery} />
+        <Route path="/admin"                   component={adminPage(AdminHub)} />
+        <Route path="/admin/diag"              component={adminPage(FlickerLab)} />
+        <Route path="/admin/marcos"            component={adminPage(FrameWorkshop)} />
+        <Route path="/admin/fonoteca"          component={adminPage(AudioCatalogAdmin)} />
         <Route path="/admin/audio/vsco-strings" component={adminPage(VscoInstallerAdmin)} />
         <Route path="/admin/audio/vsco-woodwinds" component={adminPage(VscoInstallerAdmin)} />
         <Route path="/admin/audio/vsco-brass" component={adminPage(VscoInstallerAdmin)} />
@@ -102,38 +117,128 @@ function AdminOnly({ children }: { children: ReactNode }) {
   if (!isAdmin) return <NotFound />
   return <>{children}</>
 }
-function RouteFallback() { return <BootExperience compact /> }
-function AuthUnavailable({ onRetry }: { onRetry: () => void }) {
-  return <main className="fixed inset-0 bg-black flex items-center justify-center px-6 text-white"><section className="max-w-sm text-center" role="alert"><div className="mx-auto mb-5 h-2 w-2 rounded-full bg-amber-300/70" /><h1 className="font-serif text-xl">No pudimos verificar tu sesión</h1><p className="mt-3 text-sm leading-6 text-white/55">Tu cuenta y tus libros siguen intactos. Revisa la conexión e inténtalo nuevamente.</p><button type="button" onClick={onRetry} className="mt-6 rounded-full border border-white/20 px-5 py-2 text-sm text-white/80 transition hover:border-white/40 hover:text-white">Reintentar</button></section></main>
+
+function RouteFallback() {
+  return <BootExperience compact />
 }
+
+function AuthUnavailable({ onRetry }: { onRetry: () => void }) {
+  return (
+    <main className="fixed inset-0 bg-black flex items-center justify-center px-6 text-white">
+      <section className="max-w-sm text-center" role="alert">
+        <div className="mx-auto mb-5 h-2 w-2 rounded-full bg-amber-300/70" />
+        <h1 className="font-serif text-xl">No pudimos verificar tu sesión</h1>
+        <p className="mt-3 text-sm leading-6 text-white/55">
+          Tu cuenta y tus libros siguen intactos. Revisa la conexión e inténtalo nuevamente.
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-6 rounded-full border border-white/20 px-5 py-2 text-sm text-white/80 transition hover:border-white/40 hover:text-white"
+        >
+          Reintentar
+        </button>
+      </section>
+    </main>
+  )
+}
+
 function MotionPreferences({ children }: { children: ReactNode }) {
   const { settings } = useSettings()
-  return <MotionConfig reducedMotion={settings.reduceMotion ? "always" : "user"}>{children}</MotionConfig>
+  return (
+    <MotionConfig reducedMotion={settings.reduceMotion ? "always" : "user"}>
+      {children}
+    </MotionConfig>
+  )
 }
+
 function AppContent() {
   const { isLoading, isLoggedIn, authError, retryAuth } = useAuth()
-  const [hasBootedThisSession] = useState(() => hasSessionValue(BOOT_SESSION_KEY) || hasSessionValue(LEGACY_SPLASH_KEY))
+  const [hasBootedThisSession] = useState(
+    () => hasSessionValue(BOOT_SESSION_KEY) || hasSessionValue(LEGACY_SPLASH_KEY),
+  )
   const [bootPhase, setBootPhase] = useState<BootPhase>("loading")
   const [bootComplete, setBootComplete] = useState(false)
+
   useEffect(() => {
     if (bootComplete) return
-    let slowTimer: ReturnType<typeof setTimeout> | undefined, readyTimer: ReturnType<typeof setTimeout> | undefined, exitTimer: ReturnType<typeof setTimeout> | undefined
-    if (isLoading) slowTimer = setTimeout(() => setBootPhase("slow"), SLOW_BOOT_MS)
-    else {
+
+    let slowTimer: ReturnType<typeof setTimeout> | undefined
+    let readyTimer: ReturnType<typeof setTimeout> | undefined
+    let exitTimer: ReturnType<typeof setTimeout> | undefined
+
+    if (isLoading) {
+      slowTimer = setTimeout(() => setBootPhase("slow"), SLOW_BOOT_MS)
+    } else {
       const elapsed = typeof performance === "undefined" ? 0 : performance.now()
       const wait = Math.max(0, minimumBootDuration(hasBootedThisSession) - elapsed)
-      readyTimer = setTimeout(() => { setBootPhase("ready"); exitTimer = setTimeout(() => { rememberBoot(); setBootComplete(true) }, BOOT_EXIT_MS) }, wait)
+      readyTimer = setTimeout(() => {
+        setBootPhase("ready")
+        exitTimer = setTimeout(() => {
+          rememberBoot()
+          setBootComplete(true)
+        }, BOOT_EXIT_MS)
+      }, wait)
     }
-    return () => { if (slowTimer) clearTimeout(slowTimer); if (readyTimer) clearTimeout(readyTimer); if (exitTimer) clearTimeout(exitTimer) }
+
+    return () => {
+      if (slowTimer) clearTimeout(slowTimer)
+      if (readyTimer) clearTimeout(readyTimer)
+      if (exitTimer) clearTimeout(exitTimer)
+    }
   }, [bootComplete, hasBootedThisSession, isLoading])
-  useEffect(() => { if (isLoggedIn) void pullAndMerge().catch(error => console.warn("No se pudo sincronizar el progreso al iniciar", error)) }, [isLoggedIn])
-  const [showOnboarding, setShowOnboarding] = useState(needsOnboarding)
+
+  // Al abrir la app logueado: juntar racha y progreso con la nube (una vez)
+  useEffect(() => {
+    if (isLoggedIn) {
+      void pullAndMerge().catch(error => {
+        console.warn("No se pudo sincronizar el progreso al iniciar", error)
+      })
+    }
+  }, [isLoggedIn])
+
+  const [showOnboarding, setShowOnboarding] = useState(
+    needsOnboarding
+  )
+
   if (!bootComplete) return <BootExperience phase={bootPhase} />
   if (isLoading) return <RouteFallback />
   if (authError) return <AuthUnavailable onRetry={() => { void retryAuth() }} />
+
+  // No está logueado — mostrar pantalla de login
   if (!isLoggedIn) return <LoginScreen />
-  return <>{showOnboarding && <Onboarding onComplete={() => setShowOnboarding(false)} />}<ExperienceShell><Router /></ExperienceShell></>
+
+  return (
+    <>
+      {showOnboarding && (
+        <Onboarding onComplete={() => setShowOnboarding(false)} />
+      )}
+      <ExperienceShell>
+        <Router />
+      </ExperienceShell>
+    </>
+  )
 }
+
 export default function App() {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><SettingsProvider><MotionPreferences><MusicProvider><GenreProvider><CardViewerProvider><Toaster /><AppContent /></CardViewerProvider></GenreProvider></MusicProvider></MotionPreferences></SettingsProvider></TooltipProvider></QueryClientProvider>
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <SettingsProvider>
+          <MotionPreferences>
+            <MusicProvider>
+             <GenreProvider>
+              {/* El visor de tarjetas vive arriba de todo: cualquier carta,
+                  en cualquier pantalla, se toca y se abre aquí. */}
+              <CardViewerProvider>
+                <Toaster />
+                <AppContent />
+              </CardViewerProvider>
+             </GenreProvider>
+            </MusicProvider>
+          </MotionPreferences>
+        </SettingsProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
+  )
 }
