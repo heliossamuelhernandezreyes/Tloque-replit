@@ -33,33 +33,33 @@ function parseIndex(text: string, source: CuratedRawWavPackSource): string[] {
 }
 
 function pianoZones(paths: readonly string[]): ParsedRawZone[] {
-  return paths.flatMap(samplePath => {
+  return paths.flatMap((samplePath): ParsedRawZone[] => {
     const match = /_JHPiano_Sus_Close_([A-Ga-g](?:#|b)?-?\d+)_vl(\d+)_rr(\d+)\.wav$/i.exec(samplePath)
     if (!match) return []
     const rootMidi = sfzNoteToMidi(match[1])
     const physicalLayer = Number(match[2])
     const velocityLayer = physicalLayer <= 2 ? 0 : physicalLayer === 3 ? 1 : 2
-    return [{ samplePath, rootMidi, velocityLayer, roundRobin: Math.max(0, Number(match[3]) - 1), mic: "close" as const, trigger: "attack" as const }]
+    return [{ samplePath, rootMidi, velocityLayer, roundRobin: Math.max(0, Number(match[3]) - 1), mic: "close", trigger: "attack" }]
   })
 }
 
 function organZones(paths: readonly string[]): ParsedRawZone[] {
-  return paths.flatMap(samplePath => {
+  return paths.flatMap((samplePath): ParsedRawZone[] => {
     const match = /_Rode_Man3Open_([A-Ga-g](?:#|b)?-?\d+)\.wav$/i.exec(samplePath)
     if (!match) return []
-    return [{ samplePath, rootMidi: sfzNoteToMidi(match[1]), velocityLayer: 0, roundRobin: 0, mic: "default" as const, trigger: "attack" as const }]
+    return [{ samplePath, rootMidi: sfzNoteToMidi(match[1]), velocityLayer: 0, roundRobin: 0, mic: "default", trigger: "attack" }]
   })
 }
 
 function harpsichordZones(paths: readonly string[]): ParsedRawZone[] {
-  return paths.flatMap(samplePath => {
+  return paths.flatMap((samplePath): ParsedRawZone[] => {
     const release = /Harpsichord_stop1-rel_([A-Ga-g](?:#|b)?-?\d+)_1\.wav$/i.exec(samplePath)
     if (release) {
-      return [{ samplePath, rootMidi: sfzNoteToMidi(release[1]), velocityLayer: 0, roundRobin: 0, mic: "default" as const, trigger: "release" as const }]
+      return [{ samplePath, rootMidi: sfzNoteToMidi(release[1]), velocityLayer: 0, roundRobin: 0, mic: "default", trigger: "release" }]
     }
     const sustain = /Harpsichord_stop1_([A-Ga-g](?:#|b)?-?\d+)_1\.wav$/i.exec(samplePath)
     if (!sustain) return []
-    return [{ samplePath, rootMidi: sfzNoteToMidi(sustain[1]), velocityLayer: 0, roundRobin: 0, mic: "default" as const, trigger: "attack" as const }]
+    return [{ samplePath, rootMidi: sfzNoteToMidi(sustain[1]), velocityLayer: 0, roundRobin: 0, mic: "default", trigger: "attack" }]
   })
 }
 
@@ -85,7 +85,7 @@ function rangesForRoots(roots: readonly number[]) {
 }
 
 export function compileRawWavPathsToSfz(paths: readonly string[], source: CuratedRawWavPackSource) {
-  const zones = source.rawWavProfile === "vcsl-grand-piano-sus-close"
+  const zones: ParsedRawZone[] = source.rawWavProfile === "vcsl-grand-piano-sus-close"
     ? pianoZones(paths)
     : source.rawWavProfile === "vcsl-pipe-organ-rode-man3-open"
       ? organZones(paths)
