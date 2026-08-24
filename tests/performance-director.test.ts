@@ -10,15 +10,15 @@ tempo 60
 meter 4/4
 loop false
 seed 4242
-humanize 0
+humanize 0.12
 quality master
 module builtin
 track flute synth=pad instrument=woodwinds.flute program=73 role=melody gain=0.3 pan=0 attack=0.02 release=0.8 expression=0.8 brightness=0.5 vibrato=0 timbre=natural
 section phrase form=exposition bars=2 repeat=1 fade=0 tempo=60 rubato=0
 use flute
 1:1 C5 0.5 velocity=0.50 articulation=normal
-1:2 C5 0.5 velocity=0.50 articulation=normal
-1:3 G5 0.5 velocity=0.50 articulation=normal
+1:1.5 C5 0.5 velocity=0.50 articulation=normal
+1:2 G5 0.5 velocity=0.50 articulation=normal
 2:1 A5 1 velocity=0.50 articulation=tenuto
 end`
 
