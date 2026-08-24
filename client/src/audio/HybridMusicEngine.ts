@@ -1,5 +1,6 @@
 import { linearScoreRecipeFor, type LinearScoreRecipe } from "@shared/audio"
 import { instrumentManifestById } from "@shared/instrument-manifest"
+import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
 import { MusicEngine, type MusicCue, type MusicState } from "./MusicEngine"
 import type { MusicBrainScoreV1 } from "@shared/music-brain"
 import { LinearScoreEngine } from "./LinearScoreEngine"
@@ -11,20 +12,18 @@ import { nativeModuleGroupsForRecipe, NATIVE_AUTO_MODULE_ID } from "./NativeAuto
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 type Engine = Pick<MusicEngine, "play" | "pause" | "resume" | "stop" | "dispose" | "setMasterVolume" | "setDucked" | "setNarrativeDirection">
 
-async function nativeSamplePacksAvailable(recipe: LinearScoreRecipe): Promise<boolean> {
+async function nativeAcousticSourcesAvailable(recipe: LinearScoreRecipe): Promise<boolean> {
   if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") return false
   try {
     const groups = nativeModuleGroupsForRecipe(recipe)
     if (!groups.length) return false
     const available = await Promise.all(groups.map(async group => {
+      if (nativePhysicalModelByModuleId(group.moduleId)) return true
       const response = await fetch(
         `/api/audio/sample-packs/modules/${encodeURIComponent(group.moduleId)}.json`,
         { credentials: "include", cache: "no-store" },
       )
       if (!response.ok) return false
-      // Consume and parse the body. The App Storage route can emit a streaming
-      // failure after headers have been created, so a HEAD/response.ok-only probe
-      // is not sufficient proof that the package physically exists.
       const manifest = await response.json().catch(() => null) as { instrumentManifestId?: unknown } | null
       return Boolean(manifest && manifest.instrumentManifestId === group.moduleId)
     }))
@@ -79,19 +78,18 @@ export class HybridMusicEngine {
     const nativeManifest = resolvedCue.sourceType === "score"
       ? instrumentManifestById(resolvedCue.instrumentManifestId)
       : null
-    let useNativeSamples = resolvedCue.sourceType === "score"
+    let useNativeAcoustic = resolvedCue.sourceType === "score"
       && (nativeAuto || Boolean(nativeManifest && nativeManifest.id !== "gm-orchestral-strings" && !resolvedCue.packUrl))
 
-    // `native-auto` is a virtual routing module: every semantic instrument may
-    // require a different installed sample pack. If even one package is absent,
-    // preview must honor the Studio promise and fall back to Tloque's base
-    // synthesis instead of ending in a silent 404/error state.
-    if (useNativeSamples && scoreRecipe) {
-      useNativeSamples = await nativeSamplePacksAvailable(scoreRecipe)
+    // `native-auto` may mix installed sample packs and Tloque physical models.
+    // A physical model is self-contained; sample-backed groups still prove that
+    // their published package can be fully read before the acoustic renderer wins.
+    if (useNativeAcoustic && scoreRecipe) {
+      useNativeAcoustic = await nativeAcousticSourcesAvailable(scoreRecipe)
     }
 
     const needsWorklet = resolvedCue.sourceType === "soundfont"
-      || (resolvedCue.sourceType === "score" && Boolean(resolvedCue.packUrl) && !useNativeSamples)
+      || (resolvedCue.sourceType === "score" && Boolean(resolvedCue.packUrl) && !useNativeAcoustic)
     const canUseRequestedEngine = Boolean(AudioContextClass)
       && (!needsWorklet || Boolean(AudioContextClass && "audioWorklet" in AudioContextClass.prototype))
     if (resolvedCue.sourceType !== "stream" && !canUseRequestedEngine) {
@@ -106,7 +104,7 @@ export class HybridMusicEngine {
     const next: Engine = resolvedCue.sourceType === "procedural"
       ? this.procedural
       : resolvedCue.sourceType === "soundfont" ? this.soundfont
-        : resolvedCue.sourceType === "score" ? (useNativeSamples ? this.nativeScore : this.score)
+        : resolvedCue.sourceType === "score" ? (useNativeAcoustic ? this.nativeScore : this.score)
           : this.stream
     if (this.active && this.active !== next) this.active.stop()
     this.active = next

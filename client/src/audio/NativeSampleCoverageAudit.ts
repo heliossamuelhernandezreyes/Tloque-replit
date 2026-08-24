@@ -1,9 +1,11 @@
 import { linearScoreRecipeFor } from "@shared/audio"
+import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
 import { validateTloqueSamplePack, type TloqueSamplePack, type TloqueSampleZone } from "@shared/native-sample-pack"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule } from "./NativeAutoModule"
 import { buildNativeSampleScorePlan } from "./NativeSampleScorePlan"
 
 export type NativeCoverageDensity = "dense" | "good" | "sparse" | "risk" | "missing"
+export type NativeCoverageSourceKind = "sample-pack" | "physical-model"
 
 export interface NativeCoverageSlice {
   key: string
@@ -44,6 +46,8 @@ export interface NativeCoverageItem extends NativeCoverageSummary {
   moduleId: string
   trackIds: readonly string[]
   instruments: readonly string[]
+  sourceKind: NativeCoverageSourceKind
+  masterApproved: boolean
   status: "ready" | "missing" | "invalid"
   message?: string
 }
@@ -174,6 +178,40 @@ function emptyCoverage(): NativeCoverageSummary {
   }
 }
 
+function physicalModelCoverage(moduleId: string, trackIds: readonly string[], instruments: readonly string[], notes: readonly number[]): NativeCoverageItem | null {
+  const model = nativePhysicalModelByModuleId(moduleId)
+  if (!model) return null
+  const outOfRange = [...new Set(notes.filter(midi => midi < model.midiMin || midi > model.midiMax))].sort((a, b) => a - b)
+  const playable = outOfRange.length === 0
+  return {
+    moduleId,
+    trackIds,
+    instruments,
+    sourceKind: "physical-model",
+    masterApproved: model.masterApproved,
+    status: playable ? "ready" : "invalid",
+    density: playable ? "dense" : "risk",
+    zones: 0,
+    roots: model.midiMax - model.midiMin + 1,
+    midiMin: model.midiMin,
+    midiMax: model.midiMax,
+    maxRootGap: 0,
+    maxTransposeNeed: 0,
+    uncoveredMidi: outOfRange,
+    articulations: ["normal", "legato", "staccato", "tenuto", "accent"],
+    vibratoColours: ["continuous-model"],
+    mutes: ["none"],
+    microphones: ["modeled-radiation"],
+    velocityLayers: 0,
+    roundRobins: 0,
+    releaseZones: 0,
+    trueLegatoTransitions: 0,
+    slices: [],
+    weakSlices: [],
+    message: playable ? undefined : `Modelo físico fuera de registro: MIDI ${outOfRange.join(", ")} · rango ${model.midiMin}-${model.midiMax}`,
+  }
+}
+
 export async function auditNativeSampleCoverage(value: unknown, signal?: AbortSignal): Promise<NativeCoverageAudit> {
   const recipe = linearScoreRecipeFor(value)
   if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") {
@@ -187,11 +225,24 @@ export async function auditNativeSampleCoverage(value: unknown, signal?: AbortSi
   for (const group of nativeModuleGroupsForRecipe(recipe)) {
     if (signal?.aborted) throw new DOMException("Auditoría cancelada", "AbortError")
     const instruments = [...new Set(group.trackIds.map(id => trackById.get(id)?.instrument).filter((value): value is string => Boolean(value)))]
+    const groupTrackIds = new Set(group.trackIds)
+    const modelItem = physicalModelCoverage(
+      group.moduleId,
+      group.trackIds,
+      instruments,
+      recipe.plan.events.filter(event => groupTrackIds.has(event.trackId)).flatMap(event => event.notes),
+    )
+    if (modelItem) {
+      if (modelItem.status !== "ready") scorePlayable = false
+      items.push(modelItem)
+      continue
+    }
+
     try {
       const response = await fetch(packUrl(group.moduleId), { credentials: "include", cache: "no-store", signal })
       if (!response.ok) {
         scorePlayable = false
-        items.push({ moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "missing", ...emptyCoverage(), message: `HTTP ${response.status}` })
+        items.push({ moduleId: group.moduleId, trackIds: group.trackIds, instruments, sourceKind: "sample-pack", masterApproved: true, status: "missing", ...emptyCoverage(), message: `HTTP ${response.status}` })
         continue
       }
       const pack = validateTloqueSamplePack(await response.json())
@@ -204,11 +255,11 @@ export async function auditNativeSampleCoverage(value: unknown, signal?: AbortSi
         scorePlayable = false
         message = error instanceof Error ? error.message : "La partitura usa una zona no cubierta"
       }
-      items.push({ moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "ready", ...stats, message })
+      items.push({ moduleId: group.moduleId, trackIds: group.trackIds, instruments, sourceKind: "sample-pack", masterApproved: true, status: "ready", ...stats, message })
     } catch (error) {
       scorePlayable = false
       items.push({
-        moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "invalid", ...emptyCoverage(),
+        moduleId: group.moduleId, trackIds: group.trackIds, instruments, sourceKind: "sample-pack", masterApproved: true, status: "invalid", ...emptyCoverage(),
         message: error instanceof Error ? error.message : "No se pudo auditar el banco",
       })
     }

@@ -1,4 +1,5 @@
 import { linearScoreRecipeFor } from "@shared/audio"
+import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
 import { validateTloqueSamplePack } from "@shared/native-sample-pack"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule } from "./NativeAutoModule"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
@@ -24,7 +25,7 @@ export interface NativeModuleDemandAudit extends NativeSampleDemandAudit {
 
 function semitoneShift(playbackRate: number) { return Math.abs(12 * Math.log2(Math.max(0.0001, playbackRate))) }
 
-/** Audita lo que la obra realmente exige, no sólo la densidad teórica del banco. */
+/** Audita lo que la obra realmente exige a los bancos sampleados. Los modelos físicos generan pitch continuo y no participan en esta métrica. */
 export function auditNativeSampleDemand(plan: NativeSampleScorePlan): NativeSampleDemandAudit {
   const voices = plan.voices.length
   if (!voices) return { voices: 0, exactPitchVoices: 0, shiftedVoices: 0, shiftedOverOneSemitone: 0, shiftedOverTwoSemitones: 0, shiftedOverThreeSemitones: 0, maxShiftSemitones: 0, meanShiftSemitones: 0, zoneChanges: 0, repeatedZoneRatio: 0, risk: "clean" }
@@ -54,6 +55,7 @@ export async function auditNativeScoreDemand(value: unknown, signal?: AbortSigna
   const result: NativeModuleDemandAudit[] = []
   for (const group of nativeModuleGroupsForRecipe(recipe)) {
     if (signal?.aborted) throw new DOMException("Auditoría cancelada", "AbortError")
+    if (nativePhysicalModelByModuleId(group.moduleId)) continue
     const response = await fetch(`/api/audio/sample-packs/modules/${encodeURIComponent(group.moduleId)}.json`, { credentials: "include", cache: "no-store", signal })
     if (!response.ok) continue
     const pack = validateTloqueSamplePack(await response.json())

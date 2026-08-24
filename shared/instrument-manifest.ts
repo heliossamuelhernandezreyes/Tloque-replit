@@ -2,6 +2,7 @@ import { DISCORD_MARTIN_HD28_MANIFEST, KARORYFER_EMILY_GUITAR_MANIFEST } from ".
 import { VCSL_CONCERT_HARP_MANIFEST } from "./instrument-manifest-harp"
 import { IOWA_MIS_MANIFESTS } from "./instrument-manifest-iowa"
 import { VCSL_ESTUARY_KEYS_MANIFESTS } from "./instrument-manifest-keys"
+import { TLOQUE_PHYSICAL_MODEL_MANIFESTS } from "./instrument-manifest-physical-models"
 import { VCSL_ESTUARY_WORLD_WIND_MANIFESTS } from "./instrument-manifest-worldwinds"
 import { VSCO2_CE_PERCUSSION_MANIFESTS } from "./instrument-manifest-percussion"
 import { VSCO2_CE_STRING_SECTION_MANIFESTS } from "./instrument-manifest-string-sections"
@@ -15,6 +16,11 @@ export {
   VCSL_ESTUARY_PIPE_ORGAN_PEDAL_MANIFEST,
   VCSL_ESTUARY_KEYS_MANIFESTS,
 } from "./instrument-manifest-keys"
+export {
+  TLOQUE_ENGLISH_HORN_MODEL_MANIFEST,
+  TLOQUE_CONTRABASSOON_MODEL_MANIFEST,
+  TLOQUE_PHYSICAL_MODEL_MANIFESTS,
+} from "./instrument-manifest-physical-models"
 export {
   VCSL_ESTUARY_OCARINA_MANIFEST,
   VCSL_ESTUARY_ALTO_RECORDER_MANIFEST,
@@ -129,6 +135,7 @@ export const INSTRUMENT_MANIFEST_REGISTRY: readonly InstrumentManifest[] = [
   VSCO2_CE_CLARINET_MANIFEST,
   VSCO2_CE_OBOE_MANIFEST,
   VSCO2_CE_BASSOON_MANIFEST,
+  ...TLOQUE_PHYSICAL_MODEL_MANIFESTS,
   ...IOWA_MIS_MANIFESTS,
   ...VCSL_ESTUARY_WORLD_WIND_MANIFESTS,
   VSCO2_CE_TRUMPET_MANIFEST,
