@@ -13,6 +13,7 @@ export interface RecordedTimbreProfile {
 
 export const RECORDED_TIMBRE_PROFILES: readonly RecordedTimbreProfile[] = [
   { moduleId: "vsco2-ce-solo-violin", defaultTimbre: "vibrato", availableTimbres: ["vibrato"] },
+  { moduleId: "vsco2-ce-violin-section", defaultTimbre: "vibrato", availableTimbres: ["vibrato"] },
   { moduleId: "vsco2-ce-viola-section", defaultTimbre: "vibrato", availableTimbres: ["vibrato"] },
   { moduleId: "vsco2-ce-cello-section", defaultTimbre: "vibrato", availableTimbres: ["vibrato"] },
   { moduleId: "vsco2-ce-solo-contrabass", defaultTimbre: "vibrato", availableTimbres: ["non-vibrato", "vibrato"] },
