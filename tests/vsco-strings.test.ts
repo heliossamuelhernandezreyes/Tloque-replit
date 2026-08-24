@@ -7,18 +7,21 @@ import {
   VSCO2_CE_SOLO_CONTRABASS_MANIFEST,
   VSCO2_CE_SOLO_VIOLIN_MANIFEST,
   VSCO2_CE_VIOLA_SECTION_MANIFEST,
+  VSCO2_CE_VIOLIN_SECTION_MANIFEST,
 } from "../shared/instrument-manifest"
 import { compileCuratedSfzZones } from "../server/sfzSamplePackCompiler"
 
 const COMMIT = "6dd651d55dde97fd4028699be9d4481f26917891"
 
-test("VSCO strings registra cuatro paquetes independientes con identidad real", () => {
+test("VSCO strings registra cinco paquetes independientes y separa solo de tutti", () => {
   const packs = CURATED_SAMPLE_PACKS.filter(pack => pack.instrumentId.startsWith("strings."))
-  assert.equal(packs.length, 4)
-  assert.equal(new Set(packs.map(pack => pack.moduleId)).size, 4)
+  assert.equal(packs.length, 5)
+  assert.equal(new Set(packs.map(pack => pack.moduleId)).size, 5)
   assert.deepEqual(packs.map(pack => pack.displayName), [
-    "Solo Violin", "Viola Section", "Cello Section", "Solo Contrabass",
+    "Solo Violin", "Violin Section", "Viola Section", "Cello Section", "Solo Contrabass",
   ])
+  assert.equal(packs.find(pack => pack.instrumentId === "strings.violin")?.manifestId, "vsco2-ce-solo-violin")
+  assert.equal(packs.find(pack => pack.instrumentId === "strings.violin-section")?.manifestId, "vsco2-ce-violin-section")
   for (const pack of packs) {
     assert.equal(pack.pinnedCommit, COMMIT)
     assert.equal(pack.license, "CC0-1.0")
@@ -30,6 +33,7 @@ test("VSCO strings registra cuatro paquetes independientes con identidad real", 
 
 test("los manifests conservan keyswitches propios de cada instrumento", () => {
   assert.equal(VSCO2_CE_SOLO_VIOLIN_MANIFEST.articulations.find(a => a.articulation === "tremolo")?.keyswitch, 37)
+  assert.equal(VSCO2_CE_VIOLIN_SECTION_MANIFEST.articulations.find(a => a.articulation === "spiccato")?.roundRobins, 2)
   assert.equal(VSCO2_CE_VIOLA_SECTION_MANIFEST.articulations.find(a => a.articulation === "tremolo")?.keyswitch, 37)
   assert.equal(VSCO2_CE_CELLO_SECTION_MANIFEST.articulations.find(a => a.articulation === "tremolo")?.keyswitch, 85)
   assert.equal(VSCO2_CE_SOLO_CONTRABASS_MANIFEST.articulations.find(a => a.articulation === "pizzicato")?.keyswitch, 88)
