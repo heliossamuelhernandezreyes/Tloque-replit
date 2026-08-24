@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import type { Client } from "@replit/object-storage"
-import { createLazyAudioStorage } from "../server/audioStorage"
+import { configuredAudioBucketId, createLazyAudioStorage } from "../server/audioStorage"
 
 test("Object Storage no se inicializa durante el arranque de Tloque", () => {
   let initializations = 0
@@ -26,4 +26,10 @@ test("un cliente fallido se descarta para permitir conectar un bucket después",
   storage.reset(failed)
   assert.equal(storage.get(), clients[1])
   assert.equal(next, 2)
+})
+
+test("Tloque acepta un bucket de audio explícito y descarta valores vacíos", () => {
+  assert.equal(configuredAudioBucketId({ TLOQUE_AUDIO_BUCKET_ID: " bucket-123 " }), "bucket-123")
+  assert.equal(configuredAudioBucketId({ TLOQUE_AUDIO_BUCKET_ID: "   " }), undefined)
+  assert.equal(configuredAudioBucketId({ TLOQUE_AUDIO_BUCKET_ID: undefined }), undefined)
 })
