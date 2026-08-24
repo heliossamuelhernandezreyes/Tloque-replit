@@ -21,6 +21,21 @@ interface LoadedOfflinePlan {
   plan: NativeSampleScorePlan
 }
 
+function missingSamplePack(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "")
+  return /(?:paquete de muestras|sample pack|\b404\b|no se pudo cargar el paquete)/i.test(message)
+}
+
+async function renderBaseFallback(recipe: ReturnType<typeof linearScoreRecipeFor>, options: ScoreExportOptions) {
+  if (recipe.version !== 2) throw new Error("La partitura no puede usar el fallback de síntesis base")
+  const baseRecipe = {
+    ...recipe,
+    plan: { ...recipe.plan, moduleId: "builtin" },
+  }
+  const { renderTloqueScoreToWav } = await import("./ScoreExporter")
+  return renderTloqueScoreToWav(baseRecipe, options)
+}
+
 export async function renderTloqueScoreWithNativeSamplePackToWav(value: unknown, packUrl: string, options: ScoreExportOptions = {}): Promise<Blob> {
   const recipe = linearScoreRecipeFor(value)
   if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita paquetes nativos")
@@ -35,23 +50,31 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(value: unknown,
   const loaded: LoadedOfflinePlan[] = []
   const groups = nativeModuleGroupsForRecipe(recipe)
 
-  for (let index = 0; index < groups.length; index += 1) {
-    const group = groups[index]
-    const decodePlayer = new NativeSamplePackPlayer(decodeContext, decodedByUrl)
-    const modulePackUrl = recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID
-      ? `/api/audio/sample-packs/modules/${encodeURIComponent(group.moduleId)}.json`
-      : packUrl
-    const pack = await decodePlayer.loadPack(modulePackUrl)
-    if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde al módulo solicitado`)
-    const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack)
-    const decoded = await decodePlayer.preload(plan.zones)
-    plan.zones.forEach((zone, zoneIndex) => {
-      const buffer = decoded[zoneIndex]
-      if (buffer) decodedByUrl.set(zone.sampleUrl, buffer)
-    })
-    loaded.push({ moduleId: group.moduleId, plan })
-    options.onProgress?.(0.04 + ((index + 1) / Math.max(1, groups.length)) * 0.08)
-    assertNotAborted(options.signal)
+  try {
+    for (let index = 0; index < groups.length; index += 1) {
+      const group = groups[index]
+      const decodePlayer = new NativeSamplePackPlayer(decodeContext, decodedByUrl)
+      const modulePackUrl = recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID
+        ? `/api/audio/sample-packs/modules/${encodeURIComponent(group.moduleId)}.json`
+        : packUrl
+      const pack = await decodePlayer.loadPack(modulePackUrl)
+      if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde al módulo solicitado`)
+      const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack)
+      const decoded = await decodePlayer.preload(plan.zones)
+      plan.zones.forEach((zone, zoneIndex) => {
+        const buffer = decoded[zoneIndex]
+        if (buffer) decodedByUrl.set(zone.sampleUrl, buffer)
+      })
+      loaded.push({ moduleId: group.moduleId, plan })
+      options.onProgress?.(0.04 + ((index + 1) / Math.max(1, groups.length)) * 0.08)
+      assertNotAborted(options.signal)
+    }
+  } catch (error) {
+    if (missingSamplePack(error)) {
+      options.onProgress?.(0)
+      return renderBaseFallback(recipe, options)
+    }
+    throw error
   }
 
   let naturalEnd = recipe.plan.totalSeconds
