@@ -105,11 +105,20 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
   const voices: NativeSampleVoicePlan[] = []
   const auxiliaryVoices: NativeSampleAuxiliaryVoicePlan[] = []
   const zones = new Map<string, TloqueSampleZone>()
+  const previousEventByTrack = new Map<string, LinearScoreRecipe["plan"]["events"][number]>()
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
     const decision = performance.decisionForEvent(eventIndex)
     const track = trackById.get(event.trackId)
     if (!decision || !track) continue
+    const previousEvent = previousEventByTrack.get(event.trackId)
+    const connectedPerformancePhrase = Boolean(
+      previousEvent
+      && previousEvent.notes.length === 1
+      && event.notes.length === 1
+      && event.timeSeconds - (previousEvent.timeSeconds + previousEvent.durationSeconds) <= 0.09
+      && event.timeSeconds - (previousEvent.timeSeconds + previousEvent.durationSeconds) >= -0.12,
+    )
     const oneShot = track.instrument === "percussion.orchestral-kit"
     const requestedTimbre = event.timbre ?? track.timbre ?? "natural"
     const candidates = timbreCandidates(pack.instrumentManifestId, requestedTimbre)
@@ -161,7 +170,6 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
         voices.push(voice)
         return voice
       })
-      const primaryVoice = noteVoices.reduce((best, voice) => voice.sampleGain > best.sampleGain ? voice : best, noteVoices[0])
 
       if (decision.trueLegato && decision.previousNotes?.length === 1) {
         const from = decision.previousNotes[0]
@@ -192,7 +200,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           transitionFromMidi: from,
           fadeOutSeconds: crossfadeSeconds,
         })
-      } else if ((decision.articulation === "legato" || decision.articulation === "tenuto") && decision.previousNotes?.length === 1) {
+      } else if (connectedPerformancePhrase && (decision.articulation === "legato" || decision.articulation === "tenuto" || decision.articulation === "normal")) {
         const performanceCrossfade = Math.max(0.018, Math.min(0.065, durationSeconds * 0.12))
         for (const voice of noteVoices) voice.fadeInSeconds = Math.max(voice.fadeInSeconds, performanceCrossfade)
       }
@@ -213,11 +221,12 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           zoneId: release.zone.id,
           sampleUrl: release.zone.sampleUrl,
           playbackRate: release.playbackRate,
-          sampleGain: release.gain * Math.min(1, Math.max(0.55, primaryVoice.sampleGain / Math.max(0.0001, release.gain))),
+          sampleGain: release.gain,
           fadeOutSeconds: 0,
         })
       }
     }
+    previousEventByTrack.set(event.trackId, event)
   }
 
   return { tracks, controls, voices, auxiliaryVoices, zones: [...zones.values()], totalSeconds: recipe.plan.totalSeconds }
