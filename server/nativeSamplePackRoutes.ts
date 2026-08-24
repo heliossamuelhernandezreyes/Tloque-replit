@@ -13,6 +13,21 @@ function safeModuleId(value: string) {
   return /^[a-z0-9][a-z0-9._-]{0,79}$/.test(value)
 }
 
+function readableInstallerError(error: unknown) {
+  const detail = error instanceof Error ? error.message : String(error || "Error desconocido")
+  const lowered = detail.toLowerCase()
+  if (lowered.includes("object storage") || lowered.includes("bucket") || lowered.includes("storage")) {
+    return { status: 503, message: "App Storage no está disponible. Conecta o reactiva el bucket de Replit y vuelve a intentar la instalación." }
+  }
+  if (lowered.includes("redirigida") || lowered.includes("fuente respondió") || lowered.includes("fetch") || lowered.includes("network")) {
+    return { status: 502, message: `No se pudo descargar la fuente curada desde GitHub: ${detail}` }
+  }
+  if (lowered.includes("wav") || lowered.includes("sfz") || lowered.includes("muestra") || lowered.includes("paquete")) {
+    return { status: 502, message: `La fuente descargó, pero no pasó la validación acústica: ${detail}` }
+  }
+  return { status: 502, message: `No se pudo instalar el banco acústico: ${detail}` }
+}
+
 const NATIVE_SAMPLE_PACK_CATALOG = [...CURATED_SAMPLE_PACKS, ...CURATED_RAW_WAV_PACKS] as const
 
 /**
@@ -41,8 +56,13 @@ export function registerNativeSamplePackRoutes(app: Express) {
 
       let storage: Client | undefined
       try {
-        const downloaded = await downloadCuratedSamplePack(source)
+        // Falla rápido si App Storage no está operativo: evita gastar datos y tiempo
+        // descargando decenas de WAV que luego no podrían publicarse.
         storage = audioStorage.get()
+        const storageProbe = await storage.list({ maxResults: 1, prefix: "audio/sample-packs/" })
+        if (!storageProbe.ok) throw storageProbe.error
+
+        const downloaded = await downloadCuratedSamplePack(source)
         const sampleUrlByPath = new Map<string, string>()
         const sampleShaByPath = new Map<string, string>()
         let bytes = 0
@@ -122,7 +142,9 @@ export function registerNativeSamplePackRoutes(app: Express) {
       } catch (error) {
         audioStorage.reset(storage)
         console.error(`Curated sample-pack installation failed (${source.id}):`, error)
-        res.status(502).json({ message: `No se pudo descargar, verificar o publicar ${source.displayName}.` })
+        const failure = readableInstallerError(error)
+        res.locals.publicErrorMessage = true
+        res.status(failure.status).json({ message: failure.message })
       }
     },
   )
