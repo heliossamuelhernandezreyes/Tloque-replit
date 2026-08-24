@@ -11,6 +11,7 @@ import {
   buildPerformancePlan,
   buildPerformanceRoutingPlan,
   deterministicRoundRobinIndex,
+  familyPerformanceHumanization,
   resolveInstrumentManifest,
   resolvePerformanceRoute,
   velocityLayerIndex,
@@ -112,6 +113,7 @@ test("el PerformancePlan compila decisiones acústicas deterministas por evento"
   assert.deepEqual(plan.events.map(event => event.manifestId), ["gm-orchestral-strings", "gm-orchestral-strings", "gm-orchestral-strings"])
   assert.equal(plan.decisionForEvent(1)?.source, "dedicated-articulation")
   assert.equal(plan.channelForEventIndex(1), plan.channelForEvent("violin", "pizzicato"))
+  assert.deepEqual(plan.events.map(event => [event.startOffsetSeconds, event.durationScale, event.velocityScale]), [[0, 1, 1], [0, 1, 1], [0, 1, 1]])
 })
 
 test("VSCO PerformancePlan expone dos capas y RR sólo donde existen", () => {
@@ -168,4 +170,33 @@ test("round robin y velocity layer son deterministas", () => {
   assert.equal(velocityLayerIndex(0, 4), 0)
   assert.equal(velocityLayerIndex(0.5, 4), 2)
   assert.equal(velocityLayerIndex(0.999, 4), 3)
+})
+
+test("humanize=0 es completamente neutro y el mismo seed produce la misma interpretación", () => {
+  const neutral = familyPerformanceHumanization("woodwinds.flute", 0, "phrase:1", "normal", 0)
+  assert.deepEqual(neutral, { startOffsetSeconds: 0, durationScale: 1, velocityScale: 1 })
+  const first = familyPerformanceHumanization("strings.violin", 0.65, "phrase:1", "normal", 2)
+  const second = familyPerformanceHumanization("strings.violin", 0.65, "phrase:1", "normal", 2)
+  assert.deepEqual(first, second)
+  assert.ok(Math.abs(first.startOffsetSeconds) <= 0.012)
+  assert.ok(first.durationScale >= 0.86 && first.durationScale <= 1.08)
+  assert.ok(first.velocityScale >= 0.88 && first.velocityScale <= 1.12)
+})
+
+test("vientos y metales dejan respiración en ataques separados sin cortar legato", () => {
+  const fluteNormal = familyPerformanceHumanization("woodwinds.flute", 1, "flute:a", "normal", 0)
+  const fluteLegato = familyPerformanceHumanization("woodwinds.flute", 1, "flute:a", "legato", 0)
+  const hornNormal = familyPerformanceHumanization("brass.horn", 1, "horn:a", "normal", 0)
+  assert.ok(fluteNormal.durationScale < fluteLegato.durationScale)
+  assert.ok(hornNormal.durationScale < 1.03)
+  assert.ok(Math.abs(fluteNormal.startOffsetSeconds) <= 0.015)
+  assert.ok(Math.abs(hornNormal.startOffsetSeconds) <= 0.018)
+})
+
+test("cuerdas alternan una asimetría de arco mínima sin inventar otra articulación", () => {
+  const down = familyPerformanceHumanization("strings.violin", 1, "same", "normal", 0)
+  const up = familyPerformanceHumanization("strings.violin", 1, "same", "normal", 1)
+  assert.ok(down.velocityScale > up.velocityScale)
+  assert.equal(down.startOffsetSeconds, up.startOffsetSeconds)
+  assert.equal(down.durationScale, up.durationScale)
 })
