@@ -1,4 +1,4 @@
-import { linearScoreRecipeFor } from "@shared/audio"
+import { linearScoreRecipeFor, type LinearScoreRecipe } from "@shared/audio"
 import { instrumentManifestById } from "@shared/instrument-manifest"
 import { MusicEngine, type MusicCue, type MusicState } from "./MusicEngine"
 import type { MusicBrainScoreV1 } from "@shared/music-brain"
@@ -6,10 +6,25 @@ import { LinearScoreEngine } from "./LinearScoreEngine"
 import { NativeSampleScoreEngine } from "./NativeSampleScoreEngine"
 import { ProceduralMusicEngine } from "./ProceduralMusicEngine"
 import { SoundFontMusicEngine } from "./SoundFontMusicEngine"
-import { NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
+import { nativeModuleGroupsForRecipe, NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 type Engine = Pick<MusicEngine, "play" | "pause" | "resume" | "stop" | "dispose" | "setMasterVolume" | "setDucked" | "setNarrativeDirection">
+
+async function nativeSamplePacksAvailable(recipe: LinearScoreRecipe): Promise<boolean> {
+  if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") return false
+  try {
+    const groups = nativeModuleGroupsForRecipe(recipe)
+    if (!groups.length) return false
+    const responses = await Promise.all(groups.map(group => fetch(
+      `/api/audio/sample-packs/modules/${encodeURIComponent(group.moduleId)}.json`,
+      { method: "HEAD", credentials: "include", cache: "no-store" },
+    )))
+    return responses.every(response => response.ok)
+  } catch {
+    return false
+  }
+}
 
 export class HybridMusicEngine {
   private readonly stream: MusicEngine
@@ -34,9 +49,11 @@ export class HybridMusicEngine {
   async play(cue: MusicCue): Promise<void> {
     let resolvedCue = cue
     let nativeAuto = false
+    let scoreRecipe: LinearScoreRecipe | null = null
     if (cue.sourceType === "score") {
       try {
         const recipe = linearScoreRecipeFor(cue.recipe)
+        scoreRecipe = recipe
         if (recipe.version === 2) {
           nativeAuto = recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID
           if (recipe.plan.moduleId !== "builtin" && !nativeAuto && !cue.instrumentManifestId) {
@@ -54,8 +71,17 @@ export class HybridMusicEngine {
     const nativeManifest = resolvedCue.sourceType === "score"
       ? instrumentManifestById(resolvedCue.instrumentManifestId)
       : null
-    const useNativeSamples = resolvedCue.sourceType === "score"
+    let useNativeSamples = resolvedCue.sourceType === "score"
       && (nativeAuto || Boolean(nativeManifest && nativeManifest.id !== "gm-orchestral-strings" && !resolvedCue.packUrl))
+
+    // `native-auto` is a virtual routing module: every semantic instrument may
+    // require a different installed sample pack. If even one package is absent,
+    // preview must honor the Studio promise and fall back to Tloque's base
+    // synthesis instead of ending in a silent 404/error state.
+    if (useNativeSamples && scoreRecipe) {
+      useNativeSamples = await nativeSamplePacksAvailable(scoreRecipe)
+    }
+
     const needsWorklet = resolvedCue.sourceType === "soundfont"
       || (resolvedCue.sourceType === "score" && Boolean(resolvedCue.packUrl) && !useNativeSamples)
     const canUseRequestedEngine = Boolean(AudioContextClass)
