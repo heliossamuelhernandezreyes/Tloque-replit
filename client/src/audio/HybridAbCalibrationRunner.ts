@@ -53,15 +53,20 @@ function mono(buffer: AudioBuffer) {
   return out
 }
 function rms(data: Float32Array, start: number, end: number) {
-  const a = Math.max(0, Math.min(data.length, Math.floor(start))), b = Math.max(a + 1, Math.min(data.length, Math.floor(end)))
+  if (!data.length) return 0
+  const a = Math.max(0, Math.min(data.length - 1, Math.floor(start)))
+  const b = Math.max(a + 1, Math.min(data.length, Math.floor(end)))
   let sum = 0
   for (let i = a; i < b; i += 1) sum += data[i] * data[i]
   return Math.sqrt(sum / Math.max(1, b - a))
 }
 function diffRms(a: Float32Array, b: Float32Array, start: number, end: number) {
-  const from = Math.max(0, Math.floor(start)), to = Math.min(a.length, b.length, Math.floor(end)); let sum = 0
+  const from = Math.max(0, Math.min(Math.min(a.length, b.length), Math.floor(start)))
+  const to = Math.max(from, Math.min(a.length, b.length, Math.floor(end)))
+  if (to <= from) return 0
+  let sum = 0
   for (let i = from; i < to; i += 1) { const d = b[i] - a[i]; sum += d * d }
-  return Math.sqrt(sum / Math.max(1, to - from))
+  return Math.sqrt(sum / (to - from))
 }
 function coefficientOfVariation(data: Float32Array, sampleRate: number, startSeconds: number, endSeconds: number) {
   const windows: number[] = [], width = Math.max(32, Math.floor(sampleRate * 0.05))
@@ -72,11 +77,12 @@ function coefficientOfVariation(data: Float32Array, sampleRate: number, startSec
   return Math.sqrt(variance) / Math.max(1e-6, mean)
 }
 function spectralCentroid(data: Float32Array, sampleRate: number, centerSeconds: number) {
-  const n = 512, center = Math.floor(centerSeconds * sampleRate), start = Math.max(0, Math.min(data.length - n, center - n / 2)); let weighted = 0, magnitudeSum = 0
+  if (!data.length) return 0
+  const n = Math.min(512, data.length), center = Math.floor(centerSeconds * sampleRate), start = Math.max(0, Math.min(data.length - n, center - n / 2)); let weighted = 0, magnitudeSum = 0
   for (let k = 1; k < n / 2; k += 1) {
     let real = 0, imag = 0
     for (let t = 0; t < n; t += 1) {
-      const window = 0.5 - 0.5 * Math.cos((2 * Math.PI * t) / (n - 1)), x = (data[start + t] ?? 0) * window, phase = (2 * Math.PI * k * t) / n
+      const window = 0.5 - 0.5 * Math.cos((2 * Math.PI * t) / Math.max(1, n - 1)), x = (data[start + t] ?? 0) * window, phase = (2 * Math.PI * k * t) / n
       real += x * Math.cos(phase); imag -= x * Math.sin(phase)
     }
     const mag = Math.hypot(real, imag), hz = (k * sampleRate) / n
@@ -135,7 +141,7 @@ export async function runHybridAbCalibration(source: NativeHybridSource, signal?
   const dynamic = clamp01(1 - Math.abs(contrastB - contrastA) / Math.max(6, Math.abs(contrastA)))
   const centroidA = spectralCentroid(a, sr, 4.8), centroidB = spectralCentroid(b, sr, 4.8)
   const spectral = clamp01(Math.abs(centroidB - centroidA) / Math.max(1, centroidA))
-  const active = rms(a, 4.2 * sr, 5.4 * sr), tailA = rms(a, 7.2 * sr, Math.min(a.length, 8.4 * sr)), tailB = rms(b, 7.2 * sr, Math.min(b.length, 8.4 * sr))
+  const active = rms(a, 4.2 * sr, 5.4 * sr), tailA = rms(a, 7.2 * sr, 8.4 * sr), tailB = rms(b, 7.2 * sr, 8.4 * sr)
   const tail = clamp01(Math.max(0, tailB - tailA) / Math.max(1e-6, active) * 12)
   const values: Record<HybridAbMetricId, number> = {
     "transient-preservation": transient,
