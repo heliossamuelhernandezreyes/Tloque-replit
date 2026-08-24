@@ -48,7 +48,19 @@ function capabilityCopy(pack: CuratedRawWavPackSource) {
     return "Grand Piano: sustain grabado con micrófono close y tres capas físicas de velocidad. Este módulo no afirma pedal, resonancia simpática, release samples ni true legato porque esas capacidades no están presentes en la selección curada."
   }
   if (pack.id === "vcsl-estuary-pipe-organ") {
-    return "Pipe Organ: selección Rode Man3 Open. Es un color físico de órgano de tubos, no una emulación General MIDI. Los registros/stops y pedal independiente se mantendrán como una ampliación posterior cuando estén modelados explícitamente."
+    return "Órgano · manual abierto: Rode Man3 Open C1–C6. Es la capa principal para acordes, ostinatos y crecimiento cinematográfico; no es un preset General MIDI."
+  }
+  if (pack.id === "vcsl-estuary-pipe-organ-soft") {
+    return "Órgano · manual suave: NT5 Man3 Quiet C1–C6. Úsalo como cama contenida y súmalo al manual abierto para crescendos por orquestación, sin fingir un swell o registros que no están modelados."
+  }
+  if (pack.id === "vcsl-estuary-pipe-organ-pedal") {
+    return "Órgano · pedal físico: Rode Pedal C1–C3. Capa grave independiente para fundamentales largas; está separada del manual para poder escribir un órgano cinematográfico con jerarquía real."
+  }
+  if (pack.id === "vcsl-estuary-ocarina") {
+    return "Ocarina VCSL: sustain natural y staccato físicos curados. La fuente incluye otras tomas, pero Tloque sólo promete las articulaciones que este módulo enruta de forma explícita."
+  }
+  if (pack.id === "vcsl-estuary-alto-recorder") {
+    return "Alto Recorder VCSL: sustain y staccato físicos. Está pensado para líneas monofónicas respiradas y color tímbrico, no para acordes imposibles ni rangos artificialmente enormes."
   }
   return "Italian Harpsichord · Stop 1: ataques acústicos y key-off/release samples físicos separados. Es el continuo barroco nativo recomendado para pruebas como Vivaldi; no se inventan capas dinámicas que el instrumento no contiene."
 }
@@ -190,7 +202,7 @@ export default function KeyboardInstallerAdmin() {
               </button>
             ))}
           </div>
-          <p className="mt-3 text-[10px] text-zinc-500">Piano, órgano y clave se instalan más abajo en esta misma pantalla.</p>
+          <p className="mt-3 text-[10px] text-zinc-500">Piano, órgano por capas, ocarina, recorder y clave se instalan más abajo en esta misma pantalla.</p>
         </div>
 
         <div className="rounded-2xl border border-amber-300/25 bg-amber-300/[0.055] p-4">
@@ -236,6 +248,11 @@ export default function KeyboardInstallerAdmin() {
           <p className="flex items-center gap-2 font-medium text-emerald-200"><ShieldCheck className="h-4 w-4" /> WAV curados, fijados y verificados</p>
           <p className="mt-1">Tloque usa únicamente listas o índices fijados a commits concretos, valida cada archivo RIFF/WAVE, calcula SHA-256 y copia las muestras a App Storage. El navegador nunca reproduce directamente desde GitHub.</p>
           <p className="mt-2 text-zinc-500">El importador genera un SFZ inerte interno sólo para reutilizar el mismo TloqueSamplePack y el mismo Performance Engine de la orquesta.</p>
+        </div>
+
+        <div className="rounded-2xl border border-violet-300/15 bg-violet-300/[0.035] p-4">
+          <p className="text-sm font-semibold text-violet-100">Teclados y vientos de color</p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">Aquí están el piano, las tres capas físicas de órgano, el clave, ocarina y alto recorder. Instala sólo los colores que use la partitura.</p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
