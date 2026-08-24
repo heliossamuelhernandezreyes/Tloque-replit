@@ -35,6 +35,13 @@ const BAROQUE_PACKS = BAROQUE_MODULE_IDS.map(moduleId =>
   ALL_CURATED_PACKS.find(pack => pack.moduleId === moduleId),
 ).filter((pack): pack is CuratedSamplePackSource => Boolean(pack))
 
+const PREMIUM_FAMILIES = [
+  { label: "Cuerdas", detail: "Violín solista y sección · viola · cello · contrabajo", route: "/admin/audio/vsco-strings" },
+  { label: "Maderas", detail: "Flauta · oboe · clarinete · fagot", route: "/admin/audio/vsco-woodwinds" },
+  { label: "Metales", detail: "Trompeta · trombón · corno · tuba", route: "/admin/audio/vsco-brass" },
+  { label: "Percusión", detail: "Timbales · glockenspiel · marimba · xilófono · campanas · kit orquestal", route: "/admin/audio/vsco-percussion" },
+] as const
+
 function capabilityCopy(pack: CuratedRawWavPackSource) {
   if (pack.id === "vcsl-estuary-grand-piano") {
     return "Grand Piano: sustain grabado con micrófono close y tres capas físicas de velocidad. Este módulo no afirma pedal, resonancia simpática, release samples ni true legato porque esas capacidades no están presentes en la selección curada."
@@ -52,11 +59,13 @@ function sourceKindCopy(pack: CuratedRawWavPackSource) {
 async function packIsPublished(moduleId: string) {
   try {
     const response = await fetch(`/api/audio/sample-packs/modules/${encodeURIComponent(moduleId)}.json`, {
-      method: "HEAD",
+      method: "GET",
       credentials: "include",
       cache: "no-store",
     })
-    return response.ok
+    if (!response.ok) return false
+    const body = await response.json().catch(() => null)
+    return Boolean(body && body.instrumentManifestId === moduleId && Array.isArray(body.zones) && body.zones.length)
   } catch {
     return false
   }
@@ -165,10 +174,24 @@ export default function KeyboardInstallerAdmin() {
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/10 bg-zinc-950/95 px-4 py-3">
         <button aria-label="Volver" onClick={() => setLocation("/admin/fonoteca")}><ArrowLeft className="h-4 w-4" /></button>
         <Music2 className="h-4 w-4 text-amber-300" />
-        <div><h1 className="font-semibold">Instrumentos acústicos premium</h1><p className="text-[10px] text-zinc-500">Barroco · piano · órgano · clavecín · CC0</p></div>
+        <div><h1 className="font-semibold">Instrumentos acústicos premium</h1><p className="text-[10px] text-zinc-500">Centro de instalación · native-auto · CC0</p></div>
       </header>
 
       <section className="mx-auto max-w-4xl space-y-4 p-4">
+        <div className="rounded-2xl border border-sky-300/20 bg-sky-300/[0.035] p-4">
+          <p className="text-sm font-semibold text-sky-100">¿Qué banco necesitas?</p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">Instala sólo las familias que vaya a usar tu partitura. TloqueScore con <code>module native-auto</code> elegirá después el banco físico correcto para cada pista.</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {PREMIUM_FAMILIES.map(family => (
+              <button key={family.route} onClick={() => setLocation(family.route)} className="rounded-xl border border-white/10 bg-white/[0.035] p-3 text-left transition hover:bg-white/[0.065]">
+                <span className="block text-sm font-medium text-white">{family.label}</span>
+                <span className="mt-1 block text-[10px] leading-4 text-zinc-500">{family.detail}</span>
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-[10px] text-zinc-500">Piano, órgano y clave se instalan más abajo en esta misma pantalla.</p>
+        </div>
+
         <div className="rounded-2xl border border-amber-300/25 bg-amber-300/[0.055] p-4">
           <div className="flex items-start gap-3">
             <div className="rounded-xl bg-amber-300/10 p-3"><Sparkles className="h-6 w-6 text-amber-200" /></div>
