@@ -22,25 +22,28 @@ function responseHeaders(path: string, nodeEnv: "development" | "production") {
   }
 }
 
-test("desarrollo permite el preámbulo de Vite sin debilitar producción", () => {
+test("desarrollo permite Vite y WebAssembly sin habilitar eval de JavaScript", () => {
   const development = responseHeaders("/", "development")
   const developmentCsp = development.get("Content-Security-Policy") || ""
-  assert.match(developmentCsp, /script-src 'self' 'unsafe-inline'/)
+  assert.match(developmentCsp, /script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'/)
+  assert.doesNotMatch(developmentCsp, /(?:^|\s)'unsafe-eval'(?:\s|;|$)/)
   assert.match(developmentCsp, /frame-ancestors 'self' https:\/\/replit\.com https:\/\/\*\.replit\.com/)
   assert.equal(development.has("X-Frame-Options"), false)
 
   const production = responseHeaders("/", "production")
   const productionCsp = production.get("Content-Security-Policy") || ""
-  assert.match(productionCsp, /script-src 'self'(?:;|$)/)
+  assert.match(productionCsp, /script-src 'self' 'wasm-unsafe-eval'(?:;|$)/)
   assert.doesNotMatch(productionCsp, /script-src[^;]*'unsafe-inline'/)
+  assert.doesNotMatch(productionCsp, /(?:^|\s)'unsafe-eval'(?:\s|;|$)/)
   assert.match(productionCsp, /frame-ancestors 'none'/)
   assert.equal(production.get("X-Frame-Options"), "DENY")
 })
 
-test("el taller conserva su política aislada", () => {
+test("el taller conserva su política aislada y soporte WASM restringido", () => {
   const workshop = responseHeaders("/taller-marcos.html", "production")
   const csp = workshop.get("Content-Security-Policy") || ""
-  assert.match(csp, /script-src 'self' 'unsafe-inline'/)
+  assert.match(csp, /script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'/)
+  assert.doesNotMatch(csp, /(?:^|\s)'unsafe-eval'(?:\s|;|$)/)
   assert.match(csp, /frame-ancestors 'self'/)
   assert.equal(workshop.get("X-Frame-Options"), "SAMEORIGIN")
 })
