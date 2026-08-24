@@ -38,7 +38,7 @@ use violin
 end`)
   assert.equal(result.ok, false)
   if (result.ok) return
-  assert.ok(result.diagnostics.some(item => item.line === 14 && item.message.includes("dentro de 4 compases")))
+  assert.ok(result.diagnostics.some(item => item.line === 13 && item.message.includes("dentro de 4 compases")))
 })
 
 test("TloqueScore no acepta endw como cierre silencioso", () => {
