@@ -13,6 +13,7 @@ interface ParsedRawZone {
   velocityLayer: number
   roundRobin: number
   mic: "default" | "close"
+  trigger: "attack" | "release"
 }
 
 function parseIndex(text: string, source: CuratedRawWavPackSource): string[] {
@@ -38,7 +39,7 @@ function pianoZones(paths: readonly string[]): ParsedRawZone[] {
     const rootMidi = sfzNoteToMidi(match[1])
     const physicalLayer = Number(match[2])
     const velocityLayer = physicalLayer <= 2 ? 0 : physicalLayer === 3 ? 1 : 2
-    return [{ samplePath, rootMidi, velocityLayer, roundRobin: Math.max(0, Number(match[3]) - 1), mic: "close" as const }]
+    return [{ samplePath, rootMidi, velocityLayer, roundRobin: Math.max(0, Number(match[3]) - 1), mic: "close" as const, trigger: "attack" as const }]
   })
 }
 
@@ -46,7 +47,19 @@ function organZones(paths: readonly string[]): ParsedRawZone[] {
   return paths.flatMap(samplePath => {
     const match = /_Rode_Man3Open_([A-Ga-g](?:#|b)?-?\d+)\.wav$/i.exec(samplePath)
     if (!match) return []
-    return [{ samplePath, rootMidi: sfzNoteToMidi(match[1]), velocityLayer: 0, roundRobin: 0, mic: "default" as const }]
+    return [{ samplePath, rootMidi: sfzNoteToMidi(match[1]), velocityLayer: 0, roundRobin: 0, mic: "default" as const, trigger: "attack" as const }]
+  })
+}
+
+function harpsichordZones(paths: readonly string[]): ParsedRawZone[] {
+  return paths.flatMap(samplePath => {
+    const release = /Harpsichord_stop1-rel_([A-Ga-g](?:#|b)?-?\d+)_1\.wav$/i.exec(samplePath)
+    if (release) {
+      return [{ samplePath, rootMidi: sfzNoteToMidi(release[1]), velocityLayer: 0, roundRobin: 0, mic: "default" as const, trigger: "release" as const }]
+    }
+    const sustain = /Harpsichord_stop1_([A-Ga-g](?:#|b)?-?\d+)_1\.wav$/i.exec(samplePath)
+    if (!sustain) return []
+    return [{ samplePath, rootMidi: sfzNoteToMidi(sustain[1]), velocityLayer: 0, roundRobin: 0, mic: "default" as const, trigger: "attack" as const }]
   })
 }
 
@@ -71,15 +84,18 @@ function rangesForRoots(roots: readonly number[]) {
   return map
 }
 
-export function compileRawWavIndexToSfz(indexText: string, source: CuratedRawWavPackSource) {
-  const paths = parseIndex(indexText, source)
-  const zones = source.rawWavProfile === "vcsl-grand-piano-sus-close" ? pianoZones(paths) : organZones(paths)
+export function compileRawWavPathsToSfz(paths: readonly string[], source: CuratedRawWavPackSource) {
+  const zones = source.rawWavProfile === "vcsl-grand-piano-sus-close"
+    ? pianoZones(paths)
+    : source.rawWavProfile === "vcsl-pipe-organ-rode-man3-open"
+      ? organZones(paths)
+      : harpsichordZones(paths)
   if (!zones.length) throw new Error(`El perfil ${source.rawWavProfile} no encontró WAV compatibles`)
   const rootRanges = rangesForRoots(zones.map(zone => zone.rootMidi))
   const selectedPaths = [...new Set(zones.map(zone => zone.samplePath))]
   const groups = new Map<string, ParsedRawZone[]>()
   for (const zone of zones) {
-    const key = `${zone.velocityLayer}:${zone.mic}`
+    const key = `${zone.trigger}:${zone.velocityLayer}:${zone.mic}`
     const list = groups.get(key) ?? []
     list.push(zone)
     groups.set(key, list)
@@ -87,14 +103,18 @@ export function compileRawWavIndexToSfz(indexText: string, source: CuratedRawWav
 
   const chunks: string[] = ["<control> default_path="]
   for (const [key, groupZones] of groups) {
-    const [layerText] = key.split(":")
+    const [, layerText] = key.split(":")
     const layer = Number(layerText)
     const velocity = velocityRange(layer, source.rawWavProfile)
     chunks.push("<group> sw_label=normal")
     for (const zone of groupZones.sort((a, b) => a.rootMidi - b.rootMidi)) {
       const range = rootRanges.get(zone.rootMidi)!
-      chunks.push(`<region> sample=${zone.samplePath} pitch_keycenter=${zone.rootMidi} lokey=${range.lo} hikey=${range.hi} lovel=${velocity.lo} hivel=${velocity.hi} tloque_mic=${zone.mic} seq_length=1 seq_position=${zone.roundRobin + 1}`)
+      chunks.push(`<region> sample=${zone.samplePath} pitch_keycenter=${zone.rootMidi} lokey=${range.lo} hikey=${range.hi} lovel=${velocity.lo} hivel=${velocity.hi} tloque_mic=${zone.mic} trigger=${zone.trigger} seq_length=1 seq_position=${zone.roundRobin + 1}`)
     }
   }
   return { sfzText: chunks.join("\n"), samplePaths: selectedPaths }
+}
+
+export function compileRawWavIndexToSfz(indexText: string, source: CuratedRawWavPackSource) {
+  return compileRawWavPathsToSfz(parseIndex(indexText, source), source)
 }
