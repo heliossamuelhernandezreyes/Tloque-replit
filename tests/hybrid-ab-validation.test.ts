@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { hybridSourceMasterApproved } from "../shared/native-hybrid-approval-registry"
 import { nativeHybridForInstrument } from "../shared/native-hybrid-source"
 import { buildHybridAbReport, hybridMasterEvidenceValid, hybridMetricTargets } from "../shared/native-hybrid-validation"
 
@@ -29,5 +30,12 @@ describe("hybrid A/B validation", () => {
     const stringTarget = hybridMetricTargets("bowed-string-resonator")["transient-preservation"]
     const resonanceTarget = hybridMetricTargets("sympathetic-resonance")["transient-preservation"]
     expect(resonanceTarget.min).toBeGreaterThan(stringTarget.min)
+  })
+
+  it("keeps every current hybrid out of Master until reviewed evidence is versioned", () => {
+    for (const id of ["strings.violin", "woodwinds.flute", "piano.grand"]) {
+      const source = nativeHybridForInstrument(id)!
+      expect(hybridSourceMasterApproved(source)).toBe(false)
+    }
   })
 })
