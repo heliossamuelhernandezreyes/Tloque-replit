@@ -52,15 +52,14 @@ function pitchErrorCents(actualHz: number, targetHz: number) {
 }
 
 function spectralHighRatio(data: Float32Array) {
-  // A cheap, deterministic spectral-balance proxy: first difference RMS / signal RMS.
-  // It rises as upper harmonic/noise energy grows and is suitable for regression gates.
   let diff = 0
   for (let i = 1; i < data.length; i += 1) { const d = data[i] - data[i - 1]; diff += d * d }
   return Math.min(1, Math.sqrt(diff / Math.max(1, data.length - 1)) / Math.max(1e-9, rms(data)))
 }
 
 function attackTimeMs(data: Float32Array, sampleRate: number) {
-  const peak = Math.max(1e-9, ...Array.from(data, value => Math.abs(value)))
+  let peak = 1e-9
+  for (let i = 0; i < data.length; i += 1) peak = Math.max(peak, Math.abs(data[i]))
   const threshold = peak * 0.72
   const window = Math.max(8, Math.floor(sampleRate * 0.006))
   for (let i = window; i < data.length; i += 1) {
@@ -92,7 +91,7 @@ export function analyzePhysicalModelProbe(source: NativePhysicalModelSource, pro
   const metrics: NativeAcousticMetric[] = [
     metric("pitch-stability", "Estabilidad tonal", pitch, "cents", 0, profile.pitchStabilityCentsMax, `f0 estimada ${estimated.toFixed(2)} Hz / objetivo ${probes.targetFrequencyHz.toFixed(2)} Hz`),
     metric("dynamic-response", "Respuesta dinámica", dynamic, "db", profile.dynamicResponseDbMin, profile.dynamicResponseDbMax, "Diferencia RMS entre probes soft y loud"),
-    metric("spectral-balance", "Balance espectral", spectral, "ratio", profile.spectralBalanceMin, profile.spectralBalanceMax, "Proxy de energía alta basado en primera diferencia"),
+    metric("spectral-balance", "Balance espectral", spectral, "ratio", profile.spectralBalanceMin, profile.spectralBalanceMax, "Proxy determinista de energía alta basado en primera diferencia"),
     metric("attack-envelope", "Ataque", attack, "ms", profile.attackMsMin, profile.attackMsMax, "Tiempo hasta envolvente estable"),
     metric("legato-continuity", "Continuidad legato", legato, "db", 0, profile.legatoDiscontinuityDbMax, "Salto RMS alrededor de la transición"),
   ]
@@ -105,8 +104,6 @@ export function analyzePhysicalModelProbe(source: NativePhysicalModelSource, pro
     referenceSet: profile.referenceSet,
     metrics,
     pass,
-    // Objective metrics are necessary but not sufficient. Human A/B approval must
-    // still explicitly promote the report before Master can be claimed.
     masterEligible: false,
   }
 }
