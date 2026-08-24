@@ -5,6 +5,7 @@ import {
   Import,
   Loader2,
   MonitorCog,
+  PackageCheck,
   RefreshCw,
   Shield,
   Sparkles,
@@ -108,6 +109,7 @@ export default function AdminHub() {
     { label: t("gachaTitle"), Icon: Ticket, action: () => setLocation("/sorteo") },
     { label: copy("frames"), Icon: Sparkles, action: () => setLocation("/admin/marcos") },
     { label: copy("phonotheque"), Icon: Headphones, action: () => setLocation("/admin/fonoteca") },
+    { label: "Instrumentos premium", Icon: PackageCheck, action: () => setLocation("/admin/audio/keyboards") },
     { label: copy("diagnostics"), Icon: MonitorCog, action: () => setLocation("/admin/diag") },
   ]
 
@@ -118,7 +120,7 @@ export default function AdminHub() {
         <h1 className="mt-1 text-2xl text-white">{copy("adminCenter")}</h1>
         <p className="mt-2 text-sm text-zinc-500">{copy("adminCenterHint")}</p>
 
-        <div className="my-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="my-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {tools.map(({ label, Icon, action }) => (
             <button
               key={label}
