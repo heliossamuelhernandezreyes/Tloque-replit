@@ -104,7 +104,6 @@ export function resolvePerformanceRoute(
   }
 }
 
-/** Stable renderer-neutral selector for recorded alternate attacks. */
 export function deterministicRoundRobinIndex(seed: number, identity: string, count: number): number {
   if (!Number.isInteger(count) || count <= 1) return 0
   let hash = (seed ^ 0x811c9dc5) >>> 0
@@ -125,12 +124,6 @@ function deterministicUnit(identity: string, salt: string) {
   return (hash >>> 0) / 0xffffffff
 }
 
-/**
- * Renderer-neutral micro-performance. This never fabricates an articulation or sample:
- * it only adjusts attack placement, note length and performed velocity within conservative
- * family-specific bounds. `humanize=0` is bit-for-bit neutral; larger values progressively
- * expose bow asymmetry, breath separation and ensemble looseness while remaining deterministic.
- */
 export function familyPerformanceHumanization(
   instrument: string | null,
   humanize: number,
@@ -292,9 +285,15 @@ export function buildPerformancePlan(
       next: neighbour?.next === null || neighbour?.next === undefined ? null : recipe.plan.events[neighbour.next],
       articulation,
     })
-    const startOffsetSeconds = Math.max(-0.04, Math.min(0.04, performed.startOffsetSeconds + director.startOffsetSeconds))
-    const durationScale = Math.max(0.84, Math.min(1.10, performed.durationScale * director.durationScale))
-    const velocityScale = Math.max(0.86, Math.min(1.14, performed.velocityScale * director.velocityScale))
+    // Compatibility contract: humanize=0 remains exactly neutral. Once enabled, the
+    // Director gets a useful but bounded strength even at restrained musical values.
+    const directorStrength = humanize <= 0 ? 0 : Math.min(1, 0.45 + humanize * 1.5)
+    const directedStart = director.startOffsetSeconds * directorStrength
+    const directedDuration = 1 + (director.durationScale - 1) * directorStrength
+    const directedVelocity = 1 + (director.velocityScale - 1) * directorStrength
+    const startOffsetSeconds = Math.max(-0.04, Math.min(0.04, performed.startOffsetSeconds + directedStart))
+    const durationScale = Math.max(0.84, Math.min(1.10, performed.durationScale * directedDuration))
+    const velocityScale = Math.max(0.86, Math.min(1.14, performed.velocityScale * directedVelocity))
     const performedVelocity = Math.max(0.01, Math.min(1, event.velocity * velocityScale))
     decisions.push({
       eventIndex,
