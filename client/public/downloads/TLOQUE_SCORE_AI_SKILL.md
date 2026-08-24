@@ -28,7 +28,7 @@ Never invent commands or execute JavaScript. Never add lyrics, sung words, audio
 4. Use `module native-auto` for multi-instrument premium work. Use `builtin` only when portability matters more than acoustic quality.
 5. Never claim a physical articulation, timbre, true-legato transition, release layer, stop or microphone that the installed library does not contain.
 6. For `quality master`, use only native semantic instruments expected to have their physical packs installed.
-7. Use `humanize` deliberately: it drives deterministic family-aware imperfection while the Performance Director handles contextual phrase shaping.
+7. Use `humanize` deliberately: it drives deterministic family-aware imperfection and enables bounded Performance Director shaping while preserving authored notes and articulations.
 8. Write musically meaningful rests and phrase boundaries. The Director can interpret them; it cannot infer breathing space that the score never contains.
 9. Validate the full score and return one complete code block when code is requested.
 
@@ -146,7 +146,7 @@ Release samples are automatic when declared. Mic positions are internal and are 
 
 Write phrasing rather than a MIDI grid. Shape meaningful velocity/expression arcs and use rests and durations to communicate phrase architecture.
 
-The native Performance Engine is deterministic for a given score/seed. It applies conservative family-aware micro-timing, note-length and performed-velocity variation. The Performance Director then reads local musical context and may conservatively shape:
+The native Performance Engine is deterministic for a given score/seed. It applies conservative family-aware micro-timing, note-length and performed-velocity variation. The Performance Director reads local musical context and can shape:
 
 - phrase entries;
 - phrase releases;
@@ -167,7 +167,7 @@ Family behavior remains idiomatic:
 - piano, harpsichord and guitar receive small attack/velocity variation;
 - pipe organ remains almost mechanically stable because large timing jitter is not idiomatic for held organ layers.
 
-Recommended starting ranges are `humanize 0.03..0.10` for tight Baroque/virtuoso work, `0.08..0.18` for chamber/orchestral writing, and `0.12..0.25` for slower cinematic material. Values above about `0.35` should be intentional rather than a default. `humanize 0` disables stochastic family micro-variation, but contextual Performance Director phrasing can still operate conservatively from the authored musical context.
+Recommended starting ranges are `humanize 0.03..0.10` for tight Baroque/virtuoso work, `0.08..0.18` for chamber/orchestral writing, and `0.12..0.25` for slower cinematic material. Values above about `0.35` should be intentional rather than a default. **`humanize 0` remains exactly sonically neutral for backward compatibility:** the Director may still classify phrase context internally, but its timing/duration/velocity modifiers are disabled until humanization is non-zero.
 
 Do not manually scatter every note by arbitrary fractional positions to imitate a performer. Keep the score musically legible and use fractional positions only when rhythmically intended.
 
@@ -231,7 +231,7 @@ end
 - Native identities have verified physical packages for the intended master.
 - Requested timbres/articulations exist physically and unavailable capabilities are not approximated dishonestly.
 - Do not claim true-legato for the current author-facing acoustic orchestra.
-- `humanize` is chosen for the idiom rather than maximized blindly; the score itself remains rhythmically legible.
+- `humanize` is chosen for the idiom rather than maximized blindly; `humanize 0` remains neutral.
 - Phrase boundaries are authored with meaningful duration/rest structure so the Performance Director has musical context.
 - Guitar, colour winds and organ writing stays within their installed physical capabilities.
 - A synthesis fallback is never described as a premium/native master.
