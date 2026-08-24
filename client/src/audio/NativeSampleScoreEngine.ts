@@ -7,6 +7,7 @@ import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { schedulePhysicalReedVoice } from "./PhysicalReedModel"
 import { scheduleBowedStringOverlay } from "./PhysicalBowedStringOverlay"
+import { scheduleAirColumnOverlay } from "./PhysicalAirColumnOverlay"
 import { createSampledMixMaster } from "./ScoreMixMaster"
 import { createAcousticStage } from "./ScoreAcousticStage"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, type NativeModuleGroup } from "./NativeAutoModule"
@@ -127,8 +128,8 @@ export class NativeSampleScoreEngine {
         }
       }
 
-      // Hybrid Strings v1: preserve the real sampled attack/timbre and add a quiet,
-      // continuous bowed-string layer only where sustained bow behaviour helps.
+      // Hybrid acoustic overlays: samples keep the instrument identity and attack;
+      // a quiet physical layer supplies continuous bow/air behaviour on sustained notes.
       const previousHybridEndByTrack = new Map<string, number>()
       for (const event of [...recipe.plan.events].sort((a, b) => a.timeSeconds - b.timeSeconds)) {
         const track = recipeTrackById.get(event.trackId), destination = trackGain.get(event.trackId)
@@ -140,7 +141,10 @@ export class NativeSampleScoreEngine {
         const legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
         const controls = recipe.plan.controls.filter(control => control.trackId === event.trackId)
         for (const midi of event.notes) {
-          const overlay = scheduleBowedStringOverlay(context, hybrid, { startAt, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
+          const options = { startAt, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious }
+          const overlay = hybrid.physicalLayer === "bowed-string-resonator"
+            ? scheduleBowedStringOverlay(context, hybrid, options)
+            : scheduleAirColumnOverlay(context, hybrid, options)
           if (overlay) naturalEnd = Math.max(naturalEnd, overlay.endSeconds)
         }
         previousHybridEndByTrack.set(event.trackId, event.timeSeconds + event.durationSeconds)
