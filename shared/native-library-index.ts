@@ -1,6 +1,7 @@
 import { CURATED_EXTERNAL_PCM_PACKS } from "./curated-external-pcm-packs"
 import { CURATED_SAMPLE_PACKS, type CuratedSamplePackSource } from "./curated-sample-packs"
 import { CURATED_RAW_WAV_PACKS } from "./curated-raw-wav-packs"
+import { blockedSourcesForInstrument, type NativeBlockedSourceCandidate } from "./native-library-blocked-sources"
 import { instrumentManifestById } from "./instrument-manifest"
 
 export interface NativeLibraryIndexEntry {
@@ -10,7 +11,8 @@ export interface NativeLibraryIndexEntry {
   moduleId: string | null
   manifestId: string | null
   sourceId: string | null
-  status: "curated" | "missing-source"
+  status: "curated" | "license-blocked" | "missing-source"
+  blockedCandidates: readonly NativeBlockedSourceCandidate[]
 }
 
 const ALL_CURATED_PACKS: readonly CuratedSamplePackSource[] = [...CURATED_SAMPLE_PACKS, ...CURATED_RAW_WAV_PACKS, ...CURATED_EXTERNAL_PCM_PACKS]
@@ -57,6 +59,7 @@ const TARGETS = [
 
 export const NATIVE_LIBRARY_INDEX: readonly NativeLibraryIndexEntry[] = TARGETS.map(([instrumentId, family, priority]) => {
   const pack = packByInstrument.get(instrumentId)
+  const blockedCandidates = blockedSourcesForInstrument(instrumentId)
   return {
     instrumentId,
     family,
@@ -64,11 +67,13 @@ export const NATIVE_LIBRARY_INDEX: readonly NativeLibraryIndexEntry[] = TARGETS.
     moduleId: pack?.moduleId ?? null,
     manifestId: pack?.manifestId ?? null,
     sourceId: pack?.id ?? null,
-    status: pack ? "curated" : "missing-source",
+    status: pack ? "curated" : blockedCandidates.length ? "license-blocked" : "missing-source",
+    blockedCandidates,
   }
 })
 
-export const NATIVE_LIBRARY_MISSING = NATIVE_LIBRARY_INDEX.filter(entry => entry.status === "missing-source")
+export const NATIVE_LIBRARY_MISSING = NATIVE_LIBRARY_INDEX.filter(entry => entry.status !== "curated")
+export const NATIVE_LIBRARY_LICENSE_BLOCKED = NATIVE_LIBRARY_INDEX.filter(entry => entry.status === "license-blocked")
 export const NATIVE_LIBRARY_CURATED = NATIVE_LIBRARY_INDEX.filter(entry => entry.status === "curated")
 
 /** Static integrity audit shared by every curated provenance adapter. */
