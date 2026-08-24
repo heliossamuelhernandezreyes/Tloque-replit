@@ -183,7 +183,7 @@ export function registerAudioUploadRoutes(app: Express) {
 
         const pack = compileSfzToTloqueSamplePack(downloaded.sfzText, {
           id: install.moduleId,
-          name: `${source.name} · Solo Violin`,
+          name: `${source.libraryName} · ${source.displayName}`,
           instrumentManifestId: install.manifestId,
           license: source.license,
           sourceName: source.name,
@@ -331,21 +331,23 @@ export function registerAudioUploadRoutes(app: Express) {
     const file = Array.isArray(req.params.file) ? req.params.file[0] : req.params.file
     const match = /^([a-f0-9]{64})\.wav$/.exec(file || "")
     if (!match) return res.status(404).end()
+    const objectName = `audio/sample-packs/samples/${match[1]}.wav`
     res.setHeader("Content-Type", "audio/wav")
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable")
-    const objectName = `audio/sample-packs/samples/${match[1]}.wav`
     let storage: Client | undefined
     try {
       storage = audioStorage.get()
       const stream = storage.downloadAsStream(objectName, { decompress: false })
       stream.once("error", error => {
         audioStorage.reset(storage)
+        console.error("Sample-pack stream failed:", error)
         if (!res.headersSent) res.status(404).end()
         else res.destroy(error)
       })
       stream.pipe(res)
-    } catch {
+    } catch (error) {
       audioStorage.reset(storage)
+      console.error("Sample-pack stream initialization failed:", error)
       res.status(503).end()
     }
   })
@@ -354,44 +356,47 @@ export function registerAudioUploadRoutes(app: Express) {
     const file = Array.isArray(req.params.file) ? req.params.file[0] : req.params.file
     const match = /^([a-f0-9]{64})\.json$/.exec(file || "")
     if (!match) return res.status(404).end()
+    const objectName = `audio/sample-packs/manifests/${match[1]}.json`
     res.setHeader("Content-Type", "application/json; charset=utf-8")
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable")
-    const objectName = `audio/sample-packs/manifests/${match[1]}.json`
     let storage: Client | undefined
     try {
       storage = audioStorage.get()
       const stream = storage.downloadAsStream(objectName, { decompress: false })
       stream.once("error", error => {
         audioStorage.reset(storage)
+        console.error("Sample-pack manifest stream failed:", error)
         if (!res.headersSent) res.status(404).end()
         else res.destroy(error)
       })
       stream.pipe(res)
-    } catch {
+    } catch (error) {
       audioStorage.reset(storage)
+      console.error("Sample-pack manifest stream initialization failed:", error)
       res.status(503).end()
     }
   })
 
-  app.get("/api/audio/sample-packs/modules/:file", rateLimit(60_000, 240), (req, res) => {
-    const file = Array.isArray(req.params.file) ? req.params.file[0] : req.params.file
-    const match = /^([a-z0-9][a-z0-9._-]{0,79})\.json$/.exec(file || "")
-    if (!match) return res.status(404).end()
+  app.get("/api/audio/sample-packs/modules/:moduleId.json", rateLimit(60_000, 240), (req, res) => {
+    const moduleId = Array.isArray(req.params.moduleId) ? req.params.moduleId[0] : req.params.moduleId
+    if (!safeModuleId(moduleId || "")) return res.status(404).end()
+    const objectName = `audio/sample-packs/modules/${moduleId}.json`
     res.setHeader("Content-Type", "application/json; charset=utf-8")
-    res.setHeader("Cache-Control", "public, max-age=300")
-    const objectName = `audio/sample-packs/modules/${match[1]}.json`
+    res.setHeader("Cache-Control", "public, max-age=60")
     let storage: Client | undefined
     try {
       storage = audioStorage.get()
       const stream = storage.downloadAsStream(objectName, { decompress: false })
       stream.once("error", error => {
         audioStorage.reset(storage)
+        console.error("Sample-pack module stream failed:", error)
         if (!res.headersSent) res.status(404).end()
         else res.destroy(error)
       })
       stream.pipe(res)
-    } catch {
+    } catch (error) {
       audioStorage.reset(storage)
+      console.error("Sample-pack module manifest failed:", error)
       res.status(503).end()
     }
   })

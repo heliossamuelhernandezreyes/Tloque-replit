@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto"
 import { posix as pathPosix } from "node:path"
 import { AUDIO_MODULE_SOURCES, type AudioModuleSource } from "../shared/audio-module-sources"
+import { curatedExternalPcmPackById, isCuratedExternalPcmPackSource } from "../shared/curated-external-pcm-packs"
 import { curatedSamplePackById, type CuratedSamplePackSource } from "../shared/curated-sample-packs"
 import { curatedRawWavPackById, isCuratedRawWavPackSource } from "../shared/curated-raw-wav-packs"
+import { downloadCuratedExternalPcmPack } from "./externalPcmInstaller"
 import { compileRawWavIndexToSfz, compileRawWavPathsToSfz } from "./rawWavSamplePackCompiler"
 import { compileSfzBundleToTloqueSamplePack, samplePathsFromSfz } from "./sfzSamplePackCompiler"
 import { detectSoundBankType } from "./soundBankDetection"
@@ -31,7 +33,7 @@ export function curatedAudioModuleSource(id: string): AudioModuleSource | null {
 }
 
 export function curatedSamplePackSource(id: string): CuratedSamplePackSource | null {
-  return curatedRawWavPackById(id) ?? curatedSamplePackById(id)
+  return curatedExternalPcmPackById(id) ?? curatedRawWavPackById(id) ?? curatedSamplePackById(id)
 }
 
 export async function downloadCuratedAudioModule(source: AudioModuleSource, fetcher: typeof fetch = fetch) {
@@ -90,12 +92,6 @@ function canonicalRepoPath(basePath: string, value: string) {
   return resolved
 }
 
-/**
- * Curated repositories may legitimately use ../Samples relative to the top-level
- * program. Resolve those paths server-side against a fixed base, then feed only
- * canonical repository-relative paths to the inert parser. This never permits a
- * runtime SFZ to traverse storage.
- */
 export function canonicalizeCuratedSfzPaths(sourceText: string, basePath: string) {
   let text = sourceText.replace(/\bdefault_path\s*=\s*([^\r\n<]+)/gi, (_match, raw: string) => {
     const value = raw.trim()
@@ -183,6 +179,7 @@ async function downloadRawWavSamplePack(source: CuratedSamplePackSource, fetcher
 }
 
 export async function downloadCuratedSamplePack(source: CuratedSamplePackSource, fetcher: typeof fetch = fetch): Promise<DownloadedCuratedSamplePack> {
+  if (isCuratedExternalPcmPackSource(source)) return downloadCuratedExternalPcmPack(source, fetcher)
   if (isCuratedRawWavPackSource(source)) return downloadRawWavSamplePack(source, fetcher)
 
   const sfzPaths = source.sfzPaths.length ? source.sfzPaths : [source.sfzPath]

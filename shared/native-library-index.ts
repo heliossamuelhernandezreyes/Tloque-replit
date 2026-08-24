@@ -1,3 +1,4 @@
+import { CURATED_EXTERNAL_PCM_PACKS } from "./curated-external-pcm-packs"
 import { CURATED_SAMPLE_PACKS, type CuratedSamplePackSource } from "./curated-sample-packs"
 import { CURATED_RAW_WAV_PACKS } from "./curated-raw-wav-packs"
 import { instrumentManifestById } from "./instrument-manifest"
@@ -12,7 +13,7 @@ export interface NativeLibraryIndexEntry {
   status: "curated" | "missing-source"
 }
 
-const ALL_CURATED_PACKS: readonly CuratedSamplePackSource[] = [...CURATED_SAMPLE_PACKS, ...CURATED_RAW_WAV_PACKS]
+const ALL_CURATED_PACKS: readonly CuratedSamplePackSource[] = [...CURATED_SAMPLE_PACKS, ...CURATED_RAW_WAV_PACKS, ...CURATED_EXTERNAL_PCM_PACKS]
 const packByInstrument = new Map(ALL_CURATED_PACKS.map(pack => [pack.instrumentId, pack]))
 
 const TARGETS = [
@@ -70,11 +71,7 @@ export const NATIVE_LIBRARY_INDEX: readonly NativeLibraryIndexEntry[] = TARGETS.
 export const NATIVE_LIBRARY_MISSING = NATIVE_LIBRARY_INDEX.filter(entry => entry.status === "missing-source")
 export const NATIVE_LIBRARY_CURATED = NATIVE_LIBRARY_INDEX.filter(entry => entry.status === "curated")
 
-/**
- * Static integrity audit. Runtime coverage still depends on the installed App Storage
- * manifests, but every curated source must have a matching semantic manifest before
- * it can be considered safe for native-auto routing.
- */
+/** Static integrity audit shared by every curated provenance adapter. */
 export function nativeLibraryIntegrityIssues(): string[] {
   const issues: string[] = []
   const seenModules = new Set<string>()
