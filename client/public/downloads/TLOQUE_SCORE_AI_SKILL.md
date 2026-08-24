@@ -11,7 +11,7 @@ Create only instrumental music. The TloqueScore code is the master work: Tloque 
 
 - Audio contract: `tloque-audio-2026-08-v2`
 - Compiler: `tloque-score-compiler-v2.1`
-- Skill version: `1.2.0`
+- Skill version: `1.2.1`
 - Built-in module: `builtin`
 - Native multi-instrument router: `native-auto`
 
@@ -87,6 +87,7 @@ Useful semantic identities currently include:
 
 ```text
 strings.violin
+strings.violin-section
 strings.viola
 strings.cello
 strings.contrabass
@@ -104,6 +105,8 @@ piano.grand
 keys.pipe-organ
 keys.harpsichord
 ```
+
+Use `strings.violin` for a solo/concertino line and `strings.violin-section` for tutti/section writing. They intentionally resolve to different physical VSCO packs.
 
 The renderer loads the required packs independently but sends them through one common mixer/master. Live and native WAV export must resolve the same physical zones.
 
@@ -138,7 +141,7 @@ Hard limits after repeats: 16 tracks, 32 sections, 256 bars, 8,192 note events, 
 
 For standalone listening use `quality master` unless memory constraints require `studio`. High quality comes primarily from correct source samples, orchestration and performance decisions, not from simply maximizing gain.
 
-For fast strings, let staccato/spiccato and velocity variation activate physical layers and round-robin where available. Avoid perfectly identical velocities on long repeated-note passages. Preserve ensemble hierarchy: solo violin foreground, violin/viola middle, cello/bass foundation, continuo below the solo line.
+For fast strings, let staccato/spiccato and velocity variation activate physical layers and round-robin where available. Avoid perfectly identical velocities on long repeated-note passages. Preserve ensemble hierarchy: solo violin foreground, violin sections/viola middle, cello/bass foundation, continuo below the solo line.
 
 For Baroque music, prefer `keys.harpsichord` for continuo when its native pack is installed. Keep reverberation/decay restrained compared with modern cinematic orchestration. Do not turn every string line into continuous vibrato.
 
@@ -157,6 +160,7 @@ humanize 0.045
 quality master
 module native-auto
 track solo synth=pad instrument=strings.violin program=40 role=melody gain=0.28 pan=0.10 attack=0.01 release=1.0 expression=0.88 brightness=0.58 vibrato=0.06 timbre=natural
+track tutti synth=pad instrument=strings.violin-section program=40 role=harmony gain=0.20 pan=-0.12 attack=0.01 release=1.0 expression=0.78 brightness=0.52 vibrato=0.03 timbre=natural
 track viola synth=pad instrument=strings.viola program=41 role=harmony gain=0.20 pan=-0.18 attack=0.01 release=1.0 expression=0.78 brightness=0.50 vibrato=0.03 timbre=natural
 track cello synth=bass instrument=strings.cello program=42 role=bass gain=0.22 pan=0.18 attack=0.01 release=1.0 expression=0.80 brightness=0.42 vibrato=0.02 timbre=natural
 track continuo synth=pluck instrument=keys.harpsichord program=6 role=harmony gain=0.18 pan=-0.04 attack=0.003 release=0.5 expression=0.72 brightness=0.62 vibrato=0 timbre=natural
@@ -172,6 +176,11 @@ use cello
 1:1 A2 1 velocity=0.48 articulation=staccato
 1:3 E3 1 velocity=0.50 articulation=staccato
 2:1 A2 2 velocity=0.48
+use tutti
+1:1 A4 0.5 velocity=0.50 articulation=spiccato
+1:1.5 A4 0.5 velocity=0.54 articulation=spiccato
+1:2 A4 0.5 velocity=0.52 articulation=spiccato
+1:2.5 A4 0.5 velocity=0.56 articulation=spiccato
 use viola
 1:1 A3 0.5 velocity=0.52 articulation=spiccato
 1:1.5 B3 0.5 velocity=0.54 articulation=spiccato
