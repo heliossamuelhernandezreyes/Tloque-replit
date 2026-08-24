@@ -20,6 +20,10 @@ export interface NativeSampleTimbreRequest {
   transitionFromMidi?: number
   transitionToMidi?: number
 }
+export interface NativeSamplePlaybackEnvelope {
+  fadeInSeconds?: number
+  fadeOutSeconds?: number
+}
 
 function dbToGain(db: number) { return 10 ** (db / 20) }
 function zoneMatchesRange(zone: TloqueSampleZone, note: number, midiVelocity: number) {
@@ -33,8 +37,10 @@ function zoneTimbre(zone: TloqueSampleZone) {
 }
 function transitionMatches(zone: TloqueSampleZone, request: NativeSampleTimbreRequest) {
   if ((request.trigger ?? "attack") !== "legato-transition") return true
-  if (request.transitionFromMidi !== undefined && zone.transitionFromMidi !== undefined && zone.transitionFromMidi !== request.transitionFromMidi) return false
-  if (request.transitionToMidi !== undefined && zone.transitionToMidi !== undefined && zone.transitionToMidi !== request.transitionToMidi) return false
+  // True sampled legato is a physical previous-note -> destination-note recording.
+  // Never accept an unqualified/generic transition when the score requests an exact pair.
+  if (request.transitionFromMidi !== undefined && zone.transitionFromMidi !== request.transitionFromMidi) return false
+  if (request.transitionToMidi !== undefined && zone.transitionToMidi !== request.transitionToMidi) return false
   return true
 }
 
@@ -112,6 +118,7 @@ export class NativeSamplePackPlayer {
     destination: AudioNode
     pan?: number
     oneShot?: boolean
+    envelope?: NativeSamplePlaybackEnvelope
   }): Promise<AudioBufferSourceNode | null> {
     const selection = selectNativeSampleZone(params.pack, params.articulation, params.note, params.velocity, params.roundRobin, {
       vibrato: params.vibrato,
@@ -123,20 +130,33 @@ export class NativeSamplePackPlayer {
       transitionToMidi: params.transitionToMidi,
     })
     if (!selection) return null
-    return this.playSelection(selection, params.startTime, params.durationSeconds, params.destination, params.pan, params.oneShot)
+    return this.playSelection(selection, params.startTime, params.durationSeconds, params.destination, params.pan, params.oneShot, params.envelope)
   }
 
-  async playSelection(selection: NativeSampleSelection, startTime: number, durationSeconds: number, destination: AudioNode, pan = 0, oneShot = false): Promise<AudioBufferSourceNode> {
+  async playSelection(selection: NativeSampleSelection, startTime: number, durationSeconds: number, destination: AudioNode, pan = 0, oneShot = false, envelope: NativeSamplePlaybackEnvelope = {}): Promise<AudioBufferSourceNode> {
     const buffer = await this.buffer(selection.zone)
     const source = this.context.createBufferSource(); source.buffer = buffer; source.playbackRate.value = selection.playbackRate
-    const gain = this.context.createGain(); gain.gain.value = selection.gain
+    const gain = this.context.createGain()
     let tail: AudioNode = gain; let panner: StereoPannerNode | null = null
     if (typeof this.context.createStereoPanner === "function") { panner = this.context.createStereoPanner(); panner.pan.value = Math.max(-1, Math.min(1, pan)); gain.connect(panner); tail = panner }
     tail.connect(destination); source.connect(gain)
     const loopStart = selection.zone.loopStartSeconds, loopEnd = selection.zone.loopEndSeconds
     if (loopStart !== undefined && loopEnd !== undefined && loopEnd > loopStart) { source.loop = true; source.loopStart = loopStart; source.loopEnd = loopEnd }
-    const startAt = Math.max(this.context.currentTime, startTime); source.start(startAt)
-    if (!oneShot || source.loop) source.stop(startAt + Math.max(0.01, durationSeconds))
+    const startAt = Math.max(this.context.currentTime, startTime)
+    const stopAt = startAt + Math.max(0.01, durationSeconds)
+    const fadeIn = Math.max(0, Math.min(durationSeconds * 0.75, envelope.fadeInSeconds ?? 0))
+    const fadeOut = Math.max(0, Math.min(durationSeconds * 0.75, envelope.fadeOutSeconds ?? 0))
+    if (fadeIn > 0) {
+      gain.gain.setValueAtTime(0, startAt)
+      gain.gain.linearRampToValueAtTime(selection.gain, startAt + fadeIn)
+    } else gain.gain.setValueAtTime(selection.gain, startAt)
+    if (fadeOut > 0) {
+      const fadeStart = Math.max(startAt + fadeIn, stopAt - fadeOut)
+      gain.gain.setValueAtTime(selection.gain, fadeStart)
+      gain.gain.linearRampToValueAtTime(0.0001, stopAt)
+    }
+    source.start(startAt)
+    if (!oneShot || source.loop) source.stop(stopAt)
     source.addEventListener("ended", () => { source.disconnect(); gain.disconnect(); panner?.disconnect() }, { once: true })
     return source
   }
