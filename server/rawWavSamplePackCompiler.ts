@@ -81,7 +81,16 @@ function velocityRange(layer:number, profile:CuratedRawWavPackSource["rawWavProf
   if(profile==="vcsl-concert-harp")return layer===0?{lo:0,hi:87}:{lo:88,hi:127}
   return{lo:0,hi:127}
 }
-function rangesForRoots(roots:readonly number[]){const unique=[...new Set(roots)].sort((a,b)=>a-b),map=new Map<number,{lo:number;hi:number}>();for(let i=0;i<unique.length;i++){const root=unique[i],previous=unique[i-1],next=unique[i+1],lo=previous===undefined?0:Math.floor((previous+root)/2)+1,hi=next===undefined?127:Math.floor((root+next)/2);map.set(root,{lo:Math.max(0,lo),hi:Math.min(127,hi)})}return map}
+function physicalRegister(profile: CuratedRawWavPackSource["rawWavProfile"], roots: readonly number[]) {
+  const sorted = [...new Set(roots)].sort((a, b) => a - b)
+  if (!sorted.length) return { lo: 0, hi: 127 }
+  // Martin HD28 is only declared Master-safe inside the actually sampled root span.
+  // The upstream SFZ stretches edge samples farther, but doing so would hide large
+  // transpositions from NativePremiumReadiness.
+  if (profile === "discord-martin-hd28") return { lo: sorted[0], hi: sorted[sorted.length - 1] }
+  return { lo: 0, hi: 127 }
+}
+function rangesForRoots(roots:readonly number[],bounds:{lo:number;hi:number}){const unique=[...new Set(roots)].sort((a,b)=>a-b),map=new Map<number,{lo:number;hi:number}>();for(let i=0;i<unique.length;i++){const root=unique[i],previous=unique[i-1],next=unique[i+1],lo=previous===undefined?bounds.lo:Math.floor((previous+root)/2)+1,hi=next===undefined?bounds.hi:Math.floor((root+next)/2);map.set(root,{lo:Math.max(bounds.lo,lo),hi:Math.min(bounds.hi,hi)})}return map}
 function zonesForProfile(paths:readonly string[],profile:CuratedRawWavPackSource["rawWavProfile"]):ParsedRawZone[]{switch(profile){case"vcsl-grand-piano-sus-close":return pianoZones(paths);case"vcsl-pipe-organ-rode-man3-open":return organManualOpenZones(paths);case"vcsl-pipe-organ-nt5-man3-quiet":return organManualQuietZones(paths);case"vcsl-pipe-organ-rode-pedal":return organPedalZones(paths);case"vcsl-ocarina":return ocarinaZones(paths);case"vcsl-alto-recorder":return altoRecorderZones(paths);case"vcsl-italian-harpsichord-stop1":return harpsichordZones(paths);case"vcsl-concert-harp":return concertHarpZones(paths);case"discord-martin-hd28":return martinHd28Zones(paths)}}
 
 export function compileRawWavPathsToSfz(paths:readonly string[],source:CuratedRawWavPackSource){
@@ -89,7 +98,7 @@ export function compileRawWavPathsToSfz(paths:readonly string[],source:CuratedRa
   const selectedPaths=[...new Set(zones.map(zone=>zone.samplePath))],groups=new Map<string,ParsedRawZone[]>()
   for(const zone of zones){const key=`${zone.articulation}:${zone.trigger}:${zone.velocityLayer}:${zone.mic}`,list=groups.get(key)??[];list.push(zone);groups.set(key,list)}
   const chunks:string[]=["<control> default_path="]
-  for(const[key,groupZones]of groups){const[articulation,,layerText]=key.split(":"),layer=Number(layerText),velocity=velocityRange(layer,source.rawWavProfile),rootRanges=rangesForRoots(groupZones.map(zone=>zone.rootMidi));chunks.push(`<group> sw_label=${articulation}`);for(const zone of groupZones.sort((a,b)=>a.rootMidi-b.rootMidi)){const range=rootRanges.get(zone.rootMidi)!;chunks.push(`<region> sample=${zone.samplePath} pitch_keycenter=${zone.rootMidi} lokey=${range.lo} hikey=${range.hi} lovel=${velocity.lo} hivel=${velocity.hi} tloque_mic=${zone.mic} trigger=${zone.trigger} seq_length=1 seq_position=${zone.roundRobin+1}`)}}
+  for(const[key,groupZones]of groups){const[articulation,,layerText]=key.split(":"),layer=Number(layerText),velocity=velocityRange(layer,source.rawWavProfile),rootRanges=rangesForRoots(groupZones.map(zone=>zone.rootMidi),physicalRegister(source.rawWavProfile,groupZones.map(zone=>zone.rootMidi)));chunks.push(`<group> sw_label=${articulation}`);for(const zone of groupZones.sort((a,b)=>a.rootMidi-b.rootMidi)){const range=rootRanges.get(zone.rootMidi)!;chunks.push(`<region> sample=${zone.samplePath} pitch_keycenter=${zone.rootMidi} lokey=${range.lo} hikey=${range.hi} lovel=${velocity.lo} hivel=${velocity.hi} tloque_mic=${zone.mic} trigger=${zone.trigger} seq_length=1 seq_position=${zone.roundRobin+1}`)}}
   return{sfzText:chunks.join("\n"),samplePaths:selectedPaths}
 }
 export function compileRawWavIndexToSfz(indexText:string,source:CuratedRawWavPackSource){return compileRawWavPathsToSfz(parseIndex(indexText,source),source)}
