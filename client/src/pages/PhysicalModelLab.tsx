@@ -4,6 +4,9 @@ import { useLocation } from "wouter"
 import { Layout } from "@/components/layout"
 import { NATIVE_PHYSICAL_MODEL_SOURCES } from "@shared/native-acoustic-source"
 import type { NativeAcousticValidationReport } from "@shared/native-acoustic-validation"
+import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
+import { NATIVE_HYBRID_SOURCES } from "@shared/native-hybrid-source"
+import { hybridMetricTargets } from "@shared/native-hybrid-validation"
 import { runPhysicalModelCalibration } from "@/audio/PhysicalModelCalibrationRunner"
 
 const STORAGE_KEY = "tloque_physical_model_calibration_v1"
@@ -40,9 +43,16 @@ function previousMetric(history: readonly NativeAcousticValidationReport[], metr
   return history.at(-2)?.metrics.find(metric => metric.id === metricId) ?? null
 }
 
+function hybridLayerLabel(layer: string) {
+  if (layer === "bowed-string-resonator") return "Arco + cuerda"
+  if (layer === "air-column-resonator") return "Columna de aire"
+  return "Resonancia simpática"
+}
+
 export default function PhysicalModelLab() {
   const [, setLocation] = useLocation()
   const models = useMemo(() => [...NATIVE_PHYSICAL_MODEL_SOURCES], [])
+  const hybrids = useMemo(() => [...NATIVE_HYBRID_SOURCES], [])
   const [history, setHistory] = useState<ReportHistory>(loadHistory)
   const [running, setRunning] = useState<string | null>(null)
   const [runningAll, setRunningAll] = useState(false)
@@ -95,15 +105,15 @@ export default function PhysicalModelLab() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="tloque-eyebrow">Tloque · Acoustic Lab</p>
-            <h1 className="mt-1 text-2xl text-white">Modelos físicos · calibración Master</h1>
+            <h1 className="mt-1 text-2xl text-white">Fuentes físicas e híbridas · validación Master</h1>
           </div>
           <button onClick={() => void runAll()} disabled={Boolean(running) || runningAll} className="tloque-primary-button inline-flex items-center gap-2 disabled:opacity-45">
             {runningAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
-            {runningAll ? "Calibrando…" : "Calibrar todos"}
+            {runningAll ? "Calibrando…" : "Calibrar modelos"}
           </button>
         </div>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-500">
-          Renderiza probes offline con el mismo motor WebAudio de Tloque y mide estabilidad tonal, dinámica, balance espectral, ataque y continuidad legato. Se conservan hasta ocho corridas por modelo para detectar regresiones. Un PASS objetivo sigue requiriendo revisión A/B humana antes de habilitar Master.
+          Los modelos completos se miden con probes WebAudio. Las fuentes híbridas usan una política sampled-vs-hybrid: deben conservar el ataque real, mejorar continuidad/dinámica/cola dentro de límites espectrales y ganar una revisión A/B humana. Ninguna capa Studio entra a Master sin evidencia de la versión exacta.
         </p>
 
         {error && <p className="mt-5 rounded-xl border border-red-300/10 bg-red-300/[.04] px-4 py-3 text-sm text-red-200/70">{error}</p>}
@@ -158,6 +168,40 @@ export default function PhysicalModelLab() {
                     </div>
                   </div>
                 )}
+              </article>
+            )
+          })}
+        </div>
+
+        <div className="mt-10 flex items-end justify-between gap-4">
+          <div>
+            <p className="tloque-eyebrow">Sampled vs Hybrid</p>
+            <h2 className="mt-1 text-xl text-white">Candidatos A/B</h2>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-white/35">Los umbrales son específicos por familia. La preferencia humana debe ser híbrida; un empate o preferencia por el sample mantiene el overlay fuera de Master.</p>
+          </div>
+          <span className="text-xs text-white/30">{hybrids.filter(source => hybridSourceMasterApproved(source)).length}/{hybrids.length} Master</span>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {hybrids.map(source => {
+            const targets = hybridMetricTargets(source.physicalLayer)
+            const approved = hybridSourceMasterApproved(source)
+            return (
+              <article key={source.instrumentId} className="rounded-2xl border border-white/[.06] bg-white/[.02] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-white">{source.instrumentId}</p>
+                    <p className="mt-1 text-[11px] text-white/35">{hybridLayerLabel(source.physicalLayer)} · {source.engineVersion}</p>
+                  </div>
+                  <span className={`rounded-full px-2 py-1 text-[10px] ${approved ? "bg-emerald-300/10 text-emerald-200" : "bg-amber-300/10 text-amber-200"}`}>{approved ? "MASTER" : "A/B pendiente"}</span>
+                </div>
+                <p className="mt-2 text-[11px] leading-5 text-white/30">{source.notes}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-lg bg-black/20 p-2"><p className="text-[10px] text-white/25">Ataque preservado</p><p className="mt-0.5 text-xs text-white/55">≥ {targets["transient-preservation"].min.toFixed(2)}</p></div>
+                  <div className="rounded-lg bg-black/20 p-2"><p className="text-[10px] text-white/25">Desviación espectral</p><p className="mt-0.5 text-xs text-white/55">≤ {targets["spectral-deviation"].max.toFixed(2)}</p></div>
+                  <div className="rounded-lg bg-black/20 p-2"><p className="text-[10px] text-white/25">Continuidad mínima</p><p className="mt-0.5 text-xs text-white/55">≥ {targets["sustain-continuity"].min.toFixed(2)}</p></div>
+                  <div className="rounded-lg bg-black/20 p-2"><p className="text-[10px] text-white/25">Mejora de cola</p><p className="mt-0.5 text-xs text-white/55">≥ {targets["tail-naturalness"].min.toFixed(2)}</p></div>
+                </div>
               </article>
             )
           })}
