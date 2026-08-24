@@ -49,7 +49,9 @@ app.use((req, res, next) => {
   const path  = req.path
   const originalJson = res.json.bind(res)
   res.json = ((body: any) => {
-    if (res.statusCode >= 500) return originalJson({ message: "Internal Server Error" })
+    if (res.statusCode >= 500 && !res.locals.publicErrorMessage) {
+      return originalJson({ message: "Internal Server Error" })
+    }
     return originalJson(body)
   }) as typeof res.json
   res.on("finish", () => {

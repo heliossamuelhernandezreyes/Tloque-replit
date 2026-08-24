@@ -12,6 +12,19 @@ export const MAX_CURATED_SAMPLE_BYTES = 48 * 1024 * 1024
 export const MAX_CURATED_SAMPLE_PACK_BYTES = 256 * 1024 * 1024
 
 const RAW_GITHUB_ORIGIN = "https://raw.githubusercontent.com"
+const TRUSTED_GITHUB_DOWNLOAD_HOSTS = new Set([
+  "raw.githubusercontent.com",
+  "media.githubusercontent.com",
+  "objects.githubusercontent.com",
+  "github.com",
+])
+
+function assertTrustedGitHubDownloadResponse(response: Response) {
+  const finalUrl = new URL(response.url)
+  if (finalUrl.protocol !== "https:" || !TRUSTED_GITHUB_DOWNLOAD_HOSTS.has(finalUrl.hostname)) {
+    throw new Error(`La descarga curada fue redirigida a un host no permitido: ${finalUrl.hostname}`)
+  }
+}
 
 export function curatedAudioModuleSource(id: string): AudioModuleSource | null {
   return AUDIO_MODULE_SOURCES.find(source => source.id === id && source.install) || null
@@ -24,10 +37,11 @@ export function curatedSamplePackSource(id: string): CuratedSamplePackSource | n
 export async function downloadCuratedAudioModule(source: AudioModuleSource, fetcher: typeof fetch = fetch) {
   if (!source.install) throw new Error("El módulo no tiene una descarga aprobada")
   const response = await fetcher(source.install.sourceUrl, {
-    redirect: "error",
+    redirect: "follow",
     headers: { Accept: "application/octet-stream", "User-Agent": "Tloque-Audio-Module-Installer/1.0" },
   })
   if (!response.ok) throw new Error(`La fuente respondió ${response.status}`)
+  if (response.url) assertTrustedGitHubDownloadResponse(response)
   const declaredBytes = Number(response.headers.get("content-length") || 0)
   if (declaredBytes > MAX_CURATED_MODULE_BYTES) throw new Error("El módulo supera el límite de 64 MB")
   const bytes = Buffer.from(await response.arrayBuffer())
@@ -55,10 +69,11 @@ function assertWav(bytes: Buffer) {
 
 async function strictFetch(url: string, maxBytes: number, fetcher: typeof fetch) {
   const response = await fetcher(url, {
-    redirect: "error",
+    redirect: "follow",
     headers: { Accept: "application/octet-stream,text/plain;q=0.9", "User-Agent": "Tloque-Sample-Pack-Installer/1.0" },
   })
   if (!response.ok) throw new Error(`La fuente respondió ${response.status}`)
+  if (response.url) assertTrustedGitHubDownloadResponse(response)
   const declaredBytes = Number(response.headers.get("content-length") || 0)
   if (declaredBytes > maxBytes) throw new Error("El archivo curado excede el tamaño permitido")
   const bytes = Buffer.from(await response.arrayBuffer())
