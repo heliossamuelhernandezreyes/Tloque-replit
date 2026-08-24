@@ -64,55 +64,67 @@ interface ModelProfile {
   brightnessBase: number
   resonances: readonly { ratio?: number; hz?: number; q: number; gain: number }[]
   vibratoRate: number
+  boreFeedback: number
+  boreDamping: number
+  boreMix: number
+  pressureWanderHz: number
 }
 
 function profileFor(source: NativePhysicalModelSource): ModelProfile {
   if (source.modelId === "double-reed-contrabassoon-v1") {
     return {
       reedMix: 0.82,
-      noiseMix: 0.16,
-      harmonic2: 0.34,
-      harmonic3: 0.21,
-      harmonic4: 0.09,
-      brightnessBase: 1_900,
+      noiseMix: 0.17,
+      harmonic2: 0.38,
+      harmonic3: 0.24,
+      harmonic4: 0.1,
+      brightnessBase: 1_850,
       resonances: [
-        { ratio: 1, q: 2.8, gain: 0.54 },
-        { ratio: 2.02, q: 3.4, gain: 0.38 },
-        { hz: 520, q: 2.2, gain: 0.28 },
-        { hz: 980, q: 2.6, gain: 0.2 },
-        { hz: 1_850, q: 2.1, gain: 0.1 },
+        { ratio: 1, q: 2.8, gain: 0.5 },
+        { ratio: 2.01, q: 3.2, gain: 0.36 },
+        { hz: 460, q: 2.4, gain: 0.31 },
+        { hz: 1_240, q: 2.8, gain: 0.23 },
+        { hz: 2_450, q: 2.2, gain: 0.12 },
+        { hz: 4_100, q: 1.8, gain: 0.06 },
       ],
-      vibratoRate: 4.7,
+      vibratoRate: 4.65,
+      boreFeedback: 0.78,
+      boreDamping: 1_650,
+      boreMix: 0.28,
+      pressureWanderHz: 1.55,
     }
   }
   return {
-    reedMix: 0.74,
-    noiseMix: 0.19,
-    harmonic2: 0.27,
-    harmonic3: 0.18,
-    harmonic4: 0.07,
-    brightnessBase: 4_100,
+    reedMix: 0.75,
+    noiseMix: 0.2,
+    harmonic2: 0.3,
+    harmonic3: 0.2,
+    harmonic4: 0.08,
+    brightnessBase: 4_000,
     resonances: [
-      { ratio: 1, q: 2.2, gain: 0.42 },
-      { ratio: 2.01, q: 3.1, gain: 0.29 },
-      { hz: 760, q: 2.5, gain: 0.27 },
-      { hz: 1_320, q: 2.9, gain: 0.2 },
-      { hz: 2_650, q: 2.5, gain: 0.14 },
-      { hz: 4_300, q: 1.8, gain: 0.08 },
+      { ratio: 1, q: 2.2, gain: 0.4 },
+      { ratio: 2.01, q: 3.0, gain: 0.28 },
+      { hz: 900, q: 2.7, gain: 0.3 },
+      { hz: 1_750, q: 2.9, gain: 0.2 },
+      { hz: 3_050, q: 2.4, gain: 0.13 },
+      { hz: 4_600, q: 1.8, gain: 0.07 },
     ],
-    vibratoRate: 5.15,
+    vibratoRate: 5.1,
+    boreFeedback: 0.69,
+    boreDamping: 3_900,
+    boreMix: 0.23,
+    pressureWanderHz: 1.8,
   }
 }
 
 /**
  * Tloque reed-resonator v1.
  *
- * This is an original acoustic model, not a sample impersonator: a nonlinear
- * double-reed excitation (harmonic oscillator bank + turbulent breath noise)
- * feeds a pitch-aware resonator/bore network. Continuous velocity/expression,
- * vibrato, articulation and brightness change the excitation rather than merely
- * crossfading recordings. It is intentionally tagged Studio until calibrated
- * against reference recordings and approved for Master.
+ * Original acoustic model: nonlinear double-reed excitation drives both a
+ * formant/radiation network and a damped feedback delay representing the air
+ * column. Velocity/expression alter pressure and harmonic content continuously;
+ * the model never crossfades discrete recorded pitches. Studio-approved only
+ * until calibrated against legally usable acoustic references for Master.
  */
 export function schedulePhysicalReedVoice(
   context: AudioContext,
@@ -130,9 +142,9 @@ export function schedulePhysicalReedVoice(
   const envelope = articulationEnvelope(event, track)
   const noteStart = startAt + event.timeSeconds
   const noteEnd = noteStart + envelope.sounding
-  const stopAt = noteEnd + envelope.release + 0.08
+  const stopAt = noteEnd + envelope.release + 0.1
 
-  const excitation = context.createGain()
+  const excitation = context.createGain(); excitation.gain.value = 1
   const saturator = createSaturator(context, 0.22 + pressure * 0.5)
   excitation.connect(saturator)
 
@@ -159,13 +171,26 @@ export function schedulePhysicalReedVoice(
   noise.loop = true
   const noiseBand = context.createBiquadFilter()
   noiseBand.type = "bandpass"
-  noiseBand.frequency.value = source.modelId === "double-reed-contrabassoon-v1" ? 1_100 : 2_300
-  noiseBand.Q.value = 0.65
+  noiseBand.frequency.value = source.modelId === "double-reed-contrabassoon-v1" ? 1_050 : 2_250
+  noiseBand.Q.value = 0.7
   const noiseGain = context.createGain(); noiseGain.gain.value = profile.noiseMix * (0.28 + pressure * 0.72)
   noise.connect(noiseBand); noiseBand.connect(noiseGain); noiseGain.connect(excitation)
 
+  // Air-column waveguide. A delay of one period establishes the playable
+  // resonance; damping and sub-unity feedback keep the loop passive/stable.
+  const boreDelay = context.createDelay(0.08)
+  const baseDelaySeconds = Math.min(0.075, Math.max(1 / 18_000, 1 / frequency))
+  boreDelay.delayTime.value = baseDelaySeconds
+  const boreDamping = context.createBiquadFilter(); boreDamping.type = "lowpass"; boreDamping.frequency.value = profile.boreDamping * (0.76 + brightness * 0.46); boreDamping.Q.value = 0.35
+  const boreFeedback = context.createGain(); boreFeedback.gain.value = profile.boreFeedback * (0.9 + pressure * 0.08)
+  const boreTap = context.createGain(); boreTap.gain.value = profile.boreMix
+  saturator.connect(boreDelay)
+  boreDelay.connect(boreDamping)
+  boreDamping.connect(boreFeedback); boreFeedback.connect(boreDelay)
+
   const boreBus = context.createGain(); boreBus.gain.value = 0.94
-  const dry = context.createGain(); dry.gain.value = 0.18
+  boreDamping.connect(boreTap); boreTap.connect(boreBus)
+  const dry = context.createGain(); dry.gain.value = 0.14
   saturator.connect(dry); dry.connect(boreBus)
   for (const resonance of profile.resonances) {
     const filter = context.createBiquadFilter()
@@ -180,16 +205,24 @@ export function schedulePhysicalReedVoice(
   radiation.type = "lowpass"
   radiation.frequency.value = Math.min(15_000, profile.brightnessBase * (0.62 + brightness * 1.15) * (0.86 + pressure * 0.24))
   radiation.Q.value = 0.7
-  const output = context.createGain()
-  output.gain.value = 0
+  const output = context.createGain(); output.gain.value = 0
   boreBus.connect(radiation); radiation.connect(output); output.connect(destination)
 
+  // Embouchure vibrato moves both excitation pitch and the effective bore length.
   const lfo = context.createOscillator(); lfo.type = "sine"; lfo.frequency.value = profile.vibratoRate + vibrato * 0.5
   const lfoDepth = context.createGain(); lfoDepth.gain.value = vibrato * (source.modelId === "double-reed-contrabassoon-v1" ? 9 : 13)
   lfo.connect(lfoDepth); lfoDepth.connect(fundamental.detune)
   for (const oscillator of harmonicOscillators) lfoDepth.connect(oscillator.detune)
+  const delayMod = context.createGain(); delayMod.gain.value = baseDelaySeconds * vibrato * 0.0045
+  lfo.connect(delayMod); delayMod.connect(boreDelay.delayTime)
 
-  const peak = Math.min(0.9, (0.2 + pressure * 0.58) * envelope.accent)
+  // Slow breath/embouchure wander avoids a static, frozen excitation while
+  // remaining subtle enough not to become an audible tremolo effect.
+  const pressureLfo = context.createOscillator(); pressureLfo.type = "sine"; pressureLfo.frequency.value = profile.pressureWanderHz
+  const pressureDepth = context.createGain(); pressureDepth.gain.value = 0.008 + pressure * 0.014
+  pressureLfo.connect(pressureDepth); pressureDepth.connect(excitation.gain)
+
+  const peak = Math.min(0.86, (0.19 + pressure * 0.55) * envelope.accent)
   output.gain.setValueAtTime(0.0001, noteStart)
   output.gain.exponentialRampToValueAtTime(Math.max(0.001, peak), noteStart + envelope.attack)
   if (event.articulation === "accent") {
@@ -202,6 +235,7 @@ export function schedulePhysicalReedVoice(
   for (const oscillator of harmonicOscillators) { oscillator.start(noteStart); oscillator.stop(stopAt) }
   noise.start(noteStart); noise.stop(stopAt)
   lfo.start(noteStart); lfo.stop(stopAt)
+  pressureLfo.start(noteStart); pressureLfo.stop(stopAt)
 
   return { startSeconds: event.timeSeconds, endSeconds: stopAt - startAt, sourceKind: source.kind }
 }
