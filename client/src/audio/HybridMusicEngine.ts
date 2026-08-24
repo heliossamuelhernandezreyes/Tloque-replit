@@ -16,11 +16,19 @@ async function nativeSamplePacksAvailable(recipe: LinearScoreRecipe): Promise<bo
   try {
     const groups = nativeModuleGroupsForRecipe(recipe)
     if (!groups.length) return false
-    const responses = await Promise.all(groups.map(group => fetch(
-      `/api/audio/sample-packs/modules/${encodeURIComponent(group.moduleId)}.json`,
-      { method: "HEAD", credentials: "include", cache: "no-store" },
-    )))
-    return responses.every(response => response.ok)
+    const available = await Promise.all(groups.map(async group => {
+      const response = await fetch(
+        `/api/audio/sample-packs/modules/${encodeURIComponent(group.moduleId)}.json`,
+        { credentials: "include", cache: "no-store" },
+      )
+      if (!response.ok) return false
+      // Consume and parse the body. The App Storage route can emit a streaming
+      // failure after headers have been created, so a HEAD/response.ok-only probe
+      // is not sufficient proof that the package physically exists.
+      const manifest = await response.json().catch(() => null) as { instrumentManifestId?: unknown } | null
+      return Boolean(manifest && manifest.instrumentManifestId === group.moduleId)
+    }))
+    return available.every(Boolean)
   } catch {
     return false
   }
