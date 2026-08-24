@@ -3,7 +3,7 @@ import { posix as pathPosix } from "node:path"
 import { AUDIO_MODULE_SOURCES, type AudioModuleSource } from "../shared/audio-module-sources"
 import { curatedSamplePackById, type CuratedSamplePackSource } from "../shared/curated-sample-packs"
 import { curatedRawWavPackById, isCuratedRawWavPackSource } from "../shared/curated-raw-wav-packs"
-import { compileRawWavIndexToSfz } from "./rawWavSamplePackCompiler"
+import { compileRawWavIndexToSfz, compileRawWavPathsToSfz } from "./rawWavSamplePackCompiler"
 import { compileSfzBundleToTloqueSamplePack, samplePathsFromSfz } from "./sfzSamplePackCompiler"
 import { detectSoundBankType } from "./soundBankDetection"
 
@@ -108,14 +108,30 @@ export interface DownloadedCuratedSamplePack {
 }
 
 async function downloadRawWavSamplePack(source: CuratedSamplePackSource, fetcher: typeof fetch): Promise<DownloadedCuratedSamplePack> {
-  if (!isCuratedRawWavPackSource(source)) throw new Error("El paquete no es un índice WAV curado")
-  const indexUrl = rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, source.rawWavIndexPath)
-  const indexBytes = await strictFetch(indexUrl, 4 * 1024 * 1024, fetcher)
-  const compiled = compileRawWavIndexToSfz(indexBytes.toString("utf8"), source)
-  if (!compiled.samplePaths.length) throw new Error("El índice WAV no produjo muestras")
+  if (!isCuratedRawWavPackSource(source)) throw new Error("El paquete no es una fuente WAV curada")
+
+  let compiled: ReturnType<typeof compileRawWavPathsToSfz>
+  let metadataBytes = 0
+  let generatedFrom = "static-paths"
+  if (source.sourceKind === "raw-wav-index") {
+    if (!source.rawWavIndexPath) throw new Error("El paquete WAV indexado no declara índice")
+    const indexUrl = rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, source.rawWavIndexPath)
+    const indexBytes = await strictFetch(indexUrl, 4 * 1024 * 1024, fetcher)
+    compiled = compileRawWavIndexToSfz(indexBytes.toString("utf8"), source)
+    metadataBytes = indexBytes.length
+    generatedFrom = source.rawWavIndexPath
+  } else {
+    const paths = source.rawWavStaticPaths ?? []
+    if (!paths.length) throw new Error("El paquete WAV estático no declara muestras")
+    if (paths.length > 768) throw new Error("El paquete curado contiene demasiadas muestras")
+    for (const path of paths) rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, path)
+    compiled = compileRawWavPathsToSfz(paths, source)
+  }
+
+  if (!compiled.samplePaths.length) throw new Error("La fuente WAV no produjo muestras")
   if (compiled.samplePaths.length > 768) throw new Error("El paquete curado contiene demasiadas muestras")
 
-  let totalBytes = indexBytes.length
+  let totalBytes = metadataBytes
   const samples: DownloadedCuratedSample[] = []
   for (const sourcePath of compiled.samplePaths) {
     const url = rawGitHubUrl(source.repositoryUrl, source.pinnedCommit, sourcePath)
@@ -145,7 +161,7 @@ async function downloadRawWavSamplePack(source: CuratedSamplePackSource, fetcher
     pinnedCommit: source.pinnedCommit,
     sfzSha256,
     sfzText: compiled.sfzText,
-    sfzSources: [{ path: `generated:${source.rawWavIndexPath}`, sha256: sfzSha256, text: compiled.sfzText }],
+    sfzSources: [{ path: `generated:${generatedFrom}`, sha256: sfzSha256, text: compiled.sfzText }],
     samples,
     source,
   }
