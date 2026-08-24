@@ -11,11 +11,12 @@ Create only instrumental music. The TloqueScore code is the master work: Tloque 
 
 - Audio contract: `tloque-audio-2026-08-v2`
 - Compiler: `tloque-score-compiler-v2.1`
-- Skill version: `1.6.0`
+- Skill version: `1.7.0`
 - Built-in module: `builtin`
 - Native multi-instrument router: `native-auto`
 - Premium native master: physical verified sample packs required
 - Performance engine: deterministic family-aware micro-timing, duration and performed-velocity shaping driven by `humanize`
+- Performance Director v1: contextual phrase-entry/release, leap-destination, repeated-note and sustained-destination shaping without changing authored notes or articulations
 
 Never invent commands or execute JavaScript. Never add lyrics, sung words, audio URLs, Markdown, or explanations inside a score.
 
@@ -27,8 +28,9 @@ Never invent commands or execute JavaScript. Never add lyrics, sung words, audio
 4. Use `module native-auto` for multi-instrument premium work. Use `builtin` only when portability matters more than acoustic quality.
 5. Never claim a physical articulation, timbre, true-legato transition, release layer, stop or microphone that the installed library does not contain.
 6. For `quality master`, use only native semantic instruments expected to have their physical packs installed.
-7. Use `humanize` deliberately: it is no longer generic random jitter. It drives deterministic family-aware performance behavior while preserving authored notes and articulations.
-8. Validate the full score and return one complete code block when code is requested.
+7. Use `humanize` deliberately: it drives deterministic family-aware imperfection and enables bounded Performance Director shaping while preserving authored notes and articulations.
+8. Write musically meaningful rests and phrase boundaries. The Director can interpret them; it cannot infer breathing space that the score never contains.
+9. Validate the full score and return one complete code block when code is requested.
 
 ## Grammar
 
@@ -109,13 +111,13 @@ Trumpet includes recorded natural/vibrato, straight mute and Harmon mute colours
 
 ### Colour winds
 
-`woodwinds.ocarina` uses the CC0 VCSL Estuary ocarina selection. Tloque currently curates physical natural sustain and physical staccato. The source library also contains vibrato recordings, but they are deliberately not author-facing until the timbre routing is explicitly modeled. Never fake the missing vibrato colour.
+`woodwinds.ocarina` uses the CC0 VCSL Estuary ocarina selection. Tloque currently curates physical natural sustain and physical staccato. Never fake a missing vibrato colour.
 
 `woodwinds.alto-recorder` uses VCSL Estuary alto recorder. Tloque currently curates physical sustain and staccato. Write breath-shaped monophonic phrases, leave room between exposed phrases, and do not write impossible polyphonic chords for a single recorder or ocarina track.
 
 ### Cinematic pipe organ
 
-The current organ is no longer treated as one generic preset. Three semantic tracks expose three independent physical VCSL layers:
+Three semantic tracks expose three independent physical VCSL layers:
 
 ```text
 keys.pipe-organ       -> Rode Man3 Open manual
@@ -123,9 +125,7 @@ keys.pipe-organ-soft  -> NT5 Man3 Quiet manual
 keys.pipe-organ-pedal -> Rode Pedal low register
 ```
 
-For monumental/cinematic organ writing, combine these as separate tracks: the soft manual can establish a restrained bed, the open manual can carry the principal harmony/ostinato, and the pedal layer can supply long low fundamentals. Build crescendos by orchestration and expression rather than pretending there is a continuous swell pedal or arbitrary stop automation. These three identities are physical recorded colours, not a complete virtual pipe-organ registration system.
-
-A suitable original cosmic/cinematic texture may combine sustained organ pedal, repeating manual figures, strings and restrained brass, but never copy a copyrighted score or claim stops that Tloque has not sampled.
+For monumental/cinematic organ writing, combine these as separate tracks. Build crescendos by orchestration and expression rather than pretending there is a continuous swell pedal or arbitrary stop automation. These three identities are physical recorded colours, not a complete virtual pipe-organ registration system.
 
 ### Preview versus premium master
 
@@ -138,30 +138,40 @@ A suitable original cosmic/cinematic texture may combine sustained organ pedal, 
 
 Articulation and recorded timbre are independent. `articulation=staccato` asks for a played gesture; `timbre=vibrato` asks for a separately recorded colour when the manifest actually contains one. Numeric `vibrato=0..1` is an expressive control and is not the same as recorded `timbre=vibrato`.
 
-`articulation=legato` is semantic. True legato is used only when a manifest declares recorded note-to-note transitions. Release samples are automatic when declared. Mic positions are internal and are not currently author-facing; never invent `mic=`.
+`articulation=legato` is semantic. True legato is used only when a manifest declares recorded note-to-note transitions. **The current author-facing acoustic orchestra does not yet expose any true-legato instrument.** Tloque has a reference transition bank proving the engine path, but do not describe ordinary orchestral `legato` as a recorded physical transition until an acoustic manifest actually declares it.
 
-## Performance guidance
+Release samples are automatic when declared. Mic positions are internal and are not currently author-facing; never invent `mic=`.
 
-Write phrasing rather than a MIDI grid. Shape small velocity and expression arcs, use accents at structural destinations, and let `humanize` handle only the last layer of physical imperfection.
+## Performance Engine + Performance Director v1
 
-The native Performance Engine is deterministic for a given score/seed. It does not fabricate new articulations. It adjusts only conservative performed timing, note length and velocity according to the semantic family:
+Write phrasing rather than a MIDI grid. Shape meaningful velocity/expression arcs and use rests and durations to communicate phrase architecture.
+
+The native Performance Engine is deterministic for a given score/seed. It applies conservative family-aware micro-timing, note-length and performed-velocity variation. The Performance Director reads local musical context and can shape:
+
+- phrase entries;
+- phrase releases;
+- exact repeated notes;
+- destinations after large melodic leaps;
+- long sustained destinations;
+- string line carry;
+- breath-aware release behavior for woodwinds and brass.
+
+The Director **never** changes pitch, authored rhythmic position, articulation, timbre, mute, organ registration or instrument identity. It cannot fabricate true legato, bow-direction samples or breath samples. Its output remains bounded and deterministic.
+
+Family behavior remains idiomatic:
 
 - solo strings receive tiny attack variation and alternating bow-like velocity asymmetry;
 - string sections receive slightly wider ensemble timing variation than solo strings;
-- woodwinds and brass create modest separation on non-legato notes to suggest breath while preserving authored legato/tenuto;
+- woodwinds and brass create modest separation on non-legato notes and use phrase boundaries as breath cues;
 - percussion stays comparatively tight but avoids identical repeated velocities;
 - piano, harpsichord and guitar receive small attack/velocity variation;
 - pipe organ remains almost mechanically stable because large timing jitter is not idiomatic for held organ layers.
 
-Recommended starting ranges are `humanize 0.03..0.10` for tight Baroque/virtuoso work, `0.08..0.18` for chamber/orchestral writing, and `0.12..0.25` for slower cinematic material. Values above about `0.35` should be intentional rather than a default. `humanize 0` is exactly neutral.
+Recommended starting ranges are `humanize 0.03..0.10` for tight Baroque/virtuoso work, `0.08..0.18` for chamber/orchestral writing, and `0.12..0.25` for slower cinematic material. Values above about `0.35` should be intentional rather than a default. **`humanize 0` remains exactly sonically neutral for backward compatibility:** the Director may still classify phrase context internally, but its timing/duration/velocity modifiers are disabled until humanization is non-zero.
 
-Do not manually scatter every note by arbitrary fractional positions to imitate a performer. Keep the score musically legible and use fractional positions when rhythmically intended; the Performance Engine handles micro-timing after compilation.
+Do not manually scatter every note by arbitrary fractional positions to imitate a performer. Keep the score musically legible and use fractional positions only when rhythmically intended.
 
-For exposed Baroque strings, avoid permanent high vibrato. For brass, keep low brass from masking bass fundamentals and reserve trumpet brightness for peaks.
-
-For ocarina and recorder, prefer singable monophonic contours, realistic breath-length phrases, modest registers and intentional rests. Their current sparse physical sampling is best for exposed colour lines, not dense virtuoso chromatic writing across huge ranges.
-
-For cinematic pipe organ, long held notes and repeating figures are strengths. Use `keys.pipe-organ-pedal` sparingly below the orchestra, layer `keys.pipe-organ-soft` before `keys.pipe-organ` for growth, and let strings/brass widen the spectrum instead of simply maximizing organ gain.
+For exposed Baroque strings, avoid permanent high vibrato. For brass, keep low brass from masking bass fundamentals and reserve trumpet brightness for peaks. For ocarina and recorder, prefer singable monophonic contours, realistic breath-length phrases, modest registers and intentional rests. For cinematic pipe organ, use long held notes and repeating figures, with pedal used sparingly below the orchestra.
 
 ## Native multi-instrument example
 
@@ -220,7 +230,9 @@ end
 - Bars, beats, fractional positions, repeats and values are in range.
 - Native identities have verified physical packages for the intended master.
 - Requested timbres/articulations exist physically and unavailable capabilities are not approximated dishonestly.
-- `humanize` is chosen for the idiom rather than maximized blindly; the score itself remains rhythmically legible.
+- Do not claim true-legato for the current author-facing acoustic orchestra.
+- `humanize` is chosen for the idiom rather than maximized blindly; `humanize 0` remains neutral.
+- Phrase boundaries are authored with meaningful duration/rest structure so the Performance Director has musical context.
 - Guitar, colour winds and organ writing stays within their installed physical capabilities.
 - A synthesis fallback is never described as a premium/native master.
 - Fast passages have deliberate phrasing rather than machine-identical events.

@@ -5,6 +5,7 @@ import {
   type InstrumentManifest,
   type TloqueArticulation,
 } from "@shared/instrument-manifest"
+import { directPerformanceEvent } from "./PerformanceDirector"
 
 export interface PerformanceRoute {
   manifestId: string | null
@@ -30,6 +31,9 @@ export interface PerformanceEventDecision {
   startOffsetSeconds: number
   durationScale: number
   velocityScale: number
+  phraseStart: boolean
+  phraseEnd: boolean
+  directorReasons: readonly string[]
   identity: string
 }
 
@@ -87,10 +91,6 @@ export function resolvePerformanceRoute(
   const baseProgram = baseProgramForTrack(track)
   const manifest = resolveInstrumentManifest(track, manifests)
   const exactRoute = manifest?.articulations.find(item => item.articulation === articulation) ?? null
-  // A keyswitch-based sampler must actively return to its sustain/default state
-  // after pizzicato/spiccato. If the requested technique is unavailable, use the
-  // manifest's normal selector as an explicit reset without claiming that the
-  // unsupported technique was actually recorded.
   const route = exactRoute ?? manifest?.articulations.find(item => item.articulation === "normal") ?? null
   const dedicated = Boolean(exactRoute && (
     exactRoute.program !== undefined || exactRoute.keyswitch !== undefined || exactRoute.controller !== undefined
@@ -104,7 +104,6 @@ export function resolvePerformanceRoute(
   }
 }
 
-/** Stable renderer-neutral selector for recorded alternate attacks. */
 export function deterministicRoundRobinIndex(seed: number, identity: string, count: number): number {
   if (!Number.isInteger(count) || count <= 1) return 0
   let hash = (seed ^ 0x811c9dc5) >>> 0
@@ -125,12 +124,6 @@ function deterministicUnit(identity: string, salt: string) {
   return (hash >>> 0) / 0xffffffff
 }
 
-/**
- * Renderer-neutral micro-performance. This never fabricates an articulation or sample:
- * it only adjusts attack placement, note length and performed velocity within conservative
- * family-specific bounds. `humanize=0` is bit-for-bit neutral; larger values progressively
- * expose bow asymmetry, breath separation and ensemble looseness while remaining deterministic.
- */
 export function familyPerformanceHumanization(
   instrument: string | null,
   humanize: number,
@@ -153,8 +146,6 @@ export function familyPerformanceHumanization(
 
   if (instrument === "strings.violin") {
     timingMs = 12; durationSpread = 0.018; velocitySpread = 0.026
-    // Alternating bow direction is intentionally tiny: it avoids machine-gun sameness
-    // without pretending that a separate up/down-bow sample exists.
     velocityBias = (ordinal % 2 === 0 ? 0.012 : -0.012) * amount
   } else if (instrument.startsWith("strings.")) {
     timingMs = instrument === "strings.violin-section" ? 22 : 16
@@ -248,6 +239,23 @@ export function buildPerformancePlan(
   const decisions: PerformanceEventDecision[] = []
   const humanize = recipe.version === 2 ? recipe.plan.humanize : 0
 
+  const indicesByTrack = new Map<string, number[]>()
+  for (let index = 0; index < recipe.plan.events.length; index += 1) {
+    const event = recipe.plan.events[index]
+    const items = indicesByTrack.get(event.trackId) ?? []
+    items.push(index)
+    indicesByTrack.set(event.trackId, items)
+  }
+  const neighbours = new Map<number, { previous: number | null; next: number | null }>()
+  for (const indices of indicesByTrack.values()) {
+    for (let position = 0; position < indices.length; position += 1) {
+      neighbours.set(indices[position], {
+        previous: position > 0 ? indices[position - 1] : null,
+        next: position + 1 < indices.length ? indices[position + 1] : null,
+      })
+    }
+  }
+
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
     const track = tracksById.get(event.trackId)
@@ -269,7 +277,24 @@ export function buildPerformancePlan(
     const ordinal = ordinalByTrack.get(track.id) ?? 0
     ordinalByTrack.set(track.id, ordinal + 1)
     const performed = familyPerformanceHumanization(semanticInstrumentId(track), humanize, identity, articulation, ordinal)
-    const performedVelocity = Math.max(0.01, Math.min(1, event.velocity * performed.velocityScale))
+    const neighbour = neighbours.get(eventIndex)
+    const director = directPerformanceEvent(recipe, {
+      track,
+      event,
+      previous: neighbour?.previous === null || neighbour?.previous === undefined ? null : recipe.plan.events[neighbour.previous],
+      next: neighbour?.next === null || neighbour?.next === undefined ? null : recipe.plan.events[neighbour.next],
+      articulation,
+    })
+    // Compatibility contract: humanize=0 remains exactly neutral. Once enabled, the
+    // Director gets a useful but bounded strength even at restrained musical values.
+    const directorStrength = humanize <= 0 ? 0 : Math.min(1, 0.45 + humanize * 1.5)
+    const directedStart = director.startOffsetSeconds * directorStrength
+    const directedDuration = 1 + (director.durationScale - 1) * directorStrength
+    const directedVelocity = 1 + (director.velocityScale - 1) * directorStrength
+    const startOffsetSeconds = Math.max(-0.04, Math.min(0.04, performed.startOffsetSeconds + directedStart))
+    const durationScale = Math.max(0.84, Math.min(1.10, performed.durationScale * directedDuration))
+    const velocityScale = Math.max(0.86, Math.min(1.14, performed.velocityScale * directedVelocity))
+    const performedVelocity = Math.max(0.01, Math.min(1, event.velocity * velocityScale))
     decisions.push({
       eventIndex,
       trackId: track.id,
@@ -283,9 +308,12 @@ export function buildPerformancePlan(
       trueLegato: connected,
       releaseSamples: Boolean(resolved.route?.articulation === articulation && resolved.route?.releaseSamples),
       previousNotes: connected && previous ? previous.notes : null,
-      startOffsetSeconds: performed.startOffsetSeconds,
-      durationScale: performed.durationScale,
-      velocityScale: performed.velocityScale,
+      startOffsetSeconds,
+      durationScale,
+      velocityScale,
+      phraseStart: director.phraseStart,
+      phraseEnd: director.phraseEnd,
+      directorReasons: director.reason,
       identity,
     })
     previousByTrack.set(track.id, { notes: event.notes, endSeconds: startSeconds + durationSeconds })
