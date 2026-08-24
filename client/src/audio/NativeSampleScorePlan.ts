@@ -28,6 +28,7 @@ export interface NativeSampleVoicePlan {
   playbackRate: number
   sampleGain: number
   oneShot: boolean
+  fadeInSeconds: number
 }
 export interface NativeSampleAuxiliaryVoicePlan {
   kind: "release" | "legato-transition"
@@ -43,6 +44,7 @@ export interface NativeSampleAuxiliaryVoicePlan {
   playbackRate: number
   sampleGain: number
   transitionFromMidi?: number
+  fadeOutSeconds: number
 }
 export interface NativeSampleScorePlan {
   tracks: readonly NativeSampleTrackPlan[]
@@ -55,6 +57,10 @@ export interface NativeSampleScorePlan {
 export interface NativeSampleScorePlanOptions {
   manifests?: readonly InstrumentManifest[]
   micPositionByTrack?: Readonly<Record<string, TloqueMicPosition>>
+}
+
+export function trueLegatoCrossfadeSeconds(noteDurationSeconds: number) {
+  return Math.max(0.025, Math.min(0.12, noteDurationSeconds * 0.18))
 }
 
 export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: TloqueSamplePack, options: NativeSampleScorePlanOptions = {}): NativeSampleScorePlan {
@@ -104,7 +110,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
       const selection = selectNativeSampleZone(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "attack", micPosition })
       if (!selection) throw new Error(`El módulo ${pack.instrumentManifestId} no contiene timbre=${resolvedTimbre}, mic=${micPosition} para ${track.instrument} en MIDI ${note}`)
       zones.set(selection.zone.id, selection.zone)
-      voices.push({
+      const voice: NativeSampleVoicePlan = {
         trackId: event.trackId,
         articulation: decision.articulation,
         timbre: requestedTimbre,
@@ -123,7 +129,9 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
         playbackRate: selection.playbackRate,
         sampleGain: selection.gain,
         oneShot,
-      })
+        fadeInSeconds: 0,
+      }
+      voices.push(voice)
 
       if (decision.trueLegato && decision.previousNotes?.length === 1) {
         const from = decision.previousNotes[0]
@@ -135,6 +143,8 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           transitionToMidi: note,
         })
         if (!transition) throw new Error(`El módulo ${pack.instrumentManifestId} declara true-legato pero no contiene transición ${from}->${note} en mic=${micPosition}`)
+        const crossfadeSeconds = trueLegatoCrossfadeSeconds(durationSeconds)
+        voice.fadeInSeconds = crossfadeSeconds
         zones.set(transition.zone.id, transition.zone)
         auxiliaryVoices.push({
           kind: "legato-transition",
@@ -150,6 +160,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           playbackRate: transition.playbackRate,
           sampleGain: transition.gain,
           transitionFromMidi: from,
+          fadeOutSeconds: crossfadeSeconds,
         })
       }
 
@@ -170,6 +181,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           sampleUrl: release.zone.sampleUrl,
           playbackRate: release.playbackRate,
           sampleGain: release.gain,
+          fadeOutSeconds: 0,
         })
       }
     }
