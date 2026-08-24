@@ -71,6 +71,9 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(value: unknown,
     }
   } catch (error) {
     if (missingSamplePack(error)) {
+      if (profile.quality === "master") {
+        throw new Error("Master premium requiere todos los bancos acústicos nativos de la partitura. Instala los módulos faltantes antes de exportar; Tloque no etiquetará síntesis base como master nativo.")
+      }
       options.onProgress?.(0)
       return renderBaseFallback(recipe, options)
     }
