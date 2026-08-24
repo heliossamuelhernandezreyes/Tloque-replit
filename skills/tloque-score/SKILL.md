@@ -1,6 +1,6 @@
 ---
 name: tloque-score
-version: 2.2
+version: 2.3
 summary: Write deterministic instrumental TloqueScore source for Tloque's native multi-instrument music engine.
 ---
 
@@ -11,6 +11,10 @@ Use `TLOQUE_SCORE 2` for deterministic instrumental music. The language is data,
 ## Core contract
 
 Declare global tempo/meter/seed/quality/module, then tracks, then one or more sections. Select a track with `use`, write pitched events as `bar:beat NOTE duration`, controls with `control`, rests with `rest`, and close each section with `end`.
+
+`bars=` is the declared length of that section, not a default four-bar window. Every note, rest, hit and control must use a local bar number between `1` and the section's declared `bars`. Long-form sections are supported up to 128 bars, and the complete compiled score up to 256 bars. Before emitting a section, compute the highest local bar used and set `bars` high enough to contain it. Never emit `endw`, `endsection`, braces, or another invented terminator: the only section terminator is exactly `end`.
+
+For substantial classical or orchestral writing, prefer musically meaningful sections rather than forcing the whole movement into one four-bar section. A 32- or 64-bar section is valid when its events actually span that range. `repeat=` repeats the declared section after compilation; do not write bar numbers beyond `bars` to represent repeats.
 
 Velocity is normalized `0.01..1`. Supported articulations are `normal`, `legato`, `staccato`, `tenuto`, `accent`, `spiccato`, `pizzicato`, `tremolo`, and `harmonic`. Articulation describes the played gesture; it must not be used to disguise a different physical colour of the instrument.
 
@@ -82,6 +86,8 @@ Initial semantic hit names include `bass-drum`, `snare-taps`, `snare-hit`, `snar
 Prefer `quality=master` for a standalone music render and `studio` for routine editing. Keep a stable seed. Use velocity, expression, register, articulation and rests to shape phrases rather than trying to repair everything with gain. Fast repeated string figures should use the physically available staccato/spiccato routes so round-robin can work. Sustained lines should avoid unsupported timbres or true-legato claims.
 
 For Baroque string writing, separate solo and section roles, keep continuo rhythmically clear, avoid modern cinematic over-reverb, and let the harpsichord support harmony rather than dominate the foreground. `keys.harpsichord` is preferred over substituting a grand piano when its CC0 pack is installed.
+
+Before returning any generated score, perform a structural self-check: every section has exactly one `end`; every event bar is within that section's `bars`; every beat is valid for the meter; every `use` references a declared track; and no invented commands remain. This validation is mandatory for long-form AI-generated pieces such as concertos, sonatas, fugues, or multi-minute orchestral cues.
 
 ## Complete native-auto example
 
