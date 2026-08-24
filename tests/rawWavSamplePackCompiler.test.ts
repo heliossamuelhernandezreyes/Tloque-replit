@@ -11,9 +11,9 @@ import {
 import {
   VCSL_ESTUARY_GRAND_PIANO_MANIFEST,
   VCSL_ESTUARY_PIPE_ORGAN_MANIFEST,
-  VCSL_ITALIAN_HARPSICHORD_MANIFEST,
   instrumentManifestById,
 } from "../shared/instrument-manifest"
+import { VCSL_ITALIAN_HARPSICHORD_MANIFEST } from "../shared/instrument-manifest-keys"
 
 function index(entries: Array<{ bank: string; url: string }>) {
   return JSON.stringify(entries.map((entry, n) => ({ ...entry, n, type: "audio" })))
