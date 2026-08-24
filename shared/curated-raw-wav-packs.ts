@@ -9,6 +9,7 @@ export type RawWavProfile =
   | "vcsl-alto-recorder"
   | "vcsl-italian-harpsichord-stop1"
   | "vcsl-concert-harp"
+  | "discord-martin-hd28"
 
 export interface CuratedRawWavPackSource extends CuratedSamplePackSource {
   sourceKind: "raw-wav-index" | "raw-wav-static"
@@ -80,9 +81,28 @@ export const VCSL_CONCERT_HARP_PACK: CuratedRawWavPackSource = {
   samplePackInstall: { moduleId: "vcsl-concert-harp", manifestId: "vcsl-concert-harp", version: "vcsl-c1ea7bc", pinnedCommit: VCSL_COMMIT, sfzPath: "generated:concert-harp", estimatedMegabytes: 74, acknowledgement: CONCERT_HARP_ACK, tags: ["native-samples", "concert-harp", "harp", "strings", "cc0", "raw-wav", "velocity-layers", "whole-tone-sampling"] },
 }
 
+const DISCORD_GM_REPOSITORY = "https://github.com/sfzinstruments/Discord-SFZ-GM-Bank"
+const DISCORD_GM_COMMIT = "7a9c478fe331f94f246d33332f0adedb25bbbe27"
+const MARTIN_HD28_DIR = "Discord GM/Melodic/026-Acoustic Guitar (steel)"
+const MARTIN_HD28_FILES = [
+  "MartinGM2_040__E2_1.wav", "MartinGM2_043__G2_1.wav", "MartinGM2_046_Bb2_1.wav", "MartinGM2_049_Db3_1.wav", "MartinGM2_052__E3_1.wav",
+  "MartinGM2_055__G3_1.wav", "MartinGM2_058_Bb3_1.wav", "MartinGM2_061_Db4_1.wav", "MartinGM2_064__E4_1.wav", "MartinGM2_068_Ab4_1.wav",
+  "MartinGM2_071__B4_1.wav", "MartinGM2_074__D5_1.wav", "MartinGM2_077__F5_1.wav", "MartinGM2_080_Ab5_1.wav", "MartinGM2_083__B5_1.wav",
+] as const
+const MARTIN_HD28_PATHS = MARTIN_HD28_FILES.map(file => `${MARTIN_HD28_DIR}/${file}`)
+const MARTIN_HD28_ACK = `Jeff Learman publicó esta muestra Martin HD28 dentro de Discord SFZ GM con licencia Creative Commons CC0. Tloque instalará únicamente las 15 raíces WAV declaradas desde el commit ${DISCORD_GM_COMMIT}, validará cada RIFF y mantendrá el origen fijado.`
+export const DISCORD_MARTIN_HD28_PACK: CuratedRawWavPackSource = {
+  id: "discord-martin-hd28", name: "Discord SFZ General MIDI Bank", libraryName: "Discord SFZ General MIDI Bank", displayName: "Martin HD28 · Steel Acoustic Guitar",
+  instrumentId: "guitar.acoustic", moduleId: "discord-martin-hd28", manifestId: "discord-martin-hd28", version: "discord-7a9c478", license: "CC0-1.0",
+  repositoryUrl: DISCORD_GM_REPOSITORY, pinnedCommit: DISCORD_GM_COMMIT, sfzPath: "generated:martin-hd28", sfzPaths: ["generated:martin-hd28"], estimatedMegabytes: 4,
+  acknowledgement: MARTIN_HD28_ACK, tags: ["native-samples", "guitar", "acoustic-guitar", "steel-string", "martin-hd28", "cc0", "raw-wav"], sourceKind: "raw-wav-static",
+  rawWavStaticPaths: MARTIN_HD28_PATHS, rawWavProfile: "discord-martin-hd28",
+  samplePackInstall: { moduleId: "discord-martin-hd28", manifestId: "discord-martin-hd28", version: "discord-7a9c478", pinnedCommit: DISCORD_GM_COMMIT, sfzPath: "generated:martin-hd28", estimatedMegabytes: 4, acknowledgement: MARTIN_HD28_ACK, tags: ["native-samples", "guitar", "acoustic-guitar", "steel-string", "martin-hd28", "cc0", "raw-wav"] },
+}
+
 export const CURATED_RAW_WAV_PACKS: readonly CuratedRawWavPackSource[] = [
   VCSL_ESTUARY_GRAND_PIANO_PACK, VCSL_ESTUARY_PIPE_ORGAN_PACK, VCSL_ESTUARY_PIPE_ORGAN_SOFT_PACK, VCSL_ESTUARY_PIPE_ORGAN_PEDAL_PACK,
-  VCSL_ESTUARY_OCARINA_PACK, VCSL_ESTUARY_ALTO_RECORDER_PACK, VCSL_ITALIAN_HARPSICHORD_PACK, VCSL_CONCERT_HARP_PACK,
+  VCSL_ESTUARY_OCARINA_PACK, VCSL_ESTUARY_ALTO_RECORDER_PACK, VCSL_ITALIAN_HARPSICHORD_PACK, VCSL_CONCERT_HARP_PACK, DISCORD_MARTIN_HD28_PACK,
 ]
 export function curatedRawWavPackById(id: string | null | undefined): CuratedRawWavPackSource | null { if (!id) return null; return CURATED_RAW_WAV_PACKS.find(pack => pack.id === id) ?? null }
 export function isCuratedRawWavPackSource(source: CuratedSamplePackSource): source is CuratedRawWavPackSource { const kind = (source as Partial<CuratedRawWavPackSource>).sourceKind; return kind === "raw-wav-index" || kind === "raw-wav-static" }
