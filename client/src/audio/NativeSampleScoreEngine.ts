@@ -23,6 +23,11 @@ function createRealtimeAudioContext() {
   }
 }
 
+function brightnessCutoff(value: number) {
+  const amount = Math.max(0, Math.min(1, value))
+  return 3_400 + Math.pow(amount, 0.72) * 16_000
+}
+
 export class NativeSampleScoreEngine {
   private context: AudioContext | null = null
   private cue: MusicCue | null = null
@@ -64,15 +69,17 @@ export class NativeSampleScoreEngine {
       const stage = createAcousticStage(context, mix.input)
       const output = context.createGain(); output.gain.value = 0; mix.output.connect(output); output.connect(context.destination)
       const trackGain = new Map<string, GainNode>()
+      const trackTone = new Map<string, BiquadFilterNode>()
       const recipeTrackById = new Map(recipe.plan.tracks.map(track => [track.id, track]))
       for (const { plan } of loaded) {
         for (const track of plan.tracks) {
           if (trackGain.has(track.id)) continue
           const gain = context.createGain(); gain.gain.value = track.gain
+          const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = brightnessCutoff(track.brightness); tone.Q.value = 0.12
           const semanticTrack = recipeTrackById.get(track.id)
           const stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", track.pan)
-          gain.connect(stageInput)
-          trackGain.set(track.id, gain)
+          gain.connect(tone); tone.connect(stageInput)
+          trackGain.set(track.id, gain); trackTone.set(track.id, tone)
         }
       }
 
@@ -84,10 +91,20 @@ export class NativeSampleScoreEngine {
 
       for (const { plan, player, durationByUrl } of loaded) {
         for (const control of plan.controls) {
-          const gain = trackGain.get(control.trackId); if (!gain) continue
-          const at = startAt + control.timeSeconds; gain.gain.cancelScheduledValues(at)
-          if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds)
-          else gain.gain.setValueAtTime(control.gain, at)
+          const gain = trackGain.get(control.trackId)
+          const tone = trackTone.get(control.trackId)
+          const at = startAt + control.timeSeconds
+          if (gain && control.gain !== null) {
+            gain.gain.cancelScheduledValues(at)
+            if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds)
+            else gain.gain.setValueAtTime(control.gain, at)
+          }
+          if (tone && control.brightness !== null) {
+            const cutoff = brightnessCutoff(control.brightness)
+            tone.frequency.cancelScheduledValues(at)
+            if (control.rampSeconds > 0) tone.frequency.exponentialRampToValueAtTime(cutoff, at + control.rampSeconds)
+            else tone.frequency.setValueAtTime(cutoff, at)
+          }
         }
 
         const zoneById = new Map(plan.zones.map(zone => [zone.id, zone]))
