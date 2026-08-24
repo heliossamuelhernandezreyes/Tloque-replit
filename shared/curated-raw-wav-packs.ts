@@ -1,6 +1,13 @@
 import type { CuratedSamplePackSource } from "./curated-sample-packs"
 
-export type RawWavProfile = "vcsl-grand-piano-sus-close" | "vcsl-pipe-organ-rode-man3-open" | "vcsl-italian-harpsichord-stop1"
+export type RawWavProfile =
+  | "vcsl-grand-piano-sus-close"
+  | "vcsl-pipe-organ-rode-man3-open"
+  | "vcsl-pipe-organ-nt5-man3-quiet"
+  | "vcsl-pipe-organ-rode-pedal"
+  | "vcsl-ocarina"
+  | "vcsl-alto-recorder"
+  | "vcsl-italian-harpsichord-stop1"
 
 export interface CuratedRawWavPackSource extends CuratedSamplePackSource {
   sourceKind: "raw-wav-index" | "raw-wav-static"
@@ -79,7 +86,51 @@ export const VCSL_ESTUARY_PIPE_ORGAN_PACK = indexPack({
   bank: "pipeorgan",
   profile: "vcsl-pipe-organ-rode-man3-open",
   estimatedMegabytes: 18,
-  tags: ["native-samples", "pipe-organ", "organ", "keys", "cc0", "raw-wav"],
+  tags: ["native-samples", "pipe-organ", "organ", "manual", "open", "keys", "cc0", "raw-wav"],
+})
+
+export const VCSL_ESTUARY_PIPE_ORGAN_SOFT_PACK = indexPack({
+  id: "vcsl-estuary-pipe-organ-soft",
+  displayName: "Pipe Organ · NT5 Man3 Quiet",
+  instrumentId: "keys.pipe-organ-soft",
+  manifestId: "vcsl-estuary-pipe-organ-soft",
+  bank: "pipeorgan",
+  profile: "vcsl-pipe-organ-nt5-man3-quiet",
+  estimatedMegabytes: 14,
+  tags: ["native-samples", "pipe-organ", "organ", "manual", "quiet", "keys", "cc0", "raw-wav"],
+})
+
+export const VCSL_ESTUARY_PIPE_ORGAN_PEDAL_PACK = indexPack({
+  id: "vcsl-estuary-pipe-organ-pedal",
+  displayName: "Pipe Organ · Rode Pedal",
+  instrumentId: "keys.pipe-organ-pedal",
+  manifestId: "vcsl-estuary-pipe-organ-pedal",
+  bank: "pipeorgan",
+  profile: "vcsl-pipe-organ-rode-pedal",
+  estimatedMegabytes: 8,
+  tags: ["native-samples", "pipe-organ", "organ", "pedal", "low-register", "keys", "cc0", "raw-wav"],
+})
+
+export const VCSL_ESTUARY_OCARINA_PACK = indexPack({
+  id: "vcsl-estuary-ocarina",
+  displayName: "Ocarina · sustain + staccato",
+  instrumentId: "woodwinds.ocarina",
+  manifestId: "vcsl-estuary-ocarina",
+  bank: "ocarina",
+  profile: "vcsl-ocarina",
+  estimatedMegabytes: 9,
+  tags: ["native-samples", "ocarina", "woodwinds", "cc0", "sustain", "staccato", "raw-wav"],
+})
+
+export const VCSL_ESTUARY_ALTO_RECORDER_PACK = indexPack({
+  id: "vcsl-estuary-alto-recorder",
+  displayName: "Alto Recorder · sustain + staccato",
+  instrumentId: "woodwinds.alto-recorder",
+  manifestId: "vcsl-estuary-alto-recorder",
+  bank: "altorecorder",
+  profile: "vcsl-alto-recorder",
+  estimatedMegabytes: 9,
+  tags: ["native-samples", "alto-recorder", "recorder", "woodwinds", "cc0", "sustain", "staccato", "raw-wav"],
 })
 
 const VCSL_REPOSITORY = "https://github.com/sgossner/VCSL"
@@ -127,6 +178,10 @@ export const VCSL_ITALIAN_HARPSICHORD_PACK: CuratedRawWavPackSource = {
 export const CURATED_RAW_WAV_PACKS: readonly CuratedRawWavPackSource[] = [
   VCSL_ESTUARY_GRAND_PIANO_PACK,
   VCSL_ESTUARY_PIPE_ORGAN_PACK,
+  VCSL_ESTUARY_PIPE_ORGAN_SOFT_PACK,
+  VCSL_ESTUARY_PIPE_ORGAN_PEDAL_PACK,
+  VCSL_ESTUARY_OCARINA_PACK,
+  VCSL_ESTUARY_ALTO_RECORDER_PACK,
   VCSL_ITALIAN_HARPSICHORD_PACK,
 ]
 
