@@ -38,8 +38,9 @@ const BAROQUE_PACKS = BAROQUE_MODULE_IDS.map(moduleId =>
 const PREMIUM_FAMILIES = [
   { label: "Cuerdas", detail: "Violín solista y sección · viola · cello · contrabajo", route: "/admin/audio/vsco-strings" },
   { label: "Maderas", detail: "Flauta · oboe · clarinete · fagot", route: "/admin/audio/vsco-woodwinds" },
-  { label: "Metales", detail: "Trompeta · trombón · corno · tuba", route: "/admin/audio/vsco-brass" },
+  { label: "Metales", detail: "Trompeta · trombón · corno · tuba · set completo", route: "/admin/audio/vsco-brass" },
   { label: "Percusión", detail: "Timbales · glockenspiel · marimba · xilófono · campanas · kit orquestal", route: "/admin/audio/vsco-percussion" },
+  { label: "Guitarra", detail: "Emilyguitar eléctrica limpia · 4 velocity layers · 3 round robins · releases", route: "/admin/audio/vsco-strings?guitar=1" },
 ] as const
 
 function capabilityCopy(pack: CuratedRawWavPackSource) {
