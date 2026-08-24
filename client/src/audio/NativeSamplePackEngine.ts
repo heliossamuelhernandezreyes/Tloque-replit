@@ -46,8 +46,6 @@ function zoneTimbre(zone: TloqueSampleZone) {
 }
 function transitionMatches(zone: TloqueSampleZone, request: NativeSampleTimbreRequest) {
   if ((request.trigger ?? "attack") !== "legato-transition") return true
-  // True sampled legato is a physical previous-note -> destination-note recording.
-  // Never accept an unqualified/generic transition when the score requests an exact pair.
   if (request.transitionFromMidi !== undefined && zone.transitionFromMidi !== request.transitionFromMidi) return false
   if (request.transitionToMidi !== undefined && zone.transitionToMidi !== request.transitionToMidi) return false
   return true
@@ -82,11 +80,6 @@ export function selectNativeSampleZone(
       && transitionMatches(zone, timbre)
   })
 
-  // First preserve the physical mapping declared by the source pack. Sparse public
-  // sample libraries sometimes end a mapped zone a few semitones before the playable
-  // range. For attack samples only, a bounded edge transposition is preferable to
-  // rejecting a valid orchestral note; true-legato, release, timbre, mute and mic
-  // semantics remain strict.
   const exact = by(articulation, false)
   const neutralAttack = articulation === "normal" || requestedTrigger !== "attack" ? [] : by("normal", false)
   let candidates = exact.length ? exact : neutralAttack
@@ -112,6 +105,17 @@ export function selectNativeSampleZone(
   })
   const semitones = note - zone.rootMidi + zone.tuneCents / 100
   return { zone, playbackRate: 2 ** (semitones / 12), gain: dbToGain(zone.gainDb) * Math.max(0, Math.min(1, midiVelocity / 127)) }
+}
+
+function adaptivePhraseEnvelope(durationSeconds: number, oneShot: boolean, requested: NativeSamplePlaybackEnvelope) {
+  if (oneShot) return { fadeIn: Math.max(0, requested.fadeInSeconds ?? 0), fadeOut: Math.max(0, requested.fadeOutSeconds ?? 0), overlapTail: 0 }
+  const sustained = durationSeconds >= 0.22
+  const defaultFadeIn = sustained ? Math.min(0.014, durationSeconds * 0.08) : Math.min(0.006, durationSeconds * 0.06)
+  const defaultFadeOut = sustained ? Math.min(0.045, durationSeconds * 0.16) : Math.min(0.014, durationSeconds * 0.10)
+  const fadeIn = Math.max(0, requested.fadeInSeconds ?? defaultFadeIn)
+  const fadeOut = Math.max(0, requested.fadeOutSeconds ?? defaultFadeOut)
+  const overlapTail = requested.fadeOutSeconds === undefined ? fadeOut : 0
+  return { fadeIn, fadeOut, overlapTail }
 }
 
 export class NativeSamplePackPlayer {
@@ -171,11 +175,12 @@ export class NativeSamplePackPlayer {
     const loopStart = selection.zone.loopStartSeconds, loopEnd = selection.zone.loopEndSeconds
     if (loopStart !== undefined && loopEnd !== undefined && loopEnd > loopStart) { source.loop = true; source.loopStart = loopStart; source.loopEnd = loopEnd }
     const startAt = Math.max(this.context.currentTime, startTime)
-    const stopAt = startAt + Math.max(0.01, durationSeconds)
-    const fadeIn = Math.max(0, Math.min(durationSeconds * 0.75, envelope.fadeInSeconds ?? 0))
-    const fadeOut = Math.max(0, Math.min(durationSeconds * 0.75, envelope.fadeOutSeconds ?? 0))
+    const shaped = adaptivePhraseEnvelope(durationSeconds, oneShot, envelope)
+    const stopAt = startAt + Math.max(0.01, durationSeconds + shaped.overlapTail)
+    const fadeIn = Math.max(0, Math.min(durationSeconds * 0.75, shaped.fadeIn))
+    const fadeOut = Math.max(0, Math.min((durationSeconds + shaped.overlapTail) * 0.75, shaped.fadeOut))
     if (fadeIn > 0) {
-      gain.gain.setValueAtTime(0, startAt)
+      gain.gain.setValueAtTime(0.0001, startAt)
       gain.gain.linearRampToValueAtTime(selection.gain, startAt + fadeIn)
     } else gain.gain.setValueAtTime(selection.gain, startAt)
     if (fadeOut > 0) {
