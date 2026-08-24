@@ -46,3 +46,44 @@ test("la transposición usa root key y tune cents", () => {
   const expected = 2 ** ((1 - 0.2) / 12)
   assert.ok(Math.abs((selection?.playbackRate ?? 0) - expected) < 1e-12)
 })
+
+test("una nota apenas fuera del mapa usa la muestra de borde sin cambiar timbre ni articulación", () => {
+  const pack = validateTloqueSamplePack(PACK)
+  const selection = selectNativeSampleZone(pack, "spiccato", 63, 40, 1)
+  assert.equal(selection?.zone.id, "spic-p-rr1")
+  const expected = 2 ** ((3 - 0.2) / 12)
+  assert.ok(Math.abs((selection?.playbackRate ?? 0) - expected) < 1e-12)
+})
+
+test("la extensión de borde queda acotada y no inventa registros lejanos", () => {
+  const pack = validateTloqueSamplePack(PACK)
+  assert.equal(selectNativeSampleZone(pack, "spiccato", 66, 40, 0), null)
+})
+
+test("true-legato nunca usa transposición de borde para inventar una transición", () => {
+  const pack = validateTloqueSamplePack({
+    ...PACK,
+    zones: [{
+      id: "transition",
+      articulation: "legato",
+      trigger: "legato-transition",
+      transitionFromMidi: 60,
+      transitionToMidi: 61,
+      sampleUrl: "/api/audio/sample-packs/transition.wav",
+      rootMidi: 61,
+      loMidi: 61,
+      hiMidi: 61,
+      loVelocity: 0,
+      hiVelocity: 127,
+      velocityLayer: 0,
+      roundRobin: 0,
+      gainDb: 0,
+      tuneCents: 0,
+    }],
+  })
+  assert.equal(selectNativeSampleZone(pack, "legato", 63, 90, 0, {
+    trigger: "legato-transition",
+    transitionFromMidi: 62,
+    transitionToMidi: 63,
+  }), null)
+})
