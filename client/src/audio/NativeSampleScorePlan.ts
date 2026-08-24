@@ -95,8 +95,10 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     const naturalUsesNeutralAttack = requestedTimbre === "natural" && decision.articulation !== "normal" && decision.articulation !== "legato"
     const resolvedTimbre = naturalUsesNeutralAttack ? "non-vibrato" : resolveRecordedTimbre(pack.instrumentManifestId, requestedTimbre)
     const physical = physicalRecordedTimbre(resolvedTimbre)
-    const velocity = Math.round(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(decision.articulation)) * 127)
-    const durationSeconds = event.durationSeconds * articulationDurationFactor(decision.articulation)
+    const performedVelocity = Math.max(0.01, Math.min(1, event.velocity * decision.velocityScale))
+    const velocity = Math.round(Math.min(1, scoreVelocityGain(performedVelocity) * articulationVelocityFactor(decision.articulation)) * 127)
+    const durationSeconds = Math.max(0.01, event.durationSeconds * articulationDurationFactor(decision.articulation) * decision.durationScale)
+    const startSeconds = Math.max(0, event.timeSeconds + decision.startOffsetSeconds)
     const micPosition = micForTrack(track.id)
     for (const note of event.notes) {
       const selection = selectNativeSampleZone(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "attack", micPosition })
@@ -114,7 +116,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
         vibratoColour: physical.vibratoColour,
         mute: physical.mute,
         micPosition,
-        startSeconds: event.timeSeconds,
+        startSeconds,
         durationSeconds,
         zoneId: selection.zone.id,
         sampleUrl: selection.zone.sampleUrl,
@@ -141,7 +143,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           note,
           velocity,
           micPosition,
-          startSeconds: event.timeSeconds,
+          startSeconds,
           durationSeconds: Math.min(1.5, durationSeconds),
           zoneId: transition.zone.id,
           sampleUrl: transition.zone.sampleUrl,
@@ -162,7 +164,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           note,
           velocity,
           micPosition,
-          startSeconds: event.timeSeconds + durationSeconds,
+          startSeconds: startSeconds + durationSeconds,
           durationSeconds: 8,
           zoneId: release.zone.id,
           sampleUrl: release.zone.sampleUrl,

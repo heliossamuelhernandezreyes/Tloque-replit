@@ -27,7 +27,16 @@ export interface PerformanceEventDecision {
   trueLegato: boolean
   releaseSamples: boolean
   previousNotes: readonly number[] | null
+  startOffsetSeconds: number
+  durationScale: number
+  velocityScale: number
   identity: string
+}
+
+export interface FamilyPerformanceHumanization {
+  startOffsetSeconds: number
+  durationScale: number
+  velocityScale: number
 }
 
 export interface PerformanceChannel {
@@ -106,6 +115,75 @@ export function deterministicRoundRobinIndex(seed: number, identity: string, cou
   return hash % count
 }
 
+function deterministicUnit(identity: string, salt: string) {
+  let hash = 0x811c9dc5
+  const value = `${salt}:${identity}`
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return (hash >>> 0) / 0xffffffff
+}
+
+/**
+ * Renderer-neutral micro-performance. This never fabricates an articulation or sample:
+ * it only adjusts attack placement, note length and performed velocity within conservative
+ * family-specific bounds. `humanize=0` is bit-for-bit neutral; larger values progressively
+ * expose bow asymmetry, breath separation and ensemble looseness while remaining deterministic.
+ */
+export function familyPerformanceHumanization(
+  instrument: string | null,
+  humanize: number,
+  identity: string,
+  articulation: TloqueArticulation,
+  ordinal: number,
+): FamilyPerformanceHumanization {
+  const amount = Math.max(0, Math.min(1, humanize))
+  if (amount === 0 || !instrument) return { startOffsetSeconds: 0, durationScale: 1, velocityScale: 1 }
+
+  const timingNoise = deterministicUnit(identity, "timing") * 2 - 1
+  const durationNoise = deterministicUnit(identity, "duration") * 2 - 1
+  const velocityNoise = deterministicUnit(identity, "velocity") * 2 - 1
+  const legatoLike = articulation === "legato" || articulation === "tenuto"
+  let timingMs = 8
+  let durationSpread = 0.012
+  let velocitySpread = 0.018
+  let durationBias = 0
+  let velocityBias = 0
+
+  if (instrument === "strings.violin") {
+    timingMs = 12; durationSpread = 0.018; velocitySpread = 0.026
+    // Alternating bow direction is intentionally tiny: it avoids machine-gun sameness
+    // without pretending that a separate up/down-bow sample exists.
+    velocityBias = (ordinal % 2 === 0 ? 0.012 : -0.012) * amount
+  } else if (instrument.startsWith("strings.")) {
+    timingMs = instrument === "strings.violin-section" ? 22 : 16
+    durationSpread = 0.022; velocitySpread = 0.026
+    velocityBias = (ordinal % 2 === 0 ? 0.008 : -0.008) * amount
+  } else if (instrument.startsWith("woodwinds.")) {
+    timingMs = 15; durationSpread = 0.018; velocitySpread = 0.022
+    if (!legatoLike) durationBias = -0.025 * amount
+  } else if (instrument.startsWith("brass.")) {
+    timingMs = 18; durationSpread = 0.020; velocitySpread = 0.028
+    if (!legatoLike) durationBias = -0.032 * amount
+  } else if (instrument.startsWith("percussion.")) {
+    timingMs = 7; durationSpread = 0.006; velocitySpread = 0.035
+  } else if (instrument.startsWith("guitar.")) {
+    timingMs = 14; durationSpread = 0.018; velocitySpread = 0.028
+  } else if (instrument === "piano.grand") {
+    timingMs = 10; durationSpread = 0.010; velocitySpread = 0.025
+  } else if (instrument.startsWith("keys.pipe-organ")) {
+    timingMs = 3; durationSpread = 0.004; velocitySpread = 0.006
+  } else if (instrument === "keys.harpsichord") {
+    timingMs = 7; durationSpread = 0.008; velocitySpread = 0.018
+  }
+
+  const startOffsetSeconds = timingNoise * timingMs * amount / 1000
+  const durationScale = Math.max(0.86, Math.min(1.08, 1 + durationBias + durationNoise * durationSpread * amount))
+  const velocityScale = Math.max(0.88, Math.min(1.12, 1 + velocityBias + velocityNoise * velocitySpread * amount))
+  return { startOffsetSeconds, durationScale, velocityScale }
+}
+
 export function velocityLayerIndex(velocity: number, layers: number): number {
   if (!Number.isInteger(layers) || layers <= 1) return 0
   return Math.min(layers - 1, Math.floor(Math.max(0, Math.min(0.999999, velocity)) * layers))
@@ -166,7 +244,9 @@ export function buildPerformancePlan(
   const playableTracks = recipe.plan.tracks.slice(0, maxChannels)
   const tracksById = new Map(playableTracks.map(track => [track.id, track]))
   const previousByTrack = new Map<string, { notes: readonly number[]; endSeconds: number }>()
+  const ordinalByTrack = new Map<string, number>()
   const decisions: PerformanceEventDecision[] = []
+  const humanize = recipe.version === 2 ? recipe.plan.humanize : 0
 
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
@@ -186,6 +266,10 @@ export function buildPerformancePlan(
       && event.notes.length === 1
       && startSeconds - previous.endSeconds <= 0.08,
     )
+    const ordinal = ordinalByTrack.get(track.id) ?? 0
+    ordinalByTrack.set(track.id, ordinal + 1)
+    const performed = familyPerformanceHumanization(semanticInstrumentId(track), humanize, identity, articulation, ordinal)
+    const performedVelocity = Math.max(0.01, Math.min(1, event.velocity * performed.velocityScale))
     decisions.push({
       eventIndex,
       trackId: track.id,
@@ -194,11 +278,14 @@ export function buildPerformancePlan(
       source: resolved.source,
       manifestId: resolved.manifestId,
       route: resolved.route,
-      velocityLayer: velocityLayerIndex(event.velocity, resolved.route?.velocityLayers ?? 1),
+      velocityLayer: velocityLayerIndex(performedVelocity, resolved.route?.velocityLayers ?? 1),
       roundRobin: deterministicRoundRobinIndex(recipe.plan.seed, identity, resolved.route?.roundRobins ?? 1),
       trueLegato: connected,
       releaseSamples: Boolean(resolved.route?.articulation === articulation && resolved.route?.releaseSamples),
       previousNotes: connected && previous ? previous.notes : null,
+      startOffsetSeconds: performed.startOffsetSeconds,
+      durationScale: performed.durationScale,
+      velocityScale: performed.velocityScale,
       identity,
     })
     previousByTrack.set(track.id, { notes: event.notes, endSeconds: startSeconds + durationSeconds })

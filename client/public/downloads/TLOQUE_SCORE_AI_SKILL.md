@@ -11,10 +11,11 @@ Create only instrumental music. The TloqueScore code is the master work: Tloque 
 
 - Audio contract: `tloque-audio-2026-08-v2`
 - Compiler: `tloque-score-compiler-v2.1`
-- Skill version: `1.5.0`
+- Skill version: `1.6.0`
 - Built-in module: `builtin`
 - Native multi-instrument router: `native-auto`
 - Premium native master: physical verified sample packs required
+- Performance engine: deterministic family-aware micro-timing, duration and performed-velocity shaping driven by `humanize`
 
 Never invent commands or execute JavaScript. Never add lyrics, sung words, audio URLs, Markdown, or explanations inside a score.
 
@@ -26,7 +27,8 @@ Never invent commands or execute JavaScript. Never add lyrics, sung words, audio
 4. Use `module native-auto` for multi-instrument premium work. Use `builtin` only when portability matters more than acoustic quality.
 5. Never claim a physical articulation, timbre, true-legato transition, release layer, stop or microphone that the installed library does not contain.
 6. For `quality master`, use only native semantic instruments expected to have their physical packs installed.
-7. Validate the full score and return one complete code block when code is requested.
+7. Use `humanize` deliberately: it is no longer generic random jitter. It drives deterministic family-aware performance behavior while preserving authored notes and articulations.
+8. Validate the full score and return one complete code block when code is requested.
 
 ## Grammar
 
@@ -140,7 +142,22 @@ Articulation and recorded timbre are independent. `articulation=staccato` asks f
 
 ## Performance guidance
 
-Write phrasing rather than a MIDI grid. Shape small velocity and expression arcs, use accents at structural destinations, and keep deterministic humanization restrained. For exposed Baroque strings, avoid permanent high vibrato. For brass, keep low brass from masking bass fundamentals and reserve trumpet brightness for peaks.
+Write phrasing rather than a MIDI grid. Shape small velocity and expression arcs, use accents at structural destinations, and let `humanize` handle only the last layer of physical imperfection.
+
+The native Performance Engine is deterministic for a given score/seed. It does not fabricate new articulations. It adjusts only conservative performed timing, note length and velocity according to the semantic family:
+
+- solo strings receive tiny attack variation and alternating bow-like velocity asymmetry;
+- string sections receive slightly wider ensemble timing variation than solo strings;
+- woodwinds and brass create modest separation on non-legato notes to suggest breath while preserving authored legato/tenuto;
+- percussion stays comparatively tight but avoids identical repeated velocities;
+- piano, harpsichord and guitar receive small attack/velocity variation;
+- pipe organ remains almost mechanically stable because large timing jitter is not idiomatic for held organ layers.
+
+Recommended starting ranges are `humanize 0.03..0.10` for tight Baroque/virtuoso work, `0.08..0.18` for chamber/orchestral writing, and `0.12..0.25` for slower cinematic material. Values above about `0.35` should be intentional rather than a default. `humanize 0` is exactly neutral.
+
+Do not manually scatter every note by arbitrary fractional positions to imitate a performer. Keep the score musically legible and use fractional positions when rhythmically intended; the Performance Engine handles micro-timing after compilation.
+
+For exposed Baroque strings, avoid permanent high vibrato. For brass, keep low brass from masking bass fundamentals and reserve trumpet brightness for peaks.
 
 For ocarina and recorder, prefer singable monophonic contours, realistic breath-length phrases, modest registers and intentional rests. Their current sparse physical sampling is best for exposed colour lines, not dense virtuoso chromatic writing across huge ranges.
 
@@ -203,6 +220,7 @@ end
 - Bars, beats, fractional positions, repeats and values are in range.
 - Native identities have verified physical packages for the intended master.
 - Requested timbres/articulations exist physically and unavailable capabilities are not approximated dishonestly.
+- `humanize` is chosen for the idiom rather than maximized blindly; the score itself remains rhythmically legible.
 - Guitar, colour winds and organ writing stays within their installed physical capabilities.
 - A synthesis fallback is never described as a premium/native master.
 - Fast passages have deliberate phrasing rather than machine-identical events.
