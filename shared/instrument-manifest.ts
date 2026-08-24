@@ -1,10 +1,10 @@
-import { KARORYFER_EMILY_GUITAR_MANIFEST } from "./instrument-manifest-guitar"
+import { DISCORD_MARTIN_HD28_MANIFEST, KARORYFER_EMILY_GUITAR_MANIFEST } from "./instrument-manifest-guitar"
 import { VCSL_CONCERT_HARP_MANIFEST } from "./instrument-manifest-harp"
 import { VCSL_ESTUARY_KEYS_MANIFESTS } from "./instrument-manifest-keys"
 import { VCSL_ESTUARY_WORLD_WIND_MANIFESTS } from "./instrument-manifest-worldwinds"
 import { VSCO2_CE_PERCUSSION_MANIFESTS } from "./instrument-manifest-percussion"
 import { VSCO2_CE_STRING_SECTION_MANIFESTS } from "./instrument-manifest-string-sections"
-export { KARORYFER_EMILY_GUITAR_MANIFEST } from "./instrument-manifest-guitar"
+export { DISCORD_MARTIN_HD28_MANIFEST, FREEPATS_SPANISH_CLASSICAL_GUITAR_MANIFEST, KARORYFER_EMILY_GUITAR_MANIFEST, NATIVE_GUITAR_MANIFESTS } from "./instrument-manifest-guitar"
 export { VCSL_CONCERT_HARP_MANIFEST } from "./instrument-manifest-harp"
 export {
   VCSL_ESTUARY_GRAND_PIANO_MANIFEST,
@@ -116,6 +116,7 @@ export const BUILTIN_INSTRUMENT_MANIFESTS: readonly InstrumentManifest[] = [GM_O
 export const INSTRUMENT_MANIFEST_REGISTRY: readonly InstrumentManifest[] = [
   GM_ORCHESTRAL_STRINGS_MANIFEST,
   KARORYFER_EMILY_GUITAR_MANIFEST,
+  DISCORD_MARTIN_HD28_MANIFEST,
   VSCO2_CE_SOLO_VIOLIN_MANIFEST,
   ...VSCO2_CE_STRING_SECTION_MANIFESTS,
   VSCO2_CE_VIOLA_SECTION_MANIFEST,
