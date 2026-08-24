@@ -1,6 +1,8 @@
+import { KARORYFER_EMILY_GUITAR_MANIFEST } from "./instrument-manifest-guitar"
 import { VCSL_ESTUARY_KEYS_MANIFESTS } from "./instrument-manifest-keys"
 import { VSCO2_CE_PERCUSSION_MANIFESTS } from "./instrument-manifest-percussion"
 import { VSCO2_CE_STRING_SECTION_MANIFESTS } from "./instrument-manifest-string-sections"
+export { KARORYFER_EMILY_GUITAR_MANIFEST } from "./instrument-manifest-guitar"
 export {
   VCSL_ESTUARY_GRAND_PIANO_MANIFEST,
   VCSL_ESTUARY_PIPE_ORGAN_MANIFEST,
@@ -114,6 +116,7 @@ export const SFZINSTRUMENTS_LEGATO_VOCAL_A_MANIFEST: InstrumentManifest = {
 export const BUILTIN_INSTRUMENT_MANIFESTS: readonly InstrumentManifest[] = [GM_ORCHESTRAL_STRINGS_MANIFEST]
 export const INSTRUMENT_MANIFEST_REGISTRY: readonly InstrumentManifest[] = [
   GM_ORCHESTRAL_STRINGS_MANIFEST,
+  KARORYFER_EMILY_GUITAR_MANIFEST,
   VSCO2_CE_SOLO_VIOLIN_MANIFEST,
   ...VSCO2_CE_STRING_SECTION_MANIFESTS,
   VSCO2_CE_VIOLA_SECTION_MANIFEST,

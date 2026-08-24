@@ -96,6 +96,27 @@ const VSCO_PACKS: readonly CuratedSamplePackSource[] = [
   vscoPack({ id: "vsco2-ce-orchestral-percussion", displayName: "Orchestral Percussion", instrumentId: "percussion.orchestral-kit", moduleId: "vsco2-ce-orchestral-percussion", manifestId: "vsco2-ce-orchestral-percussion", sfzPath: "GM-StylePerc.sfz", estimatedMegabytes: 180, tags: ["native-samples", "orchestral-percussion", "semantic-hits", "percussion", "cc0", "velocity-layers", "round-robin"] }),
 ]
 
+const EMILY_GUITAR_COMMIT = "b4920dc662fd9cad6dcaccdeecffdd91c8725d8c"
+const EMILY_GUITAR_ACK = `Karoryfer Emilyguitar se distribuye bajo CC0-1.0. Tloque instalará emily_basic.sfz y sus WAV desde el commit ${EMILY_GUITAR_COMMIT}, verificará cada WAV y lo copiará a App Storage. El banco contiene cuatro capas de velocidad, tres round robins de notas y muestras físicas de release/ruido.`
+const EMILY_GUITAR_PACK = finalizePack({
+  id: "karoryfer-emily-guitar",
+  name: "Karoryfer Emilyguitar",
+  libraryName: "Karoryfer Emilyguitar",
+  displayName: "Emilyguitar · Clean Electric Guitar",
+  instrumentId: "guitar.electric-clean",
+  moduleId: "karoryfer-emily-guitar",
+  manifestId: "karoryfer-emily-guitar",
+  version: "b4920dc",
+  license: "CC0-1.0",
+  repositoryUrl: "https://github.com/sfzinstruments/karoryfer.emilyguitar",
+  pinnedCommit: EMILY_GUITAR_COMMIT,
+  sfzPath: "emily_basic.sfz",
+  sfzPaths: ["emily_basic.sfz"],
+  estimatedMegabytes: 100,
+  acknowledgement: EMILY_GUITAR_ACK,
+  tags: ["native-samples", "guitar", "electric-guitar", "clean", "cc0", "velocity-layers", "round-robin", "release-samples"],
+})
+
 const LEGATO_VOCAL_COMMIT = "fac6461ee4c7f498b23246eced644616fa58d2ec"
 const LEGATO_VOCAL_ACK = `SFZ Instruments Legato Vocal Tutorial se publica bajo CC0-1.0. Tloque instalará únicamente el sustain A y sus transiciones true-legato desde el commit ${LEGATO_VOCAL_COMMIT}, verificará cada WAV y lo copiará a App Storage.`
 const LEGATO_VOCAL_PACK = finalizePack({
@@ -118,7 +139,7 @@ const LEGATO_VOCAL_PACK = finalizePack({
   tags: ["native-samples", "voice", "cc0", "true-legato", "recorded-transitions", "reference-pack"],
 })
 
-export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [...VSCO_PACKS, LEGATO_VOCAL_PACK]
+export const CURATED_SAMPLE_PACKS: readonly CuratedSamplePackSource[] = [...VSCO_PACKS, EMILY_GUITAR_PACK, LEGATO_VOCAL_PACK]
 
 export function curatedSamplePackById(id: string | null | undefined): CuratedSamplePackSource | null {
   if (!id) return null

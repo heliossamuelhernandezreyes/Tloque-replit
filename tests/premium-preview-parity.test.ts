@@ -19,7 +19,11 @@ test("quality master never silently becomes base synthesis", () => {
 })
 
 test("downloadable AI skill documents current premium behavior", () => {
-  assert.match(skill, /Skill version: `1\.3\.0`/)
+  const match = skill.match(/Skill version: `(\d+)\.(\d+)\.(\d+)`/)
+  assert.ok(match, "La skill debe declarar una versión semántica")
+  const [, major, minor] = match
+  assert.equal(Number(major), 1)
+  assert.ok(Number(minor) >= 3, "La skill no puede retroceder por debajo del contrato premium 1.3")
   assert.match(skill, /Preview versus premium master/)
   assert.match(skill, /4:4\.75/)
   assert.match(skill, /strings\.violin\s+-> VSCO 2 CE Solo Violin/)
