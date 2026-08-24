@@ -20,24 +20,37 @@ export const KARORYFER_EMILY_GUITAR_MANIFEST: InstrumentManifest = {
   ],
 }
 
-/**
- * FreePats Spanish Classical Guitar. The upstream bank is a CC0 multisample
- * instrument recorded from a real nylon-string classical guitar. Tloque keeps
- * the physical SFZ mapping strict and does not synthesize strums or articulations
- * absent from the source.
- */
+/** FreePats nylon-string candidate retained for a future FLAC-capable source adapter. */
 export const FREEPATS_SPANISH_CLASSICAL_GUITAR_MANIFEST: InstrumentManifest = {
   version: 1,
   id: "freepats-spanish-classical-guitar",
   family: "other",
   name: "FreePats Spanish Classical Guitar",
-  instruments: ["guitar.acoustic"],
+  instruments: ["guitar.acoustic-nylon"],
   basePrograms: [24],
+  capabilities: [],
+  articulations: [{ articulation: "normal" }],
+}
+
+/**
+ * Jeff Learman's Martin HD28 contribution to the Discord SFZ GM bank.
+ * The source SFZ explicitly declares CC0 and uses fifteen physical WAV roots
+ * spanning the guitar register. Tloque routes the generic acoustic-guitar role
+ * here until a denser nylon/steel selector is introduced.
+ */
+export const DISCORD_MARTIN_HD28_MANIFEST: InstrumentManifest = {
+  version: 1,
+  id: "discord-martin-hd28",
+  family: "other",
+  name: "Discord SFZ GM · Martin HD28",
+  instruments: ["guitar.acoustic"],
+  basePrograms: [25],
   capabilities: [],
   articulations: [{ articulation: "normal" }],
 }
 
 export const NATIVE_GUITAR_MANIFESTS = [
   KARORYFER_EMILY_GUITAR_MANIFEST,
+  DISCORD_MARTIN_HD28_MANIFEST,
   FREEPATS_SPANISH_CLASSICAL_GUITAR_MANIFEST,
 ] as const
