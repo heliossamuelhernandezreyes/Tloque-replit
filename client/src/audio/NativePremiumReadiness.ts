@@ -68,6 +68,6 @@ export function premiumReadinessError(readiness: NativePremiumReadiness) {
   return [
     "Master premium detenido: una o más fuentes acústicas todavía no alcanzan el umbral de fidelidad de esta obra.",
     ...rows,
-    "Tloque acepta samples, modelos físicos y fuentes híbridas, pero Master sólo se habilita con evidencia versionada; no ocultará huecos con pitch-shift agresivo ni síntesis base genérica.",
+    "Tloque acepta samples, modelos físicos y fuentes híbridas. Un overlay híbrido sin aprobación A/B queda fuera de Master y conserva el sample base verificado; los modelos físicos completos sí requieren evidencia Master propia.",
   ].join("\n")
 }
