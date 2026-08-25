@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "./test-compat"
 import { hybridEnabledForArticulation, nativeHybridForInstrument, NATIVE_HYBRID_SOURCES } from "../shared/native-hybrid-source"
 
-describe("Hybrid Resonance v1", () => {
+describe("Hybrid Resonance v1.1", () => {
   it("covers only sample-first resonant instruments", () => {
     const resonance = NATIVE_HYBRID_SOURCES.filter(source => source.physicalLayer === "sympathetic-resonance")
     expect(new Set(resonance.map(source => source.instrumentId))).toEqual(new Set([
@@ -12,7 +12,7 @@ describe("Hybrid Resonance v1", () => {
     ]))
     for (const source of resonance) {
       expect(source.baseSource).toBe("sample-pack")
-      expect(source.engineVersion).toBe("sympathetic-resonance-v1")
+      expect(source.engineVersion).toBe("sympathetic-resonance-v1.1")
       expect(source.approval).toBe("studio")
       expect(source.masterApproved).toBe(false)
       expect(source.wet).toBeGreaterThan(0)
