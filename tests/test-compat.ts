@@ -2,6 +2,10 @@ import { deepStrictEqual, doesNotThrow, match, ok, strictEqual } from "node:asse
 import { describe, it } from "node:test"
 
 function fail(message: string): never { throw new Error(message) }
+function partialObject(actual: any, expected: Record<PropertyKey, any>) {
+  ok(actual != null && typeof actual === "object", "Expected an object")
+  for (const key of Reflect.ownKeys(expected)) deepStrictEqual(actual[key as any], expected[key as any])
+}
 
 export { describe, it }
 
@@ -10,6 +14,7 @@ export function expect(actual: any, _message?: string) {
   const api: any = {
     toBe(expected: any) { strictEqual(actual, expected) },
     toEqual(expected: any) { deepStrictEqual(actual, expected) },
+    toMatchObject(expected: Record<PropertyKey, any>) { partialObject(actual, expected) },
     toHaveLength(expected: number) { strictEqual(actual?.length, expected) },
     toHaveProperty(property: PropertyKey) { ok(hasOwn(property), `Expected value to have property ${String(property)}`) },
     toBeTruthy() { ok(actual) },
