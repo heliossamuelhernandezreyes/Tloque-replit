@@ -5,11 +5,13 @@ function fail(message: string): never { throw new Error(message) }
 
 export { describe, it }
 
-export function expect(actual: any) {
+export function expect(actual: any, _message?: string) {
+  const hasOwn = (property: PropertyKey) => actual != null && property in Object(actual)
   const api: any = {
     toBe(expected: any) { strictEqual(actual, expected) },
     toEqual(expected: any) { deepStrictEqual(actual, expected) },
     toHaveLength(expected: number) { strictEqual(actual?.length, expected) },
+    toHaveProperty(property: PropertyKey) { ok(hasOwn(property), `Expected value to have property ${String(property)}`) },
     toBeTruthy() { ok(actual) },
     toBeFalsy() { ok(!actual) },
     toBeDefined() { ok(actual !== undefined) },
@@ -34,6 +36,7 @@ export function expect(actual: any) {
     toBe(expected: any) { ok(actual !== expected) },
     toEqual(expected: any) { try { deepStrictEqual(actual, expected) } catch { return }; fail("Expected values not to be deeply equal") },
     toContain(expected: any) { ok(!actual?.includes?.(expected)) },
+    toHaveProperty(property: PropertyKey) { ok(!hasOwn(property), `Expected value not to have property ${String(property)}`) },
     toThrow() { if (typeof actual !== "function") fail("not.toThrow expects a function"); doesNotThrow(actual) },
   }
   return api
