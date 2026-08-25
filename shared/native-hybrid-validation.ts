@@ -88,9 +88,10 @@ export function buildHybridAbReport(
   }
 }
 export function hybridMasterEvidenceValid(source: NativeHybridSource, report: HybridAbValidationReport | null | undefined) {
-  const coverage = new Set(report?.registerResults?.map(result => result.register) ?? [])
+  const registerResults: readonly HybridAbRegisterResult[] = report?.registerResults ?? []
+  const coverage = new Set(registerResults.map(result => result.register))
   return Boolean(report && report.instrumentId === source.instrumentId && report.engineVersion === source.engineVersion && report.physicalLayer === source.physicalLayer &&
-    report.registerResults.length === 3 && coverage.size === 3 && (["low", "mid", "high"] as const).every(register => coverage.has(register)) &&
-    report.objectivePass && report.registerResults.every(result => result.objectivePass && result.metrics.every(metric => metric.pass)) && report.metrics.every(metric => metric.pass) &&
+    registerResults.length === 3 && coverage.size === 3 && (["low", "mid", "high"] as const).every(register => coverage.has(register)) &&
+    report.objectivePass && registerResults.every(result => result.objectivePass && result.metrics.every(metric => metric.pass)) && report.metrics.every(metric => metric.pass) &&
     report.humanReviewMode === "blind-ab" && report.humanPreference === "hybrid")
 }
