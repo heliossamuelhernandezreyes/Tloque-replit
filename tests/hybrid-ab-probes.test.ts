@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "./test-compat"
 import { compileTloqueScore } from "../shared/audio"
 import { NATIVE_HYBRID_SOURCES } from "../shared/native-hybrid-source"
 
