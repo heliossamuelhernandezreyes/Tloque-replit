@@ -2,7 +2,8 @@ import { z } from "zod"
 import { orchestralPercussionMidiFor } from "./orchestral-percussion"
 
 export const TLOQUE_SCORE_COMPILER_V2_LEGACY = "tloque-score-compiler-v2" as const
-export const TLOQUE_SCORE_COMPILER_V2 = "tloque-score-compiler-v2.1" as const
+export const TLOQUE_SCORE_COMPILER_V2_1 = "tloque-score-compiler-v2.1" as const
+export const TLOQUE_SCORE_COMPILER_V2 = "tloque-score-compiler-v2.2" as const
 
 const synthSchema = z.enum(["warm", "pad", "bell", "pluck", "bass"])
 const qualitySchema = z.enum(["core", "studio", "master"])
@@ -28,11 +29,14 @@ export const linearScoreControlV2Schema = z.object({
   trackId: z.string(), sectionId: z.string(), bar: z.number().int().min(1).max(256), beat: z.number().min(1).max(16),
   timeBeats: z.number().min(0).max(4_096), timeSeconds: z.number().min(0).max(3_600), rampBeats: z.number().min(0).max(16), rampSeconds: z.number().min(0).max(30),
   expression: z.number().min(0).max(1).nullable(), brightness: z.number().min(0).max(1).nullable(), vibrato: z.number().min(0).max(1).nullable(), pedal: z.boolean().nullable(), pitchBend: z.number().min(-2).max(2).nullable(),
+  pressure: z.number().min(0).max(1).nullable().default(null), embouchure: z.number().min(0).max(1).nullable().default(null),
+  bowPosition: z.number().min(0).max(1).nullable().default(null), pluckPosition: z.number().min(0).max(1).nullable().default(null),
+  damper: z.number().min(0).max(1).nullable().default(null), sympatheticCoupling: z.number().min(0).max(1).nullable().default(null),
 }).strict()
 export const linearScoreRestV2Schema = z.object({ trackId: z.string(), sectionId: z.string(), bar: z.number().int().min(1).max(256), beat: z.number().min(1).max(16), timeBeats: z.number().min(0).max(4_096), timeSeconds: z.number().min(0).max(3_600), durationBeats: z.number().min(0.03125).max(64), durationSeconds: z.number().min(0.01).max(120) }).strict()
 export const linearScoreSectionV2Schema = z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/), form: formSchema, startBar: z.number().int().min(1).max(256), startSeconds: z.number().min(0).max(3_600), bpm: z.number().int().min(32).max(180), bars: z.number().int().min(1).max(128), repeat: z.number().int().min(1).max(4), fadeBeats: z.number().min(0).max(16), rubato: z.number().min(0).max(0.35).default(0) }).strict()
 export const linearScorePlanV2Schema = z.object({
-  version: z.literal(2), compilerVersion: z.union([z.literal(TLOQUE_SCORE_COMPILER_V2_LEGACY), z.literal(TLOQUE_SCORE_COMPILER_V2)]), sourceHash: z.string().regex(/^[a-f0-9]{8}$/), title: z.string().max(160), bpm: z.number().int().min(32).max(180),
+  version: z.literal(2), compilerVersion: z.union([z.literal(TLOQUE_SCORE_COMPILER_V2_LEGACY), z.literal(TLOQUE_SCORE_COMPILER_V2_1), z.literal(TLOQUE_SCORE_COMPILER_V2)]), sourceHash: z.string().regex(/^[a-f0-9]{8}$/), title: z.string().max(160), bpm: z.number().int().min(32).max(180),
   meter: z.object({ numerator: z.number().int().min(2).max(12), denominator: z.union([z.literal(4), z.literal(8)]) }).strict(), loop: z.boolean(), seed: z.number().int().min(0).max(2_147_483_647), humanize: z.number().min(0).max(1).default(0), quality: qualitySchema,
   moduleId: z.string().regex(/^[a-z][a-z0-9_-]{0,47}$/), totalBars: z.number().int().min(1).max(256), totalBeats: z.number().min(1).max(4_096), totalSeconds: z.number().min(0.1).max(1_800),
   tracks: z.array(linearScoreTrackV2Schema).min(1).max(16), sections: z.array(linearScoreSectionV2Schema).min(1).max(32), events: z.array(linearScoreEventV2Schema).min(1).max(8_192), rests: z.array(linearScoreRestV2Schema).max(4_096), controls: z.array(linearScoreControlV2Schema).max(4_096).default([]),
@@ -145,7 +149,11 @@ function unknownKeys(values: Record<string, string>, allowed: readonly string[])
 interface RawPosition { bar: number; beat: number; durationBeats: number; line: number }
 interface RawEvent extends RawPosition { trackId: string; sectionId: string; notes: number[]; velocity: number; articulation: string; timbre: ScoreTimbre }
 interface RawRest extends RawPosition { trackId: string; sectionId: string }
-interface RawControl extends RawPosition { trackId: string; sectionId: string; rampBeats: number; expression: number | null; brightness: number | null; vibrato: number | null; pedal: boolean | null; pitchBend: number | null }
+interface RawControl extends RawPosition {
+  trackId: string; sectionId: string; rampBeats: number
+  expression: number | null; brightness: number | null; vibrato: number | null; pedal: boolean | null; pitchBend: number | null
+  pressure: number | null; embouchure: number | null; bowPosition: number | null; pluckPosition: number | null; damper: number | null; sympatheticCoupling: number | null
+}
 interface RawSection { id: string; form: string; bars: number; repeat: number; fadeBeats: number; rubato: number; bpm: number; line: number }
 
 export function compileTloqueScoreV2(source: string): TloqueScoreV2CompileResult {
@@ -186,10 +194,20 @@ export function compileTloqueScoreV2(source: string): TloqueScoreV2CompileResult
       if (unknown.length) add(lineNumber, `Parámetro desconocido en hit: ${unknown.join(", ")}`); else if (selector === null) add(lineNumber, `Golpe percusivo desconocido: ${parts[2] || ""}`); else if (!positionWithinSection(position, currentSection.bars)) add(lineNumber, `El golpe debe caer dentro de ${currentSection.bars} compases y ${numerator} tiempos`); else { const candidate = linearScoreEventV2Schema.pick({ durationBeats: true, notes: true, velocity: true, articulation: true, timbre: true }).safeParse({ durationBeats, notes: [selector], velocity, articulation: "normal", timbre: "natural" }); if (!candidate.success) add(lineNumber, "hit necesita nombre conocido, duración 0.03125..64 y velocity=0.01..1"); else rawEvents.push({ ...position, durationBeats, notes: [selector], velocity, articulation: "normal", timbre: "natural", line: lineNumber, trackId: currentTrackId, sectionId: currentSection.id }) }; continue
     }
     if (command === "control") {
-      if (!currentSection || !currentTrackId) { add(lineNumber, "Declara una sección y elige un track antes del control expresivo"); continue }; const position = parsePosition(parts[1] || "", lineNumber); if (!position) continue; const values = keyValues(parts.slice(2)), unknown = unknownKeys(values, ["expression", "brightness", "vibrato", "pedal", "bend", "ramp"]); if (unknown.length) { add(lineNumber, `Parámetro desconocido en control: ${unknown.join(", ")}`); continue }
-      const numberOrNull = (value: string | undefined) => value === undefined ? null : Number(value), expression = numberOrNull(values.expression), brightness = numberOrNull(values.brightness), vibrato = numberOrNull(values.vibrato), pitchBend = numberOrNull(values.bend), rampBeats = values.ramp === undefined ? 0 : Number(values.ramp), pedal = values.pedal === undefined ? null : values.pedal === "down" ? true : values.pedal === "up" ? false : "invalid"
-      const candidate = linearScoreControlV2Schema.pick({ rampBeats: true, expression: true, brightness: true, vibrato: true, pedal: true, pitchBend: true }).safeParse({ rampBeats, expression, brightness, vibrato, pedal, pitchBend }), hasValue = [expression, brightness, vibrato, pedal, pitchBend].some(value => value !== null)
-      if (!positionWithinSection(position, currentSection.bars)) add(lineNumber, `El control debe caer dentro de ${currentSection.bars} compases y ${numerator} tiempos`); else if (!candidate.success || !hasValue) add(lineNumber, "control admite expression=0..1, brightness=0..1, vibrato=0..1, pedal=down|up, bend=-2..2 y ramp=0..16"); else rawControls.push({ ...position, durationBeats: 0.03125, line: lineNumber, trackId: currentTrackId, sectionId: currentSection.id, rampBeats, expression, brightness, vibrato, pedal: pedal as boolean | null, pitchBend }); continue
+      if (!currentSection || !currentTrackId) { add(lineNumber, "Declara una sección y elige un track antes del control expresivo"); continue }
+      const position = parsePosition(parts[1] || "", lineNumber); if (!position) continue
+      const values = keyValues(parts.slice(2)), unknown = unknownKeys(values, ["expression", "brightness", "vibrato", "pedal", "bend", "ramp", "pressure", "embouchure", "bow", "pluck", "damper", "coupling"])
+      if (unknown.length) { add(lineNumber, `Parámetro desconocido en control: ${unknown.join(", ")}`); continue }
+      const numberOrNull = (value: string | undefined) => value === undefined ? null : Number(value)
+      const expression = numberOrNull(values.expression), brightness = numberOrNull(values.brightness), vibrato = numberOrNull(values.vibrato), pitchBend = numberOrNull(values.bend), rampBeats = values.ramp === undefined ? 0 : Number(values.ramp)
+      const pressure = numberOrNull(values.pressure), embouchure = numberOrNull(values.embouchure), bowPosition = numberOrNull(values.bow), pluckPosition = numberOrNull(values.pluck), damper = numberOrNull(values.damper), sympatheticCoupling = numberOrNull(values.coupling)
+      const pedal = values.pedal === undefined ? null : values.pedal === "down" ? true : values.pedal === "up" ? false : "invalid"
+      const candidate = linearScoreControlV2Schema.pick({ rampBeats: true, expression: true, brightness: true, vibrato: true, pedal: true, pitchBend: true, pressure: true, embouchure: true, bowPosition: true, pluckPosition: true, damper: true, sympatheticCoupling: true }).safeParse({ rampBeats, expression, brightness, vibrato, pedal, pitchBend, pressure, embouchure, bowPosition, pluckPosition, damper, sympatheticCoupling })
+      const hasValue = [expression, brightness, vibrato, pedal, pitchBend, pressure, embouchure, bowPosition, pluckPosition, damper, sympatheticCoupling].some(value => value !== null)
+      if (!positionWithinSection(position, currentSection.bars)) add(lineNumber, `El control debe caer dentro de ${currentSection.bars} compases y ${numerator} tiempos`)
+      else if (!candidate.success || !hasValue) add(lineNumber, "control admite expression/brightness/vibrato/pressure/embouchure/bow/pluck/damper/coupling=0..1, pedal=down|up, bend=-2..2 y ramp=0..16")
+      else rawControls.push({ ...position, durationBeats: 0.03125, line: lineNumber, trackId: currentTrackId, sectionId: currentSection.id, rampBeats, expression, brightness, vibrato, pedal: pedal as boolean | null, pitchBend, pressure, embouchure, bowPosition, pluckPosition, damper, sympatheticCoupling })
+      continue
     }
     if (/^\d{1,3}:/.test(command)) {
       if (!currentSection || !currentTrackId) { add(lineNumber, "Declara una sección y elige un track antes de escribir notas"); continue }; const position = parsePosition(command, lineNumber); if (!position) continue; const notes = (parts[1] || "").split(",").map(midiFor), durationBeats = Number(parts[2]), values = keyValues(parts.slice(3)), unknown = unknownKeys(values, ["velocity", "articulation", "timbre"]); if (unknown.length) { add(lineNumber, `Parámetro desconocido en nota: ${unknown.join(", ")}`); continue }
@@ -207,7 +225,7 @@ export function compileTloqueScoreV2(source: string): TloqueScoreV2CompileResult
       const repeatOffset = barOffset + repeat * section.bars, repeatSeconds = secondsOffset + repeat * section.bars * beatsPerBar * 60 / section.bpm
       for (const event of sectionEvents) { const bar = repeatOffset + event.bar, localBeats = (event.bar - 1) * beatsPerBar + (event.beat - 1) * beatUnit, eventSeconds = Math.max(repeatSeconds, repeatSeconds + warpedSeconds(localBeats) + deterministic(`${section.id}:${repeat}:${event.trackId}:${event.bar}:${event.beat}:${event.notes.join(",")}:${event.timbre}`) * humanize * 0.024), eventVelocity = Math.max(0.01, Math.min(1, event.velocity + deterministic(`velocity:${section.id}:${repeat}:${event.trackId}:${event.bar}:${event.beat}`) * humanize * 0.025)); events.push({ trackId: event.trackId, sectionId: section.id, bar, beat: event.beat, timeBeats: (bar - 1) * beatsPerBar + (event.beat - 1) * beatUnit, timeSeconds: eventSeconds, durationBeats: event.durationBeats, durationSeconds: event.durationBeats * 60 / section.bpm, notes: event.notes, velocity: eventVelocity, articulation: event.articulation as z.infer<typeof linearScoreEventV2Schema>["articulation"], timbre: event.timbre }) }
       for (const rest of sectionRests) { const bar = repeatOffset + rest.bar, localBeats = (rest.bar - 1) * beatsPerBar + (rest.beat - 1) * beatUnit; rests.push({ trackId: rest.trackId, sectionId: section.id, bar, beat: rest.beat, timeBeats: (bar - 1) * beatsPerBar + (rest.beat - 1) * beatUnit, timeSeconds: repeatSeconds + warpedSeconds(localBeats), durationBeats: rest.durationBeats, durationSeconds: rest.durationBeats * 60 / section.bpm }) }
-      for (const control of sectionControls) { const bar = repeatOffset + control.bar, localBeats = (control.bar - 1) * beatsPerBar + (control.beat - 1) * beatUnit; controls.push({ trackId: control.trackId, sectionId: section.id, bar, beat: control.beat, timeBeats: (bar - 1) * beatsPerBar + (control.beat - 1) * beatUnit, timeSeconds: repeatSeconds + warpedSeconds(localBeats), rampBeats: control.rampBeats, rampSeconds: control.rampBeats * 60 / section.bpm, expression: control.expression, brightness: control.brightness, vibrato: control.vibrato, pedal: control.pedal, pitchBend: control.pitchBend }) }
+      for (const control of sectionControls) { const bar = repeatOffset + control.bar, localBeats = (control.bar - 1) * beatsPerBar + (control.beat - 1) * beatUnit; controls.push({ trackId: control.trackId, sectionId: section.id, bar, beat: control.beat, timeBeats: (bar - 1) * beatsPerBar + (control.beat - 1) * beatUnit, timeSeconds: repeatSeconds + warpedSeconds(localBeats), rampBeats: control.rampBeats, rampSeconds: control.rampBeats * 60 / section.bpm, expression: control.expression, brightness: control.brightness, vibrato: control.vibrato, pedal: control.pedal, pitchBend: control.pitchBend, pressure: control.pressure, embouchure: control.embouchure, bowPosition: control.bowPosition, pluckPosition: control.pluckPosition, damper: control.damper, sympatheticCoupling: control.sympatheticCoupling }) }
     }
     barOffset += section.bars * section.repeat; secondsOffset += section.bars * section.repeat * beatsPerBar * 60 / section.bpm
   }

@@ -1,6 +1,6 @@
 ---
 name: tloque-score
-version: 2.4
+version: 2.5
 summary: Write deterministic instrumental TloqueScore source for Tloque's native multi-instrument music engine.
 ---
 
@@ -84,6 +84,32 @@ Release samples are automatic when a manifest declares them. Authors do not writ
 
 Mic positions exist in the native sample-pack contract but are not currently an author-facing TloqueScore command. Do not invent `mic=` syntax inside scores.
 
+## Physical performance controls · compiler 2.2
+
+The source header remains `TLOQUE_SCORE 2`. New compilations support dedicated physical axes on ordinary `control` lines. Each dedicated value is normalized `0..1` and persists until another value for the same axis replaces it.
+
+```tloque-score
+control 1:1 pressure=0.72 bow=0.28 coupling=0.45 ramp=0.5
+control 2:1 embouchure=0.62 pressure=0.58 ramp=0.25
+control 3:1 pedal=down damper=0.08 coupling=0.86
+control 4:1 pluck=0.34 damper=0.55 coupling=0.42
+```
+
+Use the axes according to the physical family:
+
+- Bowed strings: `pressure`, `bow`, and optionally `coupling`.
+- Woodwinds and brass: `pressure` and `embouchure`.
+- Piano and celesta: `pedal=down|up`, `damper`, and `coupling`.
+- Harp and guitars: `pluck`, `damper`, and `coupling`.
+
+Do not use an unsupported physical axis merely because the compiler accepts the numeric field. Do not use physical controls to fake a recorded articulation or timbre that already has a real sample route. `pressure` is not a volume fader, `bow` is not a brightness EQ, `embouchure` is not generic tone, and `coupling` is not a loudness boost.
+
+Compatibility is deliberate. When a dedicated axis is absent, Tloque retains the 2.1 bridge: `expression` supplies pressure, `brightness` supplies bow/pluck position or embouchure depending on family, and `pedal` supplies default damper/coupling behaviour. An explicit axis overrides only itself; for example, a later `brightness=` change must not silently replace an explicit `pressure=` or `bow=` value.
+
+Use `ramp=` for physically plausible continuous gestures rather than abrupt jumps. Prefer sparse controls at musically meaningful points; do not write a new physical control on every note unless the performance genuinely changes there.
+
+Dedicated physical controls do not bypass acoustic validation. `quality master` may use a hybrid physical layer only when the exact engine version has approved evidence; otherwise Tloque preserves the verified sample base.
+
 ## Percusión orquestal
 
 For unpitched orchestral percussion use semantic `hit` events on `instrument=percussion.orchestral-kit`, never fake musical pitches. Examples include `bass-drum`, `snare-hit`, `snare-roll`, `crash-cymbal`, `suspended-cymbal`, `tambourine-hit`, `cowbell`, triangle variants, and `sleigh-bells`. One-shot samples must be allowed to finish their physical tails.
@@ -96,7 +122,7 @@ For Baroque string writing, separate solo and section roles, keep continuo rhyth
 
 For ocarina and recorder, favor exposed colour melodies and breath-shaped phrases. For cinematic organ, long sustained notes and repeating figures are strengths: keep `keys.pipe-organ-pedal` below the orchestra, layer `keys.pipe-organ-soft` before the open manual, and let strings and brass widen the spectrum instead of simply maximizing organ gain.
 
-Before returning any generated score, perform a structural self-check: every section has exactly one `end`; every event bar is within that section's `bars`; every beat is valid for the meter; every `use` references a declared track; and no invented commands remain.
+Before returning any generated score, perform a structural self-check: every section has exactly one `end`; every event bar is within that section's `bars`; every beat is valid for the meter; every `use` references a declared track; every physical axis belongs to that instrument family; and no invented commands remain.
 
 ## Complete native-auto example
 
@@ -132,12 +158,13 @@ use viola
 1:2 C4 0.5 velocity=0.56 articulation=spiccato
 1:2.5 B3 0.5 velocity=0.52 articulation=spiccato
 use solo
-control 1:1 expression=0.72 vibrato=0.04 brightness=0.54 ramp=0
+control 1:1 expression=0.72 vibrato=0.04 brightness=0.54 pressure=0.68 bow=0.40 coupling=0.36 ramp=0.5
 1:1 E5 0.5 velocity=0.66 articulation=spiccato
 1:1.5 F5 0.5 velocity=0.70 articulation=spiccato
 1:2 G#5 0.5 velocity=0.74 articulation=spiccato
 1:2.5 A5 0.5 velocity=0.78 articulation=accent
 1:3 G#5 1 velocity=0.68 articulation=staccato
+control 2:1 pressure=0.54 bow=0.58 coupling=0.44 ramp=0.5
 2:1 E5 2 velocity=0.62 articulation=normal
 end
 ```
