@@ -9,15 +9,20 @@ const track = {
   vibrato: 0,
 } as any
 
-const control = (timeSeconds: number, values: Partial<Record<"expression" | "brightness" | "pedal", number | boolean>>) => ({
+const control = (timeSeconds: number, values: Partial<Record<"expression" | "brightness" | "pedal" | "pressure" | "embouchure" | "bowPosition" | "pluckPosition" | "damper" | "sympatheticCoupling", number | boolean>>) => ({
   trackId: "t1",
   timeSeconds,
   expression: values.expression ?? null,
   brightness: values.brightness ?? null,
   vibrato: null,
   pitchBend: null,
-  gain: null,
   pedal: values.pedal ?? null,
+  pressure: values.pressure ?? null,
+  embouchure: values.embouchure ?? null,
+  bowPosition: values.bowPosition ?? null,
+  pluckPosition: values.pluckPosition ?? null,
+  damper: values.damper ?? null,
+  sympatheticCoupling: values.sympatheticCoupling ?? null,
   rampSeconds: 0,
 }) as any
 
@@ -32,7 +37,7 @@ describe("physical performance controls", () => {
     expect(physicalControlSupportedByInstrument("percussion.timpani", "sympatheticCoupling")).toBe(false)
   })
 
-  it("derives pressure and positions from backwards-compatible score controls", () => {
+  it("preserves the 2.1 compatibility bridge when no dedicated fields exist", () => {
     const state = physicalPerformanceStateAt(track, [], 0)
     expect(state.pressure).toBeCloseTo(0.4)
     expect(state.bowPosition).toBeCloseTo(0.7)
@@ -42,7 +47,7 @@ describe("physical performance controls", () => {
     expect(state.damper).toBe(1)
   })
 
-  it("turns the existing pedal command into continuous physical pedal/damper semantics", () => {
+  it("turns pedal into physical pedal/damper semantics when no damper override exists", () => {
     const controls = [control(1, { pedal: true }), control(2, { expression: 0.8, brightness: 0.25 })]
     const down = physicalPerformanceStateAt(track, controls, 1.5)
     const later = physicalPerformanceStateAt(track, controls, 2.5)
@@ -52,5 +57,25 @@ describe("physical performance controls", () => {
     expect(later.pressure).toBeCloseTo(0.8)
     expect(later.pluckPosition).toBeCloseTo(0.25)
     expect(later.embouchure).toBeCloseTo(0.25)
+  })
+
+  it("lets 2.2 physical values override only their own axes and persist", () => {
+    const controls = [
+      control(1, { pressure: 0.91, pluckPosition: 0.18, damper: 0.33, sympatheticCoupling: 0.77 }),
+      control(2, { expression: 0.2, brightness: 0.95 }),
+    ]
+    const state = physicalPerformanceStateAt(track, controls, 2.5)
+    expect(state.pressure).toBeCloseTo(0.91)
+    expect(state.pluckPosition).toBeCloseTo(0.18)
+    expect(state.damper).toBeCloseTo(0.33)
+    expect(state.sympatheticCoupling).toBeCloseTo(0.77)
+    expect(state.bowPosition).toBeCloseTo(0.95)
+    expect(state.embouchure).toBeCloseTo(0.95)
+  })
+
+  it("allows a later dedicated value to replace an earlier dedicated value", () => {
+    const controls = [control(1, { pressure: 0.8 }), control(2, { pressure: 0.35 })]
+    expect(physicalPerformanceStateAt(track, controls, 1.5).pressure).toBeCloseTo(0.8)
+    expect(physicalPerformanceStateAt(track, controls, 2.5).pressure).toBeCloseTo(0.35)
   })
 })
