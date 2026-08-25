@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "./test-compat"
 import { hybridEnabledForArticulation, nativeHybridForInstrument, NATIVE_HYBRID_SOURCES } from "../shared/native-hybrid-source"
 
 describe("Hybrid Strings v1", () => {
