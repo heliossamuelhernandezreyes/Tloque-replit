@@ -16,6 +16,8 @@ export interface HybridAbMetric {
   pass: boolean
 }
 
+export type HybridHumanReviewMode = "blind-ab" | "labeled-ab" | "unreviewed"
+
 export interface HybridAbValidationReport {
   instrumentId: string
   engineVersion: NativeHybridSource["engineVersion"]
@@ -25,6 +27,7 @@ export interface HybridAbValidationReport {
   metrics: readonly HybridAbMetric[]
   objectivePass: boolean
   humanPreference: "sampled" | "hybrid" | "tie" | "unreviewed"
+  humanReviewMode: HybridHumanReviewMode
   reviewerNote: string
 }
 
@@ -60,7 +63,7 @@ export function buildHybridAbReport(
   source: NativeHybridSource,
   sampleReferenceId: string,
   values: Record<HybridAbMetricId, number>,
-  review?: { preference: HybridAbValidationReport["humanPreference"]; note?: string },
+  review?: { preference: HybridAbValidationReport["humanPreference"]; mode?: HybridHumanReviewMode; note?: string },
 ): HybridAbValidationReport {
   const targets = TARGETS[source.physicalLayer]
   const labels: Record<HybridAbMetricId, string> = {
@@ -83,6 +86,7 @@ export function buildHybridAbReport(
     metrics,
     objectivePass: metrics.every(metric => metric.pass),
     humanPreference: review?.preference ?? "unreviewed",
+    humanReviewMode: review?.mode ?? "unreviewed",
     reviewerNote: review?.note?.trim().slice(0, 600) ?? "",
   }
 }
@@ -95,6 +99,7 @@ export function hybridMasterEvidenceValid(source: NativeHybridSource, report: Hy
     report.physicalLayer === source.physicalLayer &&
     report.objectivePass &&
     report.metrics.every(metric => metric.pass) &&
+    report.humanReviewMode === "blind-ab" &&
     report.humanPreference === "hybrid",
   )
 }
