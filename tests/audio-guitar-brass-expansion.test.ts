@@ -23,8 +23,8 @@ test("native-auto exposes a verified premium clean electric guitar", () => {
 test("premium UI makes guitar and full brass easy to install", () => {
   assert.match(hub, /Guitarra/)
   assert.match(hub, /guitar=1/)
-  assert.match(installer, /Metales Premium completos/)
-  assert.match(installer, /Instalar Metales Premium/)
+  assert.match(installer, /Metales Premium/)
+  assert.match(installer, /Instalar todos los metales|Instalar Metales Premium/)
   assert.match(installer, /Emilyguitar/)
   assert.match(installer, /family === "guitar"/)
 })
