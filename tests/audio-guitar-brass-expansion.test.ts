@@ -20,13 +20,15 @@ test("native-auto exposes a verified premium clean electric guitar", () => {
   assert.match(manifests, /KARORYFER_EMILY_GUITAR_MANIFEST/)
 })
 
-test("premium UI makes guitar and full brass easy to install", () => {
+test("premium UI makes guitar and full brass easy to install through the unified catalog", () => {
   assert.match(hub, /Guitarra/)
   assert.match(hub, /guitar=1/)
+  assert.match(installer, /CURATED_INSTALLABLE_SAMPLE_PACKS/)
   assert.match(installer, /Metales Premium/)
   assert.match(installer, /Instalar todos los metales|Instalar Metales Premium/)
-  assert.match(installer, /Emilyguitar/)
   assert.match(installer, /family === "guitar"/)
+  assert.match(installer, /pack\.displayName/)
+  assert.match(installer, /pack\.instrumentId\.startsWith\(`\$\{family\}\.\`\)/)
 })
 
 test("AI skill documents guitar and brass physical capabilities", () => {
