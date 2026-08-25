@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "./test-compat"
 import { hybridBlindAssignment, hybridBlindSideForActual, hybridPreferenceForBlindVote } from "../shared/hybrid-ab-blind"
 
 describe("hybrid blind A/B mapping", () => {
