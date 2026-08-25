@@ -2,7 +2,7 @@ import type { LinearScoreRecipe } from "@shared/audio"
 import { manifestsForModule, type InstrumentManifest, type TloqueArticulation } from "@shared/instrument-manifest"
 import type { TloqueMicPosition, TloqueMute, TloqueSamplePack, TloqueSampleZone, TloqueVibratoColour } from "@shared/native-sample-pack"
 import { physicalRecordedTimbre, recordedTimbreProfileFor, resolveRecordedTimbre, type ExplicitRecordedTimbre } from "@shared/recorded-timbre"
-import type { ScoreTimbre } from "@shared/tloque-score-v2"
+import type { LinearScoreRecipeV2, ScoreTimbre } from "@shared/tloque-score-v2"
 import { selectNativeSampleZone } from "./NativeSamplePackEngine"
 import { selectNativeSampleVelocityBlend } from "./NativeSampleVelocityBlend"
 import { buildPerformancePlan } from "./PerformanceEngine"
@@ -82,7 +82,11 @@ function timbreCandidates(moduleId: string, requested: ScoreTimbre, vibratoAmoun
   return requested === "natural" ? naturalTimbreCandidates(moduleId, vibratoAmount) : [resolveRecordedTimbre(moduleId, requested)]
 }
 
-function vibratoAtTime(recipe: LinearScoreRecipe, trackId: string, timeSeconds: number, initial: number) {
+function blendHasExactNoteCoverage(blend: ReturnType<typeof selectNativeSampleVelocityBlend>, note: number) {
+  return blend.some(selection => note >= selection.zone.loMidi && note <= selection.zone.hiMidi)
+}
+
+function vibratoAtTime(recipe: LinearScoreRecipeV2, trackId: string, timeSeconds: number, initial: number) {
   const controls = recipe.plan.controls
     .filter(control => control.trackId === trackId && control.vibrato !== null)
     .sort((a, b) => a.timeSeconds - b.timeSeconds)
@@ -140,7 +144,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
   const voices: NativeSampleVoicePlan[] = []
   const auxiliaryVoices: NativeSampleAuxiliaryVoicePlan[] = []
   const zones = new Map<string, TloqueSampleZone>()
-  const previousEventByTrack = new Map<string, LinearScoreRecipe["plan"]["events"][number]>()
+  const previousEventByTrack = new Map<string, LinearScoreRecipeV2["plan"]["events"][number]>()
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
     const decision = performance.decisionForEvent(eventIndex)
@@ -166,14 +170,25 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     for (const note of event.notes) {
       let selections: ReturnType<typeof selectNativeSampleVelocityBlend> = []
       let resolvedTimbre: ExplicitRecordedTimbre | null = null
+      let fallbackSelections: ReturnType<typeof selectNativeSampleVelocityBlend> = []
+      let fallbackTimbre: ExplicitRecordedTimbre | null = null
       for (const candidate of candidates) {
         const physical = physicalRecordedTimbre(candidate)
         const blend = selectNativeSampleVelocityBlend(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "attack", micPosition })
-        if (blend.length) {
+        if (!blend.length) continue
+        if (!fallbackSelections.length) {
+          fallbackSelections = blend
+          fallbackTimbre = candidate
+        }
+        if (requestedTimbre !== "natural" || blendHasExactNoteCoverage(blend, note)) {
           selections = blend
           resolvedTimbre = candidate
           break
         }
+      }
+      if (!selections.length && fallbackSelections.length && fallbackTimbre) {
+        selections = fallbackSelections
+        resolvedTimbre = fallbackTimbre
       }
       if (!selections.length || !resolvedTimbre) {
         const attempted = candidates.join("|")

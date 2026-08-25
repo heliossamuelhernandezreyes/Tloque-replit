@@ -8,7 +8,7 @@ import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./Native
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
 import { assessNativePremiumReadiness, premiumReadinessError } from "./NativePremiumReadiness"
 import { createAcousticStage } from "./ScoreAcousticStage"
-import { encodeAudioBufferToWav, type ScoreExportOptions } from "./ScoreExporter"
+import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQuality } from "./ScoreExporter"
 import { createSampledMixMaster } from "./ScoreMixMaster"
 
 const MAX_OFFLINE_FLOAT_BYTES = 220 * 1024 * 1024
@@ -32,7 +32,10 @@ export interface NativeSamplePackPreflight {
 
 function nativeSampleQuality(value: unknown, options: ScoreExportOptions) {
   const recipe = linearScoreRecipeFor(value)
-  const requested = options.quality ?? (recipe.version === 2 && recipe.plan.quality === "core" ? "preview" : recipe.version === 2 ? recipe.plan.quality : "studio")
+  const recipeQuality: ScoreExportQuality = recipe.version === 2
+    ? recipe.plan.quality === "core" ? "preview" : recipe.plan.quality
+    : "studio"
+  const requested: ScoreExportQuality = options.quality ?? recipeQuality
   return requested === "preview"
     ? { quality: requested, sampleRate: 32_000, bitDepth: 16 as const, tail: 2.5 }
     : { quality: requested, sampleRate: 48_000, bitDepth: 24 as const, tail: requested === "master" ? 8 : 5 }
@@ -55,7 +58,7 @@ function trackAtEvent(recipe: LinearScoreRecipeV2, track: LinearScoreTrackV2, ti
   }
   return { ...track, expression, brightness, vibrato }
 }
-function hybridEnabledForExport(source: NonNullable<ReturnType<typeof nativeHybridForInstrument>>, quality: "preview" | "studio" | "master", mode: HybridExportMode) {
+function hybridEnabledForExport(source: NonNullable<ReturnType<typeof nativeHybridForInstrument>>, quality: ScoreExportQuality, mode: HybridExportMode) {
   if (mode === "none" || quality === "preview") return false
   return quality !== "master" || hybridSourceMasterApproved(source)
 }

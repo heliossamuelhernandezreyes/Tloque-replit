@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "./test-compat"
 import { boundedHybridCalibrationTuning, DEFAULT_HYBRID_CALIBRATION_TUNING } from "../shared/native-hybrid-tuning"
 
 describe("hybrid family tuning contract", () => {

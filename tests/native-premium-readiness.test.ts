@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { premiumReadinessError, type NativePremiumReadiness } from "../client/src/audio/NativePremiumReadiness"
 import { auditNativeSampleDemand } from "../client/src/audio/NativeSampleDemandAudit"
 
-test("el error premium explica el banco físico responsable", () => {
+test("el error premium explica la fuente acústica responsable y la política Master", () => {
   const readiness = {
     ready: false,
     blockers: [{ moduleId: "brass", instruments: ["brass.trumpet"], reason: "coverage-risk", message: "transposición máx. 7 semitonos" }],
@@ -14,7 +14,8 @@ test("el error premium explica el banco físico responsable", () => {
   const message = premiumReadinessError(readiness)
   assert.match(message, /brass\.trumpet/)
   assert.match(message, /7 semitonos/)
-  assert.match(message, /no ocultará huecos físicos/)
+  assert.match(message, /Master premium detenido/)
+  assert.match(message, /modelos físicos|fuentes híbridas/)
 })
 
 test("la demanda real detecta pitch shift audible aunque el plan compile", () => {

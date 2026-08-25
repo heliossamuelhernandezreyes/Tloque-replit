@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "./test-compat"
 import { NATIVE_HYBRID_SOURCES, nativeHybridForInstrument } from "../shared/native-hybrid-source"
 
 const engineForLayer = {

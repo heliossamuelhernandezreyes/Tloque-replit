@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "./test-compat"
 import { compileTloqueScoreV2, linearScoreRecipeV2Schema, TLOQUE_SCORE_COMPILER_V2, TLOQUE_SCORE_COMPILER_V2_1 } from "../shared/tloque-score-v2"
 
 const base = `TLOQUE_SCORE 2

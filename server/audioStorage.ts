@@ -2,7 +2,7 @@ import { Client } from "@replit/object-storage"
 
 type AudioStorageClientFactory = () => Client
 
-type AudioStorageEnvironment = {
+type AudioStorageEnvironment = Record<string, string | undefined> & {
   TLOQUE_AUDIO_BUCKET_ID?: string
 }
 

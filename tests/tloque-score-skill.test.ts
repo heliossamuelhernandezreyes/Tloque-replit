@@ -7,17 +7,17 @@ import { compileTloqueScore } from "../shared/audio"
 const skillPath = resolve(process.cwd(), "skills/tloque-score/SKILL.md")
 const downloadableSkillPath = resolve(process.cwd(), "client/public/downloads/TLOQUE_SCORE_AI_SKILL.md")
 
-test("la skill canónica declara el contrato y contiene un ejemplo compilable", async () => {
+test("la skill canónica declara el contrato y contiene un ejemplo completo compilable", async () => {
   const content = await readFile(skillPath, "utf8")
   assert.match(content, /TLOQUE_SCORE 2/)
   assert.match(content, /instrumental/i)
   assert.match(content, /module/i)
   assert.match(content, /velocity/i)
   assert.match(content, /articulation/i)
-  const fence = content.match(/```tloque-score\n([\s\S]*?)```/)
-  assert.ok(fence, "La skill canónica debe contener un bloque tloque-score")
+  const fence = content.match(/## Complete native-auto example[\s\S]*?```tloque-score\n([\s\S]*?)```/)
+  assert.ok(fence, "La skill canónica debe contener el ejemplo native-auto completo")
   const result = compileTloqueScore(fence![1].trim())
-  assert.equal(result.ok, true)
+  assert.equal(result.ok, true, result.ok ? undefined : JSON.stringify(result.diagnostics))
 })
 
 test("timbre a nivel de track forma parte del contrato real del compilador", () => {
