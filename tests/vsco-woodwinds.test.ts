@@ -13,7 +13,7 @@ import { compileCuratedSfzZones, compileSfzBundleToTloqueSamplePack } from "../s
 const COMMIT = "6dd651d55dde97fd4028699be9d4481f26917891"
 
 test("VSCO woodwinds registra flauta, clarinete, oboe y fagot con colores grabados verificados", () => {
-  const packs = CURATED_SAMPLE_PACKS.filter(pack => pack.instrumentId.startsWith("woodwinds."))
+  const packs = CURATED_SAMPLE_PACKS.filter(pack => pack.instrumentId.startsWith("woodwinds.") && pack.id.startsWith("vsco2-ce-"))
   assert.deepEqual(packs.map(pack => pack.displayName), ["Flute", "Clarinet", "Oboe", "Bassoon"])
   assert.equal(new Set(packs.map(pack => pack.moduleId)).size, 4)
   for (const pack of packs) {
