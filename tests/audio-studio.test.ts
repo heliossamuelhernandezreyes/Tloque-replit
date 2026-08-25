@@ -32,7 +32,7 @@ test("TloqueScore compila la partitura de referencia de forma determinista", () 
   }
 })
 
-test("TloqueScore V2.1 compila interpretación expresiva y articulaciones extendidas", () => {
+test("TloqueScore V2.2 conserva interpretación expresiva y articulaciones extendidas", () => {
   const result = compileTloqueScore(`TLOQUE_SCORE 2
 title "Frase expresiva"
 tempo 60
@@ -54,7 +54,7 @@ control 2:1 pedal=up bend=0 ramp=0.5
 end`)
   assert.equal(result.ok, true, result.ok ? undefined : JSON.stringify(result.diagnostics))
   if (!result.ok || result.recipe.version !== 2) return
-  assert.equal(result.recipe.plan.compilerVersion, "tloque-score-compiler-v2.1")
+  assert.equal(result.recipe.plan.compilerVersion, TLOQUE_SCORE_COMPILER_VERSION)
   assert.equal(result.recipe.plan.controls.length, 3)
   assert.deepEqual(result.recipe.plan.events.map(event => event.articulation), ["pizzicato", "spiccato", "harmonic"])
   assert.equal(result.recipe.plan.controls[1].expression, 0.8)
@@ -62,7 +62,7 @@ end`)
   assert.equal(result.recipe.plan.controls[2].pedal, false)
 })
 
-test("TloqueScore V2.1 señala parámetros y gestos inválidos por línea", () => {
+test("TloqueScore V2.2 señala parámetros y gestos inválidos por línea", () => {
   const result = compileTloqueScore(`TLOQUE_SCORE 2
 track violin synth=pad role=melody gain=0.2 pan=0 expresion=0.5
 section phrase form=exposition bars=1
