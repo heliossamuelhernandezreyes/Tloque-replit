@@ -26,6 +26,6 @@ test("preview y WAV enrutan cada instrumento semántico por el mismo stage", () 
   const offline = fs.readFileSync("client/src/audio/NativeSampleScoreExporter.ts", "utf8")
   for (const source of [live, offline]) {
     assert.match(source, /createAcousticStage\(context, mix\.input\)/)
-    assert.match(source, /stage\.createTrackInput\(semanticTrack\?\.instrument \?\? "unknown", track\.pan\)/)
+    assert.match(source, /stage\.createTrackInput\(semanticTrack\?\.instrument \?\? "unknown", (?:track\.pan|pan)\)/)
   }
 })
