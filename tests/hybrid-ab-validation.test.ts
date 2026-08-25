@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "./test-compat"
 import { hybridSourceMasterApproved } from "../shared/native-hybrid-approval-registry"
 import { nativeHybridForInstrument } from "../shared/native-hybrid-source"
 import {
