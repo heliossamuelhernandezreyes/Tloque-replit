@@ -1,4 +1,5 @@
 import type { NativeHybridSource } from "@shared/native-hybrid-source"
+import type { HybridCalibrationTuning } from "@shared/native-hybrid-tuning"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import { scheduleAirColumnOverlay } from "./PhysicalAirColumnOverlay"
 import { scheduleBowedStringOverlay } from "./PhysicalBowedStringOverlay"
@@ -15,6 +16,7 @@ export interface HybridPhysicalOverlayOptions {
   destination: AudioNode
   controls?: readonly LinearScoreControlV2[]
   legatoFromPrevious?: boolean
+  calibrationTuning?: HybridCalibrationTuning
 }
 
 export function scheduleHybridPhysicalOverlay(
