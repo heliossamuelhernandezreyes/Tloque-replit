@@ -6,6 +6,7 @@ export type HybridAbMetricId =
   | "dynamic-response"
   | "spectral-deviation"
   | "tail-naturalness"
+export type HybridAbRegister = "low" | "mid" | "high"
 
 export interface HybridAbMetric {
   id: HybridAbMetricId
@@ -15,7 +16,12 @@ export interface HybridAbMetric {
   targetMax: number
   pass: boolean
 }
-
+export interface HybridAbRegisterResult {
+  register: HybridAbRegister
+  midi: number
+  metrics: readonly HybridAbMetric[]
+  objectivePass: boolean
+}
 export type HybridHumanReviewMode = "blind-ab" | "labeled-ab" | "unreviewed"
 
 export interface HybridAbValidationReport {
@@ -24,6 +30,7 @@ export interface HybridAbValidationReport {
   physicalLayer: NativeHybridPhysicalLayer
   generatedAt: string
   sampleReferenceId: string
+  registerResults: readonly HybridAbRegisterResult[]
   metrics: readonly HybridAbMetric[]
   objectivePass: boolean
   humanPreference: "sampled" | "hybrid" | "tie" | "unreviewed"
@@ -32,74 +39,58 @@ export interface HybridAbValidationReport {
 }
 
 interface MetricTarget { min: number; max: number }
-
 const TARGETS: Record<NativeHybridPhysicalLayer, Record<HybridAbMetricId, MetricTarget>> = {
   "bowed-string-resonator": {
-    "transient-preservation": { min: 0.9, max: 1 },
-    "sustain-continuity": { min: 0.08, max: 1 },
-    "dynamic-response": { min: 0.9, max: 1 },
-    "spectral-deviation": { min: 0, max: 0.18 },
-    "tail-naturalness": { min: 0.02, max: 1 },
+    "transient-preservation": { min: 0.9, max: 1 }, "sustain-continuity": { min: 0.08, max: 1 }, "dynamic-response": { min: 0.9, max: 1 }, "spectral-deviation": { min: 0, max: 0.18 }, "tail-naturalness": { min: 0.02, max: 1 },
   },
   "air-column-resonator": {
-    "transient-preservation": { min: 0.92, max: 1 },
-    "sustain-continuity": { min: 0.07, max: 1 },
-    "dynamic-response": { min: 0.92, max: 1 },
-    "spectral-deviation": { min: 0, max: 0.16 },
-    "tail-naturalness": { min: 0.015, max: 1 },
+    "transient-preservation": { min: 0.92, max: 1 }, "sustain-continuity": { min: 0.07, max: 1 }, "dynamic-response": { min: 0.92, max: 1 }, "spectral-deviation": { min: 0, max: 0.16 }, "tail-naturalness": { min: 0.015, max: 1 },
   },
   "sympathetic-resonance": {
-    "transient-preservation": { min: 0.96, max: 1 },
-    "sustain-continuity": { min: 0.03, max: 1 },
-    "dynamic-response": { min: 0.94, max: 1 },
-    "spectral-deviation": { min: 0, max: 0.12 },
-    "tail-naturalness": { min: 0.08, max: 1 },
+    "transient-preservation": { min: 0.96, max: 1 }, "sustain-continuity": { min: 0.03, max: 1 }, "dynamic-response": { min: 0.94, max: 1 }, "spectral-deviation": { min: 0, max: 0.12 }, "tail-naturalness": { min: 0.08, max: 1 },
   },
 }
-
+const LABELS: Record<HybridAbMetricId, string> = {
+  "transient-preservation": "Preservación del ataque sampleado", "sustain-continuity": "Ganancia de continuidad sostenida", "dynamic-response": "Preservación del contraste dinámico", "spectral-deviation": "Desviación espectral vs sample", "tail-naturalness": "Extensión controlada de cola",
+}
 export function hybridMetricTargets(layer: NativeHybridPhysicalLayer) { return TARGETS[layer] }
-
+function metricsFor(source: NativeHybridSource, values: Record<HybridAbMetricId, number>) {
+  const targets = TARGETS[source.physicalLayer]
+  return (Object.keys(targets) as HybridAbMetricId[]).map(id => {
+    const target = targets[id], value = values[id]
+    return { id, label: LABELS[id], value, targetMin: target.min, targetMax: target.max, pass: Number.isFinite(value) && value >= target.min && value <= target.max }
+  })
+}
+export interface HybridAbRegisterValues { register: HybridAbRegister; midi: number; values: Record<HybridAbMetricId, number> }
 export function buildHybridAbReport(
   source: NativeHybridSource,
   sampleReferenceId: string,
-  values: Record<HybridAbMetricId, number>,
+  registerValues: readonly HybridAbRegisterValues[],
   review?: { preference: HybridAbValidationReport["humanPreference"]; mode?: HybridHumanReviewMode; note?: string },
 ): HybridAbValidationReport {
-  const targets = TARGETS[source.physicalLayer]
-  const labels: Record<HybridAbMetricId, string> = {
-    "transient-preservation": "Preservación del ataque sampleado",
-    "sustain-continuity": "Ganancia de continuidad sostenida",
-    "dynamic-response": "Preservación del contraste dinámico",
-    "spectral-deviation": "Desviación espectral vs sample",
-    "tail-naturalness": "Extensión controlada de cola",
-  }
-  const metrics = (Object.keys(targets) as HybridAbMetricId[]).map(id => {
-    const target = targets[id], value = values[id]
-    return { id, label: labels[id], value, targetMin: target.min, targetMax: target.max, pass: Number.isFinite(value) && value >= target.min && value <= target.max }
+  const registerResults = registerValues.map(item => {
+    const metrics = metricsFor(source, item.values)
+    return { register: item.register, midi: item.midi, metrics, objectivePass: metrics.every(metric => metric.pass) }
   })
+  const ids = Object.keys(TARGETS[source.physicalLayer]) as HybridAbMetricId[]
+  const worstValues = Object.fromEntries(ids.map(id => {
+    const target = TARGETS[source.physicalLayer][id]
+    const values = registerResults.map(result => result.metrics.find(metric => metric.id === id)?.value ?? Number.NaN)
+    return [id, target.min === 0 ? Math.max(...values) : Math.min(...values)]
+  })) as Record<HybridAbMetricId, number>
+  const metrics = metricsFor(source, worstValues)
+  const coverage = new Set(registerResults.map(result => result.register))
+  const completeCoverage = registerResults.length === 3 && coverage.size === 3 && (["low", "mid", "high"] as const).every(register => coverage.has(register))
   return {
-    instrumentId: source.instrumentId,
-    engineVersion: source.engineVersion,
-    physicalLayer: source.physicalLayer,
-    generatedAt: new Date().toISOString(),
-    sampleReferenceId,
-    metrics,
-    objectivePass: metrics.every(metric => metric.pass),
-    humanPreference: review?.preference ?? "unreviewed",
-    humanReviewMode: review?.mode ?? "unreviewed",
-    reviewerNote: review?.note?.trim().slice(0, 600) ?? "",
+    instrumentId: source.instrumentId, engineVersion: source.engineVersion, physicalLayer: source.physicalLayer, generatedAt: new Date().toISOString(), sampleReferenceId,
+    registerResults, metrics, objectivePass: completeCoverage && registerResults.every(result => result.objectivePass) && metrics.every(metric => metric.pass),
+    humanPreference: review?.preference ?? "unreviewed", humanReviewMode: review?.mode ?? "unreviewed", reviewerNote: review?.note?.trim().slice(0, 600) ?? "",
   }
 }
-
 export function hybridMasterEvidenceValid(source: NativeHybridSource, report: HybridAbValidationReport | null | undefined) {
-  return Boolean(
-    report &&
-    report.instrumentId === source.instrumentId &&
-    report.engineVersion === source.engineVersion &&
-    report.physicalLayer === source.physicalLayer &&
-    report.objectivePass &&
-    report.metrics.every(metric => metric.pass) &&
-    report.humanReviewMode === "blind-ab" &&
-    report.humanPreference === "hybrid",
-  )
+  const coverage = new Set(report?.registerResults?.map(result => result.register) ?? [])
+  return Boolean(report && report.instrumentId === source.instrumentId && report.engineVersion === source.engineVersion && report.physicalLayer === source.physicalLayer &&
+    report.registerResults.length === 3 && coverage.size === 3 && (["low", "mid", "high"] as const).every(register => coverage.has(register)) &&
+    report.objectivePass && report.registerResults.every(result => result.objectivePass && result.metrics.every(metric => metric.pass)) && report.metrics.every(metric => metric.pass) &&
+    report.humanReviewMode === "blind-ab" && report.humanPreference === "hybrid")
 }
