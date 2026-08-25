@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "./test-compat"
 import { physicalControlSupportedByInstrument, physicalPerformanceStateAt } from "../shared/physical-performance-control"
 
 const track = {
