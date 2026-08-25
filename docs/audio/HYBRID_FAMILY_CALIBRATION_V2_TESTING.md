@@ -1,1 +1,0 @@
-Testing expectations: baseline render paths must remain neutral when no calibration tuning is attached; candidates must preserve the 3x3 probe and carry calibrationCandidateId; family-specific planner tests must verify changed axes and bounds; promotion remains a manual/versioned process.
