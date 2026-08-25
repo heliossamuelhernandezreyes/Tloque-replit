@@ -39,6 +39,7 @@ export interface HybridAbValidationReport {
   physicalLayer: NativeHybridPhysicalLayer
   generatedAt: string
   sampleReferenceId: string
+  calibrationCandidateId: string | null
   cellResults: readonly HybridAbCellResult[]
   registerResults: readonly HybridAbRegisterResult[]
   metrics: readonly HybridAbMetric[]
@@ -113,6 +114,7 @@ export function buildHybridAbReport(
   sampleReferenceId: string,
   cellValues: readonly HybridAbCellValues[],
   review?: { preference: HybridAbValidationReport["humanPreference"]; mode?: HybridHumanReviewMode; note?: string },
+  calibrationCandidateId: string | null = null,
 ): HybridAbValidationReport {
   const cellResults = cellValues.map(item => {
     const metrics = metricsFor(source, item.values)
@@ -131,6 +133,7 @@ export function buildHybridAbReport(
     physicalLayer: source.physicalLayer,
     generatedAt: new Date().toISOString(),
     sampleReferenceId,
+    calibrationCandidateId,
     cellResults,
     registerResults,
     metrics,
@@ -149,6 +152,7 @@ export function hybridMasterEvidenceValid(source: NativeHybridSource, report: Hy
     report.instrumentId === source.instrumentId &&
     report.engineVersion === source.engineVersion &&
     report.physicalLayer === source.physicalLayer &&
+    !report.calibrationCandidateId &&
     exactCoverage &&
     report.objectivePass &&
     cells.every(cell => cell.objectivePass && cell.metrics.every(metric => metric.pass)) &&
