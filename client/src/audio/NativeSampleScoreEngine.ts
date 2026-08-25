@@ -3,15 +3,14 @@ import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
 import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared/native-hybrid-source"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
+import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import type { MusicCue, MusicState } from "./MusicEngine"
+import { nativeModuleGroupsForRecipe, recipeForNativeModule, type NativeModuleGroup } from "./NativeAutoModule"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { schedulePhysicalReedVoice } from "./PhysicalReedModel"
-import { scheduleBowedStringOverlay } from "./PhysicalBowedStringOverlay"
-import { scheduleAirColumnOverlay } from "./PhysicalAirColumnOverlay"
-import { createSampledMixMaster } from "./ScoreMixMaster"
 import { createAcousticStage } from "./ScoreAcousticStage"
-import { nativeModuleGroupsForRecipe, recipeForNativeModule, type NativeModuleGroup } from "./NativeAutoModule"
+import { createSampledMixMaster } from "./ScoreMixMaster"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 
@@ -26,12 +25,10 @@ function createRealtimeAudioContext() {
   try { return new AudioContext({ latencyHint: "playback", sampleRate: 48_000 }) }
   catch { return new AudioContext({ latencyHint: "playback" }) }
 }
-
 function brightnessCutoff(value: number) {
   const amount = Math.max(0, Math.min(1, value))
   return 3_400 + Math.pow(amount, 0.72) * 16_000
 }
-
 function trackAtEvent(recipe: LinearScoreRecipeV2, track: LinearScoreTrackV2, timeSeconds: number): LinearScoreTrackV2 {
   let expression = track.expression, brightness = track.brightness, vibrato = track.vibrato
   for (const control of recipe.plan.controls) {
@@ -129,8 +126,6 @@ export class NativeSampleScoreEngine {
         }
       }
 
-      // Hybrid acoustic overlays are experimental in Studio. Master playback keeps
-      // the verified sample base unless the exact overlay engineVersion has A/B evidence.
       const previousHybridEndByTrack = new Map<string, number>()
       for (const event of [...recipe.plan.events].sort((a, b) => a.timeSeconds - b.timeSeconds)) {
         const track = recipeTrackById.get(event.trackId), destination = trackGain.get(event.trackId)
@@ -142,10 +137,7 @@ export class NativeSampleScoreEngine {
         const legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
         const controls = recipe.plan.controls.filter(control => control.trackId === event.trackId)
         for (const midi of event.notes) {
-          const options = { startAt, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious }
-          const overlay = hybrid.physicalLayer === "bowed-string-resonator"
-            ? scheduleBowedStringOverlay(context, hybrid, options)
-            : scheduleAirColumnOverlay(context, hybrid, options)
+          const overlay = scheduleHybridPhysicalOverlay(context, hybrid, { startAt, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
           if (overlay) naturalEnd = Math.max(naturalEnd, overlay.endSeconds)
         }
         previousHybridEndByTrack.set(event.trackId, event.timeSeconds + event.durationSeconds)
