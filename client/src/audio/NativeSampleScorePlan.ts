@@ -82,6 +82,10 @@ function timbreCandidates(moduleId: string, requested: ScoreTimbre, vibratoAmoun
   return requested === "natural" ? naturalTimbreCandidates(moduleId, vibratoAmount) : [resolveRecordedTimbre(moduleId, requested)]
 }
 
+function blendHasExactNoteCoverage(blend: ReturnType<typeof selectNativeSampleVelocityBlend>, note: number) {
+  return blend.some(selection => note >= selection.zone.loMidi && note <= selection.zone.hiMidi)
+}
+
 function vibratoAtTime(recipe: LinearScoreRecipeV2, trackId: string, timeSeconds: number, initial: number) {
   const controls = recipe.plan.controls
     .filter(control => control.trackId === trackId && control.vibrato !== null)
@@ -166,14 +170,25 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     for (const note of event.notes) {
       let selections: ReturnType<typeof selectNativeSampleVelocityBlend> = []
       let resolvedTimbre: ExplicitRecordedTimbre | null = null
+      let fallbackSelections: ReturnType<typeof selectNativeSampleVelocityBlend> = []
+      let fallbackTimbre: ExplicitRecordedTimbre | null = null
       for (const candidate of candidates) {
         const physical = physicalRecordedTimbre(candidate)
         const blend = selectNativeSampleVelocityBlend(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "attack", micPosition })
-        if (blend.length) {
+        if (!blend.length) continue
+        if (!fallbackSelections.length) {
+          fallbackSelections = blend
+          fallbackTimbre = candidate
+        }
+        if (requestedTimbre !== "natural" || blendHasExactNoteCoverage(blend, note)) {
           selections = blend
           resolvedTimbre = candidate
           break
         }
+      }
+      if (!selections.length && fallbackSelections.length && fallbackTimbre) {
+        selections = fallbackSelections
+        resolvedTimbre = fallbackTimbre
       }
       if (!selections.length || !resolvedTimbre) {
         const attempted = candidates.join("|")
