@@ -3,8 +3,8 @@ import { NATIVE_HYBRID_SOURCES, nativeHybridForInstrument } from "../shared/nati
 
 const engineForLayer = {
   "bowed-string-resonator": "bowed-string-overlay-v1",
-  "air-column-resonator": "air-column-overlay-v1",
-  "sympathetic-resonance": "sympathetic-resonance-v1",
+  "air-column-resonator": "air-column-overlay-v1.1",
+  "sympathetic-resonance": "sympathetic-resonance-v1.1",
 } as const
 
 describe("hybrid render parity contract", () => {
@@ -21,13 +21,14 @@ describe("hybrid render parity contract", () => {
       const source = nativeHybridForInstrument(id)
       expect(source).not.toBeNull()
       expect(source?.physicalLayer).toBe("sympathetic-resonance")
-      expect(source?.engineVersion).toBe("sympathetic-resonance-v1")
+      expect(source?.engineVersion).toBe("sympathetic-resonance-v1.1")
     }
   })
 
   it("keeps representative bowed and wind instruments on their own families", () => {
     expect(nativeHybridForInstrument("strings.violin")?.physicalLayer).toBe("bowed-string-resonator")
     expect(nativeHybridForInstrument("woodwinds.flute")?.physicalLayer).toBe("air-column-resonator")
+    expect(nativeHybridForInstrument("woodwinds.flute")?.engineVersion).toBe("air-column-overlay-v1.1")
     expect(nativeHybridForInstrument("brass.trumpet")?.physicalLayer).toBe("air-column-resonator")
   })
 })
