@@ -42,6 +42,7 @@ export function expect(actual: any, _message?: string) {
     toEqual(expected: any) { try { deepStrictEqual(actual, expected) } catch { return }; fail("Expected values not to be deeply equal") },
     toContain(expected: any) { ok(!actual?.includes?.(expected)) },
     toHaveProperty(property: PropertyKey) { ok(!hasOwn(property), `Expected value not to have property ${String(property)}`) },
+    toBeNull() { ok(actual !== null) },
     toThrow() { if (typeof actual !== "function") fail("not.toThrow expects a function"); doesNotThrow(actual) },
   }
   return api
