@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "./test-compat"
 import { nativeHybridForInstrument } from "../shared/native-hybrid-source"
 import { hybridMetricTargets, buildHybridAbReport, hybridMasterEvidenceValid, type HybridAbCellValues } from "../shared/native-hybrid-validation"
 import { hybridCalibrationScore, proposeHybridCalibrationCandidate, sourceWithCalibrationCandidate } from "../shared/native-hybrid-calibration"
