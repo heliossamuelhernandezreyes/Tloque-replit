@@ -16,14 +16,23 @@ describe("hybrid A/B validation", () => {
     const report = buildHybridAbReport(source, "vsco2-ce-solo-violin", valuesFor(source.instrumentId))
     expect(report.objectivePass).toBe(true)
     expect(report.humanPreference).toBe("unreviewed")
+    expect(report.humanReviewMode).toBe("unreviewed")
     expect(hybridMasterEvidenceValid(source, report)).toBe(false)
   })
 
-  it("requires exact engine version and a human A/B win", () => {
+  it("requires exact engine version, blind review and a human A/B win", () => {
     const source = nativeHybridForInstrument("piano.grand")!
-    const report = buildHybridAbReport(source, "vcsl-estuary-grand-piano", valuesFor(source.instrumentId), { preference: "hybrid", note: "B conserva ataque y mejora cola." })
+    const report = buildHybridAbReport(source, "vcsl-estuary-grand-piano", valuesFor(source.instrumentId), { preference: "hybrid", mode: "blind-ab", note: "La opción elegida conserva ataque y mejora cola." })
     expect(hybridMasterEvidenceValid(source, report)).toBe(true)
-    expect(hybridMasterEvidenceValid({ ...source, engineVersion: "air-column-overlay-v1" } as any, report)).toBe(false)
+    expect(hybridMasterEvidenceValid({ ...source, engineVersion: "air-column-overlay-v1.1" } as any, report)).toBe(false)
+  })
+
+  it("rejects a labeled A/B win even when every objective metric passes", () => {
+    const source = nativeHybridForInstrument("woodwinds.flute")!
+    const report = buildHybridAbReport(source, "vsco2-flute", valuesFor(source.instrumentId), { preference: "hybrid", mode: "labeled-ab", note: "Reviewer knew which side was hybrid." })
+    expect(report.objectivePass).toBe(true)
+    expect(report.humanPreference).toBe("hybrid")
+    expect(hybridMasterEvidenceValid(source, report)).toBe(false)
   })
 
   it("uses stricter transient preservation for sympathetic resonance", () => {

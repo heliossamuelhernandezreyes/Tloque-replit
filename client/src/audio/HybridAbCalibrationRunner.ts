@@ -16,13 +16,22 @@ function midiNote(midi: number) {
   const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
   return `${names[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`
 }
+function physicalProbeControls(source: NativeHybridSource) {
+  if (source.physicalLayer === "bowed-string-resonator") {
+    return "control 3:1 expression=0.78 brightness=0.68 vibrato=0.10 pressure=0.78 bow=0.25 coupling=0.55 ramp=0.35\ncontrol 4:2 expression=0.42 brightness=0.38 vibrato=0.04 pressure=0.42 bow=0.72 coupling=0.30 ramp=0.35"
+  }
+  if (source.physicalLayer === "air-column-resonator") {
+    return "control 3:1 expression=0.78 brightness=0.68 vibrato=0.10 pressure=0.78 embouchure=0.68 ramp=0.35\ncontrol 4:2 expression=0.42 brightness=0.38 vibrato=0.04 pressure=0.42 embouchure=0.34 ramp=0.35"
+  }
+  if (source.instrumentId === "piano.grand" || source.instrumentId === "keys.celesta") {
+    return "control 3:1 pedal=down damper=0.08 coupling=0.82 expression=0.70 brightness=0.58 ramp=0.15\ncontrol 4:3 pedal=up damper=0.78 coupling=0.32 expression=0.48 brightness=0.46 ramp=0.18"
+  }
+  return "control 3:1 pluck=0.28 damper=0.12 coupling=0.72 expression=0.70 brightness=0.58 ramp=0.15\ncontrol 4:3 pluck=0.68 damper=0.58 coupling=0.35 expression=0.48 brightness=0.46 ramp=0.18"
+}
 function probeScore(source: NativeHybridSource) {
   const center = Math.max(source.midiMin, Math.min(source.midiMax, Math.round((source.midiMin + source.midiMax) / 2)))
   const upper = Math.min(source.midiMax, center + 2)
   const note = midiNote(center), note2 = midiNote(upper)
-  const pedalControls = source.physicalLayer === "sympathetic-resonance"
-    ? "control 3:1 pedal=down expression=0.70 brightness=0.58 ramp=0.15\ncontrol 4:3 pedal=up expression=0.48 brightness=0.46 ramp=0.18"
-    : "control 3:1 expression=0.78 brightness=0.68 vibrato=0.10 ramp=0.35\ncontrol 4:2 expression=0.42 brightness=0.38 vibrato=0.04 ramp=0.35"
   return `TLOQUE_SCORE 2
 title "Hybrid A-B probe ${source.instrumentId}"
 tempo 120
@@ -37,7 +46,7 @@ section probe form=development bars=4 repeat=1 fade=0 tempo=120 rubato=0
 use probe
 1:1 ${note} 2 velocity=0.32 articulation=normal
 2:1 ${note} 2 velocity=0.84 articulation=normal
-${pedalControls}
+${physicalProbeControls(source)}
 3:1 ${note} 3 velocity=0.62 articulation=normal
 4:1 ${note2} 2 velocity=0.58 articulation=legato
 end`
