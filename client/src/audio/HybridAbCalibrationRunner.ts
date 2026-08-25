@@ -1,10 +1,9 @@
 import { compileTloqueScore } from "@shared/audio"
 import type { NativeHybridSource } from "@shared/native-hybrid-source"
 import { buildHybridAbReport, type HybridAbMetricId } from "@shared/native-hybrid-validation"
+import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import { preferredNativeModuleForInstrument } from "./NativeAutoModule"
 import { renderTloqueScoreWithNativeSamplePackToWav } from "./NativeSampleScoreExporter"
-import { scheduleBowedStringOverlay } from "./PhysicalBowedStringOverlay"
-import { scheduleAirColumnOverlay } from "./PhysicalAirColumnOverlay"
 
 export interface HybridAbCalibrationResult {
   report: ReturnType<typeof buildHybridAbReport>
@@ -105,7 +104,7 @@ export async function runHybridAbCalibration(source: NativeHybridSource, signal?
   const recipe = compiled.recipe
   const moduleId = preferredNativeModuleForInstrument(source.instrumentId)
   if (!moduleId) throw new Error(`No existe sample base para ${source.instrumentId}`)
-  const sampled = await renderTloqueScoreWithNativeSamplePackToWav(recipe, "/api/audio/sample-packs/modules/native-auto.json", { quality: "studio", signal })
+  const sampled = await renderTloqueScoreWithNativeSamplePackToWav(recipe, "/api/audio/sample-packs/modules/native-auto.json", { quality: "studio", signal, hybridMode: "none" })
   if (signal?.aborted) throw new DOMException("Calibración cancelada", "AbortError")
 
   const decoder = new OfflineAudioContext(2, 1, 48_000)
@@ -119,9 +118,7 @@ export async function runHybridAbCalibration(source: NativeHybridSource, signal?
   for (const event of recipe.plan.events) {
     const legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
     for (const midi of event.notes) {
-      const options = { startAt: 0, event, track, midi, destination: overlayBus, controls, legatoFromPrevious }
-      if (source.physicalLayer === "bowed-string-resonator") scheduleBowedStringOverlay(context, source, options)
-      else scheduleAirColumnOverlay(context, source, options)
+      scheduleHybridPhysicalOverlay(context, source, { startAt: 0, event, track, midi, destination: overlayBus, controls, legatoFromPrevious })
     }
     previousEnd = event.timeSeconds + event.durationSeconds
   }
