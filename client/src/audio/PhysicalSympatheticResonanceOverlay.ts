@@ -58,7 +58,32 @@ function profileFor(source: NativeHybridSource): ResonanceProfile {
   }
 }
 
-/** Hybrid Resonance v1.1: sample transient + pedal/damper/coupling-aware body response. */
+function pressureFor(eventVelocity: number, pressure: number) {
+  return clamp01(eventVelocity * 0.62 + pressure * 0.38)
+}
+function pluckSpectralFor(pluckPosition: number) {
+  return 0.78 + clamp01(pluckPosition) * 0.4
+}
+function partialGainFor(profile: ResonanceProfile, level: number, pressure: number, coupling: number, pluckPosition: number) {
+  return level * profile.sympatheticGain * (0.58 + pressure * 0.16 + coupling * 0.34) * pluckSpectralFor(pluckPosition)
+}
+function bodyExcitationGainFor(pressure: number, coupling: number) {
+  return 0.045 * (0.72 + pressure * 0.15 + coupling * 0.35)
+}
+function bodyBusGainFor(profile: ResonanceProfile, coupling: number, damper: number) {
+  return profile.bodyGain * (0.7 + coupling * 0.5) * (1 - damper * 0.18)
+}
+function toneHzFor(profile: ResonanceProfile, brightness: number, pluckPosition: number, damper: number) {
+  return profile.brightness * (0.52 + brightness * 0.46 + pluckPosition * 0.18) * (1 - damper * 0.16)
+}
+function wetGainFor(source: NativeHybridSource, pressure: number, coupling: number, pedal: number, damper: number) {
+  return Math.max(0.001, source.wet * (0.58 + pressure * 0.17 + coupling * 0.2 + pedal * 0.12) * (1 - damper * 0.18))
+}
+function tailFor(profile: ResonanceProfile, pressure: number, coupling: number, pedal: number, damper: number) {
+  return profile.decay * (0.5 + pressure * 0.22 + coupling * 0.34 + pedal * 0.48) * (1 - damper * 0.42)
+}
+
+/** Hybrid Resonance v1.2: fully automated pedal/damper/coupling/pluck/pressure body response. */
 export function scheduleSympatheticResonanceOverlay(
   context: BaseAudioContext,
   source: NativeHybridSource,
@@ -69,8 +94,10 @@ export function scheduleSympatheticResonanceOverlay(
 
   const profile = profileFor(source)
   const state0 = physicalPerformanceStateAt(track, controls, event.timeSeconds)
+  const stateEnd = physicalPerformanceStateAt(track, controls, event.timeSeconds + event.durationSeconds)
   const hz = midiHz(midi)
-  const pressure = clamp01(event.velocity * 0.62 + state0.pressure * 0.38)
+  const pressure = pressureFor(event.velocity, state0.pressure)
+  const endPressure = pressureFor(event.velocity, stateEnd.pressure)
   const brightness = clamp01(track.brightness)
   const coupling = state0.sympatheticCoupling
   const pluckPosition = state0.pluckPosition
@@ -78,61 +105,68 @@ export function scheduleSympatheticResonanceOverlay(
   const damper = state0.damper
   const start = startAt + event.timeSeconds + profile.attackDelay
   const sustain = Math.max(0.08, event.durationSeconds - profile.attackDelay)
-  const tail = profile.decay * (0.5 + pressure * 0.22 + coupling * 0.34 + pedal * 0.48) * (1 - damper * 0.22)
-  const stop = start + sustain + tail
+  const tail = tailFor(profile, endPressure, stateEnd.sympatheticCoupling, stateEnd.pedal, stateEnd.damper)
+  const stop = start + sustain + Math.max(0.12, tail)
 
   const resonanceBus = context.createGain(); resonanceBus.gain.value = 1
   const partialOscillators: OscillatorNode[] = []
-  const partialGains: GainNode[] = []
+  const pitchedPartialGains: GainNode[] = []
+  const bodyOscillators: OscillatorNode[] = []
+  const bodyExcitationGains: GainNode[] = []
 
-  const pluckSpectral = 0.78 + pluckPosition * 0.4
   for (const partial of profile.partials) {
     const oscillator = context.createOscillator(); oscillator.type = "sine"; oscillator.frequency.value = hz * partial.ratio
     if (partial.detune) oscillator.detune.value = partial.detune
-    const gain = context.createGain(); gain.gain.value = partial.level * profile.sympatheticGain * (0.58 + pressure * 0.16 + coupling * 0.34) * pluckSpectral
+    const gain = context.createGain(); gain.gain.value = partialGainFor(profile, partial.level, pressure, coupling, pluckPosition)
     oscillator.connect(gain); gain.connect(resonanceBus)
-    partialOscillators.push(oscillator); partialGains.push(gain)
+    partialOscillators.push(oscillator); pitchedPartialGains.push(gain)
   }
 
-  const bodyBus = context.createGain(); bodyBus.gain.value = profile.bodyGain * (0.7 + coupling * 0.5)
+  const bodyBus = context.createGain(); bodyBus.gain.value = bodyBusGainFor(profile, coupling, damper)
   for (const bodyFrequency of profile.bodyHz) {
     const excitation = context.createOscillator(); excitation.type = "sine"; excitation.frequency.value = bodyFrequency
     const filter = context.createBiquadFilter(); filter.type = "bandpass"; filter.frequency.value = bodyFrequency; filter.Q.value = profile.bodyQ
-    const gain = context.createGain(); gain.gain.value = 0.045 * (0.72 + pressure * 0.15 + coupling * 0.35)
+    const gain = context.createGain(); gain.gain.value = bodyExcitationGainFor(pressure, coupling)
     excitation.connect(filter); filter.connect(gain); gain.connect(bodyBus)
-    partialOscillators.push(excitation); partialGains.push(gain)
+    bodyOscillators.push(excitation); bodyExcitationGains.push(gain)
   }
   bodyBus.connect(resonanceBus)
 
-  const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = profile.brightness * (0.52 + brightness * 0.46 + pluckPosition * 0.18); tone.Q.value = 0.32
+  const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = toneHzFor(profile, brightness, pluckPosition, damper); tone.Q.value = 0.32
   const output = context.createGain(); output.gain.value = 0
   resonanceBus.connect(tone); tone.connect(output); output.connect(destination)
+
+  const initialPeak = wetGainFor(source, pressure, coupling, pedal, damper)
+  output.gain.setValueAtTime(0.0001, start)
+  output.gain.exponentialRampToValueAtTime(initialPeak, start + Math.min(0.11, sustain * 0.35))
 
   for (const control of controls) {
     if (control.trackId !== event.trackId || control.timeSeconds <= event.timeSeconds || control.timeSeconds > event.timeSeconds + event.durationSeconds) continue
     const at = startAt + control.timeSeconds
     const state = physicalPerformanceStateAt(track, controls, control.timeSeconds)
-    const p = clamp01(event.velocity * 0.62 + state.pressure * 0.38)
+    const p = pressureFor(event.velocity, state.pressure)
     const couplingNow = state.sympatheticCoupling
     const pluckNow = state.pluckPosition
-    for (let i = 0; i < partialGains.length; i += 1) {
-      const base = partialGains[i].gain.value
-      scheduleParam(partialGains[i].gain, at, base * (0.72 + p * 0.08 + couplingNow * 0.28), control.rampSeconds)
+    const damperNow = state.damper
+
+    for (let i = 0; i < pitchedPartialGains.length; i += 1) {
+      scheduleParam(pitchedPartialGains[i].gain, at, partialGainFor(profile, profile.partials[i].level, p, couplingNow, pluckNow), control.rampSeconds)
     }
-    scheduleParam(bodyBus.gain, at, profile.bodyGain * (0.7 + couplingNow * 0.5), control.rampSeconds)
-    scheduleParam(tone.frequency, at, profile.brightness * (0.52 + (control.brightness ?? brightness) * 0.46 + pluckNow * 0.18), control.rampSeconds, true)
+    for (const gain of bodyExcitationGains) scheduleParam(gain.gain, at, bodyExcitationGainFor(p, couplingNow), control.rampSeconds)
+    scheduleParam(bodyBus.gain, at, bodyBusGainFor(profile, couplingNow, damperNow), control.rampSeconds)
+    scheduleParam(tone.frequency, at, toneHzFor(profile, control.brightness ?? brightness, pluckNow, damperNow), control.rampSeconds, true)
+    scheduleParam(output.gain, at, wetGainFor(source, p, couplingNow, state.pedal, damperNow), control.rampSeconds, true)
     if (control.pitchBend !== null) {
       const cents = control.pitchBend * 100
-      for (let i = 0; i < profile.partials.length; i += 1) scheduleParam(partialOscillators[i].detune, at, cents, control.rampSeconds)
+      for (const oscillator of partialOscillators) scheduleParam(oscillator.detune, at, cents, control.rampSeconds)
     }
   }
 
-  const peak = Math.max(0.001, source.wet * (0.58 + pressure * 0.17 + coupling * 0.2 + pedal * 0.12) * (1 - damper * 0.08))
-  output.gain.setValueAtTime(0.0001, start)
-  output.gain.exponentialRampToValueAtTime(peak, start + Math.min(0.11, sustain * 0.35))
-  output.gain.setValueAtTime(Math.max(0.001, peak * (0.6 + pedal * 0.14)), start + sustain)
+  const finalPeak = wetGainFor(source, endPressure, stateEnd.sympatheticCoupling, stateEnd.pedal, stateEnd.damper)
+  output.gain.setValueAtTime(Math.max(0.001, finalPeak * (0.58 + stateEnd.pedal * 0.18) * (1 - stateEnd.damper * 0.16)), start + sustain)
   output.gain.exponentialRampToValueAtTime(0.0001, stop)
 
   for (const oscillator of partialOscillators) { oscillator.start(start); oscillator.stop(stop + 0.04) }
+  for (const oscillator of bodyOscillators) { oscillator.start(start); oscillator.stop(stop + 0.04) }
   return { endSeconds: event.timeSeconds + event.durationSeconds + tail }
 }
