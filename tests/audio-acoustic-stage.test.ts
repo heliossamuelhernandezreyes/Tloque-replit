@@ -21,11 +21,17 @@ test("master nativo usa una sala de concierto determinista y conservadora", () =
   assert.ok(SAMPLED_MIX_MASTER_PROFILE.limiterThreshold < 0)
 })
 
-test("preview y WAV enrutan cada instrumento semántico por el mismo stage", () => {
+test("preview y WAV comparten el mismo grafo acústico nativo", () => {
   const live = fs.readFileSync("client/src/audio/NativeSampleScoreEngine.ts", "utf8")
   const offline = fs.readFileSync("client/src/audio/NativeSampleScoreExporter.ts", "utf8")
+  const graph = fs.readFileSync("client/src/audio/NativeRenderGraph.ts", "utf8")
+
   for (const source of [live, offline]) {
-    assert.match(source, /createAcousticStage\(context, mix\.input\)/)
-    assert.match(source, /stage\.createTrackInput\(semanticTrack\?\.instrument \?\? "unknown", (?:track\.pan|pan)\)/)
+    assert.match(source, /createNativeRenderGraph\(context, index\.trackById/)
+    assert.doesNotMatch(source, /createAcousticStage\(context, mix\.input\)/)
   }
+
+  assert.match(graph, /createSampledMixMaster\(context, 1\)/)
+  assert.match(graph, /createAcousticStage\(context, mix\.input\)/)
+  assert.match(graph, /stage\.createTrackInput\(semanticTrack\?\.instrument \?\? "unknown", pan\)/)
 })
