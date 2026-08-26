@@ -35,7 +35,7 @@ test("mastering safety warns on narrow headroom without modifying the PCM", () =
   const result = analyzePcmChannels([channel], 48_000)
   const safety = assessAudioMasteringSafety(result)
   assert.notEqual(safety.status, "pass")
-  assert.equal(result.peakLinear, 0.93)
+  assert.ok(Math.abs(result.peakLinear - 0.93) < 1e-6)
 })
 
 test("silence stays well-defined without inventing loudness", () => {
