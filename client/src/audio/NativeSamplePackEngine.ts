@@ -140,6 +140,13 @@ export class NativeSamplePackPlayer {
   }
   preload(zones: readonly TloqueSampleZone[]) { return Promise.all(zones.map(zone => this.buffer(zone))) }
 
+  /** Drop only the player's retained decode reference. Already-created WebAudio
+   * sources keep their own AudioBuffer reference, so evicting after last use does
+   * not truncate an active voice. */
+  evictSampleUrl(sampleUrl: string) { return this.buffers.delete(sampleUrl) }
+  clearRetainedSamples() { this.buffers.clear() }
+  get retainedSampleCount() { return this.buffers.size }
+
   async play(params: {
     pack: TloqueSamplePack
     articulation: TloqueArticulation
