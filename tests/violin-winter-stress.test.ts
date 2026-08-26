@@ -61,13 +61,15 @@ test("el runner exige el banco real y nunca acepta síntesis fallback para el A/
   assert.match(runner, /preflightNativeSamplePacks/)
   assert.match(runner, /violinItem\?\.status !== "ready"/)
   assert.match(runner, /No se usará síntesis fallback/)
-  assert.match(runner, /hybridMode: "none"/)
 })
 
-test("el runner compara el mismo render sample con una única capa física y no altera el gate Master", () => {
+test("Winter compara dos renders completos del mismo grafo de producción", () => {
   const runner = readFileSync("client/src/audio/ViolinWinterStressRunner.ts", "utf8")
   const validation = readFileSync("shared/native-hybrid-validation.ts", "utf8")
-  assert.match(runner, /scheduleHybridPhysicalOverlay/)
+  assert.match(runner, /hybridMode: "none"/)
+  assert.match(runner, /hybridMode: "quality"/)
+  assert.doesNotMatch(runner, /scheduleHybridPhysicalOverlay/)
+  assert.doesNotMatch(runner, /physicalBus/)
   assert.match(runner, /source\.instrumentId !== VIOLIN_WINTER_STRESS_INSTRUMENT/)
   assert.doesNotMatch(runner, /buildHybridAbReport/)
   assert.match(validation, /humanReviewMode/)
