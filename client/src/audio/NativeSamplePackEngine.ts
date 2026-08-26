@@ -29,6 +29,9 @@ const MAX_EDGE_TRANSPOSE_SEMITONES = 4
 const NEIGHBOUR_ROOT_WINDOW_SEMITONES = 2
 
 function dbToGain(db: number) { return 10 ** (db / 20) }
+function velocityAmplitude(zone: TloqueSampleZone, midiVelocity: number) {
+  return zone.amplitudeDynamic === false ? 1 : Math.max(0, Math.min(1, midiVelocity / 127))
+}
 function zoneMatchesVelocity(zone: TloqueSampleZone, midiVelocity: number) {
   return midiVelocity >= zone.loVelocity && midiVelocity <= zone.hiVelocity
 }
@@ -79,18 +82,12 @@ export function selectNativeSampleZone(
       && transitionMatches(zone, timbre)
   })
 
-  // For ordinary attacks, consider the immediately neighbouring mapped zones even
-  // when the current zone technically contains the note. Public multisample maps
-  // often use broad lo/hi ranges around sparse roots; choosing purely by range can
-  // suddenly jump several semitones of playbackRate at a boundary. A narrow 2-semitone
-  // neighbour window lets the nearest recorded root win and makes tone changes smoother.
   const exact = by(articulation, requestedTrigger === "attack" ? NEIGHBOUR_ROOT_WINDOW_SEMITONES : 0)
   const neutralAttack = articulation === "normal" || requestedTrigger !== "attack"
     ? []
     : by("normal", NEIGHBOUR_ROOT_WINDOW_SEMITONES)
   let candidates = exact.length ? exact : neutralAttack
 
-  // Only when no nearby recording exists do we use the wider 4-semitone safety net.
   if (!candidates.length && requestedTrigger === "attack") {
     const edgeExact = by(articulation, MAX_EDGE_TRANSPOSE_SEMITONES)
     const edgeNeutral = articulation === "normal" ? [] : by("normal", MAX_EDGE_TRANSPOSE_SEMITONES)
@@ -115,7 +112,7 @@ export function selectNativeSampleZone(
     return best
   })
   const semitones = note - zone.rootMidi + zone.tuneCents / 100
-  return { zone, playbackRate: 2 ** (semitones / 12), gain: dbToGain(zone.gainDb) * Math.max(0, Math.min(1, midiVelocity / 127)) }
+  return { zone, playbackRate: 2 ** (semitones / 12), gain: dbToGain(zone.gainDb) * velocityAmplitude(zone, midiVelocity) }
 }
 
 function adaptivePhraseEnvelope(durationSeconds: number, oneShot: boolean, requested: NativeSamplePlaybackEnvelope) {
@@ -125,7 +122,7 @@ function adaptivePhraseEnvelope(durationSeconds: number, oneShot: boolean, reque
   const defaultFadeOut = sustained ? Math.min(0.045, durationSeconds * 0.16) : Math.min(0.014, durationSeconds * 0.10)
   const fadeIn = Math.max(0, requested.fadeInSeconds ?? defaultFadeIn)
   const fadeOut = Math.max(0, requested.fadeOutSeconds ?? defaultFadeOut)
-  const overlapTail = requested.fadeOutSeconds === undefined ? fadeOut : 0
+  const overlapTail = requested.fadeOutSeconds === undefined ? fadeOut : Math.max(0, requested.fadeOutSeconds)
   return { fadeIn, fadeOut, overlapTail }
 }
 
@@ -186,10 +183,14 @@ export class NativeSamplePackPlayer {
     const loopStart = selection.zone.loopStartSeconds, loopEnd = selection.zone.loopEndSeconds
     if (loopStart !== undefined && loopEnd !== undefined && loopEnd > loopStart) { source.loop = true; source.loopStart = loopStart; source.loopEnd = loopEnd }
     const startAt = Math.max(this.context.currentTime, startTime)
-    const shaped = adaptivePhraseEnvelope(durationSeconds, oneShot, envelope)
+    const sourceEnvelope = {
+      fadeInSeconds: envelope.fadeInSeconds ?? selection.zone.amplitudeAttackSeconds,
+      fadeOutSeconds: envelope.fadeOutSeconds ?? selection.zone.amplitudeReleaseSeconds,
+    }
+    const shaped = adaptivePhraseEnvelope(durationSeconds, oneShot, sourceEnvelope)
     const stopAt = startAt + Math.max(0.01, durationSeconds + shaped.overlapTail)
     const fadeIn = Math.max(0, Math.min(durationSeconds * 0.75, shaped.fadeIn))
-    const fadeOut = Math.max(0, Math.min((durationSeconds + shaped.overlapTail) * 0.75, shaped.fadeOut))
+    const fadeOut = Math.max(0, Math.min((durationSeconds + shaped.overlapTail) * 0.95, shaped.fadeOut))
     if (fadeIn > 0) {
       gain.gain.setValueAtTime(0.0001, startAt)
       gain.gain.linearRampToValueAtTime(selection.gain, startAt + fadeIn)

@@ -12,9 +12,14 @@ import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQualit
 import { createSampledMixMaster } from "./ScoreMixMaster"
 
 const MAX_OFFLINE_FLOAT_BYTES = 220 * 1024 * 1024
+const MAX_OFFLINE_TOTAL_FLOAT_BYTES = 300 * 1024 * 1024
 
 type HybridExportMode = "none" | "quality"
-export interface NativeSampleScoreExportOptions extends ScoreExportOptions { hybridMode?: HybridExportMode }
+export interface NativeSampleScoreExportOptions extends ScoreExportOptions {
+  hybridMode?: HybridExportMode
+  /** Diagnostic/certification renders must never become builtin synthesis after preflight. */
+  strictNativeSources?: boolean
+}
 interface LoadedOfflinePlan { moduleId: string; plan: NativeSampleScorePlan }
 
 export interface NativeSamplePackPreflightItem {
@@ -48,10 +53,10 @@ function modulePackUrlFor(recipe: ReturnType<typeof linearScoreRecipeFor>, modul
   if (!packUrl?.startsWith("/api/audio/sample-packs/modules/")) throw new Error("El módulo nativo debe provenir del almacenamiento interno de Tloque")
   return packUrl
 }
-function trackAtEvent(recipe: LinearScoreRecipeV2, track: LinearScoreTrackV2, timeSeconds: number): LinearScoreTrackV2 {
+function trackAtEvent(track: LinearScoreTrackV2, controls: LinearScoreRecipeV2["plan"]["controls"], timeSeconds: number): LinearScoreTrackV2 {
   let expression = track.expression, brightness = track.brightness, vibrato = track.vibrato
-  for (const control of recipe.plan.controls) {
-    if (control.trackId !== track.id || control.timeSeconds > timeSeconds) continue
+  for (const control of controls) {
+    if (control.timeSeconds > timeSeconds) continue
     if (control.expression !== null) expression = control.expression
     if (control.brightness !== null) brightness = control.brightness
     if (control.vibrato !== null) vibrato = control.vibrato
@@ -61,6 +66,11 @@ function trackAtEvent(recipe: LinearScoreRecipeV2, track: LinearScoreTrackV2, ti
 function hybridEnabledForExport(source: NonNullable<ReturnType<typeof nativeHybridForInstrument>>, quality: ScoreExportQuality, mode: HybridExportMode) {
   if (mode === "none" || quality === "preview") return false
   return quality !== "master" || hybridSourceMasterApproved(source)
+}
+function decodedFloatBytes(buffers: ReadonlyMap<string, AudioBuffer>) {
+  let bytes = 0
+  for (const buffer of buffers.values()) bytes += buffer.length * buffer.numberOfChannels * Float32Array.BYTES_PER_ELEMENT
+  return bytes
 }
 
 export async function preflightNativeSamplePacks(value: unknown, packUrl?: string, signal?: AbortSignal): Promise<NativeSamplePackPreflight> {
@@ -93,6 +103,12 @@ function premiumPreflightError(preflight: NativeSamplePackPreflight) {
     "Abre Instrumentos premium e instala los bancos faltantes. Tloque no sustituirá silenciosamente estos instrumentos por síntesis base.",
   ].join("\n")
 }
+function strictNativePreflightError(preflight: NativeSamplePackPreflight) {
+  return [
+    "El render acústico estricto requiere los bancos nativos reales y no permite síntesis fallback.",
+    ...preflight.missing.map(item => `• ${item.instruments.join(", ") || "instrumento"} → module:${item.moduleId}${item.message ? ` (${item.message})` : ""}`),
+  ].join("\n")
+}
 async function renderBaseFallback(recipe: ReturnType<typeof linearScoreRecipeFor>, options: ScoreExportOptions) {
   if (recipe.version !== 2) throw new Error("La partitura no puede usar el fallback de síntesis base")
   const baseRecipe = { ...recipe, plan: { ...recipe.plan, moduleId: "builtin" } }
@@ -113,6 +129,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   const preflight = await preflightNativeSamplePacks(recipe, packUrl, options.signal)
   if (!preflight.ready) {
     if (profile.quality === "master") throw new Error(premiumPreflightError(preflight))
+    if (options.strictNativeSources) throw new Error(strictNativePreflightError(preflight))
     options.onProgress?.(0)
     return renderBaseFallback(recipe, options)
   }
@@ -124,11 +141,18 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   options.onProgress?.(0.03)
   const decodeContext = new OfflineAudioContext(2, 1, profile.sampleRate), decodedByUrl = new Map<string, AudioBuffer>(), loaded: LoadedOfflinePlan[] = [], groups = nativeModuleGroupsForRecipe(recipe)
   for (let index = 0; index < groups.length; index += 1) {
-    const group = groups[index], decodePlayer = new NativeSamplePackPlayer(decodeContext, decodedByUrl), url = modulePackUrlFor(recipe, group.moduleId, packUrl), pack = await decodePlayer.loadPack(url)
+    const group = groups[index], decodePlayer = new NativeSamplePackPlayer(decodeContext, decodedByUrl), url = modulePackUrlFor(recipe, group.moduleId, packUrl)
+    let pack
+    try { pack = await decodePlayer.loadPack(url) }
+    catch (error) {
+      if (options.strictNativeSources) throw new Error(`El banco nativo ${group.moduleId} dejó de estar disponible durante el render: ${error instanceof Error ? error.message : String(error)}`)
+      throw error
+    }
     if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde al módulo solicitado`)
     const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack), decoded = await decodePlayer.preload(plan.zones)
     plan.zones.forEach((zone, i) => { const buffer = decoded[i]; if (buffer) decodedByUrl.set(zone.sampleUrl, buffer) })
     loaded.push({ moduleId: group.moduleId, plan })
+    if (decodedFloatBytes(decodedByUrl) > MAX_OFFLINE_TOTAL_FLOAT_BYTES) throw new Error("Las muestras decodificadas exceden la memoria segura del navegador móvil; reduce instrumentos o exporta por movimientos")
     options.onProgress?.(0.04 + ((index + 1) / Math.max(1, groups.length)) * 0.08); assertNotAborted(options.signal)
   }
 
@@ -140,10 +164,13 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   const hybridTail = hybridMode === "none" || profile.quality === "preview" ? 0 : 7
   const durationSeconds = Math.max(recipe.plan.totalSeconds, naturalEnd) + Math.max(profile.tail, hybridTail), totalFrames = Math.ceil(durationSeconds * profile.sampleRate), floatBytes = totalFrames * 2 * Float32Array.BYTES_PER_ELEMENT
   if (floatBytes > MAX_OFFLINE_FLOAT_BYTES) throw new Error("La obra muestreada excede la memoria segura del navegador móvil; expórtala por movimientos")
+  if (floatBytes + decodedFloatBytes(decodedByUrl) > MAX_OFFLINE_TOTAL_FLOAT_BYTES) throw new Error("El render y sus muestras exceden juntos la memoria segura del navegador móvil; expórtalo por movimientos")
 
   options.onProgress?.(0.20)
   const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate), mix = createSampledMixMaster(context, 1); mix.output.connect(context.destination)
   const stage = createAcousticStage(context, mix.input), trackGain = new Map<string, GainNode>(), trackTone = new Map<string, BiquadFilterNode>(), trackNodes: AudioNode[] = [], recipeTrackById = new Map(recipe.plan.tracks.map(track => [track.id, track]))
+  const controlsByTrack = new Map<string, LinearScoreRecipeV2["plan"]["controls"]>()
+  for (const track of recipe.plan.tracks) controlsByTrack.set(track.id, recipe.plan.controls.filter(control => control.trackId === track.id))
   for (const { plan } of loaded) for (const track of plan.tracks) {
     if (trackGain.has(track.id)) continue
     const gain = context.createGain(); gain.gain.value = track.gain
@@ -180,7 +207,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
     const source = nativeHybridForInstrument(track.instrument)
     if (!source || !hybridEnabledForExport(source, profile.quality, hybridMode)) continue
     const previousEnd = previousHybridEndByTrack.get(event.trackId), legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
-    const controls = recipe.plan.controls.filter(control => control.trackId === event.trackId), effectiveTrack = trackAtEvent(recipe, track, event.timeSeconds)
+    const controls = controlsByTrack.get(event.trackId) ?? [], effectiveTrack = trackAtEvent(track, controls, event.timeSeconds)
     for (const midi of event.notes) scheduleHybridPhysicalOverlay(context, source, { startAt: 0, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
     previousHybridEndByTrack.set(event.trackId, event.timeSeconds + event.durationSeconds)
   }

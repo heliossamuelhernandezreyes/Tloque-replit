@@ -27,6 +27,9 @@ export interface CompiledSfzZone {
   velocityLayer: number
   gainDb: number
   tuneCents: number
+  amplitudeAttackSeconds?: number
+  amplitudeReleaseSeconds?: number
+  amplitudeDynamic?: boolean
 }
 
 export interface SfzSamplePackCompileOptions {
@@ -56,6 +59,9 @@ interface GroupState {
   seqLength: number
   seqPosition: number
   groupRoundRobin: number
+  amplitudeAttackSeconds?: number
+  amplitudeReleaseSeconds?: number
+  amplitudeDynamic?: boolean
 }
 
 const NOTE = /^([a-gA-G])([#b]?)(-?\d+)$/
@@ -142,6 +148,18 @@ function requiredMidi(value: string | undefined, label: string): number {
   if (midi === undefined) throw new Error(`Región SFZ incompleta: ${label}`)
   return midi
 }
+function optionalSeconds(value: string | undefined, label: string): number | undefined {
+  if (value === undefined) return undefined
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > 30) throw new Error(`Opcode SFZ inválido: ${label}`)
+  return numeric
+}
+function optionalDynamic(value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) throw new Error("Opcode SFZ inválido: ampeg_dynamic")
+  return numeric !== 0
+}
 
 function opcodes(text: string) {
   const map = new Map<string, string>()
@@ -197,6 +215,9 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
         seqLength: Math.max(1, Number(values.get("seq_length") || 1)),
         seqPosition: Math.max(1, Number(values.get("seq_position") || 1)),
         groupRoundRobin: rrFromGroup(values),
+        amplitudeAttackSeconds: optionalSeconds(values.get("ampeg_attack"), "ampeg_attack"),
+        amplitudeReleaseSeconds: optionalSeconds(values.get("ampeg_release"), "ampeg_release"),
+        amplitudeDynamic: optionalDynamic(values.get("ampeg_dynamic")),
       }
       continue
     }
@@ -234,6 +255,9 @@ export function compileCuratedSfzZones(source: string): CompiledSfzZone[] {
       roundRobin: sampleRoundRobin ?? (group.seqLength > 1 ? group.seqPosition - 1 : group.groupRoundRobin),
       gainDb: Number(values.get("volume") || 0),
       tuneCents: Number(values.get("tune") || 0),
+      amplitudeAttackSeconds: optionalSeconds(values.get("ampeg_attack"), "ampeg_attack") ?? group.amplitudeAttackSeconds,
+      amplitudeReleaseSeconds: optionalSeconds(values.get("ampeg_release"), "ampeg_release") ?? group.amplitudeReleaseSeconds,
+      amplitudeDynamic: optionalDynamic(values.get("ampeg_dynamic")) ?? group.amplitudeDynamic,
     })
   }
 
@@ -268,6 +292,9 @@ export function compileSfzBundleToTloqueSamplePack(sources: readonly string[], o
     sha256: options.sampleSha256ForPath?.(zone.samplePath),
     rootMidi: zone.rootMidi, loMidi: zone.loMidi, hiMidi: zone.hiMidi, loVelocity: zone.loVelocity, hiVelocity: zone.hiVelocity,
     velocityLayer: zone.velocityLayer, roundRobin: zone.roundRobin, gainDb: zone.gainDb, tuneCents: zone.tuneCents,
+    amplitudeAttackSeconds: zone.amplitudeAttackSeconds,
+    amplitudeReleaseSeconds: zone.amplitudeReleaseSeconds,
+    amplitudeDynamic: zone.amplitudeDynamic,
   })))
   const inferredMics = [...new Set(zones.map(zone => zone.micPosition ?? "default"))]
   return validateTloqueSamplePack({

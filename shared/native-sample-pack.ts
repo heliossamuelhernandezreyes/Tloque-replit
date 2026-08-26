@@ -21,6 +21,12 @@ export interface TloqueSampleZone {
   roundRobin: number
   gainDb: number
   tuneCents: number
+  /** SFZ amplitude-envelope attack preserved from the curated source. */
+  amplitudeAttackSeconds?: number
+  /** SFZ amplitude-envelope release preserved from the curated source. */
+  amplitudeReleaseSeconds?: number
+  /** Whether the source explicitly requests velocity-driven amplitude dynamics. */
+  amplitudeDynamic?: boolean
   /** Backwards-compatible marker; true for any explicitly vibrato-coloured recording. */
   vibrato?: boolean
   /** Physical vibrato colour recorded upstream. */
@@ -93,6 +99,9 @@ export function validateTloqueSamplePack(value: unknown): TloqueSamplePack {
     for (const key of ["rootMidi", "loMidi", "hiMidi", "loVelocity", "hiVelocity", "velocityLayer", "roundRobin", "gainDb", "tuneCents"] as const) {
       if (!finite(zone[key])) throw new Error(`Zona ${index}: ${key} inválido`)
     }
+    if (zone.amplitudeAttackSeconds !== undefined && (!finite(zone.amplitudeAttackSeconds) || zone.amplitudeAttackSeconds < 0 || zone.amplitudeAttackSeconds > 30)) throw new Error(`Zona ${index}: amplitudeAttackSeconds inválido`)
+    if (zone.amplitudeReleaseSeconds !== undefined && (!finite(zone.amplitudeReleaseSeconds) || zone.amplitudeReleaseSeconds < 0 || zone.amplitudeReleaseSeconds > 30)) throw new Error(`Zona ${index}: amplitudeReleaseSeconds inválido`)
+    if (zone.amplitudeDynamic !== undefined && typeof zone.amplitudeDynamic !== "boolean") throw new Error(`Zona ${index}: amplitudeDynamic inválido`)
     const mute = zone.mute === undefined ? "none" : zone.mute
     if (typeof mute !== "string" || !mutes.has(mute as TloqueMute)) throw new Error(`Zona ${index}: mute inválido`)
     if (zone.vibrato !== undefined && typeof zone.vibrato !== "boolean") throw new Error(`Zona ${index}: vibrato inválido`)
@@ -120,6 +129,9 @@ export function validateTloqueSamplePack(value: unknown): TloqueSamplePack {
       roundRobin: zone.roundRobin as number,
       gainDb: zone.gainDb as number,
       tuneCents: zone.tuneCents as number,
+      amplitudeAttackSeconds: finite(zone.amplitudeAttackSeconds) ? zone.amplitudeAttackSeconds : undefined,
+      amplitudeReleaseSeconds: finite(zone.amplitudeReleaseSeconds) ? zone.amplitudeReleaseSeconds : undefined,
+      amplitudeDynamic: typeof zone.amplitudeDynamic === "boolean" ? zone.amplitudeDynamic : undefined,
       vibrato: vibratoColour !== "none",
       vibratoColour: vibratoColour as TloqueVibratoColour,
       mute: mute as TloqueMute,

@@ -23,10 +23,11 @@ function effectiveRoot(zone: TloqueSampleZone) {
 }
 function selectionFor(zone: TloqueSampleZone, note: number, velocity: number): NativeSampleSelection {
   const semitones = note - zone.rootMidi + zone.tuneCents / 100
+  const velocityGain = zone.amplitudeDynamic === false ? 1 : Math.max(0, Math.min(1, velocity / 127))
   return {
     zone,
     playbackRate: 2 ** (semitones / 12),
-    gain: dbToGain(zone.gainDb) * Math.max(0, Math.min(1, velocity / 127)),
+    gain: dbToGain(zone.gainDb) * velocityGain,
   }
 }
 
@@ -73,6 +74,7 @@ function pitchBlendForLayer(
   note: number,
   velocity: number,
   roundRobin: number,
+  allowPitchBlend: boolean,
 ): readonly WeightedNativeSampleSelection[] {
   const probeVelocity = Math.max(layer.lo, Math.min(layer.hi, Math.round(layer.center)))
   let candidates = zones.filter(zone =>
@@ -101,6 +103,11 @@ function pitchBlendForLayer(
   }
   if (roots.length === 1) return [weighted(roots[0], 1)]
 
+  if (!allowPitchBlend) {
+    const nearest = roots.reduce((best, zone) => Math.abs(note - effectiveRoot(zone)) < Math.abs(note - effectiveRoot(best)) ? zone : best)
+    return [weighted(nearest, 1)]
+  }
+
   let lower: TloqueSampleZone | null = null
   let upper: TloqueSampleZone | null = null
   for (const zone of roots) {
@@ -125,11 +132,9 @@ function pitchBlendForLayer(
 }
 
 /**
- * Continuous two-dimensional multisample interpolation. Ordinary attack notes can
- * crossfade both between neighbouring recorded pitch roots and neighbouring physical
- * velocity layers. The weights are equal-power in each dimension, so boundaries no
- * longer produce abrupt timbre swaps. Releases and true-legato transitions remain
- * strictly single recordings and are never interpolated.
+ * Continuous multisample interpolation. Velocity layers retain equal-power blending.
+ * Solo violin deliberately uses a single nearest pitch root to avoid phase beating,
+ * doubled attacks and ensemble-like chorusing between independent recordings.
  */
 export function selectNativeSampleVelocityBlend(
   pack: TloqueSamplePack,
@@ -148,6 +153,7 @@ export function selectNativeSampleVelocityBlend(
   const layers = semanticLayers(zones)
   if (!layers.length) return []
   const velocity = Math.max(0, Math.min(127, midiVelocity))
+  const allowPitchBlend = pack.instrumentManifestId !== "vsco2-ce-solo-violin"
 
   let lower = layers[0]
   let upper = layers[layers.length - 1]
@@ -161,10 +167,10 @@ export function selectNativeSampleVelocityBlend(
   if (velocity <= layers[0].center) lower = upper = layers[0]
   if (velocity >= layers[layers.length - 1].center) lower = upper = layers[layers.length - 1]
 
-  const lowPitchBlend = pitchBlendForLayer(zones, lower, note, velocity, roundRobin)
+  const lowPitchBlend = pitchBlendForLayer(zones, lower, note, velocity, roundRobin, allowPitchBlend)
   if (!lowPitchBlend.length) return []
   if (lower.layer === upper.layer) return lowPitchBlend
-  const highPitchBlend = pitchBlendForLayer(zones, upper, note, velocity, roundRobin)
+  const highPitchBlend = pitchBlendForLayer(zones, upper, note, velocity, roundRobin, allowPitchBlend)
   if (!highPitchBlend.length) return lowPitchBlend
 
   const span = Math.max(1, upper.center - lower.center)

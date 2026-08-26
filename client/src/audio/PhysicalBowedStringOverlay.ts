@@ -2,6 +2,7 @@ import type { NativeHybridSource } from "@shared/native-hybrid-source"
 import { boundedHybridCalibrationTuning, type HybridCalibrationTuning } from "@shared/native-hybrid-tuning"
 import { physicalPerformanceStateAt } from "@shared/physical-performance-control"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
+import { createDeterministicNoiseBuffer } from "./DeterministicAudioNoise"
 
 type LinearScoreEventV2 = LinearScoreRecipeV2["plan"]["events"][number]
 type LinearScoreControlV2 = LinearScoreRecipeV2["plan"]["controls"][number]
@@ -32,19 +33,6 @@ function profileFor(source: NativeHybridSource) {
   if (source.instrumentId === "strings.cello") return { body: [118, 238, 410], bodyQ: 2.35, bowNoise: 0.12, brightness: 3_300, delayMix: 0.27, feedback: 0.81 }
   if (source.instrumentId === "strings.viola") return { body: [196, 392, 710], bodyQ: 2.55, bowNoise: 0.105, brightness: 4_500, delayMix: 0.24, feedback: 0.78 }
   return { body: [278, 552, 980], bodyQ: 2.8, bowNoise: 0.095, brightness: 5_800, delayMix: 0.22, feedback: 0.75 }
-}
-
-function noiseBuffer(context: BaseAudioContext, seconds = 0.18) {
-  const frames = Math.max(128, Math.ceil(context.sampleRate * seconds))
-  const buffer = context.createBuffer(1, frames, context.sampleRate)
-  const data = buffer.getChannelData(0)
-  let last = 0
-  for (let i = 0; i < data.length; i += 1) {
-    const white = Math.random() * 2 - 1
-    last = last * 0.68 + white * 0.32
-    data[i] = last
-  }
-  return buffer
 }
 
 /** Hybrid Strings v1.1: sample identity + shared physical performance controls. */
@@ -83,7 +71,9 @@ export function scheduleBowedStringOverlay(
   const harmonicGain = context.createGain(); harmonicGain.gain.value = (0.045 + brightness * 0.05) * bridgeFactor * tuning.textureScale
   harmonic.connect(harmonicGain); harmonicGain.connect(excitation)
 
-  const bow = context.createBufferSource(); bow.buffer = noiseBuffer(context); bow.loop = true
+  const bow = context.createBufferSource()
+  bow.buffer = createDeterministicNoiseBuffer(context, `${source.instrumentId}:${track.id}:${event.timeSeconds}:${midi}:bow`, 0.18, 0.68)
+  bow.loop = true
   const bowBand = context.createBiquadFilter(); bowBand.type = "bandpass"; bowBand.frequency.value = profile.brightness * (0.5 + bowPosition * 0.9) * tuning.dampingScale; bowBand.Q.value = 0.65
   const bowGain = context.createGain(); bowGain.gain.value = profile.bowNoise * (0.38 + pressure * 0.62) * (0.78 + bowPosition * 0.35) * tuning.textureScale
   bow.connect(bowBand); bowBand.connect(bowGain); bowGain.connect(excitation)

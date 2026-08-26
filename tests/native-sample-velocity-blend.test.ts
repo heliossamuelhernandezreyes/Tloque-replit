@@ -17,6 +17,8 @@ const PACK: TloqueSamplePack = {
   ],
 }
 
+const GENERIC_PACK = { ...PACK, instrumentManifestId: "fixture-multisample" }
+
 test("mezcla dos capas físicas entre sus centros dinámicos", () => {
   const pack = validateTloqueSamplePack(PACK)
   const blend = selectNativeSampleVelocityBlend(pack, "normal", 60, 64, 0)
@@ -34,9 +36,9 @@ test("en extremos dinámicos usa una sola capa sin duplicar voces", () => {
   assert.deepEqual(selectNativeSampleVelocityBlend(pack, "normal", 60, 120, 0).map(item => item.zone.id), ["f"])
 })
 
-test("interpola raíces grabadas vecinas para ocultar fronteras de pitch", () => {
+test("instrumentos genéricos pueden interpolar raíces grabadas vecinas", () => {
   const pack = validateTloqueSamplePack({
-    ...PACK,
+    ...GENERIC_PACK,
     zones: [
       { ...PACK.zones[0], id: "root60", rootMidi: 60, loMidi: 58, hiMidi: 63, loVelocity: 0, hiVelocity: 127 },
       { ...PACK.zones[0], id: "root64", rootMidi: 64, loMidi: 61, hiMidi: 66, loVelocity: 0, hiVelocity: 127 },
@@ -51,9 +53,23 @@ test("interpola raíces grabadas vecinas para ocultar fronteras de pitch", () =>
   assert.ok(blend[1].playbackRate < 1)
 })
 
-test("no mezcla raíces excesivamente separadas", () => {
+test("VSCO Solo Violin usa una sola raíz de pitch para evitar phasing", () => {
   const pack = validateTloqueSamplePack({
     ...PACK,
+    zones: [
+      { ...PACK.zones[0], id: "root60", rootMidi: 60, loMidi: 58, hiMidi: 63, loVelocity: 0, hiVelocity: 127 },
+      { ...PACK.zones[0], id: "root64", rootMidi: 64, loMidi: 61, hiMidi: 66, loVelocity: 0, hiVelocity: 127 },
+    ],
+  })
+  const blend = selectNativeSampleVelocityBlend(pack, "normal", 62, 80, 0)
+  assert.equal(blend.length, 1)
+  assert.equal(blend[0].zone.id, "root60", "en empate conserva de forma determinista la raíz inferior")
+  assert.equal(blend[0].weight, 1)
+})
+
+test("no mezcla raíces excesivamente separadas", () => {
+  const pack = validateTloqueSamplePack({
+    ...GENERIC_PACK,
     zones: [
       { ...PACK.zones[0], id: "root58", rootMidi: 58, loMidi: 56, hiMidi: 62, loVelocity: 0, hiVelocity: 127 },
       { ...PACK.zones[0], id: "root66", rootMidi: 66, loMidi: 62, hiMidi: 69, loVelocity: 0, hiVelocity: 127 },
@@ -62,6 +78,16 @@ test("no mezcla raíces excesivamente separadas", () => {
   const blend = selectNativeSampleVelocityBlend(pack, "normal", 62, 80, 0)
   assert.equal(blend.length, 1)
   assert.equal(blend[0].zone.id, "root58")
+})
+
+test("ampeg_dynamic=0 conserva la ganancia física de la muestra", () => {
+  const pack = validateTloqueSamplePack({
+    ...PACK,
+    zones: [{ ...PACK.zones[0], amplitudeDynamic: false, loVelocity: 0, hiVelocity: 127 }],
+  })
+  const quiet = selectNativeSampleVelocityBlend(pack, "normal", 60, 10, 0)[0]
+  const loud = selectNativeSampleVelocityBlend(pack, "normal", 60, 120, 0)[0]
+  assert.equal(quiet.gain, loud.gain)
 })
 
 test("release y true-legato conservan selección física estricta", () => {
