@@ -56,10 +56,17 @@ test("Winter Stress v1 contiene rampas físicas p→ff y presión de arco fuerte
   assert.match(score, /section high-pressure/)
 })
 
+test("el runner exige el banco real y nunca acepta síntesis fallback para el A/B", () => {
+  const runner = readFileSync("client/src/audio/ViolinWinterStressRunner.ts", "utf8")
+  assert.match(runner, /preflightNativeSamplePacks/)
+  assert.match(runner, /violinItem\?\.status !== "ready"/)
+  assert.match(runner, /No se usará síntesis fallback/)
+  assert.match(runner, /hybridMode: "none"/)
+})
+
 test("el runner compara el mismo render sample con una única capa física y no altera el gate Master", () => {
   const runner = readFileSync("client/src/audio/ViolinWinterStressRunner.ts", "utf8")
   const validation = readFileSync("shared/native-hybrid-validation.ts", "utf8")
-  assert.match(runner, /hybridMode: "none"/)
   assert.match(runner, /scheduleHybridPhysicalOverlay/)
   assert.match(runner, /source\.instrumentId !== VIOLIN_WINTER_STRESS_INSTRUMENT/)
   assert.doesNotMatch(runner, /buildHybridAbReport/)
