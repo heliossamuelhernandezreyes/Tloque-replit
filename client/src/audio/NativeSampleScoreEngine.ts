@@ -7,7 +7,7 @@ import type { MusicCue, MusicState } from "./MusicEngine"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, type NativeModuleGroup } from "./NativeAutoModule"
 import { buildNativeProgressivePreloadPlan } from "./NativeProgressivePreload"
 import { buildNativeRecipeIndex, nativeTrackAtTime } from "./NativeRecipeIndex"
-import { NativeRealtimeLookahead, NATIVE_REALTIME_TICK_MS, type NativeRealtimeTask } from "./NativeRealtimeLookahead"
+import { NativeRealtimeLookahead, NATIVE_REALTIME_LOOKAHEAD_SECONDS, NATIVE_REALTIME_TICK_MS, type NativeRealtimeTask } from "./NativeRealtimeLookahead"
 import { createNativeRenderGraph } from "./NativeRenderGraph"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
@@ -79,13 +79,20 @@ export class NativeSampleScoreEngine {
         for (const control of plan.controls) graph.scheduleTrackControl(control, startAt)
         const zoneById = new Map(plan.zones.map(zone => [zone.id, zone]))
 
-        // Warm a physical WAV well before its first voice. NativeSamplePackPlayer
-        // caches the in-flight decode promise, so a playback task can safely reuse
-        // the same request if slow storage/network overlaps the scheduling window.
+        // Warm each physical WAV before first use, then drop the player's retained
+        // decode after the final use. Release tasks are offset by the look-ahead
+        // horizon because NativeRealtimeLookahead executes tasks ahead of their
+        // timestamp; this makes the actual deletion happen no earlier than
+        // releaseAtSeconds. AudioBufferSourceNodes already scheduled keep their own
+        // AudioBuffer reference, so deleting the player's cache does not cut sound.
         for (const preload of buildNativeProgressivePreloadPlan(plan)) {
           realtimeTasks.push({
             timeSeconds: preload.preloadAtSeconds,
             run: async () => { await player.preload([preload.zone]) },
+          })
+          realtimeTasks.push({
+            timeSeconds: preload.releaseAtSeconds + NATIVE_REALTIME_LOOKAHEAD_SECONDS,
+            run: () => { player.releaseSample(preload.zone.sampleUrl) },
           })
         }
 
@@ -104,9 +111,6 @@ export class NativeSampleScoreEngine {
               voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : undefined,
             ),
           })
-          // Realtime no needs every sample decoded up front just to discover its
-          // physical tail. Keep completion conservative without reintroducing the
-          // eager preload: one-shots get a bounded eight-second safety tail.
           if (voice.oneShot) naturalEnd = Math.max(naturalEnd, voice.startSeconds + Math.max(voice.durationSeconds, 8))
         }
         for (const auxiliary of plan.auxiliaryVoices) {
