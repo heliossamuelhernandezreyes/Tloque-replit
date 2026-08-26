@@ -1,11 +1,11 @@
 import { linearScoreRecipeFor } from "@shared/audio"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
 import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared/native-hybrid-source"
-import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
+import { buildNativeRecipeIndex, nativeTrackAtTime } from "./NativeRecipeIndex"
 import { assessNativePremiumReadiness, premiumReadinessError } from "./NativePremiumReadiness"
 import { createAcousticStage } from "./ScoreAcousticStage"
 import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQuality } from "./ScoreExporter"
@@ -52,16 +52,6 @@ function modulePackUrlFor(recipe: ReturnType<typeof linearScoreRecipeFor>, modul
   if (recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID) return `/api/audio/sample-packs/modules/${encodeURIComponent(moduleId)}.json`
   if (!packUrl?.startsWith("/api/audio/sample-packs/modules/")) throw new Error("El módulo nativo debe provenir del almacenamiento interno de Tloque")
   return packUrl
-}
-function trackAtEvent(track: LinearScoreTrackV2, controls: LinearScoreRecipeV2["plan"]["controls"], timeSeconds: number): LinearScoreTrackV2 {
-  let expression = track.expression, brightness = track.brightness, vibrato = track.vibrato
-  for (const control of controls) {
-    if (control.timeSeconds > timeSeconds) continue
-    if (control.expression !== null) expression = control.expression
-    if (control.brightness !== null) brightness = control.brightness
-    if (control.vibrato !== null) vibrato = control.vibrato
-  }
-  return { ...track, expression, brightness, vibrato }
 }
 function hybridEnabledForExport(source: NonNullable<ReturnType<typeof nativeHybridForInstrument>>, quality: ScoreExportQuality, mode: HybridExportMode) {
   if (mode === "none" || quality === "preview") return false
@@ -168,15 +158,14 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
 
   options.onProgress?.(0.20)
   const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate), mix = createSampledMixMaster(context, 1); mix.output.connect(context.destination)
-  const stage = createAcousticStage(context, mix.input), trackGain = new Map<string, GainNode>(), trackTone = new Map<string, BiquadFilterNode>(), trackNodes: AudioNode[] = [], recipeTrackById = new Map(recipe.plan.tracks.map(track => [track.id, track]))
-  const controlsByTrack = new Map<string, LinearScoreRecipeV2["plan"]["controls"]>()
-  for (const track of recipe.plan.tracks) controlsByTrack.set(track.id, recipe.plan.controls.filter(control => control.trackId === track.id))
+  const stage = createAcousticStage(context, mix.input), trackGain = new Map<string, GainNode>(), trackTone = new Map<string, BiquadFilterNode>(), trackNodes: AudioNode[] = []
+  const index = buildNativeRecipeIndex(recipe)
   for (const { plan } of loaded) for (const track of plan.tracks) {
     if (trackGain.has(track.id)) continue
     const gain = context.createGain(); gain.gain.value = track.gain
     const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = brightnessCutoff(track.brightness); tone.Q.value = 0.12
     trackNodes.push(gain, tone)
-    const semanticTrack = recipeTrackById.get(track.id), stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", track.pan)
+    const semanticTrack = index.trackById.get(track.id), stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", track.pan)
     gain.connect(tone); tone.connect(stageInput); trackGain.set(track.id, gain); trackTone.set(track.id, tone)
   }
   for (const { plan } of loaded) for (const control of plan.controls) {
@@ -201,13 +190,13 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   }
 
   const previousHybridEndByTrack = new Map<string, number>()
-  for (const event of [...recipe.plan.events].sort((a, b) => a.timeSeconds - b.timeSeconds)) {
-    const track = recipeTrackById.get(event.trackId), destination = trackGain.get(event.trackId)
+  for (const event of index.chronologicalEvents) {
+    const track = index.trackById.get(event.trackId), destination = trackGain.get(event.trackId)
     if (!track || !destination || !hybridEnabledForArticulation(track.instrument, event.articulation)) continue
     const source = nativeHybridForInstrument(track.instrument)
     if (!source || !hybridEnabledForExport(source, profile.quality, hybridMode)) continue
     const previousEnd = previousHybridEndByTrack.get(event.trackId), legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
-    const controls = controlsByTrack.get(event.trackId) ?? [], effectiveTrack = trackAtEvent(track, controls, event.timeSeconds)
+    const controls = index.controlsByTrack.get(event.trackId) ?? [], effectiveTrack = nativeTrackAtTime(track, controls, event.timeSeconds)
     for (const midi of event.notes) scheduleHybridPhysicalOverlay(context, source, { startAt: 0, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
     previousHybridEndByTrack.set(event.trackId, event.timeSeconds + event.durationSeconds)
   }
