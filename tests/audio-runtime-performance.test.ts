@@ -55,6 +55,22 @@ test("realtime y WAV comparten el mismo índice temporal nativo", () => {
   assert.doesNotMatch(exporter, /\[\.\.\.recipe\.plan\.events\]\.sort/)
 })
 
+test("realtime y WAV construyen stage, master y filtros desde NativeRenderGraph", () => {
+  const engine = read("client/src/audio/NativeSampleScoreEngine.ts")
+  const exporter = read("client/src/audio/NativeSampleScoreExporter.ts")
+  const graph = read("client/src/audio/NativeRenderGraph.ts")
+  for (const source of [engine, exporter]) {
+    assert.match(source, /createNativeRenderGraph\(/)
+    assert.doesNotMatch(source, /createSampledMixMaster\(/)
+    assert.doesNotMatch(source, /createAcousticStage\(/)
+    assert.doesNotMatch(source, /createBiquadFilter\(\)/)
+  }
+  assert.match(graph, /createSampledMixMaster\(context, 1\)/)
+  assert.match(graph, /createAcousticStage\(context, mix\.input\)/)
+  assert.match(graph, /nativeBrightnessCutoff/)
+  assert.match(graph, /scheduleTrackControl/)
+})
+
 test("Winter expone una presión de voces determinista para benchmarks", () => {
   const compiled = compileViolinWinterStressV1()
   assert.equal(compiled.ok, true)
