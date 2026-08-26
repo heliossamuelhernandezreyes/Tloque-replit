@@ -23,14 +23,15 @@ test("Winter mantiene fuentes nativas estrictas durante todo el render", () => {
   assert.match(exporter, /if \(options\.strictNativeSources\) throw/)
 })
 
-test("los modelos físicos principales no usan Math.random", () => {
+test("los modelos físicos principales usan ruido determinista compartido y nunca Math.random", () => {
   for (const path of [
     "client/src/audio/PhysicalBowedStringOverlay.ts",
     "client/src/audio/PhysicalAirColumnOverlay.ts",
   ]) {
     const source = read(path)
     assert.doesNotMatch(source, /Math\.random/)
-    assert.match(source, /createDeterministicNoiseBuffer/)
+    assert.match(source, /sharedDeterministicNoiseBuffer/)
+    assert.match(source, /deterministicNoiseOffset/)
   }
 })
 

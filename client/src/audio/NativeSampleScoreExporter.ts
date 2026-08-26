@@ -1,15 +1,15 @@
 import { linearScoreRecipeFor } from "@shared/audio"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
 import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared/native-hybrid-source"
-import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
+import { analyzeAudioBuffer, type AudioRenderAnalysis } from "./AudioRenderAnalysis"
 import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
+import { buildNativeRecipeIndex, nativeTrackAtTime } from "./NativeRecipeIndex"
+import { createNativeRenderGraph } from "./NativeRenderGraph"
 import { assessNativePremiumReadiness, premiumReadinessError } from "./NativePremiumReadiness"
-import { createAcousticStage } from "./ScoreAcousticStage"
 import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQuality } from "./ScoreExporter"
-import { createSampledMixMaster } from "./ScoreMixMaster"
 
 const MAX_OFFLINE_FLOAT_BYTES = 220 * 1024 * 1024
 const MAX_OFFLINE_TOTAL_FLOAT_BYTES = 300 * 1024 * 1024
@@ -19,6 +19,8 @@ export interface NativeSampleScoreExportOptions extends ScoreExportOptions {
   hybridMode?: HybridExportMode
   /** Diagnostic/certification renders must never become builtin synthesis after preflight. */
   strictNativeSources?: boolean
+  /** Optional post-render diagnostics; does not alter gain or mastering. */
+  onAnalysis?: (analysis: AudioRenderAnalysis) => void
 }
 interface LoadedOfflinePlan { moduleId: string; plan: NativeSampleScorePlan }
 
@@ -46,22 +48,11 @@ function nativeSampleQuality(value: unknown, options: ScoreExportOptions) {
     : { quality: requested, sampleRate: 48_000, bitDepth: 24 as const, tail: requested === "master" ? 8 : 5 }
 }
 function assertNotAborted(signal?: AbortSignal) { if (signal?.aborted) throw new DOMException("Exportación cancelada", "AbortError") }
-function brightnessCutoff(value: number) { const amount = Math.max(0, Math.min(1, value)); return 3_400 + Math.pow(amount, 0.72) * 16_000 }
 function modulePackUrlFor(recipe: ReturnType<typeof linearScoreRecipeFor>, moduleId: string, packUrl?: string) {
   if (recipe.version !== 2) throw new Error("La partitura no usa módulos nativos")
   if (recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID) return `/api/audio/sample-packs/modules/${encodeURIComponent(moduleId)}.json`
   if (!packUrl?.startsWith("/api/audio/sample-packs/modules/")) throw new Error("El módulo nativo debe provenir del almacenamiento interno de Tloque")
   return packUrl
-}
-function trackAtEvent(track: LinearScoreTrackV2, controls: LinearScoreRecipeV2["plan"]["controls"], timeSeconds: number): LinearScoreTrackV2 {
-  let expression = track.expression, brightness = track.brightness, vibrato = track.vibrato
-  for (const control of controls) {
-    if (control.timeSeconds > timeSeconds) continue
-    if (control.expression !== null) expression = control.expression
-    if (control.brightness !== null) brightness = control.brightness
-    if (control.vibrato !== null) vibrato = control.vibrato
-  }
-  return { ...track, expression, brightness, vibrato }
 }
 function hybridEnabledForExport(source: NonNullable<ReturnType<typeof nativeHybridForInstrument>>, quality: ScoreExportQuality, mode: HybridExportMode) {
   if (mode === "none" || quality === "preview") return false
@@ -167,53 +158,42 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   if (floatBytes + decodedFloatBytes(decodedByUrl) > MAX_OFFLINE_TOTAL_FLOAT_BYTES) throw new Error("El render y sus muestras exceden juntos la memoria segura del navegador móvil; expórtalo por movimientos")
 
   options.onProgress?.(0.20)
-  const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate), mix = createSampledMixMaster(context, 1); mix.output.connect(context.destination)
-  const stage = createAcousticStage(context, mix.input), trackGain = new Map<string, GainNode>(), trackTone = new Map<string, BiquadFilterNode>(), trackNodes: AudioNode[] = [], recipeTrackById = new Map(recipe.plan.tracks.map(track => [track.id, track]))
-  const controlsByTrack = new Map<string, LinearScoreRecipeV2["plan"]["controls"]>()
-  for (const track of recipe.plan.tracks) controlsByTrack.set(track.id, recipe.plan.controls.filter(control => control.trackId === track.id))
-  for (const { plan } of loaded) for (const track of plan.tracks) {
-    if (trackGain.has(track.id)) continue
-    const gain = context.createGain(); gain.gain.value = track.gain
-    const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = brightnessCutoff(track.brightness); tone.Q.value = 0.12
-    trackNodes.push(gain, tone)
-    const semanticTrack = recipeTrackById.get(track.id), stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", track.pan)
-    gain.connect(tone); tone.connect(stageInput); trackGain.set(track.id, gain); trackTone.set(track.id, tone)
-  }
-  for (const { plan } of loaded) for (const control of plan.controls) {
-    const gain = trackGain.get(control.trackId), tone = trackTone.get(control.trackId), at = control.timeSeconds
-    if (gain && control.gain !== null) { gain.gain.cancelScheduledValues(at); if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds); else gain.gain.setValueAtTime(control.gain, at) }
-    if (tone && control.brightness !== null) { const cutoff = brightnessCutoff(control.brightness); tone.frequency.cancelScheduledValues(at); if (control.rampSeconds > 0) tone.frequency.exponentialRampToValueAtTime(cutoff, at + control.rampSeconds); else tone.frequency.setValueAtTime(cutoff, at) }
-  }
+  const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate)
+  const index = buildNativeRecipeIndex(recipe)
+  const graph = createNativeRenderGraph(context, index.trackById, context.destination)
+  for (const { plan } of loaded) for (const track of plan.tracks) graph.createTrackPath(track.id, track.gain, track.brightness, track.pan)
+  for (const { plan } of loaded) for (const control of plan.controls) graph.scheduleTrackControl(control)
 
   const scheduled: Promise<unknown>[] = []
   for (const { plan } of loaded) {
     const player = new NativeSamplePackPlayer(context, decodedByUrl), zoneById = new Map(plan.zones.map(zone => [zone.id, zone]))
     for (const voice of plan.voices) {
-      const destination = trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
+      const destination = graph.trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
       if (!destination || !zone) continue
       scheduled.push(player.playSelection({ zone, playbackRate: voice.playbackRate, gain: voice.sampleGain }, voice.startSeconds, voice.durationSeconds, destination, 0, voice.oneShot, voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : undefined))
     }
     for (const auxiliary of plan.auxiliaryVoices) {
-      const destination = trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
+      const destination = graph.trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
       if (!destination || !zone) continue
       scheduled.push(player.playSelection({ zone, playbackRate: auxiliary.playbackRate, gain: auxiliary.sampleGain }, auxiliary.startSeconds, auxiliary.durationSeconds, destination, 0, true, auxiliary.fadeOutSeconds > 0 ? { fadeOutSeconds: auxiliary.fadeOutSeconds } : undefined))
     }
   }
 
   const previousHybridEndByTrack = new Map<string, number>()
-  for (const event of [...recipe.plan.events].sort((a, b) => a.timeSeconds - b.timeSeconds)) {
-    const track = recipeTrackById.get(event.trackId), destination = trackGain.get(event.trackId)
+  for (const event of index.chronologicalEvents) {
+    const track = index.trackById.get(event.trackId), destination = graph.trackGain.get(event.trackId)
     if (!track || !destination || !hybridEnabledForArticulation(track.instrument, event.articulation)) continue
     const source = nativeHybridForInstrument(track.instrument)
     if (!source || !hybridEnabledForExport(source, profile.quality, hybridMode)) continue
     const previousEnd = previousHybridEndByTrack.get(event.trackId), legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
-    const controls = controlsByTrack.get(event.trackId) ?? [], effectiveTrack = trackAtEvent(track, controls, event.timeSeconds)
+    const controls = index.controlsByTrack.get(event.trackId) ?? [], effectiveTrack = nativeTrackAtTime(track, controls, event.timeSeconds)
     for (const midi of event.notes) scheduleHybridPhysicalOverlay(context, source, { startAt: 0, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
     previousHybridEndByTrack.set(event.trackId, event.timeSeconds + event.durationSeconds)
   }
 
   await Promise.all(scheduled); assertNotAborted(options.signal); options.onProgress?.(0.28)
   const rendered = await context.startRendering(); options.onProgress?.(0.82)
-  for (const node of trackNodes) node.disconnect(); stage.disconnect(); mix.disconnect()
+  options.onAnalysis?.(analyzeAudioBuffer(rendered))
+  graph.disconnect()
   return encodeAudioBufferToWav(rendered, profile.bitDepth, progress => options.onProgress?.(0.82 + progress * 0.18))
 }
