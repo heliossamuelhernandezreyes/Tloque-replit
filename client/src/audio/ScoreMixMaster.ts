@@ -1,3 +1,5 @@
+import { createCachedDeterministicStereoImpulse } from "./DeterministicImpulseCache"
+
 export interface SampledMixMasterProfile {
   lowShelfHz: number
   lowShelfDb: number
@@ -55,21 +57,14 @@ function deterministicNoise(index: number) {
 }
 
 function createConcertRoomImpulse(context: BaseAudioContext, seconds: number, decay: number) {
-  const length = Math.max(1, Math.floor(context.sampleRate * seconds))
-  const impulse = context.createBuffer(2, length, context.sampleRate)
-  for (let channel = 0; channel < 2; channel += 1) {
-    const data = impulse.getChannelData(channel)
-    for (let i = 0; i < length; i += 1) {
-      const t = i / context.sampleRate
-      const tail = Math.exp(-t * decay)
-      const earlyWindow = t < 0.14 ? (1 - t / 0.14) : 0
-      const lateBloom = Math.min(1, t / 0.32)
-      const early = deterministicNoise(i * 2 + channel * 7919) * earlyWindow * 0.16
-      const late = deterministicNoise(i * 5 + channel * 3571) * tail * (0.055 + lateBloom * 0.085)
-      data[i] = early + late
-    }
-  }
-  return impulse
+  return createCachedDeterministicStereoImpulse(context, `sampled-concert-room-v1:decay=${decay}`, seconds, (channel, i, t) => {
+    const tail = Math.exp(-t * decay)
+    const earlyWindow = t < 0.14 ? (1 - t / 0.14) : 0
+    const lateBloom = Math.min(1, t / 0.32)
+    const early = deterministicNoise(i * 2 + channel * 7919) * earlyWindow * 0.16
+    const late = deterministicNoise(i * 5 + channel * 3571) * tail * (0.055 + lateBloom * 0.085)
+    return early + late
+  })
 }
 
 /**
