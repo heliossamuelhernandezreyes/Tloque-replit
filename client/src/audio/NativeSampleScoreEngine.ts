@@ -6,11 +6,10 @@ import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import type { MusicCue, MusicState } from "./MusicEngine"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, type NativeModuleGroup } from "./NativeAutoModule"
 import { buildNativeRecipeIndex, nativeTrackAtTime } from "./NativeRecipeIndex"
+import { createNativeRenderGraph } from "./NativeRenderGraph"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { schedulePhysicalReedVoice } from "./PhysicalReedModel"
-import { createAcousticStage } from "./ScoreAcousticStage"
-import { createSampledMixMaster } from "./ScoreMixMaster"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 
@@ -24,10 +23,6 @@ interface LoadedNativePlan {
 function createRealtimeAudioContext() {
   try { return new AudioContext({ latencyHint: "playback", sampleRate: 48_000 }) }
   catch { return new AudioContext({ latencyHint: "playback" }) }
-}
-function brightnessCutoff(value: number) {
-  const amount = Math.max(0, Math.min(1, value))
-  return 3_400 + Math.pow(amount, 0.72) * 16_000
 }
 
 export class NativeSampleScoreEngine {
@@ -63,24 +58,14 @@ export class NativeSampleScoreEngine {
         loaded.push({ moduleId: group.moduleId, plan, player, durationByUrl: new Map(plan.zones.map((zone, index) => [zone.sampleUrl, decoded[index]?.duration ?? 0])) })
       }
 
-      const mix = createSampledMixMaster(context, 1)
-      const stage = createAcousticStage(context, mix.input)
-      const output = context.createGain(); output.gain.value = 0; mix.output.connect(output); output.connect(context.destination)
-      const trackGain = new Map<string, GainNode>(), trackTone = new Map<string, BiquadFilterNode>()
       const index = buildNativeRecipeIndex(recipe)
-      const createTrackPath = (trackId: string, gainValue: number, brightness: number, pan: number) => {
-        if (trackGain.has(trackId)) return
-        const semanticTrack = index.trackById.get(trackId)
-        const gain = context.createGain(); gain.gain.value = gainValue
-        const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = brightnessCutoff(brightness); tone.Q.value = 0.12
-        const stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", pan)
-        gain.connect(tone); tone.connect(stageInput); trackGain.set(trackId, gain); trackTone.set(trackId, tone)
-      }
+      const graph = createNativeRenderGraph(context, index.trackById)
+      const output = context.createGain(); output.gain.value = 0; graph.output.connect(output); output.connect(context.destination)
 
-      for (const { plan } of loaded) for (const track of plan.tracks) createTrackPath(track.id, track.gain, track.brightness, track.pan)
+      for (const { plan } of loaded) for (const track of plan.tracks) graph.createTrackPath(track.id, track.gain, track.brightness, track.pan)
       for (const group of physicalGroups) for (const trackId of group.trackIds) {
         const track = index.trackById.get(trackId)
-        if (track) createTrackPath(track.id, track.gain * track.expression, track.brightness, track.pan)
+        if (track) graph.createTrackPath(track.id, track.gain * track.expression, track.brightness, track.pan)
       }
 
       if (context.state === "running") await context.suspend()
@@ -90,26 +75,16 @@ export class NativeSampleScoreEngine {
       const scheduled: Promise<unknown>[] = []
 
       for (const { plan, player, durationByUrl } of loaded) {
-        for (const control of plan.controls) {
-          const gain = trackGain.get(control.trackId), tone = trackTone.get(control.trackId), at = startAt + control.timeSeconds
-          if (gain && control.gain !== null) {
-            gain.gain.cancelScheduledValues(at)
-            if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds); else gain.gain.setValueAtTime(control.gain, at)
-          }
-          if (tone && control.brightness !== null) {
-            const cutoff = brightnessCutoff(control.brightness); tone.frequency.cancelScheduledValues(at)
-            if (control.rampSeconds > 0) tone.frequency.exponentialRampToValueAtTime(cutoff, at + control.rampSeconds); else tone.frequency.setValueAtTime(cutoff, at)
-          }
-        }
+        for (const control of plan.controls) graph.scheduleTrackControl(control, startAt)
         const zoneById = new Map(plan.zones.map(zone => [zone.id, zone]))
         for (const voice of plan.voices) {
-          const destination = trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
+          const destination = graph.trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
           if (!destination || !zone) continue
           scheduled.push(player.playSelection({ zone, playbackRate: voice.playbackRate, gain: voice.sampleGain }, startAt + voice.startSeconds, voice.durationSeconds, destination, 0, voice.oneShot, voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : undefined))
           if (voice.oneShot) naturalEnd = Math.max(naturalEnd, voice.startSeconds + (durationByUrl.get(voice.sampleUrl) ?? 0) / Math.max(0.01, voice.playbackRate))
         }
         for (const auxiliary of plan.auxiliaryVoices) {
-          const destination = trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
+          const destination = graph.trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
           if (!destination || !zone) continue
           scheduled.push(player.playSelection({ zone, playbackRate: auxiliary.playbackRate, gain: auxiliary.sampleGain }, startAt + auxiliary.startSeconds, auxiliary.durationSeconds, destination, 0, true, auxiliary.fadeOutSeconds > 0 ? { fadeOutSeconds: auxiliary.fadeOutSeconds } : undefined))
           naturalEnd = Math.max(naturalEnd, auxiliary.startSeconds + (durationByUrl.get(auxiliary.sampleUrl) ?? 0) / Math.max(0.01, auxiliary.playbackRate))
@@ -118,7 +93,7 @@ export class NativeSampleScoreEngine {
 
       const previousHybridEndByTrack = new Map<string, number>()
       for (const event of index.chronologicalEvents) {
-        const track = index.trackById.get(event.trackId), destination = trackGain.get(event.trackId)
+        const track = index.trackById.get(event.trackId), destination = graph.trackGain.get(event.trackId)
         if (!track || !destination || !hybridEnabledForArticulation(track.instrument, event.articulation)) continue
         const hybrid = nativeHybridForInstrument(track.instrument)
         if (!hybrid || (recipe.plan.quality === "master" && !hybridSourceMasterApproved(hybrid))) continue
@@ -137,24 +112,22 @@ export class NativeSampleScoreEngine {
         const model = nativePhysicalModelByModuleId(group.moduleId)
         if (!model) continue
         for (const trackId of group.trackIds) {
-          const track = index.trackById.get(trackId), gain = trackGain.get(trackId), tone = trackTone.get(trackId)
+          const track = index.trackById.get(trackId)
           if (!track) continue
           for (const control of index.controlsByTrack.get(trackId) ?? []) {
-            const at = startAt + control.timeSeconds
-            if (gain && control.expression !== null) {
-              const target = track.gain * control.expression; gain.gain.cancelScheduledValues(at)
-              if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(target, at + control.rampSeconds); else gain.gain.setValueAtTime(target, at)
-            }
-            if (tone && control.brightness !== null) {
-              const cutoff = brightnessCutoff(control.brightness); tone.frequency.cancelScheduledValues(at)
-              if (control.rampSeconds > 0) tone.frequency.exponentialRampToValueAtTime(cutoff, at + control.rampSeconds); else tone.frequency.setValueAtTime(cutoff, at)
-            }
+            graph.scheduleTrackControl({
+              trackId,
+              timeSeconds: control.timeSeconds,
+              rampSeconds: control.rampSeconds,
+              gain: control.expression === null ? null : track.gain * control.expression,
+              brightness: control.brightness,
+            }, startAt)
           }
         }
 
         const previousEndByTrack = new Map<string, number>()
         for (const trackId of group.trackIds) {
-          const track = index.trackById.get(trackId), destination = trackGain.get(trackId)
+          const track = index.trackById.get(trackId), destination = graph.trackGain.get(trackId)
           if (!track || !destination) continue
           const controls = index.controlsByTrack.get(trackId) ?? []
           for (const event of index.eventsByTrack.get(trackId) ?? []) {
