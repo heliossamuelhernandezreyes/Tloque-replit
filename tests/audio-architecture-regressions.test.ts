@@ -39,3 +39,11 @@ test("la matriz de certificación exige banco nativo real", () => {
   assert.match(source, /preflightNativeSamplePacks/)
   assert.match(source, /No se usará síntesis fallback/)
 })
+
+test("native-auto no depende del orden accidental del registry", () => {
+  const source = read("client/src/audio/NativeAutoModule.ts")
+  assert.match(source, /nativeModuleRank/)
+  assert.match(source, /nativeModulesForInstrument/)
+  assert.match(source, /localeCompare/)
+  assert.doesNotMatch(source, /INSTRUMENT_MANIFEST_REGISTRY\.find\(/)
+})
