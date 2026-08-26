@@ -2,7 +2,7 @@ import type { NativeHybridSource } from "@shared/native-hybrid-source"
 import { boundedHybridCalibrationTuning, type HybridCalibrationTuning } from "@shared/native-hybrid-tuning"
 import { physicalPerformanceStateAt } from "@shared/physical-performance-control"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
-import { createDeterministicNoiseBuffer } from "./DeterministicAudioNoise"
+import { deterministicNoiseOffset, sharedDeterministicNoiseBuffer } from "./DeterministicAudioNoise"
 
 type LinearScoreEventV2 = LinearScoreRecipeV2["plan"]["events"][number]
 type LinearScoreControlV2 = LinearScoreRecipeV2["plan"]["controls"][number]
@@ -71,8 +71,10 @@ export function scheduleBowedStringOverlay(
   const harmonicGain = context.createGain(); harmonicGain.gain.value = (0.045 + brightness * 0.05) * bridgeFactor * tuning.textureScale
   harmonic.connect(harmonicGain); harmonicGain.connect(excitation)
 
+  const bowIdentity = `${source.instrumentId}:${track.id}:${event.timeSeconds}:${midi}:bow`
+  const bowBuffer = sharedDeterministicNoiseBuffer(context, `${source.instrumentId}:bow`, 8, 0.68)
   const bow = context.createBufferSource()
-  bow.buffer = createDeterministicNoiseBuffer(context, `${source.instrumentId}:${track.id}:${event.timeSeconds}:${midi}:bow`, 0.18, 0.68)
+  bow.buffer = bowBuffer
   bow.loop = true
   const bowBand = context.createBiquadFilter(); bowBand.type = "bandpass"; bowBand.frequency.value = profile.brightness * (0.5 + bowPosition * 0.9) * tuning.dampingScale; bowBand.Q.value = 0.65
   const bowGain = context.createGain(); bowGain.gain.value = profile.bowNoise * (0.38 + pressure * 0.62) * (0.78 + bowPosition * 0.35) * tuning.textureScale
@@ -134,7 +136,7 @@ export function scheduleBowedStringOverlay(
 
   fundamental.start(start); fundamental.stop(stop)
   harmonic.start(start); harmonic.stop(stop)
-  bow.start(start); bow.stop(stop)
+  bow.start(start, deterministicNoiseOffset(bowIdentity, bowBuffer.duration)); bow.stop(stop)
   lfo.start(start); lfo.stop(stop)
   return { endSeconds: event.timeSeconds + duration + release }
 }
