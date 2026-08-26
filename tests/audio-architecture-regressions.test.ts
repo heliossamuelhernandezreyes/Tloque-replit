@@ -15,6 +15,14 @@ test("los laboratorios A/B no vuelven a sumar overlays físicos post-master", ()
   }
 })
 
+test("Winter mantiene fuentes nativas estrictas durante todo el render", () => {
+  const runner = read("client/src/audio/ViolinWinterStressRunner.ts")
+  const exporter = read("client/src/audio/NativeSampleScoreExporter.ts")
+  assert.match(runner, /strictNativeSources: true/)
+  assert.match(exporter, /strictNativeSources\?: boolean/)
+  assert.match(exporter, /if \(options\.strictNativeSources\) throw/)
+})
+
 test("los modelos físicos principales no usan Math.random", () => {
   for (const path of [
     "client/src/audio/PhysicalBowedStringOverlay.ts",
@@ -46,4 +54,11 @@ test("native-auto no depende del orden accidental del registry", () => {
   assert.match(source, /nativeModulesForInstrument/)
   assert.match(source, /localeCompare/)
   assert.doesNotMatch(source, /INSTRUMENT_MANIFEST_REGISTRY\.find\(/)
+})
+
+test("el exportador contabiliza samples decodificados además del buffer final", () => {
+  const source = read("client/src/audio/NativeSampleScoreExporter.ts")
+  assert.match(source, /MAX_OFFLINE_TOTAL_FLOAT_BYTES/)
+  assert.match(source, /decodedFloatBytes/)
+  assert.match(source, /floatBytes \+ decodedFloatBytes\(decodedByUrl\)/)
 })
