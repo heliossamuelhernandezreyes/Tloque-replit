@@ -2,7 +2,7 @@ import type { NativeHybridSource } from "@shared/native-hybrid-source"
 import { VIOLIN_WINTER_STRESS_INSTRUMENT, compileViolinWinterStressV1 } from "@shared/violin-winter-stress"
 import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import { preferredNativeModuleForInstrument } from "./NativeAutoModule"
-import { renderTloqueScoreWithNativeSamplePackToWav } from "./NativeSampleScoreExporter"
+import { preflightNativeSamplePacks, renderTloqueScoreWithNativeSamplePackToWav } from "./NativeSampleScoreExporter"
 
 export interface ViolinWinterStressResult {
   sampled: Blob
@@ -59,6 +59,15 @@ export async function runViolinWinterStressV1(source: NativeHybridSource, signal
   const recipe = compiled.recipe
   const moduleId = preferredNativeModuleForInstrument(source.instrumentId)
   if (!moduleId) throw new Error(`No existe sample base para ${source.instrumentId}`)
+
+  // A diagnostic A/B is invalid if Studio silently falls back to builtin synthesis.
+  // Require the exact native bank before rendering either side.
+  const preflight = await preflightNativeSamplePacks(recipe, "/api/audio/sample-packs/modules/native-auto.json", signal)
+  const violinItem = preflight.items.find(item => item.moduleId === moduleId)
+  if (!preflight.ready || violinItem?.status !== "ready") {
+    const detail = violinItem?.message ? ` (${violinItem.message})` : ""
+    throw new Error(`Winter Stress cancelado: el banco real ${moduleId} no está listo${detail}. No se usará síntesis fallback.`)
+  }
 
   const sampled = await renderTloqueScoreWithNativeSamplePackToWav(
     recipe,
