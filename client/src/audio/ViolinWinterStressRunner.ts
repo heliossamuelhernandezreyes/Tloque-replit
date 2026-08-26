@@ -28,8 +28,6 @@ export async function runViolinWinterStressV1(source: NativeHybridSource, signal
   const moduleId = preferredNativeModuleForInstrument(source.instrumentId)
   if (!moduleId) throw new Error(`No existe sample base para ${source.instrumentId}`)
 
-  // A diagnostic A/B is invalid if Studio silently falls back to builtin synthesis.
-  // Require the exact native bank before rendering either side.
   const preflight = await preflightNativeSamplePacks(recipe, "/api/audio/sample-packs/modules/native-auto.json", signal)
   const violinItem = preflight.items.find(item => item.moduleId === moduleId)
   if (!preflight.ready || violinItem?.status !== "ready") {
@@ -37,24 +35,19 @@ export async function runViolinWinterStressV1(source: NativeHybridSource, signal
     throw new Error(`Winter Stress cancelado: el banco real ${moduleId} no está listo${detail}. No se usará síntesis fallback.`)
   }
 
-  // Both sides deliberately use the production native renderer. The only changed
-  // variable is hybridMode, so track tone, acoustic stage, room and mastering are
-  // identical in Sample and Hybrid. Never add a post-master physical overlay here.
   const sampled = await renderTloqueScoreWithNativeSamplePackToWav(
     recipe,
     "/api/audio/sample-packs/modules/native-auto.json",
-    { quality: "studio", signal, hybridMode: "none" },
+    { quality: "studio", signal, hybridMode: "none", strictNativeSources: true },
   )
   if (signal?.aborted) throw new DOMException("Winter Stress cancelado", "AbortError")
   const hybrid = await renderTloqueScoreWithNativeSamplePackToWav(
     recipe,
     "/api/audio/sample-packs/modules/native-auto.json",
-    { quality: "studio", signal, hybridMode: "quality" },
+    { quality: "studio", signal, hybridMode: "quality", strictNativeSources: true },
   )
   if (signal?.aborted) throw new DOMException("Winter Stress cancelado", "AbortError")
 
-  // WAV PCM has a 44-byte header and stereo samples. Parsing the full WAV is not
-  // necessary for the UI duration because the compiled stress score is authoritative.
   return {
     sampled,
     hybrid,
