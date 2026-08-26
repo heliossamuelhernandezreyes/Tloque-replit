@@ -139,6 +139,9 @@ export class NativeSamplePackPlayer {
     return validateTloqueSamplePack(await response.json())
   }
   preload(zones: readonly TloqueSampleZone[]) { return Promise.all(zones.map(zone => this.buffer(zone))) }
+  /** Safe after the last scheduled source using this URL has already captured its AudioBuffer. */
+  releaseSample(sampleUrl: string) { return this.buffers.delete(sampleUrl) }
+  get retainedSampleCount() { return this.buffers.size }
 
   async play(params: {
     pack: TloqueSamplePack
@@ -208,7 +211,16 @@ export class NativeSamplePackPlayer {
 
   private buffer(zone: TloqueSampleZone): Promise<AudioBuffer> {
     const existing = this.buffers.get(zone.sampleUrl); if (existing) return existing
-    const promise = fetchAudioResource(zone.sampleUrl).then(response => { if (!response.ok) throw new Error(`Muestra ${response.status}`); return response.arrayBuffer() }).then(bytes => this.context.decodeAudioData(bytes.slice(0)))
-    this.buffers.set(zone.sampleUrl, promise); return promise
+    let promise: Promise<AudioBuffer>
+    promise = fetchAudioResource(zone.sampleUrl)
+      .then(response => { if (!response.ok) throw new Error(`Muestra ${response.status}`); return response.arrayBuffer() })
+      .then(bytes => this.context.decodeAudioData(bytes.slice(0)))
+      .catch(error => {
+        // A transient fetch/decode failure must not poison this URL forever.
+        if (this.buffers.get(zone.sampleUrl) === promise) this.buffers.delete(zone.sampleUrl)
+        throw error
+      })
+    this.buffers.set(zone.sampleUrl, promise)
+    return promise
   }
 }
