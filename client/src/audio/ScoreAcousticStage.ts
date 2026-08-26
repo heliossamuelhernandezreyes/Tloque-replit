@@ -1,3 +1,5 @@
+import { createCachedDeterministicStereoImpulse } from "./DeterministicImpulseCache"
+
 export interface AcousticStagePlacement {
   panOffset: number
   depth: number
@@ -29,19 +31,12 @@ function deterministicNoise(index: number) {
 }
 
 function createEarlyReflectionImpulse(context: BaseAudioContext, seconds = 0.62) {
-  const length = Math.max(1, Math.floor(context.sampleRate * seconds))
-  const impulse = context.createBuffer(2, length, context.sampleRate)
-  for (let channel = 0; channel < 2; channel += 1) {
-    const data = impulse.getChannelData(channel)
-    for (let i = 0; i < length; i += 1) {
-      const t = i / context.sampleRate
-      const envelope = Math.exp(-t * 6.8)
-      const early = t < 0.16 ? (1 - t / 0.16) * 0.24 : 0
-      const diffusion = 0.07 + Math.min(0.10, t * 0.22)
-      data[i] = deterministicNoise(i * 2 + channel * 7919) * envelope * (diffusion + early)
-    }
-  }
-  return impulse
+  return createCachedDeterministicStereoImpulse(context, "acoustic-stage-early-v1", seconds, (channel, i, t) => {
+    const envelope = Math.exp(-t * 6.8)
+    const early = t < 0.16 ? (1 - t / 0.16) * 0.24 : 0
+    const diffusion = 0.07 + Math.min(0.10, t * 0.22)
+    return deterministicNoise(i * 2 + channel * 7919) * envelope * (diffusion + early)
+  })
 }
 
 export interface AcousticStage {

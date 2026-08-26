@@ -10,15 +10,19 @@ on:
       - 'shared/audio-module-sources.ts'
       - 'shared/instrument-manifest.ts'
       - 'shared/native-sample-pack.ts'
+      - 'shared/native-hybrid-source.ts'
+      - 'shared/native-hybrid-approval-registry.ts'
+      - 'shared/violin-winter-stress.ts'
       - 'server/audioModuleInstaller.ts'
       - 'server/audioUploads.ts'
       - 'server/sfzSamplePackCompiler.ts'
       - 'tests/**'
       - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/audio-performance-check.yml'
   push:
     branches:
-      - agent/performance-engine-v1
+      - main
     paths:
       - 'client/src/audio/**'
       - 'client/src/pages/AudioCatalogAdmin.tsx'
@@ -27,11 +31,15 @@ on:
       - 'shared/audio-module-sources.ts'
       - 'shared/instrument-manifest.ts'
       - 'shared/native-sample-pack.ts'
+      - 'shared/native-hybrid-source.ts'
+      - 'shared/native-hybrid-approval-registry.ts'
+      - 'shared/violin-winter-stress.ts'
       - 'server/audioModuleInstaller.ts'
       - 'server/audioUploads.ts'
       - 'server/sfzSamplePackCompiler.ts'
       - 'tests/**'
       - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/audio-performance-check.yml'
 
 permissions:
@@ -43,12 +51,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Node 20
-        uses: actions/setup-node@v4
+      - name: Node 24
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -58,7 +66,10 @@ jobs:
       - name: TypeScript
         run: npm run check
 
-      - name: Tests
+      - name: Audio runtime and mastering budgets
+        run: node --import tsx --test tests/audio-runtime-performance.test.ts tests/audio-render-analysis.test.ts tests/audio-acoustic-stage.test.ts tests/audio-architecture-regressions.test.ts tests/audio-impulse-cache.test.ts
+
+      - name: Full tests
         run: npm test
 
       - name: Build
