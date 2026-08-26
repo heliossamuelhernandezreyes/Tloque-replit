@@ -27,9 +27,15 @@ test("arco y columna de aire reutilizan noise beds por contexto", () => {
   }
 })
 
-test("realtime indexa automatización una vez por track", () => {
-  const source = read("client/src/audio/NativeSampleScoreEngine.ts")
-  assert.match(source, /controlsByTrack/)
-  assert.match(source, /controlsByTrack\.get\(event\.trackId\)/)
-  assert.doesNotMatch(source, /recipe\.plan\.controls\.filter\(control => control\.trackId === event\.trackId\)/)
+test("realtime indexa eventos y automatización en una sola estructura", () => {
+  const engine = read("client/src/audio/NativeSampleScoreEngine.ts")
+  const index = read("client/src/audio/NativeRecipeIndex.ts")
+  assert.match(engine, /buildNativeRecipeIndex\(recipe\)/)
+  assert.match(engine, /index\.controlsByTrack\.get\(event\.trackId\)/)
+  assert.match(engine, /index\.eventsByTrack\.get\(trackId\)/)
+  assert.doesNotMatch(engine, /recipe\.plan\.controls\.filter\(/)
+  assert.doesNotMatch(engine, /recipe\.plan\.events\.filter\(/)
+  assert.match(index, /for \(const control of recipe\.plan\.controls\)/)
+  assert.match(index, /for \(const event of recipe\.plan\.events\)/)
+  assert.match(index, /if \(control\.timeSeconds > timeSeconds\) break/)
 })
