@@ -1,6 +1,7 @@
 import { linearScoreRecipeFor } from "@shared/audio"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
 import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared/native-hybrid-source"
+import { analyzeAudioBuffer, type AudioRenderAnalysis } from "./AudioRenderAnalysis"
 import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
@@ -18,6 +19,8 @@ export interface NativeSampleScoreExportOptions extends ScoreExportOptions {
   hybridMode?: HybridExportMode
   /** Diagnostic/certification renders must never become builtin synthesis after preflight. */
   strictNativeSources?: boolean
+  /** Optional post-render diagnostics; does not alter gain or mastering. */
+  onAnalysis?: (analysis: AudioRenderAnalysis) => void
 }
 interface LoadedOfflinePlan { moduleId: string; plan: NativeSampleScorePlan }
 
@@ -190,6 +193,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
 
   await Promise.all(scheduled); assertNotAborted(options.signal); options.onProgress?.(0.28)
   const rendered = await context.startRendering(); options.onProgress?.(0.82)
+  options.onAnalysis?.(analyzeAudioBuffer(rendered))
   graph.disconnect()
   return encodeAudioBufferToWav(rendered, profile.bitDepth, progress => options.onProgress?.(0.82 + progress * 0.18))
 }
