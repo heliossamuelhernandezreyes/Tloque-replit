@@ -2,6 +2,7 @@ import type { NativeHybridSource } from "@shared/native-hybrid-source"
 import { boundedHybridCalibrationTuning, type HybridCalibrationTuning } from "@shared/native-hybrid-tuning"
 import { physicalPerformanceStateAt } from "@shared/physical-performance-control"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
+import { createDeterministicNoiseBuffer } from "./DeterministicAudioNoise"
 import { scheduleSympatheticResonanceOverlay } from "./PhysicalSympatheticResonanceOverlay"
 
 type LinearScoreEventV2 = LinearScoreRecipeV2["plan"]["events"][number]
@@ -24,12 +25,6 @@ function scheduleParam(param: AudioParam, at: number, value: number, rampSeconds
   const safe = exponential ? Math.max(1e-5, value) : value
   if (rampSeconds > 0) exponential ? param.exponentialRampToValueAtTime(safe, at + rampSeconds) : param.linearRampToValueAtTime(safe, at + rampSeconds)
   else param.setValueAtTime(safe, at)
-}
-function noiseBuffer(context: BaseAudioContext, seconds = 0.2) {
-  const buffer = context.createBuffer(1, Math.max(128, Math.ceil(context.sampleRate * seconds)), context.sampleRate)
-  const data = buffer.getChannelData(0); let state = 0
-  for (let i = 0; i < data.length; i += 1) { state = state * 0.72 + (Math.random() * 2 - 1) * 0.28; data[i] = state }
-  return buffer
 }
 function profileFor(source: NativeHybridSource) {
   const id = source.instrumentId
@@ -68,7 +63,9 @@ export function scheduleAirColumnOverlay(context: BaseAudioContext, source: Nati
   const fundamental = context.createOscillator(), fg = context.createGain(); fundamental.type = source.instrumentId.startsWith("brass.") ? "sawtooth" : "triangle"; fundamental.frequency.value = hz; fg.gain.value = 0.13 + pressure * 0.11; fundamental.connect(fg); fg.connect(excitation)
   const h2 = context.createOscillator(), h2g = context.createGain(); h2.type = "sine"; h2.frequency.value = hz * 2; h2g.gain.value = profile.h2 * (0.68 + pressure * 0.32) * embouchureTone(embouchure) * tuning.textureScale; h2.connect(h2g); h2g.connect(excitation)
   const h3 = context.createOscillator(), h3g = context.createGain(); h3.type = "sine"; h3.frequency.value = hz * 3; h3g.gain.value = profile.h3 * (0.7 + brightness * 0.24 + embouchure * 0.12) * tuning.textureScale; h3.connect(h3g); h3g.connect(excitation)
-  const breath = context.createBufferSource(), breathBand = context.createBiquadFilter(), breathGain = context.createGain(); breath.buffer = noiseBuffer(context); breath.loop = true; breathBand.type = "bandpass"; breathBand.frequency.value = profile.damping * tuning.dampingScale * (0.48 + brightness * 0.35 + embouchure * 0.28); breathBand.Q.value = 0.65; breathGain.gain.value = profile.noise * (0.35 + pressure * 0.65) * (1.1 - embouchure * 0.16) * tuning.textureScale; breath.connect(breathBand); breathBand.connect(breathGain); breathGain.connect(excitation)
+  const breath = context.createBufferSource(), breathBand = context.createBiquadFilter(), breathGain = context.createGain()
+  breath.buffer = createDeterministicNoiseBuffer(context, `${source.instrumentId}:${track.id}:${event.timeSeconds}:${midi}:air`, 0.2, 0.72)
+  breath.loop = true; breathBand.type = "bandpass"; breathBand.frequency.value = profile.damping * tuning.dampingScale * (0.48 + brightness * 0.35 + embouchure * 0.28); breathBand.Q.value = 0.65; breathGain.gain.value = profile.noise * (0.35 + pressure * 0.65) * (1.1 - embouchure * 0.16) * tuning.textureScale; breath.connect(breathBand); breathBand.connect(breathGain); breathGain.connect(excitation)
 
   const delay = context.createDelay(0.09), damping = context.createBiquadFilter(), feedback = context.createGain(); const baseDelay = Math.min(0.08, Math.max(1 / 18_000, 1 / hz)); delay.delayTime.value = baseDelay; damping.type = "lowpass"; damping.frequency.value = profile.damping * tuning.dampingScale * (0.64 + brightness * 0.35 + embouchure * 0.28); damping.Q.value = 0.25; feedback.gain.value = profile.feedback * tuning.feedbackScale * (0.91 + pressure * 0.055) * embouchureFeedback(embouchure); excitation.connect(delay); delay.connect(damping); damping.connect(feedback); feedback.connect(delay)
   const bus = context.createGain(), tap = context.createGain(); bus.gain.value = 1; tap.gain.value = 0.24 * tuning.bodyScale; damping.connect(tap); tap.connect(bus)
