@@ -26,3 +26,10 @@ test("arco y columna de aire reutilizan noise beds por contexto", () => {
     assert.doesNotMatch(source, /createDeterministicNoiseBuffer\(/)
   }
 })
+
+test("realtime indexa automatización una vez por track", () => {
+  const source = read("client/src/audio/NativeSampleScoreEngine.ts")
+  assert.match(source, /controlsByTrack/)
+  assert.match(source, /controlsByTrack\.get\(event\.trackId\)/)
+  assert.doesNotMatch(source, /recipe\.plan\.controls\.filter\(control => control\.trackId === event\.trackId\)/)
+})
