@@ -6,6 +6,7 @@ import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import type { MusicCue, MusicState } from "./MusicEngine"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, type NativeModuleGroup } from "./NativeAutoModule"
 import { buildNativeRecipeIndex, nativeTrackAtTime } from "./NativeRecipeIndex"
+import { NativeRealtimeLookahead, NATIVE_REALTIME_TICK_MS, type NativeRealtimeTask } from "./NativeRealtimeLookahead"
 import { createNativeRenderGraph } from "./NativeRenderGraph"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
@@ -30,6 +31,7 @@ export class NativeSampleScoreEngine {
   private cue: MusicCue | null = null
   private output: GainNode | null = null
   private completionTimer = 0
+  private schedulerTimer = 0
   private master = 0.35
   private duckFactor = 1
   private narrativeGain = 1
@@ -72,7 +74,7 @@ export class NativeSampleScoreEngine {
       this.context = context; this.output = output; this.cue = cue
       const startAt = context.currentTime + 0.12
       let naturalEnd = recipe.plan.totalSeconds
-      const scheduled: Promise<unknown>[] = []
+      const realtimeTasks: NativeRealtimeTask[] = []
 
       for (const { plan, player, durationByUrl } of loaded) {
         for (const control of plan.controls) graph.scheduleTrackControl(control, startAt)
@@ -80,13 +82,35 @@ export class NativeSampleScoreEngine {
         for (const voice of plan.voices) {
           const destination = graph.trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
           if (!destination || !zone) continue
-          scheduled.push(player.playSelection({ zone, playbackRate: voice.playbackRate, gain: voice.sampleGain }, startAt + voice.startSeconds, voice.durationSeconds, destination, 0, voice.oneShot, voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : undefined))
+          realtimeTasks.push({
+            timeSeconds: voice.startSeconds,
+            run: () => player.playSelection(
+              { zone, playbackRate: voice.playbackRate, gain: voice.sampleGain },
+              startAt + voice.startSeconds,
+              voice.durationSeconds,
+              destination,
+              0,
+              voice.oneShot,
+              voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : undefined,
+            ),
+          })
           if (voice.oneShot) naturalEnd = Math.max(naturalEnd, voice.startSeconds + (durationByUrl.get(voice.sampleUrl) ?? 0) / Math.max(0.01, voice.playbackRate))
         }
         for (const auxiliary of plan.auxiliaryVoices) {
           const destination = graph.trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
           if (!destination || !zone) continue
-          scheduled.push(player.playSelection({ zone, playbackRate: auxiliary.playbackRate, gain: auxiliary.sampleGain }, startAt + auxiliary.startSeconds, auxiliary.durationSeconds, destination, 0, true, auxiliary.fadeOutSeconds > 0 ? { fadeOutSeconds: auxiliary.fadeOutSeconds } : undefined))
+          realtimeTasks.push({
+            timeSeconds: auxiliary.startSeconds,
+            run: () => player.playSelection(
+              { zone, playbackRate: auxiliary.playbackRate, gain: auxiliary.sampleGain },
+              startAt + auxiliary.startSeconds,
+              auxiliary.durationSeconds,
+              destination,
+              0,
+              true,
+              auxiliary.fadeOutSeconds > 0 ? { fadeOutSeconds: auxiliary.fadeOutSeconds } : undefined,
+            ),
+          })
           naturalEnd = Math.max(naturalEnd, auxiliary.startSeconds + (durationByUrl.get(auxiliary.sampleUrl) ?? 0) / Math.max(0.01, auxiliary.playbackRate))
         }
       }
@@ -101,10 +125,13 @@ export class NativeSampleScoreEngine {
         const effectiveTrack = nativeTrackAtTime(track, controls, event.timeSeconds)
         const previousEnd = previousHybridEndByTrack.get(event.trackId)
         const legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
-        for (const midi of event.notes) {
-          const overlay = scheduleHybridPhysicalOverlay(context, hybrid, { startAt, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
-          if (overlay) naturalEnd = Math.max(naturalEnd, overlay.endSeconds)
-        }
+        realtimeTasks.push({
+          timeSeconds: event.timeSeconds,
+          run: () => {
+            for (const midi of event.notes) scheduleHybridPhysicalOverlay(context, hybrid, { startAt, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
+          },
+        })
+        naturalEnd = Math.max(naturalEnd, event.timeSeconds + event.durationSeconds + 7)
         previousHybridEndByTrack.set(event.trackId, event.timeSeconds + event.durationSeconds)
       }
 
@@ -134,19 +161,35 @@ export class NativeSampleScoreEngine {
             const effectiveTrack = nativeTrackAtTime(track, controls, event.timeSeconds)
             const previousEnd = previousEndByTrack.get(trackId)
             const legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
-            for (const midi of event.notes) {
-              const voice = schedulePhysicalReedVoice(context, model, { startAt, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
-              naturalEnd = Math.max(naturalEnd, voice.endSeconds)
-            }
+            realtimeTasks.push({
+              timeSeconds: event.timeSeconds,
+              run: () => {
+                for (const midi of event.notes) schedulePhysicalReedVoice(context, model, { startAt, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
+              },
+            })
+            naturalEnd = Math.max(naturalEnd, event.timeSeconds + event.durationSeconds + 2)
             previousEndByTrack.set(trackId, event.timeSeconds + event.durationSeconds)
           }
         }
       }
 
-      await Promise.all(scheduled)
+      const lookahead = new NativeRealtimeLookahead(realtimeTasks)
+      await Promise.all(lookahead.pump(0))
       const fadeSeconds = Math.max(0.08, Math.min(0.35, cue.crossfadeSeconds || 0.12))
       output.gain.setValueAtTime(0, startAt); output.gain.linearRampToValueAtTime(this.targetVolume(), startAt + fadeSeconds)
       await context.resume()
+
+      const pump = () => {
+        if (this.context !== context) return
+        const pending = lookahead.pump(context.currentTime - startAt)
+        for (const promise of pending) promise.catch(error => {
+          if (this.context !== context) return
+          console.error("Tloque realtime lookahead scheduling failed:", error)
+          this.stopRuntime(); this.listener("error", cue)
+        })
+        if (lookahead.complete) { window.clearInterval(this.schedulerTimer); this.schedulerTimer = 0 }
+      }
+      if (!lookahead.complete) this.schedulerTimer = window.setInterval(pump, NATIVE_REALTIME_TICK_MS)
       this.completionTimer = window.setTimeout(() => { this.listener("paused", this.cue) }, (naturalEnd + 0.5) * 1_000)
       this.listener("playing", cue)
     } catch (error) {
@@ -167,5 +210,10 @@ export class NativeSampleScoreEngine {
   dispose() { this.stop() }
   private targetVolume() { return Math.max(0, Math.min(1, this.master * (this.cue?.volume ?? 1) * this.duckFactor * this.narrativeGain)) }
   private applyVolume() { if (!this.context || !this.output) return; const now = this.context.currentTime; this.output.gain.cancelScheduledValues(now); this.output.gain.linearRampToValueAtTime(this.targetVolume(), now + 0.18) }
-  private stopRuntime() { window.clearTimeout(this.completionTimer); this.completionTimer = 0; this.output?.disconnect(); this.output = null; if (this.context) void this.context.close(); this.context = null }
+  private stopRuntime() {
+    window.clearTimeout(this.completionTimer); this.completionTimer = 0
+    window.clearInterval(this.schedulerTimer); this.schedulerTimer = 0
+    this.output?.disconnect(); this.output = null
+    if (this.context) void this.context.close(); this.context = null
+  }
 }
