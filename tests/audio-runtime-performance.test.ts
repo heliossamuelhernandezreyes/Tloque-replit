@@ -39,3 +39,16 @@ test("realtime indexa eventos y automatización en una sola estructura", () => {
   assert.match(index, /for \(const event of recipe\.plan\.events\)/)
   assert.match(index, /if \(control\.timeSeconds > timeSeconds\) break/)
 })
+
+test("realtime y WAV comparten el mismo índice temporal nativo", () => {
+  const engine = read("client/src/audio/NativeSampleScoreEngine.ts")
+  const exporter = read("client/src/audio/NativeSampleScoreExporter.ts")
+  for (const source of [engine, exporter]) {
+    assert.match(source, /buildNativeRecipeIndex\(recipe\)/)
+    assert.match(source, /nativeTrackAtTime/)
+  }
+  assert.match(exporter, /index\.chronologicalEvents/)
+  assert.match(exporter, /index\.controlsByTrack\.get\(event\.trackId\)/)
+  assert.doesNotMatch(exporter, /recipe\.plan\.controls\.filter\(/)
+  assert.doesNotMatch(exporter, /\[\.\.\.recipe\.plan\.events\]\.sort/)
+})
