@@ -27,6 +27,7 @@ export function ViolinWinterStressPanel() {
   const [error, setError] = useState("")
 
   if (!source) return null
+  const violinSource = source
 
   async function run() {
     if (running) return
@@ -36,7 +37,7 @@ export function ViolinWinterStressPanel() {
       audio?.pause()
       setAudio(null)
       setPlaying(null)
-      const result = await runViolinWinterStressV1(source)
+      const result = await runViolinWinterStressV1(violinSource)
       if (urls) {
         URL.revokeObjectURL(urls.sampled)
         URL.revokeObjectURL(urls.hybrid)
@@ -75,7 +76,7 @@ export function ViolinWinterStressPanel() {
         <p className="flex items-center gap-2 text-xs font-medium text-sky-100/75"><Snowflake className="h-3.5 w-3.5" /> Winter Stress v1 · strings.violin</p>
         <p className="mt-1 max-w-3xl text-[11px] leading-5 text-white/35">Prueba musical extrema, original y determinista: ataques repetidos, repetición tipo tremolo, legato, saltos de registro, p→ff y agudo fuerte. Complementa la matriz 3×3; nunca puede aprobar Master por sí sola.</p>
       </div>
-      <span className="rounded-full bg-sky-300/[.06] px-2 py-1 text-[10px] text-sky-100/55">{source.engineVersion}</span>
+      <span className="rounded-full bg-sky-300/[.06] px-2 py-1 text-[10px] text-sky-100/55">{violinSource.engineVersion}</span>
     </div>
 
     <div className="mt-3 flex flex-wrap gap-1.5">{VIOLIN_WINTER_STRESS_SEGMENTS.map(segment => <span key={segment.id} className="rounded-full border border-white/[.06] px-2 py-1 text-[9px] text-white/35">{segment.label}</span>)}</div>
