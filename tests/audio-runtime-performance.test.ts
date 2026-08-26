@@ -2,6 +2,8 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { deterministicNoiseOffset } from "../client/src/audio/DeterministicAudioNoise"
+import { measureNativeRuntimeBudget } from "../client/src/audio/NativeRuntimeBudget"
+import { compileViolinWinterStressV1 } from "../shared/violin-winter-stress"
 
 const read = (path: string) => readFileSync(path, "utf8")
 
@@ -51,4 +53,19 @@ test("realtime y WAV comparten el mismo índice temporal nativo", () => {
   assert.match(exporter, /index\.controlsByTrack\.get\(event\.trackId\)/)
   assert.doesNotMatch(exporter, /recipe\.plan\.controls\.filter\(/)
   assert.doesNotMatch(exporter, /\[\.\.\.recipe\.plan\.events\]\.sort/)
+})
+
+test("Winter expone una presión de voces determinista para benchmarks", () => {
+  const compiled = compileViolinWinterStressV1()
+  assert.equal(compiled.ok, true)
+  if (!compiled.ok || compiled.recipe.version !== 2) return
+  const a = measureNativeRuntimeBudget(compiled.recipe)
+  const b = measureNativeRuntimeBudget(compiled.recipe)
+  assert.deepEqual(a, b)
+  assert.equal(a.eventCount, compiled.recipe.plan.events.length)
+  assert.equal(a.controlCount, compiled.recipe.plan.controls.length)
+  assert.ok(a.noteVoiceCount > 0)
+  assert.ok(a.hybridVoiceCount > 0)
+  assert.ok(a.peakNoteVoices >= a.peakHybridVoices)
+  assert.ok(a.peakHybridVoices > 0)
 })
