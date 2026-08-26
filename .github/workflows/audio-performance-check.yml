@@ -67,7 +67,7 @@ jobs:
         run: npm run check
 
       - name: Audio runtime and mastering budgets
-        run: node --import tsx --test tests/audio-runtime-performance.test.ts tests/audio-render-analysis.test.ts tests/audio-acoustic-stage.test.ts tests/audio-architecture-regressions.test.ts
+        run: node --import tsx --test tests/audio-runtime-performance.test.ts tests/audio-render-analysis.test.ts tests/audio-acoustic-stage.test.ts tests/audio-architecture-regressions.test.ts tests/audio-impulse-cache.test.ts
 
       - name: Full tests
         run: npm test
