@@ -130,7 +130,7 @@ control 2:3 expression=0.88 brightness=0.78 vibrato=0.085 pressure=0.84 bow=0.24
 2:4 E6 0.90 velocity=0.96 articulation=normal
 end
 
-section high-pressure form=climax bars=2 repeat=1 fade=0 tempo=176 rubato=0
+section high-pressure form=development bars=2 repeat=1 fade=0 tempo=176 rubato=0
 use solo
 control 1:1 expression=0.88 brightness=0.82 vibrato=0.090 pressure=0.88 bow=0.18 coupling=0.72 ramp=0.15
 1:1 E6 0.35 velocity=0.88 articulation=normal
