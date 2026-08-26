@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { deterministicNoiseOffset } from "../client/src/audio/DeterministicAudioNoise"
+import { NativeRealtimeLookahead, NATIVE_REALTIME_LOOKAHEAD_SECONDS } from "../client/src/audio/NativeRealtimeLookahead"
 import { measureNativeRuntimeBudget } from "../client/src/audio/NativeRuntimeBudget"
 import { compileViolinWinterStressV1 } from "../shared/violin-winter-stress"
 
@@ -69,6 +70,38 @@ test("realtime y WAV construyen stage, master y filtros desde NativeRenderGraph"
   assert.match(graph, /createAcousticStage\(context, mix\.input\)/)
   assert.match(graph, /nativeBrightnessCutoff/)
   assert.match(graph, /scheduleTrackControl/)
+})
+
+test("look-ahead materializa sólo la ventana próxima y nunca duplica tareas", async () => {
+  const fired: number[] = []
+  const lookahead = new NativeRealtimeLookahead([
+    { timeSeconds: 0, run: () => { fired.push(0) } },
+    { timeSeconds: NATIVE_REALTIME_LOOKAHEAD_SECONDS, run: () => { fired.push(1) } },
+    { timeSeconds: NATIVE_REALTIME_LOOKAHEAD_SECONDS + 0.01, run: () => { fired.push(2) } },
+    { timeSeconds: 20, run: async () => { fired.push(3) } },
+  ])
+
+  await Promise.all(lookahead.pump(0))
+  assert.deepEqual(fired, [0, 1])
+  assert.equal(lookahead.pendingCount, 2)
+
+  await Promise.all(lookahead.pump(0))
+  assert.deepEqual(fired, [0, 1])
+
+  await Promise.all(lookahead.pump(0.02))
+  assert.deepEqual(fired, [0, 1, 2])
+
+  await Promise.all(lookahead.pump(14))
+  assert.deepEqual(fired, [0, 1, 2, 3])
+  assert.equal(lookahead.complete, true)
+})
+
+test("realtime usa look-ahead y cancela su intervalo al detenerse", () => {
+  const engine = read("client/src/audio/NativeSampleScoreEngine.ts")
+  assert.match(engine, /new NativeRealtimeLookahead\(realtimeTasks\)/)
+  assert.match(engine, /window\.setInterval\(pump, NATIVE_REALTIME_TICK_MS\)/)
+  assert.match(engine, /window\.clearInterval\(this\.schedulerTimer\)/)
+  assert.doesNotMatch(engine, /await Promise\.all\(scheduled\)/)
 })
 
 test("Winter expone una presión de voces determinista para benchmarks", () => {
