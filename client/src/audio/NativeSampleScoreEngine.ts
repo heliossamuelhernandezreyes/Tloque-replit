@@ -7,7 +7,7 @@ import type { MusicCue, MusicState } from "./MusicEngine"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, type NativeModuleGroup } from "./NativeAutoModule"
 import { buildNativeProgressivePreloadPlan } from "./NativeProgressivePreload"
 import { buildNativeRecipeIndex, nativeTrackAtTime } from "./NativeRecipeIndex"
-import { NativeRealtimeLookahead, NATIVE_REALTIME_TICK_MS, type NativeRealtimeTask } from "./NativeRealtimeLookahead"
+import { NativeRealtimeLookahead, NATIVE_REALTIME_LOOKAHEAD_SECONDS, NATIVE_REALTIME_TICK_MS, type NativeRealtimeTask } from "./NativeRealtimeLookahead"
 import { createNativeRenderGraph } from "./NativeRenderGraph"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
@@ -86,6 +86,13 @@ export class NativeSampleScoreEngine {
           realtimeTasks.push({
             timeSeconds: preload.preloadAtSeconds,
             run: async () => { await player.preload([preload.zone]) },
+          })
+          // Lookahead tasks execute up to six seconds before their timestamp. Shift
+          // lifecycle eviction by exactly that horizon so deletion happens around
+          // lastUse + grace rather than prematurely while a future voice still needs it.
+          realtimeTasks.push({
+            timeSeconds: preload.releaseAtSeconds + NATIVE_REALTIME_LOOKAHEAD_SECONDS,
+            run: () => { player.evictSampleUrl(preload.zone.sampleUrl) },
           })
         }
 
