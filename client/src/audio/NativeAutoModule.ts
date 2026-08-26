@@ -1,15 +1,32 @@
 import type { LinearScoreRecipeV2 } from "@shared/tloque-score-v2"
-import { INSTRUMENT_MANIFEST_REGISTRY } from "@shared/instrument-manifest"
+import { INSTRUMENT_MANIFEST_REGISTRY, type InstrumentManifest } from "@shared/instrument-manifest"
 
 export const NATIVE_AUTO_MODULE_ID = "native-auto" as const
 
 const NON_NATIVE_MANIFESTS = new Set(["gm-orchestral-strings"])
 
+function nativeModuleRank(manifest: InstrumentManifest) {
+  // Prefer richer recorded/performance-capable sources without depending on registry
+  // insertion order. Physical-only Tloque models remain valid when they are the only
+  // source for an instrument, but do not unexpectedly displace a richer sample pack.
+  let score = manifest.capabilities.length * 10
+  if (manifest.capabilities.includes("velocity-layers")) score += 30
+  if (manifest.capabilities.includes("round-robin")) score += 20
+  if (manifest.capabilities.includes("true-legato")) score += 25
+  if (manifest.capabilities.includes("release-samples")) score += 15
+  if (manifest.id.startsWith("tloque-model-")) score -= 10
+  return score
+}
+
+export function nativeModulesForInstrument(instrumentId: string): readonly InstrumentManifest[] {
+  return INSTRUMENT_MANIFEST_REGISTRY
+    .filter(item => !NON_NATIVE_MANIFESTS.has(item.id) && item.instruments.includes(instrumentId))
+    .slice()
+    .sort((a, b) => nativeModuleRank(b) - nativeModuleRank(a) || a.id.localeCompare(b.id))
+}
+
 export function preferredNativeModuleForInstrument(instrumentId: string): string | null {
-  const manifest = INSTRUMENT_MANIFEST_REGISTRY.find(item =>
-    !NON_NATIVE_MANIFESTS.has(item.id) && item.instruments.includes(instrumentId),
-  )
-  return manifest?.id ?? null
+  return nativeModulesForInstrument(instrumentId)[0]?.id ?? null
 }
 
 export interface NativeModuleGroup {
