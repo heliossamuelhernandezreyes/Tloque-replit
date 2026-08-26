@@ -5,6 +5,7 @@ import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared
 import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import type { MusicCue, MusicState } from "./MusicEngine"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, type NativeModuleGroup } from "./NativeAutoModule"
+import { buildNativeProgressivePreloadPlan } from "./NativeProgressivePreload"
 import { buildNativeRecipeIndex, nativeTrackAtTime } from "./NativeRecipeIndex"
 import { NativeRealtimeLookahead, NATIVE_REALTIME_TICK_MS, type NativeRealtimeTask } from "./NativeRealtimeLookahead"
 import { createNativeRenderGraph } from "./NativeRenderGraph"
@@ -18,7 +19,6 @@ interface LoadedNativePlan {
   moduleId: string
   plan: NativeSampleScorePlan
   player: NativeSamplePackPlayer
-  durationByUrl: Map<string, number>
 }
 
 function createRealtimeAudioContext() {
@@ -56,8 +56,7 @@ export class NativeSampleScoreEngine {
         const pack = await player.loadPack(packUrl)
         if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde a su manifest`)
         const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack)
-        const decoded = await player.preload(plan.zones)
-        loaded.push({ moduleId: group.moduleId, plan, player, durationByUrl: new Map(plan.zones.map((zone, index) => [zone.sampleUrl, decoded[index]?.duration ?? 0])) })
+        loaded.push({ moduleId: group.moduleId, plan, player })
       }
 
       const index = buildNativeRecipeIndex(recipe)
@@ -76,9 +75,20 @@ export class NativeSampleScoreEngine {
       let naturalEnd = recipe.plan.totalSeconds
       const realtimeTasks: NativeRealtimeTask[] = []
 
-      for (const { plan, player, durationByUrl } of loaded) {
+      for (const { plan, player } of loaded) {
         for (const control of plan.controls) graph.scheduleTrackControl(control, startAt)
         const zoneById = new Map(plan.zones.map(zone => [zone.id, zone]))
+
+        // Warm a physical WAV well before its first voice. NativeSamplePackPlayer
+        // caches the in-flight decode promise, so a playback task can safely reuse
+        // the same request if slow storage/network overlaps the scheduling window.
+        for (const preload of buildNativeProgressivePreloadPlan(plan)) {
+          realtimeTasks.push({
+            timeSeconds: preload.preloadAtSeconds,
+            run: async () => { await player.preload([preload.zone]) },
+          })
+        }
+
         for (const voice of plan.voices) {
           const destination = graph.trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
           if (!destination || !zone) continue
@@ -94,7 +104,10 @@ export class NativeSampleScoreEngine {
               voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : undefined,
             ),
           })
-          if (voice.oneShot) naturalEnd = Math.max(naturalEnd, voice.startSeconds + (durationByUrl.get(voice.sampleUrl) ?? 0) / Math.max(0.01, voice.playbackRate))
+          // Realtime no needs every sample decoded up front just to discover its
+          // physical tail. Keep completion conservative without reintroducing the
+          // eager preload: one-shots get a bounded eight-second safety tail.
+          if (voice.oneShot) naturalEnd = Math.max(naturalEnd, voice.startSeconds + Math.max(voice.durationSeconds, 8))
         }
         for (const auxiliary of plan.auxiliaryVoices) {
           const destination = graph.trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
@@ -111,7 +124,7 @@ export class NativeSampleScoreEngine {
               auxiliary.fadeOutSeconds > 0 ? { fadeOutSeconds: auxiliary.fadeOutSeconds } : undefined,
             ),
           })
-          naturalEnd = Math.max(naturalEnd, auxiliary.startSeconds + (durationByUrl.get(auxiliary.sampleUrl) ?? 0) / Math.max(0.01, auxiliary.playbackRate))
+          naturalEnd = Math.max(naturalEnd, auxiliary.startSeconds + Math.max(auxiliary.durationSeconds, 2))
         }
       }
 
