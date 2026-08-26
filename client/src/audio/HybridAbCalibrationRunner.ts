@@ -7,9 +7,8 @@ import {
   type HybridAbMetricId,
   type HybridAbRegister,
 } from "@shared/native-hybrid-validation"
-import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import { preferredNativeModuleForInstrument } from "./NativeAutoModule"
-import { renderTloqueScoreWithNativeSamplePackToWav } from "./NativeSampleScoreExporter"
+import { preflightNativeSamplePacks, renderTloqueScoreWithNativeSamplePackToWav } from "./NativeSampleScoreExporter"
 
 export interface HybridAbCalibrationResult {
   report: ReturnType<typeof buildHybridAbReport>
@@ -147,17 +146,6 @@ function spectralCentroid(data: Float32Array, sampleRate: number, centerSeconds:
   }
   return weighted / Math.max(1e-9, magnitudeSum)
 }
-function encodeWav(buffer: AudioBuffer) {
-  const channels = buffer.numberOfChannels, frames = buffer.length, view = new DataView(new ArrayBuffer(44 + frames * channels * 2))
-  const text = (offset: number, value: string) => { for (let i = 0; i < value.length; i += 1) view.setUint8(offset + i, value.charCodeAt(i)) }
-  text(0, "RIFF"); view.setUint32(4, 36 + frames * channels * 2, true); text(8, "WAVE"); text(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, channels, true); view.setUint32(24, buffer.sampleRate, true); view.setUint32(28, buffer.sampleRate * channels * 2, true); view.setUint16(32, channels * 2, true); view.setUint16(34, 16, true); text(36, "data"); view.setUint32(40, frames * channels * 2, true)
-  let offset = 44
-  for (let frame = 0; frame < frames; frame += 1) for (let channel = 0; channel < channels; channel += 1) {
-    const x = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[frame]))
-    view.setInt16(offset, x < 0 ? x * 0x8000 : x * 0x7fff, true); offset += 2
-  }
-  return new Blob([view.buffer], { type: "audio/wav" })
-}
 function metricsAt(a: Float32Array, b: Float32Array, sampleRate: number, offset: number): Record<HybridAbMetricId, number> {
   const attacks = [0, 2, 4, 6].map(value => offset + value)
   const transient = attacks.reduce((sum, seconds) => {
@@ -182,22 +170,25 @@ export async function runHybridAbCalibration(source: NativeHybridSource, signal?
   if (!compiled.ok || compiled.recipe.version !== 2) throw new Error(`No se pudo compilar probe A/B: ${compiled.ok ? "versión inválida" : compiled.diagnostics.map(item => item.message).join(" · ")}`)
   const recipe = compiled.recipe, moduleId = preferredNativeModuleForInstrument(source.instrumentId)
   if (!moduleId) throw new Error(`No existe sample base para ${source.instrumentId}`)
+
+  const preflight = await preflightNativeSamplePacks(recipe, "/api/audio/sample-packs/modules/native-auto.json", signal)
+  const sourceItem = preflight.items.find(item => item.moduleId === moduleId)
+  if (!preflight.ready || sourceItem?.status !== "ready") {
+    throw new Error(`Calibración A/B cancelada: el banco real ${moduleId} no está listo. No se usará síntesis fallback.`)
+  }
+
   const sampled = await renderTloqueScoreWithNativeSamplePackToWav(recipe, "/api/audio/sample-packs/modules/native-auto.json", { quality: "studio", signal, hybridMode: "none" })
   if (signal?.aborted) throw new DOMException("Calibración cancelada", "AbortError")
+  const hybrid = await renderTloqueScoreWithNativeSamplePackToWav(recipe, "/api/audio/sample-packs/modules/native-auto.json", { quality: "studio", signal, hybridMode: "quality" })
+  if (signal?.aborted) throw new DOMException("Calibración cancelada", "AbortError")
 
-  const decoder = new OfflineAudioContext(2, 1, 48_000), sampledBuffer = await decoder.decodeAudioData(await sampled.arrayBuffer())
-  const context = new OfflineAudioContext(sampledBuffer.numberOfChannels, sampledBuffer.length, sampledBuffer.sampleRate), base = context.createBufferSource()
-  base.buffer = sampledBuffer; base.connect(context.destination); base.start(0)
-  const bus = context.createGain(); bus.gain.value = 0.32; bus.connect(context.destination)
-  const track = recipe.plan.tracks[0], controls = recipe.plan.controls
-  if (!track) throw new Error("Probe A/B sin track")
-  let previousEnd: number | undefined
-  for (const event of recipe.plan.events) {
-    const legato = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
-    for (const midi of event.notes) scheduleHybridPhysicalOverlay(context, source, { startAt: 0, event, track, midi, destination: bus, controls, legatoFromPrevious: legato })
-    previousEnd = event.timeSeconds + event.durationSeconds
-  }
-  const hybridBuffer = await context.startRendering(), hybrid = encodeWav(hybridBuffer), a = mono(sampledBuffer), b = mono(hybridBuffer), sampleRate = sampledBuffer.sampleRate
+  // Metrics compare two complete production renders. Both have the same sample path,
+  // stage, room and mastering; hybridMode is the only deliberate variable.
+  const decoderA = new OfflineAudioContext(2, 1, 48_000)
+  const decoderB = new OfflineAudioContext(2, 1, 48_000)
+  const sampledBuffer = await decoderA.decodeAudioData(await sampled.arrayBuffer())
+  const hybridBuffer = await decoderB.decodeAudioData(await hybrid.arrayBuffer())
+  const a = mono(sampledBuffer), b = mono(hybridBuffer), sampleRate = sampledBuffer.sampleRate
   const cellValues: HybridAbCellValues[] = []
   let index = 0
   for (const register of REGISTERS) for (const gesture of GESTURES) {
