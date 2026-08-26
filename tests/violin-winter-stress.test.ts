@@ -32,12 +32,13 @@ test("Winter Stress v1 compila y conserva seis tipos de estrés musical distinto
     "dynamic-ramp",
     "high-register-strong",
   ])
+  const score = violinWinterStressScoreV1()
   const result = compileViolinWinterStressV1()
   assert.equal(result.ok, true, result.ok ? undefined : JSON.stringify(result.diagnostics))
   if (!result.ok) return
   assert.equal(result.recipe.version, 2)
   assert.equal(result.recipe.plan.tracks.length, 1)
-  assert.equal(result.recipe.plan.tracks[0].instrumentId, "strings.violin")
+  assert.match(score, /track solo .*instrument=strings\.violin/)
   assert.ok(result.recipe.plan.events.length >= 70, "el benchmark debe presionar ataques y repeticiones")
   assert.ok(result.recipe.plan.events.some(event => event.articulation === "legato"), "debe incluir continuidad legato")
   const notes = result.recipe.plan.events.flatMap(event => event.notes)
