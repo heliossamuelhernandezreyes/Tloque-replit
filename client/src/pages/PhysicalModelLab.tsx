@@ -3,6 +3,7 @@ import { ArrowLeft, Download, FlaskConical, Loader2, Play, ShieldCheck } from "l
 import { useLocation } from "wouter"
 import { Layout } from "@/components/layout"
 import { HybridAbLabPanel } from "@/components/admin/HybridAbLabPanel"
+import { ViolinWinterStressPanel } from "@/components/admin/ViolinWinterStressPanel"
 import { NATIVE_PHYSICAL_MODEL_SOURCES } from "@shared/native-acoustic-source"
 import type { NativeAcousticValidationReport } from "@shared/native-acoustic-validation"
 import { runPhysicalModelCalibration } from "@/audio/PhysicalModelCalibrationRunner"
@@ -68,6 +69,7 @@ export default function PhysicalModelLab() {
       })}</div>
 
       <HybridAbLabPanel />
+      <ViolinWinterStressPanel />
     </section>
   </Layout>
 }
