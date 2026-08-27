@@ -48,6 +48,7 @@ export const EXPECTED_TABLES = [
   "narrative_projects",
   "notifications",
   "paper_usage_events",
+  "payment_incidents",
   "print_copy_events",
   "speech_profiles",
   "speech_projects",
@@ -91,6 +92,9 @@ export const EXPECTED_INDEXES = [
   "author_payouts_status_requested_idx",
   "author_earnings_payout_ready_idx",
   "wallet_ledger_tinta_refund_once_idx",
+  "token_orders_payment_ref_idx",
+  "wallet_orders_payment_ref_idx",
+  "payment_incidents_resolution_created_idx",
 ]
 
 export const EXPECTED_CONSTRAINTS = [
@@ -108,6 +112,7 @@ export const EXPECTED_CONSTRAINTS = [
   "author_payouts_contract_check",
   "gacha_config_split_check",
   "print_copies_claim_key_hash_check",
+  "payment_incidents_contract_check",
 ]
 
 export function databaseUrl() {
@@ -342,11 +347,13 @@ export async function validateExpectedSchema(client) {
     book_drafts: ["book_id", "author_id", "base_revision", "draft_revision", "data", "updated_at"],
     book_revisions: ["book_id", "revision", "snapshot", "change_type", "created_by", "created_at"],
     api_rate_limits: ["bucket_key", "window_start", "request_count", "expires_at"],
-    token_orders: ["author_user_id", "author_share_bps", "book_type_snapshot", "book_revision_snapshot", "cash_backing_cents", "refund_ref", "refunded_at"],
+    token_orders: ["author_user_id", "author_share_bps", "book_type_snapshot", "book_revision_snapshot", "cash_backing_cents", "payment_ref", "refund_ref", "refunded_at"],
     wallet_ledger: ["cash_backing_cents"],
+    wallet_orders: ["payment_ref"],
     author_earnings: ["payout_eligible", "payout_id"],
     author_payout_accounts: ["user_id", "provider_account_id", "details_submitted", "payouts_enabled", "transfers_active", "requirements_due"],
     author_payouts: ["author_user_id", "amount_cents", "currency", "status", "provider_ref", "failure_code"],
+    payment_incidents: ["provider_event_id", "provider_object_id", "kind", "payment_ref", "resolution", "resolved_at"],
   }
   for (const [table, columns] of Object.entries(requiredColumns)) {
     for (const column of columns) {

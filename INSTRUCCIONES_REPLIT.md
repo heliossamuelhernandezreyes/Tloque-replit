@@ -57,7 +57,7 @@ bash scripts/migrar.sh APLICAR
 El migrador usa `DATABASE_URL` desde Secrets, toma un bloqueo exclusivo de
 migración, registra checksums, guarda una instantánea de los datos que sí
 cambian y ejecuta el snapshot `0000` cuando la base está vacía y después las
-migraciones hasta `0015` dentro de una sola transacción. Ante cualquier
+migraciones hasta `0016` dentro de una sola transacción. Ante cualquier
 error hace rollback completo.
 
 Se puede volver a ejecutar: las migraciones ya registradas con el mismo hash se

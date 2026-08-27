@@ -525,6 +525,7 @@ CREATE TABLE "token_orders" (
 	"status" text DEFAULT 'pending' NOT NULL,
 	"provider" text DEFAULT 'beta' NOT NULL,
 	"provider_ref" text DEFAULT '',
+	"payment_ref" text DEFAULT '',
 	"refund_ref" text DEFAULT '',
 	"token_id" integer,
 	"author_user_id" integer,
@@ -630,8 +631,32 @@ CREATE TABLE "wallet_orders" (
 	"status" text DEFAULT 'pending' NOT NULL,
 	"provider" text DEFAULT 'beta' NOT NULL,
 	"provider_ref" text DEFAULT '',
+	"payment_ref" text DEFAULT '',
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"paid_at" timestamp
+);
+
+CREATE TABLE "payment_incidents" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"provider_event_id" text NOT NULL,
+	"provider_object_id" text NOT NULL,
+	"kind" text NOT NULL,
+	"payment_ref" text DEFAULT '' NOT NULL,
+	"token_order_id" integer,
+	"wallet_order_id" integer,
+	"amount_cents" integer DEFAULT 0 NOT NULL,
+	"currency" text DEFAULT 'mxn' NOT NULL,
+	"provider_status" text DEFAULT '' NOT NULL,
+	"reason" text DEFAULT '' NOT NULL,
+	"resolution" text DEFAULT 'open' NOT NULL,
+	"resolution_note" text DEFAULT '' NOT NULL,
+	"admin_user_id" integer,
+	"occurred_at" timestamp DEFAULT now() NOT NULL,
+	"resolved_at" timestamp,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "payment_incidents_provider_event_id_unique" UNIQUE("provider_event_id"),
+	CONSTRAINT "payment_incidents_provider_object_id_unique" UNIQUE("provider_object_id")
 );
 
 ALTER TABLE "adaptive_score_layers" ADD CONSTRAINT "adaptive_score_layers_score_id_adaptive_scores_id_fk" FOREIGN KEY ("score_id") REFERENCES "public"."adaptive_scores"("id") ON DELETE cascade ON UPDATE no action;
@@ -707,3 +732,6 @@ ALTER TABLE "user_state" ADD CONSTRAINT "user_state_user_id_users_id_fk" FOREIGN
 ALTER TABLE "voice_profiles" ADD CONSTRAINT "voice_profiles_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
 ALTER TABLE "wallet_ledger" ADD CONSTRAINT "wallet_ledger_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
 ALTER TABLE "wallet_orders" ADD CONSTRAINT "wallet_orders_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "payment_incidents" ADD CONSTRAINT "payment_incidents_token_order_id_token_orders_id_fk" FOREIGN KEY ("token_order_id") REFERENCES "public"."token_orders"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "payment_incidents" ADD CONSTRAINT "payment_incidents_wallet_order_id_wallet_orders_id_fk" FOREIGN KEY ("wallet_order_id") REFERENCES "public"."wallet_orders"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "payment_incidents" ADD CONSTRAINT "payment_incidents_admin_user_id_users_id_fk" FOREIGN KEY ("admin_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;

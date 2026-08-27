@@ -18,6 +18,18 @@ type PayoutRow = {
   authorEmail: string
 }
 
+type PaymentIncident = {
+  id: number
+  kind: string
+  amountCents: number
+  currency: string
+  providerStatus: string
+  reason: string
+  resolution: string
+  providerObjectId: string
+  createdAt: string
+}
+
 const ACTIVE = new Set(["requested", "processing", "processing_unknown"])
 
 export default function PayoutAdmin() {
@@ -32,6 +44,15 @@ export default function PayoutAdmin() {
       return response.json()
     },
   })
+  const { data: incidentData, refetch: refetchIncidents } = useQuery<{ incidents: PaymentIncident[] }>({
+    queryKey: ["/api/admin/payment-incidents"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/payment-incidents", { credentials: "include" })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return response.json()
+    },
+  })
+  const openIncidents = incidentData?.incidents.filter(incident => incident.resolution === "open") || []
 
   async function processPayout(id: number, action: "approve" | "reject") {
     const reason = action === "reject"
@@ -58,6 +79,33 @@ export default function PayoutAdmin() {
     }
   }
 
+  async function resolveIncident(id: number, outcome: "funds_restored" | "liability_reconciled") {
+    const note = window.prompt(
+      outcome === "funds_restored"
+        ? "Referencia de Stripe o evidencia de que los fondos fueron restaurados:"
+        : "Referencia de reversa, ajuste o conciliación contable:",
+      "",
+    )
+    if (!note) return
+    setWorkingId(-id); setMessage("")
+    try {
+      const response = await fetch(`/api/admin/payment-incidents/${id}/resolve`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outcome, note }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+      setMessage("Incidencia conciliada. Las liquidaciones pueden continuar si no hay otra abierta.")
+      await Promise.all([refetchIncidents(), refetch()])
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo conciliar")
+    } finally {
+      setWorkingId(null)
+    }
+  }
+
   return (
     <Layout>
       <main className="mx-auto w-full max-w-4xl px-4 pb-24 pt-8 sm:px-6">
@@ -72,12 +120,35 @@ export default function PayoutAdmin() {
               Aprobar crea una transferencia idempotente hacia la cuenta Stripe Connect verificada. Stripe realiza después el depósito bancario según la programación del autor.
             </p>
           </div>
-          <button aria-label="Actualizar" onClick={() => refetch()} className="rounded-xl border border-white/10 p-2 text-white/40 hover:text-white/70">
+          <button aria-label="Actualizar" onClick={() => { void Promise.all([refetch(), refetchIncidents()]) }} className="rounded-xl border border-white/10 p-2 text-white/40 hover:text-white/70">
             <RefreshCw className="h-4 w-4" />
           </button>
         </div>
 
         {message && <p role="status" className="mt-4 rounded-xl border border-white/10 bg-white/[.03] px-3 py-2 text-xs text-white/65">{message}</p>}
+        {openIncidents.length > 0 && (
+          <section className="mt-6 rounded-2xl border border-red-300/20 bg-red-950/10 p-4">
+            <h2 className="text-sm font-semibold text-red-100/80">Liquidaciones congeladas · {openIncidents.length} incidencia(s)</h2>
+            <p className="mt-1 text-[11px] leading-5 text-white/40">Stripe notificó un reembolso o contracargo. Documenta primero la restauración de fondos, reversa de transferencia o ajuste contable.</p>
+            <div className="mt-3 space-y-3">
+              {openIncidents.map(incident => (
+                <article key={incident.id} className="rounded-xl border border-white/[.07] bg-black/20 p-3">
+                  <div className="flex flex-wrap justify-between gap-2">
+                    <div>
+                      <p className="text-xs text-white/75">{incident.kind} · {incident.providerStatus}</p>
+                      <p className="text-[10px] text-white/35">{incident.providerObjectId} · {incident.reason}</p>
+                    </div>
+                    <p className="text-sm font-semibold text-red-100/75">${(incident.amountCents / 100).toFixed(2)} {incident.currency.toUpperCase()}</p>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button disabled={workingId !== null} onClick={() => resolveIncident(incident.id, "funds_restored")} className="rounded-lg border border-emerald-300/20 px-2.5 py-1.5 text-[10px] text-emerald-100/70 disabled:opacity-40">Fondos restaurados</button>
+                    <button disabled={workingId !== null} onClick={() => resolveIncident(incident.id, "liability_reconciled")} className="rounded-lg border border-amber-300/20 px-2.5 py-1.5 text-[10px] text-amber-100/70 disabled:opacity-40">Reversa/ajuste conciliado</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
         {isLoading ? (
           <div className="mt-10 flex items-center gap-2 text-sm text-white/35"><Loader2 className="h-4 w-4 animate-spin" /> Cargando</div>
         ) : !data?.payouts.length ? (

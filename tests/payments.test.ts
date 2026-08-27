@@ -136,9 +136,14 @@ test("el reembolso Stripe es idempotente y exige un PaymentIntent real", async (
 })
 
 test("codifica estructuras anidadas para Stripe", () => {
-  const encoded = stripeForm({ mode: "payment", line_items: [{ quantity: 1 }] }).join("&")
+  const encoded = stripeForm({
+    mode: "payment",
+    line_items: [{ quantity: 1 }],
+    payment_intent_data: { metadata: { orderId: "42" } },
+  }).join("&")
   assert.match(encoded, /mode=payment/)
   assert.match(encoded, /line_items%5B0%5D%5Bquantity%5D=1/)
+  assert.match(encoded, /payment_intent_data%5Bmetadata%5D%5BorderId%5D=42/)
 })
 
 test("verifica firma y ventana anti-replay del webhook", () => {

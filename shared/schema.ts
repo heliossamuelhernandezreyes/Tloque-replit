@@ -326,6 +326,7 @@ export const tokenOrders = pgTable("token_orders", {
   status:      text("status").default("pending").notNull(),// pending | paid | canceled
   provider:    text("provider").default("beta").notNull(), // beta | stripe
   providerRef: text("provider_ref").default(""),           // id de sesión de Stripe
+  paymentRef:  text("payment_ref").default(""),            // PaymentIntent de Stripe
   refundRef:   text("refund_ref").default(""),
   tokenId:     integer("token_id"),                        // token emitido al pagar
   // Instantánea económica: el webhook nunca recalcula el reparto usando una
@@ -389,7 +390,7 @@ export const authorEarnings = pgTable("author_earnings", {
   authorCents:   integer("author_cents").default(0).notNull(),   // 90%
   platformCents: integer("platform_cents").default(0).notNull(), // 10%
   currency:      text("currency").default("mxn").notNull(),
-  status:        text("status").default("accrued").notNull(),    // accrued | reserved | paid_out
+  status:        text("status").default("accrued").notNull(),    // accrued | reserved | paid_out | reversed
   payoutEligible: boolean("payout_eligible").default(false).notNull(),
   payoutId:       integer("payout_id").references(() => authorPayouts.id),
   createdAt:     timestamp("created_at").defaultNow().notNull(),
@@ -429,12 +430,38 @@ export const walletOrders = pgTable("wallet_orders", {
   status:      text("status").notNull().default("pending"), // pending|paid|failed
   provider:    text("provider").notNull().default("beta"),  // "stripe" | "beta"
   providerRef: text("provider_ref").default(""),
+  paymentRef:  text("payment_ref").default(""),
   createdAt:   timestamp("created_at").defaultNow().notNull(),
   paidAt:      timestamp("paid_at"),
 })
 
 export type WalletEntry = typeof walletLedger.$inferSelect
 export type WalletOrder = typeof walletOrders.$inferSelect
+
+// Registro mínimo, idempotente y sin PII de reembolsos/contracargos. Una
+// incidencia abierta congela aprobaciones de liquidación hasta conciliación.
+export const paymentIncidents = pgTable("payment_incidents", {
+  id:               serial("id").primaryKey(),
+  providerEventId:  text("provider_event_id").notNull().unique(),
+  providerObjectId: text("provider_object_id").notNull(),
+  kind:             text("kind").notNull(),
+  paymentRef:       text("payment_ref").notNull().default(""),
+  tokenOrderId:     integer("token_order_id").references(() => tokenOrders.id),
+  walletOrderId:    integer("wallet_order_id").references(() => walletOrders.id),
+  amountCents:      integer("amount_cents").notNull().default(0),
+  currency:         text("currency").notNull().default("mxn"),
+  providerStatus:   text("provider_status").notNull().default(""),
+  reason:           text("reason").notNull().default(""),
+  resolution:       text("resolution").notNull().default("open"),
+  resolutionNote:   text("resolution_note").notNull().default(""),
+  adminUserId:      integer("admin_user_id").references(() => users.id),
+  occurredAt:       timestamp("occurred_at").defaultNow().notNull(),
+  resolvedAt:       timestamp("resolved_at"),
+  createdAt:        timestamp("created_at").defaultNow().notNull(),
+  updatedAt:        timestamp("updated_at").defaultNow().notNull(),
+})
+
+export type PaymentIncident = typeof paymentIncidents.$inferSelect
 
 // Medición auditable de IA. El proveedor reporta tokens o caracteres reales;
 // la regla central de Papel los convierte a unidades enteras. requestKey hace

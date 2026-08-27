@@ -12,6 +12,7 @@ import { requireAdmin } from "./auth"
 import { rateLimit } from "./rateLimit"
 import { publicOriginForRequest } from "./security"
 import { stripeForm, verifyStripeWebhook } from "./payments"
+import { hasOpenPaymentIncidents } from "./paymentIncidents"
 
 const ACTIVE_PAYOUT_STATES = ["requested", "processing", "processing_unknown"]
 
@@ -349,6 +350,7 @@ export function registerPayoutRoutes(app: Express) {
     try {
       const prepared = await db.transaction(async tx => {
         await tx.execute(sql`select pg_advisory_xact_lock(73001, ${payoutId})`)
+        if (await hasOpenPaymentIncidents(tx)) return { blockedByIncident: true as const }
         const [row] = await tx.select().from(authorPayouts).where(eq(authorPayouts.id, payoutId))
         if (!row || !["requested", "processing", "processing_unknown"].includes(row.status)) return null
         const [connected] = await tx.select().from(authorPayoutAccounts)
@@ -365,6 +367,9 @@ export function registerPayoutRoutes(app: Express) {
         }).where(eq(authorPayouts.id, payoutId))
         return { payout: row, account: connected, invalidLedger: false }
       })
+      if (prepared && "blockedByIncident" in prepared) {
+        return res.status(409).json({ message: "Hay un reembolso o contracargo pendiente de conciliación" })
+      }
       if (!prepared) return res.status(409).json({ message: "La liquidación ya fue procesada o no existe" })
       payout = prepared.payout
       account = prepared.account

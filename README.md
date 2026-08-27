@@ -30,10 +30,12 @@ npm run db:migrate
 ```
 
 El migrador puede reconstruir PostgreSQL vacío desde `0000`, aplica en orden
-las migraciones hasta `0015`, verifica checksums, restricciones e índices y
+las migraciones hasta `0016`, verifica checksums, restricciones e índices y
 valida la estructura antes del commit. `0012` agrega revisiones del manuscrito,
 `0013` introduce respaldo de Tinta y liquidaciones, `0014` fija los contratos
-SQL que no expresa Drizzle y `0015` protege las claves de reclamación. Si el preflight detecta datos históricos inconsistentes,
+SQL que no expresa Drizzle, `0015` protege las claves de reclamación y `0016`
+registra reembolsos/contracargos para congelar liquidaciones hasta conciliación.
+Si el preflight detecta datos históricos inconsistentes,
 debe corregirse el dato antes de reintentar; no se elimina a escondidas.
 
 ## Comandos

@@ -57,3 +57,10 @@ test("la migración de claves admite legado y exige HMAC válido", () => {
   assert.match(sql, /\^\[a-f0-9\]\{64\}\$/i)
   assert.match(sql, /históricas/i)
 })
+
+test("la migración económica registra reembolsos y contracargos", () => {
+  const sql = readFileSync(join(process.cwd(), "migrations", "0016_payment_incidents.sql"), "utf8")
+  assert.match(sql, /provider_event_id/i)
+  assert.match(sql, /payment_ref/i)
+  assert.match(sql, /resolution IN \('open', 'funds_restored', 'liability_reconciled'\)/i)
+})

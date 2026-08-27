@@ -24,6 +24,7 @@ import { PRICES, TINTA_PACKS, TINTA_CENTS, AUTHOR_SHARE_STORY, AUTHOR_SHARE_BOOK
 import { debitTinta } from "./economy";
 import { registerPayoutRoutes } from "./payouts";
 import { isProtectedClaimKey, protectClaimKey, revealClaimKey, verifyClaimKey } from "./claimKeys";
+import { reconcileOpenIncidentsForPayment, recordPaymentIncident, registerPaymentIncidentRoutes } from "./paymentIncidents";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { isSafeHttpsUrl, isSafeImageSource } from "@shared/media";
 import { PAPER_PLANS, PAPER_RATES } from "@shared/paper";
@@ -65,6 +66,7 @@ export async function registerRoutes(
   registerSpeechRoutes(app)
   registerDirectionAgentRoutes(app)
   registerPayoutRoutes(app)
+  registerPaymentIncidentRoutes(app)
 
   const AUTHOR_BOOK_FIELDS = [
     "title", "author", "coverUrl", "coverFx", "content", "synopsis", "genre",
@@ -1562,6 +1564,10 @@ export async function registerRoutes(
 
       if (event.type === "checkout.session.completed") {
         const session = event.data?.object || {}
+        const paymentRef = typeof session.payment_intent === "string"
+          && /^pi_[A-Za-z0-9]+$/.test(session.payment_intent)
+          ? session.payment_intent
+          : ""
         // Solo metadata explícita: el client_reference_id lo comparten
         // tokens y monedero, y cruzarlos emitiría tokens equivocados.
         const orderId = Number(session.metadata?.orderId)
@@ -1571,6 +1577,7 @@ export async function registerRoutes(
             const [order] = await tx.select().from(tokenOrders).where(eq(tokenOrders.id, orderId))
             const validPayment = order?.provider === "stripe"
               && order.providerRef === session.id
+              && Boolean(paymentRef)
               && session.payment_status === "paid"
               && Number(session.amount_total) === order.amountCents
               && String(session.currency || "").toLowerCase() === order.currency.toLowerCase()
@@ -1595,6 +1602,7 @@ export async function registerRoutes(
               .set({
                 status: "paid", paidAt: new Date(), tokenId: result.token.id,
                 cashBackingCents: order.amountCents,
+                paymentRef,
               })
               .where(and(eq(tokenOrders.id, orderId), eq(tokenOrders.status, "pending")))
             await settleEarnings(order, {
@@ -1626,12 +1634,13 @@ export async function registerRoutes(
             const [wo] = await tx.select().from(walletOrders).where(eq(walletOrders.id, walletOrderId))
             const validPayment = wo?.provider === "stripe"
               && wo.providerRef === session.id
+              && Boolean(paymentRef)
               && session.payment_status === "paid"
               && Number(session.amount_total) === wo.amountCents
               && String(session.currency || "").toLowerCase() === "mxn"
             if (!wo || wo.status !== "pending" || !validPayment) return
             await tx.update(walletOrders)
-              .set({ status: "paid", paidAt: new Date() })
+              .set({ status: "paid", paidAt: new Date(), paymentRef })
               .where(and(eq(walletOrders.id, walletOrderId), eq(walletOrders.status, "pending")))
             await tx.insert(walletLedger).values({
               userId: wo.userId, currency: wo.currency, delta: wo.amount,
@@ -1640,6 +1649,9 @@ export async function registerRoutes(
             })
           })
         }
+        if (paymentRef) await reconcileOpenIncidentsForPayment(paymentRef)
+      } else {
+        await recordPaymentIncident(event)
       }
       res.json({ received: true })
     } catch (err: any) {

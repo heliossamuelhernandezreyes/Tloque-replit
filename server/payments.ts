@@ -123,6 +123,7 @@ export async function createCheckoutSession(opts: {
     expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
     client_reference_id: String(opts.orderId),
     [`metadata[${metaKey}]`]: String(opts.orderId),
+    payment_intent_data: { metadata: { [metaKey]: String(opts.orderId) } },
     success_url: successUrl,
     cancel_url:  cancelUrl,
     line_items: [{
