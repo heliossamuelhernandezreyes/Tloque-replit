@@ -33,6 +33,22 @@ CREATE TABLE IF NOT EXISTS payment_incidents (
   )
 );
 
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'payment_incidents_contract_check'
+      AND conrelid = 'payment_incidents'::regclass
+  ) THEN
+    ALTER TABLE payment_incidents
+      ADD CONSTRAINT payment_incidents_contract_check CHECK (
+        kind IN ('refund', 'dispute')
+        AND amount_cents >= 0
+        AND resolution IN ('open', 'funds_restored', 'liability_reconciled')
+      );
+  END IF;
+END $$;
+
 ALTER TABLE author_earnings DROP CONSTRAINT IF EXISTS author_earnings_status_valid;
 ALTER TABLE author_earnings ADD CONSTRAINT author_earnings_status_valid
   CHECK (status IN ('accrued', 'reserved', 'paid_out', 'reversed'));
