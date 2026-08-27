@@ -80,7 +80,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: folleto ──
     pdfFormatBooklet: "Folleto · doblar y engrapar", pdfBookletHint: "Imprime a doble cara (voltear por el borde corto), dobla el fajo a la mitad y engrapa en el doblez.",
     // ── i18n: pagos y ganancias ──
-    paySuccess: "✦ Pago recibido", paySuccessDesc: "Tu token fue emitido. Tus ejemplares te esperan abajo.", earningsTitle: "Apoyos recibidos", earningsCount: "apoyos", earningsPayoutNote: "Acumulado para tu liquidación. Los retiros llegarán pronto.",
+    paySuccess: "✦ Pago recibido", paySuccessDesc: "Tu token fue emitido. Tus ejemplares te esperan abajo.", earningsTitle: "Apoyos recibidos", earningsCount: "apoyos", earningsPayoutNote: "Solo el efectivo confirmado y conciliado puede liquidarse. Stripe verifica tu identidad y cuenta bancaria.", payoutAvailable: "disponible para solicitar", payoutHeld: "en resguardo durante {n} días", payoutPending: "Liquidación en revisión", payoutVerify: "Verificar cuenta con Stripe", payoutRequest: "Solicitar liquidación", payoutRequested: "Solicitud enviada para revisión", payoutDisabled: "Las liquidaciones siguen cerradas hasta completar la configuración comercial y legal.", payoutError: "No se pudo continuar con la liquidación.",
     // ── i18n: invitación de apoyo + formatos PDF ──
     supportInviteTitleMid: "¿Te está gustando esta historia?", supportInviteTitleEnd: "¿Te marcó esta historia?", supportInviteBody: "Apóyala con un gesto: acceso digital permanente y 3 ejemplares físicos para compartir. Totalmente opcional.", supportInviteBtn: "Apoyar a {x}", supportThanks: "✦ Gracias por apoyar", supportThanksDesc: "La obra es tuya para siempre. Tus 3 ejemplares te esperan en la sinopsis.", notNow: "Ahora no", pdfFormatBook: "Libro · A5 imprenta", pdfFormatHome: "Carta · impresora casera",
     // ── i18n: sistema de tokens ──
@@ -130,7 +130,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: folleto ──
     pdfFormatBooklet: "Booklet · fold & staple", pdfBookletHint: "Print double-sided (flip on short edge), fold the stack in half and staple on the fold.",
     // ── i18n: pagos y ganancias ──
-    paySuccess: "✦ Payment received", paySuccessDesc: "Your token was issued. Your copies await you below.", earningsTitle: "Support received", earningsCount: "supports", earningsPayoutNote: "Accrued for your payout. Withdrawals coming soon.",
+    paySuccess: "✦ Payment received", paySuccessDesc: "Your token was issued. Your copies await you below.", earningsTitle: "Support received", earningsCount: "supports", earningsPayoutNote: "Only confirmed and reconciled cash can be settled. Stripe verifies your identity and bank account.", payoutAvailable: "available to request", payoutHeld: "held for {n} days", payoutPending: "Payout under review", payoutVerify: "Verify account with Stripe", payoutRequest: "Request payout", payoutRequested: "Request sent for review", payoutDisabled: "Payouts remain closed until commercial and legal setup is complete.", payoutError: "Could not continue with the payout.",
     // ── i18n: invitación de apoyo + formatos PDF ──
     supportInviteTitleMid: "Enjoying this story?", supportInviteTitleEnd: "Did this story move you?", supportInviteBody: "Support it with a gesture: permanent digital access and 3 physical copies to share. Completely optional.", supportInviteBtn: "Support {x}", supportThanks: "✦ Thank you for your support", supportThanksDesc: "The work is yours forever. Your 3 copies await you in the synopsis.", notNow: "Not now", pdfFormatBook: "Book · A5 print shop", pdfFormatHome: "Letter · home printer",
     // ── i18n: sistema de tokens ──
@@ -169,7 +169,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: folleto ──
     pdfFormatBooklet: "Livret · plier et agrafer", pdfBookletHint: "Imprimez recto verso (retourner sur le bord court), pliez la pile en deux et agrafez sur le pli.",
     // ── i18n: pagos y ganancias ──
-    paySuccess: "✦ Paiement reçu", paySuccessDesc: "Votre jeton a été émis. Vos exemplaires vous attendent ci-dessous.", earningsTitle: "Soutiens reçus", earningsCount: "soutiens", earningsPayoutNote: "Cumulé pour votre versement. Les retraits arrivent bientôt.",
+    paySuccess: "✦ Paiement reçu", paySuccessDesc: "Votre jeton a été émis. Vos exemplaires vous attendent ci-dessous.", earningsTitle: "Soutiens reçus", earningsCount: "soutiens", earningsPayoutNote: "Seuls les fonds confirmés et rapprochés peuvent être versés. Stripe vérifie votre identité et votre compte bancaire.", payoutAvailable: "disponible sur demande", payoutHeld: "retenu pendant {n} jours", payoutPending: "Versement en cours de vérification", payoutVerify: "Vérifier le compte avec Stripe", payoutRequest: "Demander le versement", payoutRequested: "Demande envoyée pour vérification", payoutDisabled: "Les versements restent fermés jusqu’à la fin de la configuration commerciale et juridique.", payoutError: "Impossible de poursuivre le versement.",
     // ── i18n: invitación de apoyo + formatos PDF ──
     supportInviteTitleMid: "Cette histoire vous plaît ?", supportInviteTitleEnd: "Cette histoire vous a marqué ?", supportInviteBody: "Soutenez-la d'un geste : accès numérique permanent et 3 exemplaires physiques à partager. Entièrement facultatif.", supportInviteBtn: "Soutenir {x}", supportThanks: "✦ Merci pour votre soutien", supportThanksDesc: "L'œuvre est à vous pour toujours. Vos 3 exemplaires vous attendent dans le synopsis.", notNow: "Pas maintenant", pdfFormatBook: "Livre · A5 imprimerie", pdfFormatHome: "Lettre · imprimante maison",
     // ── i18n: sistema de tokens ──
@@ -206,7 +206,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: folleto ──
     pdfFormatBooklet: "Heft · falten und heften", pdfBookletHint: "Beidseitig drucken (über kurze Kante wenden), Stapel in der Mitte falten und am Falz heften.",
     // ── i18n: pagos y ganancias ──
-    paySuccess: "✦ Zahlung erhalten", paySuccessDesc: "Dein Token wurde ausgestellt. Deine Exemplare warten unten.", earningsTitle: "Erhaltene Unterstützung", earningsCount: "Unterstützungen", earningsPayoutNote: "Angesammelt für deine Auszahlung. Abhebungen folgen bald.",
+    paySuccess: "✦ Zahlung erhalten", paySuccessDesc: "Dein Token wurde ausgestellt. Deine Exemplare warten unten.", earningsTitle: "Erhaltene Unterstützung", earningsCount: "Unterstützungen", earningsPayoutNote: "Nur bestätigte und abgeglichene Beträge können ausgezahlt werden. Stripe prüft Identität und Bankkonto.", payoutAvailable: "zur Auszahlung verfügbar", payoutHeld: "{n} Tage zurückgehalten", payoutPending: "Auszahlung wird geprüft", payoutVerify: "Konto mit Stripe verifizieren", payoutRequest: "Auszahlung anfordern", payoutRequested: "Anfrage zur Prüfung gesendet", payoutDisabled: "Auszahlungen bleiben bis zum Abschluss der geschäftlichen und rechtlichen Einrichtung geschlossen.", payoutError: "Die Auszahlung konnte nicht fortgesetzt werden.",
     // ── i18n: invitación de apoyo + formatos PDF ──
     supportInviteTitleMid: "Gefällt dir diese Geschichte?", supportInviteTitleEnd: "Hat dich diese Geschichte berührt?", supportInviteBody: "Unterstütze sie mit einer Geste: dauerhafter Zugang und 3 physische Exemplare zum Teilen. Völlig freiwillig.", supportInviteBtn: "{x} unterstützen", supportThanks: "✦ Danke für deine Unterstützung", supportThanksDesc: "Das Werk gehört dir für immer. Deine 3 Exemplare warten in der Übersicht.", notNow: "Nicht jetzt", pdfFormatBook: "Buch · A5 Druckerei", pdfFormatHome: "Letter · Heimdrucker",
     // ── i18n: sistema de tokens ──
@@ -243,7 +243,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: folleto ──
     pdfFormatBooklet: "Libretto · piega e pinza", pdfBookletHint: "Stampa fronte-retro (gira sul lato corto), piega la pila a metà e pinza sulla piega.",
     // ── i18n: pagos y ganancias ──
-    paySuccess: "✦ Pagamento ricevuto", paySuccessDesc: "Il tuo token è stato emesso. I tuoi esemplari ti aspettano qui sotto.", earningsTitle: "Sostegni ricevuti", earningsCount: "sostegni", earningsPayoutNote: "Accumulato per la tua liquidazione. I prelievi arriveranno presto.",
+    paySuccess: "✦ Pagamento ricevuto", paySuccessDesc: "Il tuo token è stato emesso. I tuoi esemplari ti aspettano qui sotto.", earningsTitle: "Sostegni ricevuti", earningsCount: "sostegni", earningsPayoutNote: "Solo il denaro confermato e riconciliato può essere liquidato. Stripe verifica identità e conto bancario.", payoutAvailable: "disponibile da richiedere", payoutHeld: "trattenuto per {n} giorni", payoutPending: "Liquidazione in revisione", payoutVerify: "Verifica il conto con Stripe", payoutRequest: "Richiedi liquidazione", payoutRequested: "Richiesta inviata per revisione", payoutDisabled: "Le liquidazioni restano chiuse fino al completamento della configurazione commerciale e legale.", payoutError: "Impossibile continuare la liquidazione.",
     // ── i18n: invitación de apoyo + formatos PDF ──
     supportInviteTitleMid: "Ti sta piacendo questa storia?", supportInviteTitleEnd: "Questa storia ti ha toccato?", supportInviteBody: "Sostienila con un gesto: accesso permanente e 3 esemplari fisici da condividere. Del tutto facoltativo.", supportInviteBtn: "Sostieni {x}", supportThanks: "✦ Grazie per il tuo sostegno", supportThanksDesc: "L'opera è tua per sempre. I tuoi 3 esemplari ti aspettano nella sinossi.", notNow: "Non ora", pdfFormatBook: "Libro · A5 tipografia", pdfFormatHome: "Lettera · stampante di casa",
     // ── i18n: sistema de tokens ──
@@ -280,7 +280,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: folleto ──
     pdfFormatBooklet: "Livreto · dobrar e grampear", pdfBookletHint: "Imprima frente e verso (virar na borda curta), dobre o maço ao meio e grampeie na dobra.",
     // ── i18n: pagos y ganancias ──
-    paySuccess: "✦ Pagamento recebido", paySuccessDesc: "Seu token foi emitido. Seus exemplares esperam abaixo.", earningsTitle: "Apoios recebidos", earningsCount: "apoios", earningsPayoutNote: "Acumulado para seu repasse. Saques em breve.",
+    paySuccess: "✦ Pagamento recebido", paySuccessDesc: "Seu token foi emitido. Seus exemplares esperam abaixo.", earningsTitle: "Apoios recebidos", earningsCount: "apoios", earningsPayoutNote: "Somente valores confirmados e conciliados podem ser repassados. A Stripe verifica identidade e conta bancária.", payoutAvailable: "disponível para solicitar", payoutHeld: "retido por {n} dias", payoutPending: "Repasse em análise", payoutVerify: "Verificar conta com a Stripe", payoutRequest: "Solicitar repasse", payoutRequested: "Solicitação enviada para análise", payoutDisabled: "Os repasses continuam fechados até concluir a configuração comercial e jurídica.", payoutError: "Não foi possível continuar o repasse.",
     // ── i18n: invitación de apoyo + formatos PDF ──
     supportInviteTitleMid: "Está gostando desta história?", supportInviteTitleEnd: "Esta história marcou você?", supportInviteBody: "Apoie com um gesto: acesso permanente e 3 exemplares físicos para compartilhar. Totalmente opcional.", supportInviteBtn: "Apoiar {x}", supportThanks: "✦ Obrigado pelo apoio", supportThanksDesc: "A obra é sua para sempre. Seus 3 exemplares esperam na sinopse.", notNow: "Agora não", pdfFormatBook: "Livro · A5 gráfica", pdfFormatHome: "Carta · impressora caseira",
     // ── i18n: sistema de tokens ──
@@ -317,7 +317,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: folleto ──
     pdfFormatBooklet: "小冊子 · 折って綴じる", pdfBookletHint: "両面印刷（短辺とじ）で刷り、束を半分に折って折り目を綴じてください。",
     // ── i18n: pagos y ganancias ──
-    paySuccess: "✦ お支払いを確認しました", paySuccessDesc: "トークンを発行しました。あなたの蔵書は下でお待ちしています。", earningsTitle: "受け取った応援", earningsCount: "件の応援", earningsPayoutNote: "お支払いのため積み立て中。引き出しは近日対応予定です。",
+    paySuccess: "✦ お支払いを確認しました", paySuccessDesc: "トークンを発行しました。あなたの蔵書は下でお待ちしています。", earningsTitle: "受け取った応援", earningsCount: "件の応援", earningsPayoutNote: "確認・照合済みの現金のみ精算できます。Stripe が本人確認と銀行口座確認を行います。", payoutAvailable: "申請可能", payoutHeld: "{n}日間保留", payoutPending: "精算を確認中", payoutVerify: "Stripeで口座を確認", payoutRequest: "精算を申請", payoutRequested: "確認申請を送信しました", payoutDisabled: "商用・法務設定が完了するまで精算は無効です。", payoutError: "精算を続行できませんでした。",
     // ── i18n: invitación de apoyo + formatos PDF ──
     supportInviteTitleMid: "この物語を楽しんでいますか？", supportInviteTitleEnd: "この物語は心に残りましたか？", supportInviteBody: "ちいさな応援を：永続アクセスと、分かち合える紙の3冊。完全に任意です。", supportInviteBtn: "{x}を応援する", supportThanks: "✦ 応援ありがとうございます", supportThanksDesc: "この作品は永遠にあなたのものです。3冊はあらすじページでお待ちしています。", notNow: "今はしない", pdfFormatBook: "書籍 · A5 印刷所向け", pdfFormatHome: "レター · 家庭用プリンター",
     // ── i18n: sistema de tokens ──
@@ -354,7 +354,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: folleto ──
     pdfFormatBooklet: "小册子 · 对折装订", pdfBookletHint: "双面打印（短边翻转），将纸叠对折并在折痕处装订。",
     // ── i18n: pagos y ganancias ──
-    paySuccess: "✦ 已收到付款", paySuccessDesc: "你的令牌已发放。你的副本就在下方。", earningsTitle: "收到的支持", earningsCount: "次支持", earningsPayoutNote: "已为你累积待结算。提现功能即将推出。",
+    paySuccess: "✦ 已收到付款", paySuccessDesc: "你的令牌已发放。你的副本就在下方。", earningsTitle: "收到的支持", earningsCount: "次支持", earningsPayoutNote: "只有已确认并完成对账的现金才能结算。Stripe 负责验证身份和银行账户。", payoutAvailable: "可申请结算", payoutHeld: "保留 {n} 天", payoutPending: "结算审核中", payoutVerify: "通过 Stripe 验证账户", payoutRequest: "申请结算", payoutRequested: "申请已提交审核", payoutDisabled: "商业和法律配置完成前，结算功能保持关闭。", payoutError: "无法继续结算。",
     // ── i18n: invitación de apoyo + formatos PDF ──
     supportInviteTitleMid: "喜欢这个故事吗？", supportInviteTitleEnd: "这个故事打动你了吗？", supportInviteBody: "以小小的举动支持它：永久访问权和3份可分享的实体副本。完全自愿。", supportInviteBtn: "支持 {x}", supportThanks: "✦ 感谢你的支持", supportThanksDesc: "这部作品永远属于你。你的3份副本在简介页等你。", notNow: "暂不", pdfFormatBook: "书籍 · A5 印刷厂", pdfFormatHome: "信纸 · 家用打印机",
     // ── i18n: sistema de tokens ──
@@ -391,7 +391,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: folleto ──
     pdfFormatBooklet: "كتيّب · اطوِ ودبّس", pdfBookletHint: "اطبع على الوجهين (اقلب من الحافة القصيرة)، اطوِ الرزمة من المنتصف ودبّس عند الطية.",
     // ── i18n: pagos y ganancias ──
-    paySuccess: "✦ تم استلام الدفع", paySuccessDesc: "تم إصدار رمزك. نسخك بانتظارك أدناه.", earningsTitle: "الدعم المستلم", earningsCount: "دعم", earningsPayoutNote: "متراكم لتسويتك. عمليات السحب قريبًا.",
+    paySuccess: "✦ تم استلام الدفع", paySuccessDesc: "تم إصدار رمزك. نسخك بانتظارك أدناه.", earningsTitle: "الدعم المستلم", earningsCount: "دعم", earningsPayoutNote: "لا تُسوّى إلا الأموال المؤكدة والمطابقة. تتحقق Stripe من الهوية والحساب البنكي.", payoutAvailable: "متاح لطلب التسوية", payoutHeld: "محجوز لمدة {n} يومًا", payoutPending: "التسوية قيد المراجعة", payoutVerify: "تحقق من الحساب عبر Stripe", payoutRequest: "طلب التسوية", payoutRequested: "أُرسل الطلب للمراجعة", payoutDisabled: "تظل التسويات مغلقة حتى اكتمال الإعداد التجاري والقانوني.", payoutError: "تعذر متابعة التسوية.",
     // ── i18n: invitación de apoyo + formatos PDF ──
     supportInviteTitleMid: "هل تعجبك هذه القصة؟", supportInviteTitleEnd: "هل أثّرت فيك هذه القصة؟", supportInviteBody: "ادعمها بلفتة: وصول رقمي دائم و3 نسخ ورقية للمشاركة. اختياري تمامًا.", supportInviteBtn: "ادعم {x}", supportThanks: "✦ شكرًا لدعمك", supportThanksDesc: "العمل ملكك للأبد. نسخك الثلاث بانتظارك في صفحة الملخص.", notNow: "ليس الآن", pdfFormatBook: "كتاب · A5 مطبعة", pdfFormatHome: "رسالة · طابعة منزلية",
     // ── i18n: sistema de tokens ──

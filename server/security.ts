@@ -90,14 +90,17 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
   }
   if (req.path.startsWith("/api/auth") || req.path.startsWith("/api/wallet")
       || req.path.startsWith("/api/audiobook") || req.path.startsWith("/api/audiobooks")
-      || req.path.startsWith("/api/tokens") || req.path.startsWith("/api/account")) {
+      || req.path.startsWith("/api/tokens") || req.path.startsWith("/api/account")
+      || req.path.startsWith("/api/payouts")) {
     res.setHeader("Cache-Control", "no-store")
   }
   next()
 }
 
 export function sameOriginProtection(req: Request, res: Response, next: NextFunction) {
-  if (!STATE_CHANGING.has(req.method) || req.path === "/api/payments/webhook") return next()
+  if (!STATE_CHANGING.has(req.method)
+      || req.path === "/api/payments/webhook"
+      || req.path === "/api/payouts/webhook") return next()
   const fetchSite = req.get("sec-fetch-site")
   if (fetchSite === "cross-site") {
     return res.status(403).json({ message: "Origen no permitido" })

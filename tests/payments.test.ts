@@ -56,6 +56,8 @@ test("Stripe exige webhook, monetización y retiros listos antes de cobrar", () 
     nodeEnv: process.env.NODE_ENV,
     stripe: process.env.STRIPE_SECRET_KEY,
     webhook: process.env.STRIPE_WEBHOOK_SECRET,
+    connectWebhook: process.env.STRIPE_CONNECT_WEBHOOK_SECRET,
+    connectEnabled: process.env.STRIPE_CONNECT_ENABLED,
     monetization: process.env.MONETIZATION_ENABLED,
     payouts: process.env.PAYOUTS_READY,
   }
@@ -65,6 +67,8 @@ test("Stripe exige webhook, monetización y retiros listos antes de cobrar", () 
     delete process.env.STRIPE_WEBHOOK_SECRET
     assert.equal(stripeEnabled(), false)
     process.env.STRIPE_WEBHOOK_SECRET = "whsec_configured"
+    process.env.STRIPE_CONNECT_WEBHOOK_SECRET = "whsec_connect_configured"
+    process.env.STRIPE_CONNECT_ENABLED = "true"
     delete process.env.MONETIZATION_ENABLED
     delete process.env.PAYOUTS_READY
     assert.equal(stripeEnabled(), false)
@@ -80,6 +84,8 @@ test("Stripe exige webhook, monetización y retiros listos antes de cobrar", () 
       ["NODE_ENV", previous.nodeEnv],
       ["STRIPE_SECRET_KEY", previous.stripe],
       ["STRIPE_WEBHOOK_SECRET", previous.webhook],
+      ["STRIPE_CONNECT_WEBHOOK_SECRET", previous.connectWebhook],
+      ["STRIPE_CONNECT_ENABLED", previous.connectEnabled],
       ["MONETIZATION_ENABLED", previous.monetization],
       ["PAYOUTS_READY", previous.payouts],
     ] as const) {

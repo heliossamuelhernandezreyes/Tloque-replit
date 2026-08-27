@@ -10,7 +10,7 @@ export default function LegalPage({ kind }: Props) {
         <a href="/" className="inline-flex items-center gap-2 text-sm text-white/55 hover:text-white">
           <ArrowLeft className="h-4 w-4" /> Volver a Tloque
         </a>
-        <p className="mt-10 text-[10px] uppercase tracking-[.24em] text-violet-200/45">Versión beta · 26 de agosto de 2026</p>
+        <p className="mt-10 text-[10px] uppercase tracking-[.24em] text-violet-200/45">Versión beta · 27 de agosto de 2026</p>
         <h1 className="mt-3 font-serif text-3xl text-white">{privacy ? "Privacidad" : "Términos de uso"}</h1>
         {privacy ? <Privacy /> : <Terms />}
       </article>
@@ -30,6 +30,7 @@ function Privacy() {
     </Section>
     <Section title="Proveedores y decisiones opcionales">
       <p>Google procesa el inicio de sesión. Replit y sus servicios de almacenamiento pueden alojar la aplicación y sus archivos. Stripe procesa pagos cuando están habilitados; Tloque conserva referencias y estado contable, no números completos de tarjeta.</p>
+      <p>Si un autor solicita liquidaciones, Stripe Connect recopila y verifica directamente los datos de identidad, fiscales y bancarios que correspondan. Tloque conserva el identificador de la cuenta conectada, su estado de verificación y las referencias de transferencias, pero no los números bancarios completos.</p>
       <p>El Director Artificial y la generación de audiolibros son opcionales. Solo cuando los solicitas, el fragmento necesario del manuscrito y sus indicaciones pueden enviarse al proveedor configurado, como Groq o un worker de voz que puede utilizar ElevenLabs. La reproducción musical local no requiere enviar el texto durante la lectura.</p>
     </Section>
     <Section title="Control y conservación">
@@ -56,6 +57,7 @@ function Terms() {
     <Section title="Audio, IA y economía beta">
       <p>La dirección musical y de voz es una capa separada del manuscrito. Las propuestas de IA deben ser revisadas por el autor y no modifican automáticamente el texto normal.</p>
       <p>Probabilidades, precios y repartos deben mostrarse antes de confirmar. Durante la beta, pagos, sorteos, retiros y suscripciones pueden permanecer desactivados. No deben interpretarse saldos beta como dinero retirable hasta que el flujo de pagos a autores esté habilitado expresamente.</p>
+      <p>Cuando las liquidaciones estén habilitadas, solo serán elegibles ingresos en efectivo confirmados y conciliados. Pueden aplicarse un periodo de resguardo, un mínimo, verificación de identidad y revisión administrativa. Reembolsos, contracargos, fraude o reversas pueden reducir o revertir importes antes o después de una transferencia.</p>
     </Section>
     <Section title="Moderación y retiro">
       <p>Tloque puede ocultar contenido para revisión cuando exista una denuncia razonable, riesgo de seguridad o posible infracción. Se conservará la posibilidad de corrección y apelación antes de una decisión definitiva, salvo obligación legal o peligro inmediato.</p>

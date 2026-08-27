@@ -17,6 +17,7 @@ if (!process.argv.includes("--apply")) {
 
 const here = dirname(fileURLToPath(import.meta.url))
 const projectRoot = dirname(here)
+const BASELINE = "0000_canonical_base.sql"
 const migrations = [
   "0001_fonoteca_and_hardening.sql",
   "0002_paper_usage.sql",
@@ -30,6 +31,8 @@ const migrations = [
   "0010_hybrid_fonoteca.sql",
   "0011_audio_studio_and_ui_fonoteca.sql",
   "0012_manuscript_integrity.sql",
+  "0013_author_payouts.sql",
+  "0014_canonical_constraints.sql",
 ]
 
 const pool = createPool()
@@ -43,7 +46,7 @@ try {
   await client.query("SET LOCAL statement_timeout = '180s'")
   await client.query("SELECT pg_advisory_xact_lock(84673, 7001)")
 
-  const preflight = await inspectDatabase(client)
+  const preflight = await inspectDatabase(client, { allowEmpty: true })
   if (preflight.errors.length) {
     throw new Error(`Preflight rechazado: ${preflight.errors.join(" | ")}`)
   }
@@ -81,6 +84,30 @@ try {
 
   const applied = []
   const skipped = []
+
+  // Una instalación vacía nace únicamente de este snapshot versionado. En
+  // instalaciones históricas se registra el mismo punto de partida sin
+  // ejecutar CREATE TABLE sobre datos existentes; después, las migraciones
+  // incrementales conservan sus checksums y su recorrido normal.
+  const baselineSql = await readFile(join(projectRoot, "migrations", BASELINE), "utf8")
+  const baselineChecksum = createHash("sha256").update(baselineSql).digest("hex")
+  const baselinePrior = await client.query(`
+    SELECT checksum FROM tloque_schema_migrations WHERE migration_id = $1
+  `, [BASELINE])
+  if (baselinePrior.rowCount) {
+    if (baselinePrior.rows[0].checksum !== baselineChecksum) {
+      throw new Error(`La migración ${BASELINE} cambió después de aplicarse. No se continuará.`)
+    }
+    skipped.push(BASELINE)
+  } else {
+    if (preflight.details.emptyDatabase) await client.query(baselineSql)
+    await client.query(`
+      INSERT INTO tloque_schema_migrations (migration_id, checksum, release_id)
+      VALUES ($1, $2, $3)
+    `, [BASELINE, baselineChecksum, RELEASE_ID])
+    applied.push(preflight.details.emptyDatabase ? BASELINE : `${BASELINE} (registro histórico)`)
+  }
+
   for (const migration of migrations) {
     const sql = await readFile(join(projectRoot, "migrations", migration), "utf8")
     const checksum = createHash("sha256").update(sql).digest("hex")

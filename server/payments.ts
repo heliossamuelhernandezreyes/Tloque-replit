@@ -62,6 +62,8 @@ export function stripeEnabled(): boolean {
   return Boolean(
     process.env.STRIPE_SECRET_KEY
     && process.env.STRIPE_WEBHOOK_SECRET
+    && process.env.STRIPE_CONNECT_WEBHOOK_SECRET
+    && process.env.STRIPE_CONNECT_ENABLED === "true"
     && process.env.MONETIZATION_ENABLED === "true"
     && process.env.PAYOUTS_READY === "true",
   )

@@ -333,9 +333,50 @@ export const tokenOrders = pgTable("token_orders", {
   authorShareBps: integer("author_share_bps").default(0).notNull(),
   bookTypeSnapshot: text("book_type_snapshot").default("").notNull(),
   bookRevisionSnapshot: integer("book_revision_snapshot").default(1).notNull(),
+  // Efectivo real que respalda la operación. En compras directas coincide con
+  // amountCents; al gastar Tinta usa el costo real todavía disponible en el
+  // monedero (los bonos y créditos beta aportan cero).
+  cashBackingCents: integer("cash_backing_cents").default(0).notNull(),
   createdAt:   timestamp("created_at").defaultNow().notNull(),
   paidAt:      timestamp("paid_at"),
   refundedAt:  timestamp("refunded_at"),
+})
+
+// Stripe Connect conserva la verificación y la cuenta bancaria fuera de
+// Tloque. Aquí solo se guarda el identificador opaco y un espejo no sensible
+// del estado necesario para decidir si una transferencia es segura.
+export const authorPayoutAccounts = pgTable("author_payout_accounts", {
+  userId:            integer("user_id").primaryKey().references(() => users.id).notNull(),
+  provider:          text("provider").notNull().default("stripe"),
+  providerAccountId: text("provider_account_id").notNull().unique(),
+  country:           text("country").notNull().default(""),
+  currency:          text("currency").notNull().default("mxn"),
+  detailsSubmitted:  boolean("details_submitted").notNull().default(false),
+  payoutsEnabled:    boolean("payouts_enabled").notNull().default(false),
+  transfersActive:   boolean("transfers_active").notNull().default(false),
+  disabledReason:    text("disabled_reason").notNull().default(""),
+  requirementsDue:   jsonb("requirements_due").$type<string[]>().notNull().default([]),
+  lastSyncedAt:      timestamp("last_synced_at"),
+  createdAt:         timestamp("created_at").defaultNow().notNull(),
+  updatedAt:         timestamp("updated_at").defaultNow().notNull(),
+})
+
+// Una solicitud reserva un conjunto inmutable de ganancias. La aprobación es
+// manual y la transferencia usa el id como clave idempotente en Stripe.
+export const authorPayouts = pgTable("author_payouts", {
+  id:            serial("id").primaryKey(),
+  authorUserId:  integer("author_user_id").references(() => users.id).notNull(),
+  amountCents:   integer("amount_cents").notNull(),
+  currency:      text("currency").notNull().default("mxn"),
+  status:        text("status").notNull().default("requested"),
+  provider:      text("provider").notNull().default("stripe"),
+  providerRef:   text("provider_ref").notNull().default(""),
+  failureCode:   text("failure_code").notNull().default(""),
+  adminUserId:   integer("admin_user_id").references(() => users.id),
+  requestedAt:   timestamp("requested_at").defaultNow().notNull(),
+  processedAt:   timestamp("processed_at"),
+  completedAt:   timestamp("completed_at"),
+  updatedAt:     timestamp("updated_at").defaultNow().notNull(),
 })
 
 export const authorEarnings = pgTable("author_earnings", {
@@ -347,12 +388,16 @@ export const authorEarnings = pgTable("author_earnings", {
   authorCents:   integer("author_cents").default(0).notNull(),   // 90%
   platformCents: integer("platform_cents").default(0).notNull(), // 10%
   currency:      text("currency").default("mxn").notNull(),
-  status:        text("status").default("accrued").notNull(),    // accrued | paid_out
+  status:        text("status").default("accrued").notNull(),    // accrued | reserved | paid_out
+  payoutEligible: boolean("payout_eligible").default(false).notNull(),
+  payoutId:       integer("payout_id").references(() => authorPayouts.id),
   createdAt:     timestamp("created_at").defaultNow().notNull(),
 })
 
 export type TokenOrder    = typeof tokenOrders.$inferSelect
 export type AuthorEarning = typeof authorEarnings.$inferSelect
+export type AuthorPayoutAccount = typeof authorPayoutAccounts.$inferSelect
+export type AuthorPayout = typeof authorPayouts.$inferSelect
 
 // ── MONEDERO (Tinta 🪙 y Papel 📄) ──────────────────────────
 // wallet_ledger es un libro contable INMUTABLE (solo se insertan
@@ -366,6 +411,10 @@ export const walletLedger = pgTable("wallet_ledger", {
   reason:    text("reason").notNull(),                      // purchase|spend_token|grant|refund
   refType:   text("ref_type").default(""),                  // wallet_order|token_order|admin
   refId:     integer("ref_id"),
+  // Porción de efectivo todavía atribuible a este movimiento. Nunca puede
+  // crear dinero: las compras suman y cada gasto resta como máximo lo que
+  // quedaba respaldado.
+  cashBackingCents: integer("cash_backing_cents").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 

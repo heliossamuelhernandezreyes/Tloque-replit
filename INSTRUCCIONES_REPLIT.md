@@ -27,7 +27,7 @@ El instalador:
 - crea un respaldo en `.tloque_backups/`;
 - conserva `.replit`, `replit.nix`, Secrets, archivos subidos y base de datos;
 - reemplaza únicamente código y configuración de Node;
-- ejecuta `npm ci`, TypeScript, 50 pruebas y el build de producción;
+- ejecuta `npm ci`, TypeScript, la batería completa de pruebas y el build de producción;
 - restaura automáticamente el código anterior si alguna comprobación falla.
 
 No continúes si el último mensaje no dice:
@@ -56,7 +56,8 @@ bash scripts/migrar.sh APLICAR
 
 El migrador usa `DATABASE_URL` desde Secrets, toma un bloqueo exclusivo de
 migración, registra checksums, guarda una instantánea de los datos que sí
-cambian y ejecuta `0001` a `0007` dentro de una sola transacción. Ante cualquier
+cambian y ejecuta el snapshot `0000` cuando la base está vacía y después las
+migraciones hasta `0014` dentro de una sola transacción. Ante cualquier
 error hace rollback completo.
 
 Se puede volver a ejecutar: las migraciones ya registradas con el mismo hash se

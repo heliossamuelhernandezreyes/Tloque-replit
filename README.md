@@ -15,7 +15,7 @@ marcos y herramientas creativas.
 ```bash
 cp .env.example .env
 npm ci
-npm run db:push
+npm run db:migrate
 npm run dev
 ```
 
@@ -29,9 +29,11 @@ npm run db:preflight
 npm run db:migrate
 ```
 
-El migrador aplica en orden `0001`–`0012`, verifica checksums y valida la
-estructura antes del commit. `0012` agrega revisiones del manuscrito, historial
-y borrador cloud. Si el preflight detecta datos históricos inconsistentes,
+El migrador puede reconstruir PostgreSQL vacío desde `0000`, aplica en orden
+las migraciones hasta `0014`, verifica checksums, restricciones e índices y
+valida la estructura antes del commit. `0012` agrega revisiones del manuscrito,
+`0013` introduce respaldo de Tinta y liquidaciones, y `0014` fija los contratos
+SQL que no expresa Drizzle. Si el preflight detecta datos históricos inconsistentes,
 debe corregirse el dato antes de reintentar; no se elimina a escondidas.
 
 ## Comandos
@@ -40,6 +42,7 @@ debe corregirse el dato antes de reintentar; no se elimina a escondidas.
 npm run check   # TypeScript
 npm test        # pruebas unitarias y de seguridad
 npm run build   # cliente y servidor para producción
+npm run check:bundle # presupuesto del shell inicial ya construido
 npm start       # ejecuta dist/index.cjs
 ```
 
@@ -50,12 +53,22 @@ npm start       # ejecuta dist/index.cjs
 obligatorias las credenciales de Google; el proceso falla al iniciar si falta
 alguna de estas condiciones o si PostgreSQL no está disponible.
 
-Los pagos reales solo se habilitan cuando existen tanto `STRIPE_SECRET_KEY`
-como `STRIPE_WEBHOOK_SECRET`. Configura el webhook en:
+Los pagos reales fallan cerrados. Solo se habilitan cuando están configurados
+Checkout, Stripe Connect, ambos webhooks y los interruptores explícitos de
+monetización y liquidación. Configura:
 
 ```text
 POST https://tu-dominio/api/payments/webhook
+POST https://tu-dominio/api/payouts/webhook
 ```
+
+Variables necesarias: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
+`STRIPE_CONNECT_WEBHOOK_SECRET`, `STRIPE_CONNECT_ENABLED=true`,
+`MONETIZATION_ENABLED=true` y `PAYOUTS_READY=true`. Los autores completan el
+onboarding alojado por Stripe; Tloque no almacena cuentas bancarias. Cada
+solicitud queda reservada para revisión administrativa y la transferencia usa
+una clave idempotente. `PAYOUT_HOLD_DAYS` y `PAYOUT_MIN_CENTS` controlan la
+espera y el mínimo sin alterar el libro mayor.
 
 Mantén `PAYMENTS_BETA_MODE=false` y `ALLOW_GACHA_BETA_ADMIN=false` en
 producción, salvo una prueba administrativa deliberada y controlada.
@@ -106,6 +119,10 @@ producción, salvo una prueba administrativa deliberada y controlada.
 - Tinta es la unidad de apoyo y coleccionables. Los paquetes muestran precio
   final, precio unitario, bono real y una recomendación única, sin urgencia o
   escasez artificial. Los pagos permanecen apagados hasta configurar Stripe.
+- Cada crédito pagado conserva el efectivo real que lo respalda. Los bonos,
+  regalos y Tinta beta aportan cero; cada gasto consume como máximo el respaldo
+  restante. Así, una liquidación nunca usa el valor nominal de Tinta gratuita
+  ni paga por encima del efectivo conciliado.
 - Papel no es dinero ni premio de sorteo. Mide capacidad de IA con cargos
   enteros e idempotentes: tokens de entrada/salida del Oráculo y caracteres de
   voz. Las cuotas actuales son de pre-lanzamiento y deben calibrarse con costos

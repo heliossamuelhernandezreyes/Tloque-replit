@@ -37,7 +37,10 @@ app.use(express.json({
   limit: "12mb",
   verify: (req, _res, buf) => {
     const incoming = req as any
-    if (incoming.originalUrl === "/api/payments/webhook") incoming.rawBody = Buffer.from(buf)
+    if (incoming.originalUrl === "/api/payments/webhook"
+        || incoming.originalUrl === "/api/payouts/webhook") {
+      incoming.rawBody = Buffer.from(buf)
+    }
   }
 }))
 app.use(express.urlencoded({ extended: false, limit: "1mb" }))

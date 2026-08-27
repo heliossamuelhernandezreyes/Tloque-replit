@@ -32,10 +32,10 @@ jobs:
       DATABASE_URL: postgresql://tloque:tloque_ci@localhost:5432/tloque_ci
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -45,8 +45,14 @@ jobs:
 
       - name: Rehearse database from empty PostgreSQL
         run: |
-          npx drizzle-kit push --force
           npm run db:migrate
+          npm run db:migrate
+
+      - name: Rehearse upgrade from historical db:push installation
+        run: |
+          node --input-type=module -e "import pg from 'pg'; const c = new pg.Client({connectionString: process.env.DATABASE_URL}); await c.connect(); await c.query('create database tloque_upgrade_ci'); await c.end();"
+          DATABASE_URL=postgresql://tloque:tloque_ci@localhost:5432/tloque_upgrade_ci npx drizzle-kit push --force
+          DATABASE_URL=postgresql://tloque:tloque_ci@localhost:5432/tloque_upgrade_ci npm run db:migrate
 
       - name: Typecheck
         run: npm run check
@@ -55,7 +61,7 @@ jobs:
         run: npm test
 
       - name: Build
-        run: npm run build
+        run: npm run build && npm run check:bundle
 
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high

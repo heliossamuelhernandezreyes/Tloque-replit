@@ -2,7 +2,7 @@ import pg from "pg"
 
 const { Pool } = pg
 
-export const RELEASE_ID = "tloque-replit-2026-08-26-manuscript-integrity"
+export const RELEASE_ID = "tloque-replit-2026-08-27-production-hardening"
 
 export const BASE_TABLES = [
   "users",
@@ -42,6 +42,8 @@ export const EXPECTED_TABLES = [
   "book_drafts",
   "book_revisions",
   "api_rate_limits",
+  "author_payout_accounts",
+  "author_payouts",
   "experience_profiles",
   "narrative_projects",
   "notifications",
@@ -85,6 +87,26 @@ export const EXPECTED_INDEXES = [
   "book_drafts_author_updated_idx",
   "book_revisions_book_created_idx",
   "api_rate_limits_expires_idx",
+  "author_payouts_one_active_idx",
+  "author_payouts_status_requested_idx",
+  "author_earnings_payout_ready_idx",
+  "wallet_ledger_tinta_refund_once_idx",
+]
+
+export const EXPECTED_CONSTRAINTS = [
+  "audio_assets_kind_check",
+  "audio_assets_source_type_check",
+  "adaptive_layers_values_check",
+  "audiobook_cache_contract_check",
+  "audiobook_cache_storage_key_check",
+  "direction_runs_contract_check",
+  "book_revisions_contract_check",
+  "book_drafts_contract_check",
+  "token_orders_cash_backing_range",
+  "author_earnings_status_valid",
+  "author_payout_accounts_contract_check",
+  "author_payouts_contract_check",
+  "gacha_config_split_check",
 ]
 
 export function databaseUrl() {
@@ -123,7 +145,7 @@ async function count(client, query, params = []) {
   return Number(result.rows[0]?.count || 0)
 }
 
-export async function inspectDatabase(client) {
+export async function inspectDatabase(client, { allowEmpty = false } = {}) {
   const errors = []
   const warnings = []
   const details = {}
@@ -145,9 +167,23 @@ export async function inspectDatabase(client) {
   }
   details.missingBaseTables = missingBase
   if (missingBase.length) {
+    const existing = await client.query(`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+        AND table_name NOT IN ('tloque_schema_migrations', 'tloque_migration_backups')
+      ORDER BY table_name
+    `)
+    details.existingApplicationTables = existing.rows.map(row => row.table_name)
+    details.emptyDatabase = existing.rowCount === 0
+    if (allowEmpty && details.emptyDatabase) {
+      if (!process.env.APP_URL) warnings.push("APP_URL no está visible en este Shell; será obligatorio al publicar.")
+      return { errors, warnings, details }
+    }
     errors.push(`Faltan tablas base: ${missingBase.join(", ")}. No se ejecutará ninguna migración.`)
     return { errors, warnings, details }
   }
+  details.emptyDatabase = false
 
   const missingBaseColumns = []
   for (const [table, columns] of Object.entries(BASE_COLUMNS)) {
@@ -302,7 +338,11 @@ export async function validateExpectedSchema(client) {
     book_drafts: ["book_id", "author_id", "base_revision", "draft_revision", "data", "updated_at"],
     book_revisions: ["book_id", "revision", "snapshot", "change_type", "created_by", "created_at"],
     api_rate_limits: ["bucket_key", "window_start", "request_count", "expires_at"],
-    token_orders: ["author_user_id", "author_share_bps", "book_type_snapshot", "book_revision_snapshot", "refund_ref", "refunded_at"],
+    token_orders: ["author_user_id", "author_share_bps", "book_type_snapshot", "book_revision_snapshot", "cash_backing_cents", "refund_ref", "refunded_at"],
+    wallet_ledger: ["cash_backing_cents"],
+    author_earnings: ["payout_eligible", "payout_id"],
+    author_payout_accounts: ["user_id", "provider_account_id", "details_submitted", "payouts_enabled", "transfers_active", "requirements_due"],
+    author_payouts: ["author_user_id", "amount_cents", "currency", "status", "provider_ref", "failure_code"],
   }
   for (const [table, columns] of Object.entries(requiredColumns)) {
     for (const column of columns) {
@@ -313,6 +353,12 @@ export async function validateExpectedSchema(client) {
   for (const index of EXPECTED_INDEXES) {
     const result = await client.query("SELECT to_regclass($1) AS name", [`public.${index}`])
     if (!result.rows[0]?.name) errors.push(`Falta el índice ${index}`)
+  }
+  for (const constraint of EXPECTED_CONSTRAINTS) {
+    const result = await client.query(`
+      SELECT 1 FROM pg_constraint WHERE conname = $1
+    `, [constraint])
+    if (!result.rowCount) errors.push(`Falta la restricción ${constraint}`)
   }
   return errors
 }

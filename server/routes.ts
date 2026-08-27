@@ -21,6 +21,8 @@ import { registerDirectionAgentRoutes } from "./directionAgent";
 import { computeAllScores, canUseRarity, quotasFor, rungFor, LADDER, TYPE_SCALE } from "./rarity";
 import { RARITIES, TICKET, PITY, pityCountdown, poolStatus } from "@shared/gacha";
 import { PRICES, TINTA_PACKS, TINTA_CENTS, AUTHOR_SHARE_STORY, AUTHOR_SHARE_BOOK, priceFor, isStory, stripeEnabled, betaPaymentsEnabled, createCheckoutSession, economySnapshotForBook, refundStripePayment, verifyStripeWebhook, splitEarnings } from "./payments";
+import { debitTinta } from "./economy";
+import { registerPayoutRoutes } from "./payouts";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { isSafeHttpsUrl, isSafeImageSource } from "@shared/media";
 import { PAPER_PLANS, PAPER_RATES } from "@shared/paper";
@@ -61,6 +63,7 @@ export async function registerRoutes(
   registerNarrativeRoutes(app)
   registerSpeechRoutes(app)
   registerDirectionAgentRoutes(app)
+  registerPayoutRoutes(app)
 
   const AUTHOR_BOOK_FIELDS = [
     "title", "author", "coverUrl", "coverFx", "content", "synopsis", "genre",
@@ -1357,22 +1360,28 @@ export async function registerRoutes(
   async function settleEarnings(order: {
     id: number; bookId: number; amountCents: number; currency: string
     authorUserId?: number | null; authorShareBps?: number | null
-  }, shareOverride?: number, executor: any = db) {
+  }, options: {
+    shareOverride?: number
+    grossCents?: number
+    payoutEligible?: boolean
+  } = {}, executor: any = db) {
     let authorUserId = order.authorUserId ?? null
-    let share = order.authorShareBps ? order.authorShareBps / 10_000 : shareOverride
+    let share = order.authorShareBps ? order.authorShareBps / 10_000 : options.shareOverride
     // Compatibilidad exclusiva para órdenes anteriores a la instantánea.
     if (!authorUserId || share === undefined) {
       const legacyBook = await storage.getBook(order.bookId)
       if (!legacyBook?.authorId) return
       authorUserId = legacyBook.authorId
-      share = shareOverride ?? (isStory(legacyBook) ? AUTHOR_SHARE_STORY : AUTHOR_SHARE_BOOK)
+      share = options.shareOverride ?? (isStory(legacyBook) ? AUTHOR_SHARE_STORY : AUTHOR_SHARE_BOOK)
     }
-    if (order.amountCents <= 0) return
-    const { authorCents, platformCents } = splitEarnings(order.amountCents, share)
+    const grossCents = Math.max(0, Math.floor(options.grossCents ?? order.amountCents))
+    if (grossCents <= 0) return
+    const { authorCents, platformCents } = splitEarnings(grossCents, share)
     await executor.insert(authorEarnings).values({
       authorUserId, orderId: order.id, bookId: order.bookId,
-      grossCents: order.amountCents, authorCents, platformCents,
+      grossCents, authorCents, platformCents,
       currency: order.currency,
+      payoutEligible: options.payoutEligible === true,
     }).onConflictDoNothing()
   }
 
@@ -1409,22 +1418,25 @@ export async function registerRoutes(
             status: "pending", provider: "tinta",
             ...economySnapshotForBook(book),
           }).returning()
-          const r: any = await tx.execute(sql`
-            insert into wallet_ledger (user_id, currency, delta, reason, ref_type, ref_id)
-            select ${userId}, 'tinta', ${-price.tinta}, 'spend_token', 'token_order', ${order.id}
-            where (select coalesce(sum(delta), 0) from wallet_ledger
-                   where user_id = ${userId} and currency = 'tinta') >= ${price.tinta}
-            returning id
-          `)
-          if ((r?.rows?.length ?? 0) === 0) {
+          const debit = await debitTinta(tx, {
+            userId, amount: price.tinta, reason: "spend_token",
+            refType: "token_order", refId: order.id,
+          })
+          if (!debit) {
             await tx.update(tokenOrders).set({ status: "failed" }).where(eq(tokenOrders.id, order.id))
             return { state: "funds" as const }
           }
           const result = await issueTokenWith(tx, userId, bookId, kind as "support" | "sale")
           await tx.update(tokenOrders)
-            .set({ status: "paid", paidAt: new Date(), tokenId: result.token.id })
+            .set({
+              status: "paid", paidAt: new Date(), tokenId: result.token.id,
+              cashBackingCents: debit.cashBackingCents,
+            })
             .where(eq(tokenOrders.id, order.id))
-          await settleEarnings({ ...order, amountCents: price.cents }, undefined, tx)
+          await settleEarnings(order, {
+            grossCents: debit.cashBackingCents,
+            payoutEligible: debit.cashBackingCents > 0,
+          }, tx)
           return { state: "paid" as const, result }
         })
         if (purchase.state === "owned") {
@@ -1575,9 +1587,15 @@ export async function registerRoutes(
             }
             const result = await issueTokenWith(tx, order.userId, order.bookId, order.kind as "support" | "sale")
             await tx.update(tokenOrders)
-              .set({ status: "paid", paidAt: new Date(), tokenId: result.token.id })
+              .set({
+                status: "paid", paidAt: new Date(), tokenId: result.token.id,
+                cashBackingCents: order.amountCents,
+              })
               .where(and(eq(tokenOrders.id, orderId), eq(tokenOrders.status, "pending")))
-            await settleEarnings(order, undefined, tx)
+            await settleEarnings(order, {
+              grossCents: order.amountCents,
+              payoutEligible: true,
+            }, tx)
             return { state: "paid" as const }
           })
           if (tokenOutcome?.state === "refund") {
@@ -1613,6 +1631,7 @@ export async function registerRoutes(
             await tx.insert(walletLedger).values({
               userId: wo.userId, currency: wo.currency, delta: wo.amount,
               reason: "purchase", refType: "wallet_order", refId: wo.id,
+              cashBackingCents: wo.amountCents,
             })
           })
         }
@@ -1865,7 +1884,9 @@ export async function registerRoutes(
       const userId = (req.user as any).id
       const rows = await db.select().from(authorEarnings)
         .where(eq(authorEarnings.authorUserId, userId))
-      const accrued = rows.filter(r => r.status === "accrued")
+      // Compatibilidad con clientes antiguos: jamás presentar como efectivo
+      // retirable una ganancia sin respaldo conciliado.
+      const accrued = rows.filter(r => r.status === "accrued" && r.payoutEligible)
       const totalCents = accrued.reduce((s, r) => s + r.authorCents, 0)
       res.json({
         currency:   rows[0]?.currency || "mxn",
@@ -2338,14 +2359,11 @@ export async function registerRoutes(
           status: "pending", provider: "tinta",
           ...economySnapshotForBook(book, AUTHOR_SHARE_STORY),
         }).returning()
-        const r: any = await tx.execute(sql`
-          insert into wallet_ledger (user_id, currency, delta, reason, ref_type, ref_id)
-          select ${userId}, 'tinta', ${-cost}, 'spend_card', 'token_order', ${order.id}
-          where (select coalesce(sum(delta), 0) from wallet_ledger
-                 where user_id = ${userId} and currency = 'tinta') >= ${cost}
-          returning id
-        `)
-        if ((r?.rows?.length ?? 0) === 0) {
+        const debit = await debitTinta(tx, {
+          userId, amount: cost, reason: "spend_card",
+          refType: "token_order", refId: order.id,
+        })
+        if (!debit) {
           await tx.update(tokenOrders).set({ status: "failed" }).where(eq(tokenOrders.id, order.id))
           return { state: "funds" as const }
         }
@@ -2353,9 +2371,15 @@ export async function registerRoutes(
         // Comprar una tarjeta incluye la obra: la carta no es un adorno
         // separado, sino la edición coleccionable de esa lectura.
         await ensureUnlock(userId, card.bookId!, "card", tx)
-        await tx.update(tokenOrders).set({ status: "paid", paidAt: new Date() })
+        await tx.update(tokenOrders).set({
+          status: "paid", paidAt: new Date(), cashBackingCents: debit.cashBackingCents,
+        })
           .where(eq(tokenOrders.id, order.id))
-        await settleEarnings(order, AUTHOR_SHARE_STORY, tx)
+        await settleEarnings(order, {
+          shareOverride: AUTHOR_SHARE_STORY,
+          grossCents: debit.cashBackingCents,
+          payoutEligible: debit.cashBackingCents > 0,
+        }, tx)
         return { state: "paid" as const }
       })
       if (purchase.state === "owned") return res.status(409).json({ message: "Ya está en tu colección" })
@@ -2633,14 +2657,10 @@ export async function registerRoutes(
         const [owned] = await tx.select().from(userFrames)
           .where(and(eq(userFrames.userId, userId), eq(userFrames.frameId, frameId)))
         if (owned) return { state: "owned" as const }
-        const r: any = await tx.execute(sql`
-          insert into wallet_ledger (user_id, currency, delta, reason, ref_type, ref_id)
-          select ${userId}, 'tinta', ${-cost}, 'spend_frame', 'frame', ${frameId}
-          where (select coalesce(sum(delta), 0) from wallet_ledger
-                 where user_id = ${userId} and currency = 'tinta') >= ${cost}
-          returning id
-        `)
-        if ((r?.rows?.length ?? 0) === 0) return { state: "funds" as const }
+        const debit = await debitTinta(tx, {
+          userId, amount: cost, reason: "spend_frame", refType: "frame", refId: frameId,
+        })
+        if (!debit) return { state: "funds" as const }
         await tx.insert(userFrames).values({ userId, frameId, source: "tinta" })
         return { state: "paid" as const }
       })
