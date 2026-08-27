@@ -6,7 +6,7 @@ import { z } from "zod";
 import { requireAdmin, isAdmin, refreshAdminCache, FOUNDER_EMAIL } from "./auth";
 import { db } from "./db";
 import { admins, books, bookDrafts, bookRevisions, users, comments, authorProfiles, userState, readingProgress, savedBooks, bookTokens, printCopies, printCopyEvents, notifications, unlockedBooks, tokenOrders, authorEarnings, walletLedger, walletOrders, paperUsageEvents, bookCards, userCards, frames, userFrames, gachaConfig, gachaPity, gachaDraws, insertCommentSchema } from "@shared/schema";
-import { randomBytes, timingSafeEqual } from "crypto";
+import { randomBytes } from "crypto";
 import { rateLimit } from "./rateLimit";
 import {
   validateCard, MAX_CARDS_PER_BOOK, MAX_LOOSE_CARDS,
@@ -23,6 +23,7 @@ import { RARITIES, TICKET, PITY, pityCountdown, poolStatus } from "@shared/gacha
 import { PRICES, TINTA_PACKS, TINTA_CENTS, AUTHOR_SHARE_STORY, AUTHOR_SHARE_BOOK, priceFor, isStory, stripeEnabled, betaPaymentsEnabled, createCheckoutSession, economySnapshotForBook, refundStripePayment, verifyStripeWebhook, splitEarnings } from "./payments";
 import { debitTinta } from "./economy";
 import { registerPayoutRoutes } from "./payouts";
+import { isProtectedClaimKey, protectClaimKey, revealClaimKey, verifyClaimKey } from "./claimKeys";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { isSafeHttpsUrl, isSafeImageSource } from "@shared/media";
 import { PAPER_PLANS, PAPER_RATES } from "@shared/paper";
@@ -1313,14 +1314,18 @@ export async function registerRoutes(
     for (let i = 0; i < copiesToMake; i++) {
       const folio = await uniqueFolio(executor)
       const isOwnerCopy = kind === "support" && i === 0
+      const plainClaimKey = makeKey()
+      const protectedClaimKey = protectClaimKey(plainClaimKey)
       const [copy] = await executor.insert(printCopies).values({
         tokenId: token.id,
         folio,
-        claimKey: makeKey(),
+        claimKey: protectedClaimKey.ciphertext,
+        claimKeyHash: protectedClaimKey.digest,
         claimedByUserId: isOwnerCopy ? userId : null,
         claimedAt: isOwnerCopy ? new Date() : null,
       }).returning()
-      copies.push(copy)
+      const { claimKeyHash: _claimKeyHash, ...safeCopy } = copy
+      copies.push({ ...safeCopy, claimKey: plainClaimKey })
     }
     if (kind === "support") await ensureUnlock(userId, bookId, "support", executor)
     return { token, copies }
@@ -1959,7 +1964,7 @@ export async function registerRoutes(
       const tokenById = new Map(tokens.map(token => [token.id, token]))
       const editions = copyRows.map(copy => {
         const token = tokenById.get(copy.tokenId)!
-        const { claimKey: _claimKey, claimedByUserId, ...safeCopy } = copy
+        const { claimKey: _claimKey, claimKeyHash: _claimKeyHash, claimedByUserId, ...safeCopy } = copy
         return {
           ...safeCopy,
           book: bookById.get(token.bookId) || null,
@@ -2020,7 +2025,7 @@ export async function registerRoutes(
         })
         return [row]
       })
-      const { claimKey: _claimKey, claimedByUserId, ...safeCopy } = updated
+      const { claimKey: _claimKey, claimKeyHash: _claimKeyHash, claimedByUserId, ...safeCopy } = updated
       res.json({ ...safeCopy, digitalClaimed: claimedByUserId != null })
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0]?.message || "Datos inválidos" })
@@ -2087,18 +2092,30 @@ export async function registerRoutes(
       const copies = tokenIds.length
         ? await db.select().from(printCopies).where(inArray(printCopies.tokenId, tokenIds))
         : []
-      const copiesByToken = new Map<number, typeof copies>()
-      for (const copy of copies) {
-        const group = copiesByToken.get(copy.tokenId) || []
-        group.push(copy)
-        copiesByToken.set(copy.tokenId, group)
+      const safeCopies = await Promise.all(copies.map(async copy => {
+        const plainClaimKey = revealClaimKey(copy.claimKey)
+        if (!isProtectedClaimKey(copy.claimKey) || !copy.claimKeyHash) {
+          const protectedClaimKey = protectClaimKey(plainClaimKey)
+          await db.update(printCopies).set({
+            claimKey: protectedClaimKey.ciphertext,
+            claimKeyHash: protectedClaimKey.digest,
+          }).where(and(eq(printCopies.id, copy.id), eq(printCopies.claimKey, copy.claimKey)))
+        }
+        return { copy, plainClaimKey }
+      }))
+      const safeCopiesByToken = new Map<number, typeof safeCopies>()
+      for (const item of safeCopies) {
+        const group = safeCopiesByToken.get(item.copy.tokenId) || []
+        group.push(item)
+        safeCopiesByToken.set(item.copy.tokenId, group)
       }
       const out = tokens.map(token => ({
         ...token,
-        copies: (copiesByToken.get(token.id) || []).map(copy => {
-          const { claimedByUserId, ...safeCopy } = copy
+        copies: (safeCopiesByToken.get(token.id) || []).map(({ copy, plainClaimKey }) => {
+          const { claimKey: _claimKey, claimKeyHash: _claimKeyHash, claimedByUserId, ...safeCopy } = copy
           return {
             ...safeCopy,
+            claimKey: plainClaimKey,
             digitalClaimed: claimedByUserId != null,
             claimedByOwner: claimedByUserId === userId,
           }
@@ -2157,14 +2174,15 @@ export async function registerRoutes(
         if (fresh.claimedByUserId && fresh.claimedByUserId !== userId) {
           return { state: "taken" as const }
         }
-        const normalizedStored = fresh.claimKey.toUpperCase().replace(/\s/g, "")
-        const sameSecret = (candidate: string, expected: string) => {
-          const left = Buffer.from(candidate, "utf8")
-          const right = Buffer.from(expected, "utf8")
-          return left.length === right.length && timingSafeEqual(left, right)
-        }
-        if (!sameSecret(key, normalizedStored) && !sameSecret(key, normalizedStored.replace(/-/g, ""))) {
+        if (!verifyClaimKey(key, fresh.claimKey, fresh.claimKeyHash)) {
           return { state: "key" as const }
+        }
+        if (!isProtectedClaimKey(fresh.claimKey) || !fresh.claimKeyHash) {
+          const protectedClaimKey = protectClaimKey(revealClaimKey(fresh.claimKey))
+          await tx.update(printCopies).set({
+            claimKey: protectedClaimKey.ciphertext,
+            claimKeyHash: protectedClaimKey.digest,
+          }).where(eq(printCopies.id, fresh.id))
         }
         const [token] = await tx.select().from(bookTokens).where(eq(bookTokens.id, fresh.tokenId))
         if (!token) return { state: "token" as const }

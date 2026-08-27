@@ -257,7 +257,8 @@ export const printCopies = pgTable("print_copies", {
   id:              serial("id").primaryKey(),
   tokenId:         integer("token_id").references(() => bookTokens.id).notNull(),
   folio:           text("folio").notNull().unique(),                  // TLQ-XXXX-XXXX
-  claimKey:        text("claim_key").notNull(),                       // clave impresa dentro
+  claimKey:        text("claim_key").notNull(),                       // cifrado autenticado o legado
+  claimKeyHash:    text("claim_key_hash").notNull().default(""),      // HMAC para verificar sin descifrar
   claimedByUserId: integer("claimed_by_user_id").references(() => users.id),
   claimedAt:       timestamp("claimed_at"),
   // Ciclo comercial del ejemplar. Nunca se infiere una venta a partir del

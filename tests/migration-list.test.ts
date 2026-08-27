@@ -50,3 +50,10 @@ test("la capa canónica repone restricciones que Drizzle no expresa", () => {
     /author_payouts_contract_check/i,
   ]) assert.match(sql, contract)
 })
+
+test("la migración de claves admite legado y exige HMAC válido", () => {
+  const sql = readFileSync(join(process.cwd(), "migrations", "0015_claim_key_protection.sql"), "utf8")
+  assert.match(sql, /claim_key_hash/i)
+  assert.match(sql, /\^\[a-f0-9\]\{64\}\$/i)
+  assert.match(sql, /históricas/i)
+})

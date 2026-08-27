@@ -30,10 +30,10 @@ npm run db:migrate
 ```
 
 El migrador puede reconstruir PostgreSQL vacío desde `0000`, aplica en orden
-las migraciones hasta `0014`, verifica checksums, restricciones e índices y
+las migraciones hasta `0015`, verifica checksums, restricciones e índices y
 valida la estructura antes del commit. `0012` agrega revisiones del manuscrito,
-`0013` introduce respaldo de Tinta y liquidaciones, y `0014` fija los contratos
-SQL que no expresa Drizzle. Si el preflight detecta datos históricos inconsistentes,
+`0013` introduce respaldo de Tinta y liquidaciones, `0014` fija los contratos
+SQL que no expresa Drizzle y `0015` protege las claves de reclamación. Si el preflight detecta datos históricos inconsistentes,
 debe corregirse el dato antes de reintentar; no se elimina a escondidas.
 
 ## Comandos
@@ -49,7 +49,8 @@ npm start       # ejecuta dist/index.cjs
 ## Configuración de producción
 
 `APP_URL` debe ser el origen HTTPS canónico, sin una ruta al final.
-`SESSION_SECRET` debe tener por lo menos 32 caracteres. En producción son
+`SESSION_SECRET` y `CLAIM_KEY_SECRET` deben tener por lo menos 32 caracteres y
+permanecer estables. En producción son
 obligatorias las credenciales de Google; el proceso falla al iniciar si falta
 alguna de estas condiciones o si PostgreSQL no está disponible.
 

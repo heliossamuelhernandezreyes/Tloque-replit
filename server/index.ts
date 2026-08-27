@@ -8,6 +8,9 @@ import { rateLimit } from "./rateLimit"
 import { registerNativeSamplePackRoutes } from "./nativeSamplePackRoutes"
 import { randomUUID } from "crypto"
 import { pool } from "./db"
+import { assertClaimKeyConfiguration } from "./claimKeys"
+
+assertClaimKeyConfiguration()
 
 const app        = express()
 const httpServer = createServer(app)

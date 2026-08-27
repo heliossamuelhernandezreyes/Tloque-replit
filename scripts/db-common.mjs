@@ -107,6 +107,7 @@ export const EXPECTED_CONSTRAINTS = [
   "author_payout_accounts_contract_check",
   "author_payouts_contract_check",
   "gacha_config_split_check",
+  "print_copies_claim_key_hash_check",
 ]
 
 export function databaseUrl() {
@@ -310,6 +311,9 @@ export async function inspectDatabase(client, { allowEmpty = false } = {}) {
   if (!process.env.SESSION_SECRET || String(process.env.SESSION_SECRET).length < 32) {
     warnings.push("SESSION_SECRET no está visible o tiene menos de 32 caracteres; producción no iniciará así.")
   }
+  if (!process.env.CLAIM_KEY_SECRET || String(process.env.CLAIM_KEY_SECRET).length < 32) {
+    warnings.push("CLAIM_KEY_SECRET no está visible o tiene menos de 32 caracteres; producción no iniciará así.")
+  }
   if (!process.env.ADMIN_EMAIL || process.env.ADMIN_EMAIL === "admin@example.com") {
     warnings.push("ADMIN_EMAIL no está configurado para el fundador; producción no iniciará así.")
   }
@@ -328,7 +332,7 @@ export async function validateExpectedSchema(client) {
 
   const requiredColumns = {
     users: ["subscription_plan", "subscription_status", "subscription_expires_at", "deleted_at"],
-    print_copies: ["sale_status", "sold_at", "sale_price_cents", "sale_channel", "sale_note", "updated_at"],
+    print_copies: ["sale_status", "sold_at", "sale_price_cents", "sale_channel", "sale_note", "claim_key_hash", "updated_at"],
     audiobook_cache: ["cache_key", "storage_key", "status", "content_hash"],
     audiobook_jobs: ["request_key", "reserved_paper", "status", "content_hash"],
     notifications: ["user_id", "kind", "title", "body", "destination", "dedupe_key", "read_at"],

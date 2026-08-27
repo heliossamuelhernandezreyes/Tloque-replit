@@ -448,6 +448,7 @@ CREATE TABLE "print_copies" (
 	"token_id" integer NOT NULL,
 	"folio" text NOT NULL,
 	"claim_key" text NOT NULL,
+	"claim_key_hash" text DEFAULT '' NOT NULL,
 	"claimed_by_user_id" integer,
 	"claimed_at" timestamp,
 	"sale_status" text DEFAULT 'available' NOT NULL,
