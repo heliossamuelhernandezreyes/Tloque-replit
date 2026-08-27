@@ -44,12 +44,27 @@ export function splitEarnings(grossCents: number, authorShare = AUTHOR_SHARE_BOO
   return { authorCents, platformCents: grossCents - authorCents }
 }
 
+export function economySnapshotForBook(book: any, shareOverride?: number) {
+  const share = shareOverride ?? (isStory(book) ? AUTHOR_SHARE_STORY : AUTHOR_SHARE_BOOK)
+  return {
+    authorUserId: book?.authorId ?? null,
+    authorShareBps: Math.round(share * 10_000),
+    bookTypeSnapshot: String(book?.type || "book"),
+    bookRevisionSnapshot: Math.max(1, Number(book?.revision) || 1),
+  }
+}
+
 // ── Stripe ───────────────────────────────────────────────────
 export function stripeEnabled(): boolean {
   // Nunca abrir Checkout si no existe la ruta autenticada que confirmará y
   // entregará la compra. Esto también protege los Repls de desarrollo que son
   // accesibles públicamente y podrían contener una clave de prueba o real.
-  return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET)
+  return Boolean(
+    process.env.STRIPE_SECRET_KEY
+    && process.env.STRIPE_WEBHOOK_SECRET
+    && process.env.MONETIZATION_ENABLED === "true"
+    && process.env.PAYOUTS_READY === "true",
+  )
 }
 
 export function betaPaymentsEnabled(): boolean {
@@ -133,6 +148,23 @@ export async function createCheckoutSession(opts: {
     throw new Error(data?.error?.message || "No se pudo crear la sesión de pago")
   }
   return { id: data.id, url: data.url }
+}
+
+export async function refundStripePayment(paymentIntent: string, orderId: number): Promise<string> {
+  if (!/^pi_[a-zA-Z0-9_]+$/.test(paymentIntent)) throw new Error("Stripe payment intent inválido")
+  const response = await fetch("https://api.stripe.com/v1/refunds", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Idempotency-Key": `tloque-token-refund-${orderId}`,
+    },
+    body: `payment_intent=${encodeURIComponent(paymentIntent)}&metadata[orderId]=${orderId}`,
+    signal: AbortSignal.timeout(15_000),
+  })
+  const payload = await response.json().catch(() => ({})) as { id?: string; error?: { message?: string } }
+  if (!response.ok || !payload.id) throw new Error(payload.error?.message || "Stripe rechazó el reembolso")
+  return payload.id
 }
 
 // Verifica la firma del webhook de Stripe (HMAC-SHA256 sobre `t.payload`).

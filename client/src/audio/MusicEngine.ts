@@ -61,7 +61,7 @@ export class MusicEngine {
 
   setNarrativeDirection(intensity: number, silence: boolean, transitionSeconds: number, _regionId?: string) {
     const normalized = Math.max(0, Math.min(0.8, intensity))
-    const target = silence ? 0.12 : 0.72 + normalized * 0.35
+    const target = silence ? 0 : 0.72 + normalized * 0.35
     const start = this.narrativeGain
     const duration = Math.max(2_000, Math.min(30_000, transitionSeconds * 1_000))
     const started = performance.now()

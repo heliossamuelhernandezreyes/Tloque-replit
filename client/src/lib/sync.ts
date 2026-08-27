@@ -5,7 +5,60 @@
 
 const STREAK_KEY = "novareads_streak"
 
-import { slimBook, saveOfflineContent, migrateHeavySaved } from "./offline"
+import { slimBook, saveOfflineContent, removeOfflineContent, migrateHeavySaved } from "./offline"
+
+const LIBRARY_OPS_KEY = "tloque_library_ops_v1"
+const LIBRARY_MIGRATED_KEY = "tloque_library_ops_migrated_v1"
+type LibraryOperation = { bookId: number; action: "save" | "remove"; createdAt: number }
+
+function readLibraryOperations(): LibraryOperation[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LIBRARY_OPS_KEY) || "[]")
+    return Array.isArray(parsed) ? parsed : []
+  } catch { return [] }
+}
+
+function writeLibraryOperations(operations: LibraryOperation[]): boolean {
+  try {
+    localStorage.setItem(LIBRARY_OPS_KEY, JSON.stringify(operations))
+    return true
+  } catch { return false }
+}
+
+function enqueueLibraryOperation(bookId: number, action: LibraryOperation["action"]): boolean {
+  const existing = readLibraryOperations()
+  const operations = existing.filter(operation => operation.bookId !== bookId)
+  const latest = existing.reduce((maximum, operation) => Math.max(maximum, operation.createdAt), 0)
+  operations.push({ bookId, action, createdAt: Math.max(Date.now(), latest + 1) })
+  return writeLibraryOperations(operations)
+}
+
+async function flushLibraryOperations(): Promise<void> {
+  const operations = readLibraryOperations().sort((a, b) => a.createdAt - b.createdAt)
+  for (const operation of operations) {
+    try {
+      const response = await fetch(`/api/sync/library/${operation.bookId}`, {
+        method: operation.action === "save" ? "PUT" : "DELETE",
+        credentials: "include",
+      })
+      if (!response.ok) break
+      // Leer de nuevo evita que una respuesta antigua borre una operación más
+      // reciente (por ejemplo save seguido inmediatamente de remove).
+      const current = readLibraryOperations().filter(item =>
+        item.bookId !== operation.bookId
+        || item.createdAt !== operation.createdAt
+        || item.action !== operation.action)
+      writeLibraryOperations(current)
+    } catch { break }
+  }
+}
+
+let libraryFlushQueue: Promise<void> = Promise.resolve()
+function scheduleLibraryFlush(): Promise<void> {
+  const task = libraryFlushQueue.then(flushLibraryOperations, flushLibraryOperations)
+  libraryFlushQueue = task.catch(() => undefined)
+  return task
+}
 
 // ── Subidas (dispara y olvida, a prueba de offline) ──────────
 export function pushStreak(days: number, lastDate: string) {
@@ -18,6 +71,7 @@ export function pushStreak(days: number, lastDate: string) {
 }
 
 export function pushProgress(bookId: string | number, chapter: number, maxChapter: number) {
+  try { localStorage.setItem(`reading_updated_${bookId}`, String(Date.now())) } catch {}
   fetch("/api/sync/progress", {
     method:      "PUT",
     headers:     { "Content-Type": "application/json" },
@@ -27,15 +81,13 @@ export function pushProgress(bookId: string | number, chapter: number, maxChapte
 }
 
 export function pushSaveBook(bookId: number) {
-  fetch(`/api/sync/library/${bookId}`, {
-    method: "PUT", credentials: "include",
-  }).catch(() => {})
+  if (enqueueLibraryOperation(bookId, "save")) void scheduleLibraryFlush()
+  else void fetch(`/api/sync/library/${bookId}`, { method: "PUT", credentials: "include" }).catch(() => undefined)
 }
 
 export function pushUnsaveBook(bookId: number) {
-  fetch(`/api/sync/library/${bookId}`, {
-    method: "DELETE", credentials: "include",
-  }).catch(() => {})
+  if (enqueueLibraryOperation(bookId, "remove")) void scheduleLibraryFlush()
+  else void fetch(`/api/sync/library/${bookId}`, { method: "DELETE", credentials: "include" }).catch(() => undefined)
 }
 
 // ── Juntar lo local con el servidor (al abrir la app logueado) ──
@@ -45,7 +97,7 @@ export async function pullAndMerge(): Promise<void> {
 
   let data: {
     streak: { days: number; lastDate: string } | null
-    progress: { bookId: string; chapter: number; maxChapter: number }[]
+    progress: { bookId: string; chapter: number; maxChapter: number; updatedAt?: string }[]
   }
   try {
     const res = await fetch("/api/sync/state", { credentials: "include" })
@@ -86,9 +138,9 @@ export async function pullAndMerge(): Promise<void> {
 
   // ── Progreso por libro ──
   try {
-    const serverMap = new Map<string, { chapter: number; maxChapter: number }>()
+    const serverMap = new Map<string, { chapter: number; maxChapter: number; updatedAt?: string }>()
     for (const p of data.progress || []) {
-      serverMap.set(String(p.bookId), { chapter: p.chapter, maxChapter: p.maxChapter })
+      serverMap.set(String(p.bookId), { chapter: p.chapter, maxChapter: p.maxChapter, updatedAt: p.updatedAt })
     }
 
     // Recolectar el progreso local de todas las claves reading_*
@@ -104,12 +156,15 @@ export async function pullAndMerge(): Promise<void> {
     for (const [bookId, sp] of serverMap) {
       const localChapter = Number(localStorage.getItem(`reading_chapter_${bookId}`)    || "0")
       const localMax     = Number(localStorage.getItem(`reading_maxchapter_${bookId}`) || "0")
-      const mergedChapter = Math.max(localChapter, sp.chapter)
+      const localUpdated = Number(localStorage.getItem(`reading_updated_${bookId}`) || "0")
+      const serverUpdated = sp.updatedAt ? Date.parse(sp.updatedAt) : 0
+      const mergedChapter = serverUpdated > localUpdated ? sp.chapter : localChapter
       const mergedMax     = Math.max(localMax, sp.maxChapter)
       if (mergedChapter !== localChapter) localStorage.setItem(`reading_chapter_${bookId}`, String(mergedChapter))
       if (mergedMax !== localMax)         localStorage.setItem(`reading_maxchapter_${bookId}`, String(mergedMax))
-      // Si lo local iba más adelante que el servidor, subir el máximo
-      if (localChapter > sp.chapter || localMax > sp.maxChapter) {
+      if (serverUpdated > localUpdated) localStorage.setItem(`reading_updated_${bookId}`, String(serverUpdated))
+      // Una posición local más reciente se respeta incluso si retrocedió.
+      if (localUpdated > serverUpdated || localMax > sp.maxChapter) {
         pushProgress(bookId, mergedChapter, mergedMax)
       }
       localBookIds.delete(bookId)
@@ -133,39 +188,53 @@ export async function pullAndMerge(): Promise<void> {
   } catch { /* sin conexión: se conserva lo último conocido */ }
 
   // ── Biblioteca guardada ──
-  // Unión conservadora: nunca pierde libros. (Si quitaste uno en otro
-  // dispositivo antes de que este sincronizara, podría reaparecer;
-  // preferimos conservar de más que borrar de menos.)
+  // Las operaciones pendientes actúan como tombstones. Tras confirmarlas, el
+  // servidor es canónico y una eliminación en otro dispositivo no reaparece.
   try {
+    const legacyRaw = localStorage.getItem("novareads_saved")
+    const legacyLocal: any[] = legacyRaw ? JSON.parse(legacyRaw) : []
+    if (!localStorage.getItem(LIBRARY_MIGRATED_KEY)) {
+      for (const book of legacyLocal) {
+        const numeric = Number(book.id)
+        if (Number.isInteger(numeric) && numeric > 0) enqueueLibraryOperation(numeric, "save")
+      }
+      localStorage.setItem(LIBRARY_MIGRATED_KEY, "1")
+    }
+    await scheduleLibraryFlush()
     const res = await fetch("/api/sync/library", { credentials: "include" })
     if (res.ok) {
       const lib = await res.json() as { books: any[] }
       const serverBooks = lib.books || []
       const localRaw    = localStorage.getItem("novareads_saved")
-      const local: any[] = localRaw ? JSON.parse(localRaw) : []
+      let local: any[] = localRaw ? JSON.parse(localRaw) : []
       const localIds  = new Set(local.map(b => String(b.id)))
       const serverIds = new Set(serverBooks.map(b => String(b.id)))
+      const pending = new Map(readLibraryOperations().map(operation => [String(operation.bookId), operation.action]))
 
       // Del servidor a local: restaurar los que falten (ligeros + contenido a IndexedDB)
       let changed = false
       for (const sb of serverBooks) {
-        if (!localIds.has(String(sb.id))) {
+        if (!localIds.has(String(sb.id)) && pending.get(String(sb.id)) !== "remove") {
           local.push({ ...slimBook(sb), isSaved: true })
-          saveOfflineContent(sb.id, sb)
+          void saveOfflineContent(sb.id, sb).catch(error => {
+            console.warn("No se pudo restaurar el contenido offline", error)
+          })
           changed = true
         }
+      }
+      // Quitar copias que el servidor ya no guarda, salvo un alta aún pendiente.
+      const removed = local.filter(book => {
+        const id = String(book.id)
+        return /^\d+$/.test(id) && !serverIds.has(id) && pending.get(id) !== "save"
+      })
+      if (removed.length) {
+        local = local.filter(book => !removed.some(item => String(item.id) === String(book.id)))
+        for (const book of removed) void removeOfflineContent(book.id)
+        changed = true
       }
       if (changed) {
         try { localStorage.setItem("novareads_saved", JSON.stringify(local)) }
         catch { /* cuota llena: no romper */ }
-      }
-
-      // De local al servidor: subir los guardados (con id numérico) que falten
-      for (const lb of local) {
-        const idStr = String(lb.id)
-        if (/^\d+$/.test(idStr) && !serverIds.has(idStr)) {
-          pushSaveBook(Number(idStr))
-        }
       }
     }
   } catch { /* ignorar */ }

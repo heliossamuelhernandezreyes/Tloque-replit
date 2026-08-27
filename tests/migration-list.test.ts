@@ -12,3 +12,17 @@ test("el migrador seguro incluye todas las migraciones SQL versionadas", () => {
     assert.match(migrator, new RegExp(`['\"]${migration.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}['\"]`), `${migration} falta en el migrador`)
   }
 })
+
+test("la migración editorial crea historial, borrador, límite distribuido e instantánea económica", () => {
+  const sql = readFileSync(join(process.cwd(), "migrations", "0012_manuscript_integrity.sql"), "utf8")
+  for (const contract of [
+    /ADD COLUMN IF NOT EXISTS revision integer NOT NULL DEFAULT 1/i,
+    /CREATE TABLE IF NOT EXISTS book_revisions/i,
+    /UNIQUE \(book_id, revision\)/i,
+    /CREATE TABLE IF NOT EXISTS book_drafts/i,
+    /CREATE TABLE IF NOT EXISTS api_rate_limits/i,
+    /author_share_bps/i,
+    /book_revision_snapshot/i,
+    /refunded_at/i,
+  ]) assert.match(sql, contract)
+})

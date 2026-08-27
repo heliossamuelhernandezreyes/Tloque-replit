@@ -29,6 +29,7 @@ const migrations = [
   "0009_direction_agent_v2.sql",
   "0010_hybrid_fonoteca.sql",
   "0011_audio_studio_and_ui_fonoteca.sql",
+  "0012_manuscript_integrity.sql",
 ]
 
 const pool = createPool()

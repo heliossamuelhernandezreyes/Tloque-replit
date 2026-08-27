@@ -37,6 +37,7 @@ const ProfileHub = lazy(() => import("@/pages/ProfileHub"))
 const Inbox = lazy(() => import("@/pages/Inbox"))
 const Editions = lazy(() => import("@/pages/Editions"))
 const AdminHub = lazy(() => import("@/pages/AdminHub"))
+const LegalPage = lazy(() => import("@/pages/legal"))
 import { CardViewerProvider } from "@/components/CardViewer"
 import { MusicProvider } from "@/audio/MusicProvider"
 import {
@@ -159,6 +160,9 @@ function AppContent() {
   )
   const [bootPhase, setBootPhase] = useState<BootPhase>("loading")
   const [bootComplete, setBootComplete] = useState(false)
+  const legalPath = window.location.pathname === "/privacy"
+    ? "privacy"
+    : window.location.pathname === "/terms" ? "terms" : null
 
   useEffect(() => {
     if (bootComplete) return
@@ -201,6 +205,7 @@ function AppContent() {
     needsOnboarding
   )
 
+  if (legalPath) return <Suspense fallback={<RouteFallback />}><LegalPage kind={legalPath} /></Suspense>
   if (!bootComplete) return <BootExperience phase={bootPhase} />
   if (isLoading) return <RouteFallback />
   if (authError) return <AuthUnavailable onRetry={() => { void retryAuth() }} />

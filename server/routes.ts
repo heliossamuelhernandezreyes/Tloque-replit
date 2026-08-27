@@ -1,11 +1,11 @@
 import type { Express } from "express";
 import type { Server } from "http";
-import { storage } from "./storage";
+import { storage, BookRevisionConflictError, type BookChangeType } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { requireAdmin, isAdmin, refreshAdminCache, FOUNDER_EMAIL } from "./auth";
 import { db } from "./db";
-import { admins, books, users, comments, authorProfiles, userState, readingProgress, savedBooks, bookTokens, printCopies, printCopyEvents, notifications, unlockedBooks, tokenOrders, authorEarnings, walletLedger, walletOrders, paperUsageEvents, bookCards, userCards, frames, userFrames, gachaConfig, gachaPity, gachaDraws, insertCommentSchema } from "@shared/schema";
+import { admins, books, bookDrafts, bookRevisions, users, comments, authorProfiles, userState, readingProgress, savedBooks, bookTokens, printCopies, printCopyEvents, notifications, unlockedBooks, tokenOrders, authorEarnings, walletLedger, walletOrders, paperUsageEvents, bookCards, userCards, frames, userFrames, gachaConfig, gachaPity, gachaDraws, insertCommentSchema } from "@shared/schema";
 import { randomBytes, timingSafeEqual } from "crypto";
 import { rateLimit } from "./rateLimit";
 import {
@@ -20,7 +20,7 @@ import { registerSpeechRoutes } from "./speech";
 import { registerDirectionAgentRoutes } from "./directionAgent";
 import { computeAllScores, canUseRarity, quotasFor, rungFor, LADDER, TYPE_SCALE } from "./rarity";
 import { RARITIES, TICKET, PITY, pityCountdown, poolStatus } from "@shared/gacha";
-import { PRICES, TINTA_PACKS, TINTA_CENTS, AUTHOR_SHARE_STORY, AUTHOR_SHARE_BOOK, priceFor, isStory, stripeEnabled, betaPaymentsEnabled, createCheckoutSession, verifyStripeWebhook, splitEarnings } from "./payments";
+import { PRICES, TINTA_PACKS, TINTA_CENTS, AUTHOR_SHARE_STORY, AUTHOR_SHARE_BOOK, priceFor, isStory, stripeEnabled, betaPaymentsEnabled, createCheckoutSession, economySnapshotForBook, refundStripePayment, verifyStripeWebhook, splitEarnings } from "./payments";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { isSafeHttpsUrl, isSafeImageSource } from "@shared/media";
 import { PAPER_PLANS, PAPER_RATES } from "@shared/paper";
@@ -40,6 +40,16 @@ const gutenbergImportSchema = z.object({
   overrideTitle: z.string().trim().max(200).optional().default(""),
   overrideSynopsis: z.string().trim().max(8_000).optional().default(""),
   lang: z.string().trim().toLowerCase().max(12).optional().default("es"),
+}).strict()
+
+const cloudBookDraftSchema = z.object({
+  baseRevision: z.number().int().min(1),
+  expectedDraftRevision: z.number().int().min(0).optional(),
+  data: api.books.create.input.partial(),
+}).strict()
+
+const restoreBookRevisionSchema = z.object({
+  expectedRevision: z.number().int().min(1),
 }).strict()
 
 export async function registerRoutes(
@@ -67,6 +77,11 @@ export async function registerRoutes(
 
   function canViewBook(req: any, book: any): boolean {
     if (book?.status === "published") return true
+    if (!req.isAuthenticated()) return false
+    return isAdmin(req.user) || (!!book?.authorId && book.authorId === (req.user as any)?.id)
+  }
+
+  function canEditBook(req: any, book: any): boolean {
     if (!req.isAuthenticated()) return false
     return isAdmin(req.user) || (!!book?.authorId && book.authorId === (req.user as any)?.id)
   }
@@ -147,6 +162,18 @@ export async function registerRoutes(
       res.status(500).json({ message: "Failed to fetch books" });
     }
   });
+
+  // Fuente canónica de la biblioteca del autor, incluidos borradores. La
+  // respuesta es ligera; el manuscrito completo se pide al abrir el editor.
+  app.get("/api/books/mine", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
+      res.setHeader("Cache-Control", "no-store")
+      res.json(await storage.getBooksByAuthor((req.user as any).id))
+    } catch {
+      res.status(500).json({ message: "No se pudieron cargar tus obras" })
+    }
+  })
 
   // ── GET /api/books/:id ────────────────────────────────
   app.get(api.books.get.path, async (req, res) => {
@@ -237,12 +264,35 @@ export async function registerRoutes(
         }
       }
 
-      const updated = await storage.updateBook(
-        id,
-        userIsAdmin ? input : authorBookInput(input, req.user),
-      );
+      const { expectedRevision, ...requestedUpdates } = input
+      const updates = userIsAdmin ? requestedUpdates : authorBookInput(requestedUpdates, req.user)
+      // Un autor puede corregir una obra moderada, pero no levantar su propia
+      // revisión. Sólo el flujo administrativo de visibilidad puede hacerlo.
+      if (!userIsAdmin && existing.status === "review") updates.status = "review"
+      let changeType: BookChangeType = "update"
+      if (existing.status !== "published" && updates.status === "published") changeType = "publish"
+      if (existing.status === "published" && updates.status === "draft") changeType = "unpublish"
+      const updated = await storage.updateBook(id, updates, {
+        expectedRevision,
+        changedBy: req.isAuthenticated() ? (req.user as any).id : null,
+        changeType,
+      });
+      // Al confirmar una revisión canónica, el borrador cloud anterior deja de
+      // ser necesario. El cliente conserva su copia local hasta recibir éxito.
+      if (req.isAuthenticated()) {
+        await db.delete(bookDrafts).where(and(
+          eq(bookDrafts.bookId, id),
+          eq(bookDrafts.authorId, (req.user as any).id),
+        ))
+      }
       res.json(updated);
     } catch (err) {
+      if (err instanceof BookRevisionConflictError) {
+        return res.status(409).json({
+          message: "El manuscrito cambió en otra sesión. Conservamos tu borrador para que puedas compararlo.",
+          currentRevision: err.currentRevision,
+        })
+      }
       if (err instanceof z.ZodError) {
         return res.status(400).json({
           message: err.errors[0].message,
@@ -252,6 +302,140 @@ export async function registerRoutes(
       res.status(500).json({ message: "Failed to update book" });
     }
   });
+
+  // ── BORRADOR CLOUD DEL EDITOR NORMAL ───────────────────
+  app.get("/api/books/:id/draft", async (req, res) => {
+    try {
+      const id = Number(req.params.id)
+      const book = await storage.getBook(id)
+      if (!book) return res.status(404).json({ message: "Libro no encontrado" })
+      if (!canEditBook(req, book)) return res.status(403).json({ message: "No tienes permiso para editar este libro" })
+      const [draft] = await db.select().from(bookDrafts).where(eq(bookDrafts.bookId, id))
+      res.json({ draft: draft ?? null, currentRevision: book.revision })
+    } catch {
+      res.status(500).json({ message: "No se pudo cargar el borrador" })
+    }
+  })
+
+  app.put("/api/books/:id/draft", rateLimit(60_000, 30), async (req, res) => {
+    try {
+      const id = Number(req.params.id)
+      const parsed = cloudBookDraftSchema.parse(req.body)
+      const book = await storage.getBook(id)
+      if (!book) return res.status(404).json({ message: "Libro no encontrado" })
+      if (!canEditBook(req, book)) return res.status(403).json({ message: "No tienes permiso para editar este libro" })
+      if (parsed.baseRevision !== book.revision) {
+        return res.status(409).json({
+          message: "La obra cambió desde que comenzó este borrador.",
+          currentRevision: book.revision,
+        })
+      }
+      const userId = (req.user as any).id as number
+      const saved = await db.transaction(async tx => {
+        await tx.execute(sql`select pg_advisory_xact_lock(84673, ${id})`)
+        const [current] = await tx.select().from(bookDrafts).where(eq(bookDrafts.bookId, id))
+        const expected = parsed.expectedDraftRevision ?? current?.draftRevision ?? 0
+        if ((current?.draftRevision ?? 0) !== expected) {
+          return { conflict: current?.draftRevision ?? 0, draft: null }
+        }
+        const nextRevision = expected + 1
+        const [draft] = await tx.insert(bookDrafts).values({
+          bookId: id,
+          authorId: userId,
+          baseRevision: parsed.baseRevision,
+          draftRevision: nextRevision,
+          data: parsed.data as Record<string, unknown>,
+          updatedAt: new Date(),
+        }).onConflictDoUpdate({
+          target: bookDrafts.bookId,
+          set: {
+            authorId: userId,
+            baseRevision: parsed.baseRevision,
+            draftRevision: nextRevision,
+            data: parsed.data as Record<string, unknown>,
+            updatedAt: new Date(),
+          },
+        }).returning()
+        return { conflict: null, draft }
+      })
+      if (saved.conflict !== null) {
+        return res.status(409).json({
+          message: "Existe un borrador más reciente en otra sesión.",
+          currentDraftRevision: saved.conflict,
+        })
+      }
+      res.json({ draft: saved.draft })
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message })
+      res.status(500).json({ message: "No se pudo guardar el borrador" })
+    }
+  })
+
+  app.delete("/api/books/:id/draft", rateLimit(60_000, 30), async (req, res) => {
+    try {
+      const id = Number(req.params.id)
+      const book = await storage.getBook(id)
+      if (!book) return res.status(404).json({ message: "Libro no encontrado" })
+      if (!canEditBook(req, book)) return res.status(403).json({ message: "No tienes permiso para editar este libro" })
+      await db.delete(bookDrafts).where(eq(bookDrafts.bookId, id))
+      res.status(204).send()
+    } catch {
+      res.status(500).json({ message: "No se pudo eliminar el borrador" })
+    }
+  })
+
+  // ── HISTORIAL DE MANUSCRITOS ───────────────────────────
+  app.get("/api/books/:id/revisions", async (req, res) => {
+    try {
+      const id = Number(req.params.id)
+      const book = await storage.getBook(id)
+      if (!book) return res.status(404).json({ message: "Libro no encontrado" })
+      if (!canEditBook(req, book)) return res.status(403).json({ message: "No tienes permiso para ver el historial" })
+      const revisions = await db.select().from(bookRevisions)
+        .where(eq(bookRevisions.bookId, id))
+        .orderBy(desc(bookRevisions.revision))
+        .limit(50)
+      res.json({ currentRevision: book.revision, revisions })
+    } catch {
+      res.status(500).json({ message: "No se pudo cargar el historial" })
+    }
+  })
+
+  app.post("/api/books/:id/revisions/:revision/restore", rateLimit(60_000, 6), async (req, res) => {
+    try {
+      const id = Number(req.params.id)
+      const revision = Number(req.params.revision)
+      const parsed = restoreBookRevisionSchema.parse(req.body)
+      const book = await storage.getBook(id)
+      if (!book) return res.status(404).json({ message: "Libro no encontrado" })
+      if (!canEditBook(req, book)) return res.status(403).json({ message: "No tienes permiso para restaurar esta obra" })
+      const [historic] = await db.select().from(bookRevisions).where(and(
+        eq(bookRevisions.bookId, id), eq(bookRevisions.revision, revision),
+      ))
+      if (!historic) return res.status(404).json({ message: "Revisión no encontrada" })
+      const safeSnapshot: any = {}
+      for (const key of AUTHOR_BOOK_FIELDS) {
+        if ((historic.snapshot as any)?.[key] !== undefined) safeSnapshot[key] = (historic.snapshot as any)[key]
+      }
+      // Restaurar texto/diseño no debe publicar, retirar o reasignar la obra
+      // como efecto lateral. El autor visible de un clásico también se conserva.
+      safeSnapshot.status = book.status
+      if (!isAdmin(req.user)) safeSnapshot.author = (req.user as any)?.name || book.author
+      const restored = await storage.updateBook(id, safeSnapshot, {
+        expectedRevision: parsed.expectedRevision,
+        changedBy: (req.user as any).id,
+        changeType: "restore",
+      })
+      await db.delete(bookDrafts).where(eq(bookDrafts.bookId, id))
+      res.json(restored)
+    } catch (err) {
+      if (err instanceof BookRevisionConflictError) {
+        return res.status(409).json({ message: err.message, currentRevision: err.currentRevision })
+      }
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message })
+      res.status(500).json({ message: "No se pudo restaurar la revisión" })
+    }
+  })
 
   // ── DELETE /api/books/:id ─────────────────────────────
   app.delete(api.books.delete.path, rateLimit(60_000, 12), async (req, res) => {
@@ -276,7 +460,8 @@ export async function registerRoutes(
         return res.status(403).json({ message: "No tienes permiso para eliminar este libro" });
       }
 
-      await storage.deleteBook(id);
+      await storage.deleteBook(id, userId);
+      await db.delete(bookDrafts).where(eq(bookDrafts.bookId, id))
       res.status(204).send();
     } catch (err) {
       res.status(500).json({ message: "Failed to delete book" });
@@ -409,7 +594,9 @@ export async function registerRoutes(
       }
 
       const enabled = !!req.body?.enabled
-      const updated = await storage.updateBook(bookId, { commentsEnabled: enabled } as any)
+      const updated = await storage.updateBook(bookId, { commentsEnabled: enabled } as any, {
+        changedBy: (req.user as any).id,
+      })
       res.json({ commentsEnabled: updated.commentsEnabled })
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
@@ -583,7 +770,8 @@ export async function registerRoutes(
       const existing = await storage.getBook(id)
       if (!existing) return res.status(404).json({ message: "Libro no encontrado" })
 
-      await storage.deleteBook(id)
+      await storage.deleteBook(id, (req.user as any).id)
+      await db.delete(bookDrafts).where(eq(bookDrafts.bookId, id))
       res.status(204).send()
     } catch (err: any) {
       console.error("Admin delete error:", err)
@@ -617,7 +805,10 @@ export async function registerRoutes(
       const existing = await storage.getBook(id)
       if (!existing) return res.status(404).json({ message: "Libro no encontrado" })
 
-      const updated = await storage.updateBook(id, { status } as any)
+      const updated = await storage.updateBook(id, { status } as any, {
+        changedBy: (req.user as any).id,
+        changeType: status === "published" ? "publish" : "unpublish",
+      })
       res.json(updated)
     } catch (err: any) {
       console.error("Visibility error:", err)
@@ -940,6 +1131,7 @@ export async function registerRoutes(
           : null,
         progress: progress.map(p => ({
           bookId: p.bookId, chapter: p.chapter, maxChapter: p.maxChapter,
+          updatedAt: p.updatedAt,
         })),
       })
     } catch (err: any) {
@@ -974,7 +1166,7 @@ export async function registerRoutes(
     }
   })
 
-  // Subir el progreso de un libro (nunca retrocede: guarda el máximo)
+  // El capítulo actual puede retroceder; maxChapter conserva el avance máximo.
   app.put("/api/sync/progress", rateLimit(60_000, 60), async (req, res) => {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
@@ -1162,13 +1354,23 @@ export async function registerRoutes(
 
   // Asienta la ganancia del autor de una orden pagada (reparto según tipo de obra:
   // cuentos 50/50 · libros 90/10)
-  async function settleEarnings(order: { id: number; bookId: number; amountCents: number; currency: string }, shareOverride?: number, executor: any = db) {
-    const book = await storage.getBook(order.bookId)
-    if (!book?.authorId || order.amountCents <= 0) return
-    const share = shareOverride ?? (isStory(book) ? AUTHOR_SHARE_STORY : AUTHOR_SHARE_BOOK)
+  async function settleEarnings(order: {
+    id: number; bookId: number; amountCents: number; currency: string
+    authorUserId?: number | null; authorShareBps?: number | null
+  }, shareOverride?: number, executor: any = db) {
+    let authorUserId = order.authorUserId ?? null
+    let share = order.authorShareBps ? order.authorShareBps / 10_000 : shareOverride
+    // Compatibilidad exclusiva para órdenes anteriores a la instantánea.
+    if (!authorUserId || share === undefined) {
+      const legacyBook = await storage.getBook(order.bookId)
+      if (!legacyBook?.authorId) return
+      authorUserId = legacyBook.authorId
+      share = shareOverride ?? (isStory(legacyBook) ? AUTHOR_SHARE_STORY : AUTHOR_SHARE_BOOK)
+    }
+    if (order.amountCents <= 0) return
     const { authorCents, platformCents } = splitEarnings(order.amountCents, share)
     await executor.insert(authorEarnings).values({
-      authorUserId: book.authorId, orderId: order.id, bookId: order.bookId,
+      authorUserId, orderId: order.id, bookId: order.bookId,
       grossCents: order.amountCents, authorCents, platformCents,
       currency: order.currency,
     }).onConflictDoNothing()
@@ -1205,6 +1407,7 @@ export async function registerRoutes(
           const [order] = await tx.insert(tokenOrders).values({
             userId, bookId, kind, amountCents: price.cents, currency: price.currency,
             status: "pending", provider: "tinta",
+            ...economySnapshotForBook(book),
           }).returning()
           const r: any = await tx.execute(sql`
             insert into wallet_ledger (user_id, currency, delta, reason, ref_type, ref_id)
@@ -1254,6 +1457,7 @@ export async function registerRoutes(
           const [order] = await tx.insert(tokenOrders).values({
             userId, bookId, kind, amountCents: 0, currency: price.currency,
             status: "paid", provider: "beta", paidAt: new Date(),
+            ...economySnapshotForBook(book),
           }).returning()
           const issued = await issueTokenWith(tx, userId, bookId, kind as "support" | "sale")
           await tx.update(tokenOrders).set({ tokenId: issued.token.id })
@@ -1293,6 +1497,7 @@ export async function registerRoutes(
         const [order] = await tx.insert(tokenOrders).values({
           userId, bookId, kind, amountCents: price.cents, currency: price.currency,
           status: "pending", provider: "stripe",
+          ...economySnapshotForBook(book),
         }).returning()
         return { state: "created" as const, order }
       })
@@ -1344,7 +1549,7 @@ export async function registerRoutes(
         // tokens y monedero, y cruzarlos emitiría tokens equivocados.
         const orderId = Number(session.metadata?.orderId)
         if (!isNaN(orderId)) {
-          await db.transaction(async (tx) => {
+          const tokenOutcome = await db.transaction(async (tx) => {
             await tx.execute(sql`select pg_advisory_xact_lock(71001, ${orderId})`)
             const [order] = await tx.select().from(tokenOrders).where(eq(tokenOrders.id, orderId))
             const validPayment = order?.provider === "stripe"
@@ -1352,7 +1557,9 @@ export async function registerRoutes(
               && session.payment_status === "paid"
               && Number(session.amount_total) === order.amountCents
               && String(session.currency || "").toLowerCase() === order.currency.toLowerCase()
-            if (!order || order.status !== "pending" || !validPayment) return
+            if (!order || !validPayment) return { state: "ignored" as const }
+            if (order.status === "needs_refund") return { state: "refund" as const, orderId: order.id }
+            if (order.status !== "pending") return { state: "ignored" as const }
             await tx.execute(sql`select pg_advisory_xact_lock(${order.userId})`)
             if (order.kind === "support") {
               const [owned] = await tx.select().from(bookTokens).where(and(
@@ -1363,7 +1570,7 @@ export async function registerRoutes(
               if (owned) {
                 console.error(`Paid duplicate support order requires refund: ${order.id}`)
                 await tx.update(tokenOrders).set({ status: "needs_refund" }).where(eq(tokenOrders.id, order.id))
-                return
+                return { state: "refund" as const, orderId: order.id }
               }
             }
             const result = await issueTokenWith(tx, order.userId, order.bookId, order.kind as "support" | "sale")
@@ -1371,7 +1578,22 @@ export async function registerRoutes(
               .set({ status: "paid", paidAt: new Date(), tokenId: result.token.id })
               .where(and(eq(tokenOrders.id, orderId), eq(tokenOrders.status, "pending")))
             await settleEarnings(order, undefined, tx)
+            return { state: "paid" as const }
           })
+          if (tokenOutcome?.state === "refund") {
+            const paymentIntent = typeof session.payment_intent === "string"
+              ? session.payment_intent
+              : String(session.payment_intent?.id || "")
+            const refundRef = await refundStripePayment(paymentIntent, tokenOutcome.orderId)
+            await db.update(tokenOrders).set({
+              status: "refunded",
+              refundRef,
+              refundedAt: new Date(),
+            }).where(and(
+              eq(tokenOrders.id, tokenOutcome.orderId),
+              eq(tokenOrders.status, "needs_refund"),
+            ))
+          }
         }
         // ── Compra de TINTA: acreditar el monedero ──
         const walletOrderId = Number(session.metadata?.walletOrderId)
@@ -1493,6 +1715,70 @@ export async function registerRoutes(
       })
     } catch {
       res.status(500).json({ message: "No se pudo preparar la exportación" })
+    }
+  })
+
+  // Eliminación verificable: retira obras del catálogo y seudonimiza la cuenta.
+  // Los asientos económicos se conservan por integridad contable, sin PII.
+  app.delete("/api/account", rateLimit(60 * 60_000, 3), async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
+      if (req.body?.confirmation !== "ELIMINAR") {
+        return res.status(400).json({ message: "Escribe ELIMINAR para confirmar" })
+      }
+      const userId = (req.user as any).id as number
+      const tombstone = randomBytes(12).toString("hex")
+      await db.transaction(async tx => {
+        await tx.execute(sql`select pg_advisory_xact_lock(84673, ${userId})`)
+        const authored = await tx.select().from(books).where(eq(books.authorId, userId))
+        for (const book of authored) {
+          const [updated] = await tx.update(books).set({
+            status: "draft",
+            revision: sql`${books.revision} + 1`,
+            updatedAt: new Date(),
+          }).where(eq(books.id, book.id)).returning()
+          await tx.insert(bookRevisions).values({
+            bookId: updated.id,
+            revision: updated.revision,
+            snapshot: updated as unknown as Record<string, unknown>,
+            changeType: "unpublish",
+            createdBy: userId,
+          })
+        }
+        await tx.delete(bookDrafts).where(eq(bookDrafts.authorId, userId))
+        await tx.delete(savedBooks).where(eq(savedBooks.userId, userId))
+        await tx.delete(readingProgress).where(eq(readingProgress.userId, userId))
+        await tx.delete(userState).where(eq(userState.userId, userId))
+        await tx.update(comments).set({ userName: "Cuenta eliminada", userAvatar: "" }).where(eq(comments.userId, userId))
+        await tx.update(users).set({
+          googleId: `deleted:${userId}:${tombstone}`,
+          email: `deleted-${userId}-${tombstone}@tloque.invalid`,
+          name: "Cuenta eliminada",
+          avatar: "",
+          banner: "",
+          bio: "",
+          frame: "",
+          socialLinks: {},
+          customAvatar: false,
+          subscriptionPlan: "reader",
+          subscriptionStatus: "inactive",
+          subscriptionExpiresAt: null,
+          deletedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(users.id, userId))
+      })
+      // Revocar también otras sesiones del mismo usuario cuando la tabla ya
+      // fue creada por connect-pg-simple.
+      await db.execute(sql`delete from user_sessions where sess->'passport'->>'user' = ${String(userId)}`)
+        .catch(() => undefined)
+      req.logout(() => {
+        req.session.destroy(() => {
+          res.clearCookie("tloque.sid")
+          res.status(204).send()
+        })
+      })
+    } catch {
+      res.status(500).json({ message: "No se pudo eliminar la cuenta" })
     }
   })
 
@@ -2050,6 +2336,7 @@ export async function registerRoutes(
           userId, bookId: card.bookId!, kind: "card",
           amountCents: cost * TINTA_CENTS, currency: "mxn",
           status: "pending", provider: "tinta",
+          ...economySnapshotForBook(book, AUTHOR_SHARE_STORY),
         }).returning()
         const r: any = await tx.execute(sql`
           insert into wallet_ledger (user_id, currency, delta, reason, ref_type, ref_id)

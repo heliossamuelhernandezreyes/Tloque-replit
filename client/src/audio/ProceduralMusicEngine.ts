@@ -123,7 +123,7 @@ export class ProceduralMusicEngine {
     this.startRegion(region.regionId, false)
   }
   setNarrativeDirection(intensity: number, silence: boolean, seconds: number, regionId?: string) {
-    this.narrativeGain = silence ? 0.08 : 0.72 + Math.max(0, Math.min(0.8, intensity)) * 0.35
+    this.narrativeGain = silence ? 0 : 0.72 + Math.max(0, Math.min(0.8, intensity)) * 0.35
     this.transitionSeconds = Math.max(0.25, Math.min(30, seconds))
     this.output?.gain.rampTo(this.targetVolume(), Math.max(0.25, seconds))
     if (regionId) this.requestedRegionId = regionId

@@ -23,6 +23,7 @@ export const users = pgTable("users", {
   subscriptionPlan: text("subscription_plan").notNull().default("reader"),
   subscriptionStatus: text("subscription_status").notNull().default("inactive"),
   subscriptionExpiresAt: timestamp("subscription_expires_at"),
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
@@ -99,6 +100,9 @@ export const books = pgTable("books", {
   isAuthored:      boolean("is_authored").default(false).notNull(),
   // Interruptor maestro del autor: encender/apagar comentarios en su obra.
   commentsEnabled: boolean("comments_enabled").default(true).notNull(),
+  // Revisión canónica del manuscrito. Toda escritura del libro la incrementa
+  // y el cliente debe enviar expectedRevision para evitar last-write-wins.
+  revision:        integer("revision").default(1).notNull(),
   createdAt:       timestamp("created_at").defaultNow().notNull(),
   updatedAt:       timestamp("updated_at").defaultNow().notNull(),
 })
@@ -129,6 +133,33 @@ export type Book              = typeof books.$inferSelect
 export type InsertBook        = z.input<typeof insertBookSchema>
 export type CreateBookRequest = typeof books.$inferInsert
 export type UpdateBookRequest = Partial<CreateBookRequest>
+
+// ── HISTORIAL Y BORRADOR CLOUD DEL MANUSCRITO ────────────
+// El manuscrito sigue siendo propiedad del editor normal. Dirección avanzada
+// conserva sus sidecars separados y solo referencia una revisión publicada.
+export const bookRevisions = pgTable("book_revisions", {
+  id:         serial("id").primaryKey(),
+  bookId:     integer("book_id").references(() => books.id).notNull(),
+  revision:   integer("revision").notNull(),
+  snapshot:   jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+  changeType: text("change_type").notNull().default("update"),
+  createdBy:  integer("created_by").references(() => users.id),
+  createdAt:  timestamp("created_at").defaultNow().notNull(),
+}, table => ({
+  bookRevisionUnique: unique("book_revisions_book_revision_unique").on(table.bookId, table.revision),
+}))
+
+export const bookDrafts = pgTable("book_drafts", {
+  bookId:        integer("book_id").primaryKey().references(() => books.id),
+  authorId:      integer("author_id").references(() => users.id).notNull(),
+  baseRevision:  integer("base_revision").notNull(),
+  draftRevision: integer("draft_revision").notNull().default(1),
+  data:          jsonb("data").$type<Record<string, unknown>>().notNull(),
+  updatedAt:     timestamp("updated_at").defaultNow().notNull(),
+})
+
+export type BookRevision = typeof bookRevisions.$inferSelect
+export type BookDraft = typeof bookDrafts.$inferSelect
 
 // ── COMENTARIOS ────────────────────────────────────────────
 // Comentarios por libro y por capítulo. chapterIndex = -1 son
@@ -294,9 +325,17 @@ export const tokenOrders = pgTable("token_orders", {
   status:      text("status").default("pending").notNull(),// pending | paid | canceled
   provider:    text("provider").default("beta").notNull(), // beta | stripe
   providerRef: text("provider_ref").default(""),           // id de sesión de Stripe
+  refundRef:   text("refund_ref").default(""),
   tokenId:     integer("token_id"),                        // token emitido al pagar
+  // Instantánea económica: el webhook nunca recalcula el reparto usando una
+  // versión posterior del libro.
+  authorUserId: integer("author_user_id").references(() => users.id),
+  authorShareBps: integer("author_share_bps").default(0).notNull(),
+  bookTypeSnapshot: text("book_type_snapshot").default("").notNull(),
+  bookRevisionSnapshot: integer("book_revision_snapshot").default(1).notNull(),
   createdAt:   timestamp("created_at").defaultNow().notNull(),
   paidAt:      timestamp("paid_at"),
+  refundedAt:  timestamp("refunded_at"),
 })
 
 export const authorEarnings = pgTable("author_earnings", {

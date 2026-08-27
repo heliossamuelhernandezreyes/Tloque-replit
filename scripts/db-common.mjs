@@ -2,7 +2,7 @@ import pg from "pg"
 
 const { Pool } = pg
 
-export const RELEASE_ID = "tloque-replit-2026-08-15-hybrid-fonoteca"
+export const RELEASE_ID = "tloque-replit-2026-08-26-manuscript-integrity"
 
 export const BASE_TABLES = [
   "users",
@@ -39,6 +39,9 @@ export const EXPECTED_TABLES = [
   "audiobook_jobs",
   "chapter_audio_assignments",
   "direction_agent_runs",
+  "book_drafts",
+  "book_revisions",
+  "api_rate_limits",
   "experience_profiles",
   "narrative_projects",
   "notifications",
@@ -79,6 +82,9 @@ export const EXPECTED_INDEXES = [
   "direction_agent_runs_user_idx",
   "direction_agent_one_active_request_idx",
   "audio_assets_source_type_idx",
+  "book_drafts_author_updated_idx",
+  "book_revisions_book_created_idx",
+  "api_rate_limits_expires_idx",
 ]
 
 export function databaseUrl() {
@@ -285,13 +291,18 @@ export async function validateExpectedSchema(client) {
   }
 
   const requiredColumns = {
-    users: ["subscription_plan", "subscription_status", "subscription_expires_at"],
+    users: ["subscription_plan", "subscription_status", "subscription_expires_at", "deleted_at"],
     print_copies: ["sale_status", "sold_at", "sale_price_cents", "sale_channel", "sale_note", "updated_at"],
     audiobook_cache: ["cache_key", "storage_key", "status", "content_hash"],
     audiobook_jobs: ["request_key", "reserved_paper", "status", "content_hash"],
     notifications: ["user_id", "kind", "title", "body", "destination", "dedupe_key", "read_at"],
     advanced_direction_projects: ["book_id", "chapter_index", "revision", "content_hash", "data"],
     direction_agent_runs: ["request_key", "status", "maximum_paper", "reserved_paper", "proposal", "expires_at"],
+    books: ["revision", "updated_at"],
+    book_drafts: ["book_id", "author_id", "base_revision", "draft_revision", "data", "updated_at"],
+    book_revisions: ["book_id", "revision", "snapshot", "change_type", "created_by", "created_at"],
+    api_rate_limits: ["bucket_key", "window_start", "request_count", "expires_at"],
+    token_orders: ["author_user_id", "author_share_bps", "book_type_snapshot", "book_revision_snapshot", "refund_ref", "refunded_at"],
   }
   for (const [table, columns] of Object.entries(requiredColumns)) {
     for (const column of columns) {

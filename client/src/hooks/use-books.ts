@@ -8,6 +8,16 @@ const store = localforage.createInstance({
   storeName: "books"
 });
 
+export class BookConflictError extends Error {
+  constructor(
+    message: string,
+    public readonly currentRevision: number,
+  ) {
+    super(message)
+    this.name = "BookConflictError"
+  }
+}
+
 export function useBooks() {
   return useQuery({
     queryKey: [api.books.list.path],
@@ -28,6 +38,17 @@ export function useBooks() {
       }
     },
   });
+}
+
+export function useMyBooks() {
+  return useQuery({
+    queryKey: ["/api/books/mine"],
+    queryFn: async () => {
+      const response = await fetch("/api/books/mine", { credentials: "include" })
+      if (!response.ok) throw new Error("No se pudieron cargar tus obras")
+      return response.json() as Promise<any[]>
+    },
+  })
 }
 
 export function useBook(id: number | null) {
@@ -73,6 +94,7 @@ export function useCreateBook() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.books.list.path] });
+      queryClient.invalidateQueries({ queryKey: ["/api/books/mine"] });
     },
   });
 }
@@ -91,7 +113,14 @@ export function useUpdateBook() {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to update book");
+        const error = await res.json().catch(() => ({})) as { message?: string; currentRevision?: number }
+        if (res.status === 409 && Number.isInteger(error.currentRevision)) {
+          throw new BookConflictError(
+            error.message || "El manuscrito cambió en otra sesión",
+            Number(error.currentRevision),
+          )
+        }
+        throw new Error(error.message || "Failed to update book");
       }
 
       const updatedBook = await res.json();
@@ -102,6 +131,7 @@ export function useUpdateBook() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: [api.books.list.path] });
       queryClient.invalidateQueries({ queryKey: [api.books.get.path, variables.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/books/mine"] });
     },
   });
 }
@@ -122,6 +152,7 @@ export function useDeleteBook() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.books.list.path] });
+      queryClient.invalidateQueries({ queryKey: ["/api/books/mine"] });
     },
   });
 }

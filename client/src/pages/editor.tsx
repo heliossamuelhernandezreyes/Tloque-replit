@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useLocation } from "wouter"
 import { motion, AnimatePresence } from "framer-motion"
 import { useToast } from "@/hooks/use-toast"
-import { useCreateBook, useUpdateBook } from "@/hooks/use-books"
+import { BookConflictError, useCreateBook, useUpdateBook } from "@/hooks/use-books"
 import { useAuth } from "@/hooks/useAuth"
 import { useSettings } from "@/context/SettingsContext"
 import {
@@ -15,11 +15,12 @@ import ParallaxCover from "@/components/ParallaxCover"
 import { type CoverFxConfig } from "@/lib/cover-effects"
 import { LayerUpload } from "@/components/LayerUpload"
 import {
+  classifyDurableDraft,
   loadDurableEditorDraft,
   removeDurableEditorDraft,
   saveDurableEditorDraft,
 } from "@/lib/editor-drafts"
-import { buildDirectionWorkspaceUrl } from "@/lib/editor-workspace"
+import { buildDirectionWorkspaceUrl, isServerBookId } from "@/lib/editor-workspace"
 
 // ── TIPOS ────────────────────────────────────────────────
 type Chapter  = { title: string; content: string }
@@ -37,8 +38,15 @@ type BookForm = {
   premiumCoverUrl: string       // vestido premium — regalo para quienes apoyan
   premiumBackUrl:  string
   chapters:     Chapter[]
-  status:       "draft" | "published"
+  status:       "draft" | "published" | "review"
   spotifyLink:  string
+}
+
+type EditableBook = BookForm & {
+  id?: number
+  revision?: number
+  updatedAt?: string
+  localSavedAt?: number
 }
 
 const genres = [
@@ -293,6 +301,7 @@ export default function Editor() {
   const updateBook      = useUpdateBook()
   const autoSaveTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const durableSaveQueue = useRef<Promise<void>>(Promise.resolve())
+  const cloudDraftRevision = useRef(0)
 
   const [activeChapter, setActiveChapter] = useState(0)
   const [metaOpen,      setMetaOpen]      = useState(true)
@@ -309,7 +318,7 @@ export default function Editor() {
   const serverMetaRef = useRef<any>(null)
   useEffect(() => { serverMetaRef.current = serverMeta }, [serverMeta])
 
-  const [form, setForm] = useState<BookForm & { id?: number }>({
+  const [form, setForm] = useState<EditableBook>({
     title: "", author: "", synopsis: "",
     genre: "", type: "book", coverUrl: "",
     coverFx:      { mode: "simple", layers: {} },
@@ -340,67 +349,139 @@ export default function Editor() {
     const editId     = params.get("id")
     const editStatus = params.get("status") as "draft" | "published" | null
     const editSource = params.get("source")
-    const recoverDurableCopy = (id: string) => {
-      void loadDurableEditorDraft<BookForm & { id?: number }>(id)
-        .then(recovered => {
-          if (!recovered) return
-          setForm(recovered)
-          setManuscriptDirty(true)
-          setMetaOpen(false)
-          setSaveStatus("recovered")
-          setTimeout(() => setSaveStatus("idle"), 3500)
-        })
-        .catch(error => console.warn("No se pudo recuperar el borrador durable", error))
+    const configureCover = (book: EditableBook) => {
+      if (book.coverFx?.mode !== "layered") return
+      const layers = book.coverFx.layers || {}
+      if (layers.front) setCoverMode("triple")
+      else if (layers.mid) setCoverMode("double")
     }
-
-    // Carga desde el SERVIDOR — admin editando catálogo o clásicos
-    if (editSource === "server" && editId) {
-      (async () => {
-        try {
-          const res = await fetch(`/api/books/${editId}`, { credentials: "include" })
-          if (!res.ok) return
-          const b = await res.json()
-          setForm(b as any)
-          setManuscriptDirty(false)
-          setMetaOpen(false)
-          // Guardar la metadata original para preservarla al publicar
-          setServerMeta({
-            id:               b.id,
-            author:           b.author ?? "",
-            authorId:         b.authorId ?? null,
-            isClassic:        !!b.isClassic,
-            isAuthored:       !!b.isAuthored,
-            status:           b.status || "published",
-            originalLanguage: b.originalLanguage || "",
-            gutenbergId:      b.gutenbergId ?? null,
-            publicationYear:  b.publicationYear ?? null,
+    const recoverCopies = async (id: string, canonical: EditableBook | null) => {
+      try {
+        const candidates: Array<{
+          label: "local" | "cloud"
+          savedAt: number
+          value: EditableBook
+          decision: ReturnType<typeof classifyDurableDraft>
+        }> = []
+        const durable = await loadDurableEditorDraft<EditableBook>(id)
+        if (durable) {
+          candidates.push({
+            label: "local",
+            savedAt: durable.savedAt,
+            value: durable.value,
+            decision: canonical
+              ? classifyDurableDraft(durable, {
+                  value: canonical,
+                  revision: canonical.revision,
+                  updatedAt: canonical.updatedAt,
+                })
+              : "recover",
           })
-          if (b.coverFx?.mode === "layered") {
-            const layers = b.coverFx.layers || {}
-            if (layers.front) setCoverMode("triple")
-            else if (layers.mid) setCoverMode("double")
+        }
+        if (canonical && isServerBookId(Number(id))) {
+          const response = await fetch(`/api/books/${id}/draft`, { credentials: "include" })
+          if (response.ok) {
+            const payload = await response.json()
+            if (payload.draft) {
+              cloudDraftRevision.current = payload.draft.draftRevision ?? 0
+              const cloudEnvelope = {
+                schemaVersion: 2 as const,
+                savedAt: Date.parse(payload.draft.updatedAt) || 0,
+                baseRevision: payload.draft.baseRevision ?? null,
+                baseUpdatedAt: canonical.updatedAt ?? null,
+                contentHash: "cloud",
+                value: payload.draft.data as EditableBook,
+              }
+              // Un hash deliberadamente distinto obliga a clasificar por
+              // revisión/fecha; el servidor ya validó y normalizó el JSON.
+              candidates.push({
+                label: "cloud",
+                savedAt: cloudEnvelope.savedAt,
+                value: cloudEnvelope.value,
+                decision: cloudEnvelope.baseRevision < (canonical.revision ?? 1)
+                  ? "stale"
+                  : "recover",
+              })
+            }
           }
-          recoverDurableCopy(editId)
-        } catch { /* sin conexión: no carga */ }
-      })()
-      return
+        }
+        const useful = candidates
+          .filter(candidate => candidate.decision !== "same")
+          .sort((a, b) => b.savedAt - a.savedAt)
+        const candidate = useful[0]
+        if (!candidate) return
+        const when = candidate.savedAt
+          ? new Date(candidate.savedAt).toLocaleString()
+          : "fecha desconocida"
+        const stale = candidate.decision === "stale"
+        const accept = window.confirm(stale
+          ? `Hay una copia ${candidate.label === "cloud" ? "en la nube" : "local"} anterior a la revisión actual (${when}). No se aplicará automáticamente. ¿Quieres recuperarla como borrador para compararla?`
+          : `Hay una copia de recuperación ${candidate.label === "cloud" ? "en la nube" : "local"} con cambios (${when}). ¿Quieres continuar desde esa copia?`)
+        if (!accept) return
+        setForm({
+          ...(canonical ?? candidate.value),
+          ...candidate.value,
+          id: canonical?.id ?? candidate.value.id,
+          revision: canonical?.revision ?? candidate.value.revision,
+          updatedAt: canonical?.updatedAt ?? candidate.value.updatedAt,
+          status: canonical?.status ?? candidate.value.status ?? "draft",
+        })
+        setManuscriptDirty(true)
+        setMetaOpen(false)
+        setSaveStatus("recovered")
+        setTimeout(() => setSaveStatus("idle"), 3500)
+      } catch (error) {
+        console.warn("No se pudieron comparar las copias de recuperación", error)
+      }
     }
 
-    if (!editId || !editStatus) return
+    if (!editId) return
     const source = editStatus === "draft" ? STORAGE_DRAFTS : STORAGE_PUBLISHED
-    const found  = loadAll(source).find((b: any) => String(b.id) === editId)
+    const found = loadAll(source).find((b: any) => String(b.id) === editId) as EditableBook | undefined
     if (found) {
       setForm(found)
       setManuscriptDirty(false)
       setMetaOpen(false)
-      // Detectar modo de portada actual
-      if (found.coverFx?.mode === "layered") {
-        const layers = found.coverFx.layers || {}
-        if (layers.front) setCoverMode("triple")
-        else if (layers.mid) setCoverMode("double")
-      }
+      configureCover(found)
     }
-    recoverDurableCopy(editId)
+
+    if (!isServerBookId(Number(editId))) {
+      void recoverCopies(editId, found ?? null)
+      return
+    }
+
+    // Para toda obra persistida, el servidor es canónico. La copia local solo
+    // se propone después de comparar revisión y fecha.
+    void (async () => {
+      try {
+        const res = await fetch(`/api/books/${editId}`, { credentials: "include" })
+        if (!res.ok) {
+          await recoverCopies(editId, found ?? null)
+          return
+        }
+        const book = await res.json() as EditableBook & Record<string, any>
+        setForm(book)
+        setManuscriptDirty(false)
+        setMetaOpen(false)
+        configureCover(book)
+        if (editSource === "server") {
+          setServerMeta({
+            id: book.id,
+            author: book.author ?? "",
+            authorId: book.authorId ?? null,
+            isClassic: !!book.isClassic,
+            isAuthored: !!book.isAuthored,
+            status: book.status || "published",
+            originalLanguage: book.originalLanguage || "",
+            gutenbergId: book.gutenbergId ?? null,
+            publicationYear: book.publicationYear ?? null,
+          })
+        }
+        await recoverCopies(editId, book)
+      } catch {
+        await recoverCopies(editId, found ?? null)
+      }
+    })()
   }, [])
 
   function update<K extends keyof BookForm>(key: K, value: BookForm[K]) {
@@ -419,6 +500,29 @@ export default function Editor() {
     triggerAutoSave()
   }
 
+  async function saveCloudDraft(currentForm: EditableBook): Promise<void> {
+    if (!isServerBookId(currentForm.id) || !Number.isInteger(currentForm.revision)) return
+    const response = await fetch(`/api/books/${currentForm.id}/draft`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        baseRevision: currentForm.revision,
+        expectedDraftRevision: cloudDraftRevision.current,
+        data: currentForm,
+      }),
+    })
+    const payload = await response.json().catch(() => ({}))
+    if (response.status === 409) {
+      throw new BookConflictError(
+        payload.message || "Existe una copia más reciente del manuscrito.",
+        Number(payload.currentRevision ?? currentForm.revision),
+      )
+    }
+    if (!response.ok) throw new Error(payload.message || "No se pudo sincronizar el borrador")
+    cloudDraftRevision.current = payload.draft?.draftRevision ?? cloudDraftRevision.current
+  }
+
   // ── AUTOGUARDADO ─────────────────────────────────────
   const triggerAutoSave = useCallback(() => {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
@@ -431,17 +535,18 @@ export default function Editor() {
     }, 2000)
   }, [])
 
-  function doSaveDraft(currentForm: BookForm & { id?: number }, isAuto = false) {
+  function doSaveDraft(currentForm: EditableBook, isAuto = false) {
     // Las obras de servidor no se duplican en localStorage porque pueden ser
     // enormes. Sí reciben una copia durable en IndexedDB para recuperación.
-    if (serverMetaRef.current) {
+    if (isServerBookId(currentForm.id)) {
       if (!currentForm.id) return
       setSaveStatus("saving")
       const durableSave = durableSaveQueue.current
         .catch(() => undefined)
         .then(() => saveDurableEditorDraft(currentForm.id!, currentForm))
       durableSaveQueue.current = durableSave
-      void durableSave.then(() => {
+      void durableSave.then(async () => {
+        await saveCloudDraft(currentForm)
         setSaveStatus("saved")
         if (!isAuto) toast({ title: "Copia de recuperación guardada ✓" })
         setTimeout(() => setSaveStatus("idle"), 2500)
@@ -455,7 +560,7 @@ export default function Editor() {
     setSaveStatus("saving")
     try {
       const id   = currentForm.id || Date.now()
-      const book = { ...currentForm, id, status: "draft" as const }
+      const book = { ...currentForm, id, status: "draft" as const, localSavedAt: Date.now() }
       const drafts = loadAll(STORAGE_DRAFTS)
       const existingDraft = drafts.some((draft: any) => draft.id === id)
       const fallbackSaved = saveAll(STORAGE_DRAFTS,
@@ -469,17 +574,24 @@ export default function Editor() {
         .catch(() => undefined)
         .then(() => saveDurableEditorDraft(id, book))
       durableSaveQueue.current = durableSave
-      void durableSave.then(() => {
+      void durableSave.then(async () => {
+        await saveCloudDraft(book)
         setSaveStatus("saved")
         if (!isAuto) toast({ title: "Borrador guardado ✓" })
         setTimeout(() => setSaveStatus("idle"), 2500)
       }).catch(error => {
         console.warn("No se pudo crear la copia durable del manuscrito", error)
-        if (fallbackSaved) {
+        if (fallbackSaved && !isServerBookId(id)) {
           setSaveStatus("saved")
           if (!isAuto) toast({ title: "Borrador guardado localmente" })
           setTimeout(() => setSaveStatus("idle"), 2500)
           return
+        }
+        if (error instanceof BookConflictError) {
+          toast({
+            title: "Conflicto de edición",
+            description: "Hay una copia más reciente en otra sesión. Tu borrador local sigue intacto.",
+          })
         }
         setSaveStatus("error")
         setTimeout(() => setSaveStatus("idle"), 3000)
@@ -563,7 +675,7 @@ export default function Editor() {
         synopsis:     form.synopsis,
         genre:        form.genre,
         type:         form.type,
-        status:       (serverMeta ? serverMeta.status : "published") as any,
+        status:       (serverMeta?.status === "review" ? "review" : "published") as any,
         chapters:     form.chapters,
         coverUrl:     form.coverUrl || "",
         coverFx:      finalCoverFx,
@@ -583,13 +695,18 @@ export default function Editor() {
       }
 
       let serverId: number | undefined
+      let serverBook: any
 
-      if (localId && localId < 1_000_000_000_000) {
-        await updateBook.mutateAsync({ id: localId, ...serverPayload })
+      if (isServerBookId(localId)) {
+        serverBook = await updateBook.mutateAsync({
+          id: localId,
+          ...serverPayload,
+          ...(Number.isInteger(form.revision) ? { expectedRevision: form.revision } : {}),
+        })
         serverId = localId
       } else {
-        const created = await createBook.mutateAsync(serverPayload)
-        serverId = created.id
+        serverBook = await createBook.mutateAsync(serverPayload)
+        serverId = serverBook.id
       }
 
       // Edición de servidor (admin/clásico): NO se guarda en la lista local
@@ -609,58 +726,102 @@ export default function Editor() {
       }
 
       const finalId = serverId || localId || Date.now()
-      const book    = { ...form, id: finalId, status: "published" as const, coverFx: finalCoverFx }
+      const finalStatus = serverBook?.status === "review" ? "review" : "published"
+      const book = {
+        ...form,
+        ...serverBook,
+        id: finalId,
+        status: finalStatus,
+        coverFx: finalCoverFx,
+        localSavedAt: Date.now(),
+      }
       saveAll(STORAGE_DRAFTS, loadAll(STORAGE_DRAFTS).filter((b: any) => b.id !== localId))
-      const pub = loadAll(STORAGE_PUBLISHED)
-      saveAll(STORAGE_PUBLISHED,
-        pub.find((b: any) => b.id === localId || b.id === finalId)
-          ? pub.map((b: any) => (b.id === localId || b.id === finalId) ? book : b)
-          : [...pub, book]
-      )
-      setForm(f => ({ ...f, id: finalId }))
+      saveAll(STORAGE_PUBLISHED, loadAll(STORAGE_PUBLISHED).filter((b: any) => b.id !== localId && b.id !== finalId))
+      const destination = finalStatus === "published" ? STORAGE_PUBLISHED : STORAGE_DRAFTS
+      const current = loadAll(destination)
+      saveAll(destination, current.some((b: any) => b.id === localId || b.id === finalId)
+        ? current.map((b: any) => (b.id === localId || b.id === finalId) ? book : b)
+        : [...current, book])
+      setForm(book)
       setManuscriptDirty(false)
       if (localId) void removeDurableEditorDraft(localId).catch(() => undefined)
       setSaveStatus("saved")
-      toast({ title: "¡Historia publicada! ✦", description: "Ya visible para todos los lectores." })
+      toast(finalStatus === "review"
+        ? { title: "Correcciones guardadas", description: "La obra permanece en revisión hasta que administración la restaure." }
+        : { title: "¡Historia publicada! ✦", description: "Ya visible para todos los lectores." })
       setLocation("/library")
     } catch (err) {
       setSaveStatus("error")
+      if (err instanceof BookConflictError) {
+        void saveDurableEditorDraft(form.id ?? Date.now(), form).catch(() => undefined)
+        toast({
+          title: "La obra cambió en otra sesión",
+          description: `El servidor está en la revisión ${err.currentRevision}. Tu versión se conservó como borrador y no se publicó encima.`,
+        })
+        return
+      }
       // Para libros de servidor (clásicos/admin), no intentamos guardar en
       // memoria local (son enormes). Solo avisamos del fallo de conexión.
       if (serverMeta) {
         toast({ title: "No se pudo guardar", description: "Revisa tu conexión e inténtalo de nuevo." })
         return
       }
-      const id   = (form as any).id || Date.now()
-      const book = { ...form, id, status: "published" as const }
-      saveAll(STORAGE_DRAFTS, loadAll(STORAGE_DRAFTS).filter((b: any) => b.id !== id))
-      const pub = loadAll(STORAGE_PUBLISHED)
-      saveAll(STORAGE_PUBLISHED,
-        pub.find((b: any) => b.id === id)
-          ? pub.map((b: any) => b.id === id ? book : b)
-          : [...pub, book]
-      )
-      toast({ title: "Guardado localmente", description: "Sin conexión al servidor." })
-      setLocation("/library")
+      const id = form.id || Date.now()
+      const book = { ...form, id, status: "draft" as const, localSavedAt: Date.now() }
+      void saveDurableEditorDraft(id, book).catch(() => undefined)
+      if (!isServerBookId(id)) {
+        const drafts = loadAll(STORAGE_DRAFTS)
+        saveAll(STORAGE_DRAFTS,
+          drafts.some((entry: any) => entry.id === id)
+            ? drafts.map((entry: any) => entry.id === id ? book : entry)
+            : [...drafts, book],
+        )
+      }
+      toast({
+        title: "No se publicó",
+        description: "La copia quedó como borrador local. Revisa la conexión e inténtalo nuevamente.",
+      })
     }
   }
 
-  function unpublish() {
-    const id = (form as any).id
+  async function unpublish() {
+    const id = form.id
     if (!id) return
-    const book = { ...form, id, status: "draft" as const }
-    saveAll(STORAGE_PUBLISHED, loadAll(STORAGE_PUBLISHED).filter((b: any) => b.id !== id))
-    const drafts = loadAll(STORAGE_DRAFTS)
-    saveAll(STORAGE_DRAFTS,
-      drafts.find((b: any) => b.id === id)
-        ? drafts.map((b: any) => b.id === id ? book : b)
-        : [...drafts, book]
-    )
-    void saveDurableEditorDraft(id, book).catch(error => {
-      console.warn("No se pudo conservar la copia durable al despublicar", error)
-    })
-    toast({ title: "Historia despublicada" })
-    setLocation("/library")
+    setSaveStatus("saving")
+    try {
+      let canonical: EditableBook = { ...form, status: "draft" }
+      if (isServerBookId(id)) {
+        canonical = await updateBook.mutateAsync({
+          id,
+          status: "draft",
+          ...(Number.isInteger(form.revision) ? { expectedRevision: form.revision } : {}),
+        }) as EditableBook
+      }
+      const book = { ...canonical, id, status: "draft" as const, localSavedAt: Date.now() }
+      if (!serverMeta) {
+        saveAll(STORAGE_PUBLISHED, loadAll(STORAGE_PUBLISHED).filter((entry: any) => entry.id !== id))
+        const drafts = loadAll(STORAGE_DRAFTS)
+        saveAll(STORAGE_DRAFTS,
+          drafts.some((entry: any) => entry.id === id)
+            ? drafts.map((entry: any) => entry.id === id ? book : entry)
+            : [...drafts, book],
+        )
+        await saveDurableEditorDraft(id, book)
+      }
+      setForm(book)
+      setManuscriptDirty(false)
+      setSaveStatus("saved")
+      toast({ title: "Historia despublicada", description: "Ya no aparece en el catálogo público." })
+      setLocation("/library")
+    } catch (error) {
+      setSaveStatus("error")
+      toast({
+        title: "No se pudo despublicar",
+        description: error instanceof BookConflictError
+          ? "La obra cambió en otra sesión. Recarga antes de intentarlo de nuevo."
+          : "El servidor no confirmó el cambio; la obra sigue publicada.",
+      })
+    }
   }
 
   function addChapter() {

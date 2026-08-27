@@ -13,6 +13,11 @@ import {
   musicBrainScoreForProceduralRecipe,
   notesForMusicBrainRegion,
 } from "../shared/music-brain.ts"
+import {
+  MUSIC_BRAIN_RENDERER_VERSION,
+  renderMusicBrainRegion,
+} from "../shared/music-brain-renderer.ts"
+import { TLOQUE_SCORE_COMPILER_V2, linearScoreRecipeV2Schema } from "../shared/tloque-score-v2.ts"
 
 function directionFixture() {
   return advancedDirectionProjectSchema.parse({
@@ -164,4 +169,36 @@ test("las recetas procedurales existentes pasan por el nuevo compilador", () => 
   assert.equal(compilation.plan.regions[0].mode, "dorian")
   assert.equal(compilation.plan.regions[0].bpm, 58)
   assert.ok(notesForMusicBrainRegion(compilation.timeline, "legacy-cue").length > 0)
+})
+
+test("Music Brain llega de forma determinista al renderer TloqueScore 2.2", () => {
+  const score = musicBrainScoreForDirection(directionFixture(), 441)
+  const first = renderMusicBrainRegion(score, "encuentro")
+  const second = renderMusicBrainRegion(score, "encuentro")
+  assert.deepEqual(first, second)
+  assert.equal(first.rendererVersion, MUSIC_BRAIN_RENDERER_VERSION)
+  assert.equal(first.ruleVersion, score.ruleVersion)
+  assert.equal(first.knowledgeVersion, score.knowledgeVersion)
+  assert.equal(first.contentMode, MUSIC_BRAIN_CONTENT_MODE)
+  assert.equal(first.regionId, "encuentro")
+  assert.equal(first.silence, false)
+  assert.ok(first.recipe)
+  assert.equal(linearScoreRecipeV2Schema.safeParse(first.recipe).success, true)
+  assert.equal(first.recipe?.plan.compilerVersion, TLOQUE_SCORE_COMPILER_V2)
+  assert.equal(first.recipe?.plan.moduleId, "native-auto")
+  assert.equal(first.recipe?.plan.quality, "studio")
+  assert.equal(first.recipe?.plan.loop, true)
+  assert.deepEqual(first.recipe?.plan.tracks.map(track => track.id), ["foundation", "motion", "leitmotif"])
+  assert.ok(first.recipe?.plan.events.every(event => event.velocity <= 0.42))
+  assert.ok(first.recipe?.source.includes("content=instrumental_only"))
+})
+
+test("una región de silencio no inventa eventos para satisfacer al renderer", () => {
+  const rendered = renderMusicBrainRegion(
+    musicBrainScoreForDirection(directionFixture(), 442),
+    "quietud",
+  )
+  assert.equal(rendered.regionId, "quietud")
+  assert.equal(rendered.silence, true)
+  assert.equal(rendered.recipe, null)
 })

@@ -1,12 +1,8 @@
 # Tloque
 
 Tloque es una plataforma de lectura y publicación digital con biblioteca,
-lector, TTS, funcionamiento offline, comunidad, Fonoteca, cartas coleccionables,
+lector, TTS, lectura guardada sin conexión, comunidad, Fonoteca, cartas coleccionables,
 marcos y herramientas creativas.
-
-Este repositorio parte del baseline recibido el 8 de agosto de 2026. Los ZIP y
-sus hashes se conservan en `archive/` y `checksums/`; `BASELINE_AUDIT.md`
-documenta el estado anterior a las reparaciones.
 
 ## Requisitos
 
@@ -25,27 +21,18 @@ npm run dev
 
 Drizzle usa las variables del entorno actual; carga `.env` con el mecanismo de
 tu plataforma o tu shell antes de ejecutar los comandos. Para actualizar una
-base existente, haz una copia de seguridad y aplica también:
+base existente, crea primero un respaldo recuperable y ejecuta el migrador
+versionado e idempotente:
 
 ```bash
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f migrations/0001_fonoteca_and_hardening.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f migrations/0002_paper_usage.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f migrations/0003_adaptive_fonoteca.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f migrations/0004_speech_and_audiobook_cache.sql
+npm run db:preflight
+npm run db:migrate
 ```
 
-La primera migración agrega la Fonoteca, endurece la unicidad de compras y
-asegura el borrado en cascada de copias de cartas. La segunda crea el registro
-auditable de consumo de Papel. La tercera agrega planes de suscripción,
-partituras por capas, proyectos narrativos laterales y perfiles compactos para
-el lector. La cuarta agrega dirección de voz, estado real de suscripción,
-trabajos con reserva de Papel y caché privada de audiolibros. Si detectan datos
-históricos inconsistentes, debe corregirse ese dato
-antes de reintentarlas; no lo eliminan a escondidas.
+El migrador aplica en orden `0001`–`0012`, verifica checksums y valida la
+estructura antes del commit. `0012` agrega revisiones del manuscrito, historial
+y borrador cloud. Si el preflight detecta datos históricos inconsistentes,
+debe corregirse el dato antes de reintentar; no se elimina a escondidas.
 
 ## Comandos
 

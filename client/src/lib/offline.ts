@@ -25,12 +25,17 @@ export function slimBook(book: any): any {
 
 // Guarda el contenido pesado de un libro (para leer sin conexión).
 export async function saveOfflineContent(id: string | number, book: any): Promise<void> {
-  try {
-    await store.setItem(key(id), {
-      chapters: book?.chapters ?? null,
-      content:  book?.content  ?? null,
-    })
-  } catch { /* sin espacio o error: no romper el flujo */ }
+  await store.setItem(key(id), {
+    chapters: book?.chapters ?? null,
+    content:  book?.content  ?? null,
+    savedAt: Date.now(),
+  })
+  // Verificación posterior: algunos motores de almacenamiento pueden resolver
+  // sin persistir cuando la cuota cambia durante la escritura.
+  const confirmed = await store.getItem<any>(key(id))
+  if (!confirmed || (!Array.isArray(confirmed.chapters) && confirmed.content == null)) {
+    throw new Error("No se pudo verificar el contenido offline")
+  }
 }
 
 export async function getOfflineContent(id: string | number): Promise<{ chapters: any; content: any } | null> {

@@ -367,7 +367,7 @@ export default function Reader() {
     window.speechSynthesis.speak(utterance)
   }
 
-  function toggleSave() {
+  async function toggleSave() {
     const currentBook = apiBook || localBook
     if (!currentBook || isMine) return
     let saved = JSON.parse(localStorage.getItem("novareads_saved") || "[]")
@@ -375,7 +375,7 @@ export default function Reader() {
       saved = saved.filter((b: any) => String(b.id) !== String(bookId))
       localStorage.setItem("novareads_saved", JSON.stringify(saved))
       setIsSaved(false)
-      removeOfflineContent(bookId!)
+      void removeOfflineContent(bookId!)
       if (numericBookId !== null) pushUnsaveBook(numericBookId)
       toast({ title: t("removedFromReadings") })
     } else {
@@ -386,9 +386,18 @@ export default function Reader() {
           return
         }
       }
-      saved.push({ ...slimBook(currentBook), isSaved: true })
-      localStorage.setItem("novareads_saved", JSON.stringify(saved))
-      saveOfflineContent(bookId!, currentBook)   // contenido pesado → IndexedDB
+      try {
+        await saveOfflineContent(bookId!, currentBook)
+        saved.push({ ...slimBook(currentBook), isSaved: true })
+        localStorage.setItem("novareads_saved", JSON.stringify(saved))
+      } catch {
+        await removeOfflineContent(bookId!)
+        toast({
+          title: "No se pudo guardar offline",
+          description: "Libera espacio del dispositivo y vuelve a intentarlo.",
+        })
+        return
+      }
       setIsSaved(true)
       if (numericBookId !== null) pushSaveBook(numericBookId)
       toast({ title: t("tomeClaimed"), description: t("savedOffline") })
@@ -726,11 +735,10 @@ export default function Reader() {
               </motion.div>
             )}
 
-            {/* TEXTO — aplica preferencias + protección para autores independientes */}
+            {/* TEXTO — seleccionable para diccionario, accesibilidad y traducción. */}
             <div
               ref={directedTextRef}
               className="font-serif"
-              onContextMenu={book?.isClassic ? undefined : (e) => e.preventDefault()}
               onDoubleClick={(e) => {
                 const sel = window.getSelection()?.toString().trim()
                 if (sel && sel.split(" ").length <= 3) {
@@ -753,8 +761,8 @@ export default function Reader() {
                 letterSpacing: "0.012em",
                 color:         textColor,
                 transition:    "font-size 0.3s ease, line-height 0.3s ease, color 0.5s ease",
-                userSelect:    book?.isClassic ? "text" : "none",
-                WebkitUserSelect: book?.isClassic ? "text" : "none",
+                userSelect:    "text",
+                WebkitUserSelect: "text",
               }}
             >
               {narrativeParagraphsFor(String(cap.content || "")).map((paragraph, index) => (
