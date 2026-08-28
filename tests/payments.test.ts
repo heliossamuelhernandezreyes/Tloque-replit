@@ -2,8 +2,8 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { createHmac } from "node:crypto"
 import {
-  AUTHOR_SHARE_BOOK, AUTHOR_SHARE_STORY, betaPaymentsEnabled, priceFor,
-  splitEarnings, stripeEnabled, stripeForm, TINTA_PACKS, verifyStripeWebhook,
+  AUTHOR_SHARE_BOOK, AUTHOR_SHARE_STORY, betaPaymentsEnabled, economySnapshotForBook, priceFor,
+  refundStripePayment, splitEarnings, stripeEnabled, stripeForm, TINTA_PACKS, verifyStripeWebhook,
 } from "../server/payments"
 
 test("preserva precios y reparto económico actuales", () => {
@@ -51,11 +51,15 @@ test("el modo beta exige autorización explícita en cualquier entorno", () => {
   }
 })
 
-test("Stripe exige secreto de webhook antes de cobrar en cualquier entorno", () => {
+test("Stripe exige webhook, monetización y retiros listos antes de cobrar", () => {
   const previous = {
     nodeEnv: process.env.NODE_ENV,
     stripe: process.env.STRIPE_SECRET_KEY,
     webhook: process.env.STRIPE_WEBHOOK_SECRET,
+    connectWebhook: process.env.STRIPE_CONNECT_WEBHOOK_SECRET,
+    connectEnabled: process.env.STRIPE_CONNECT_ENABLED,
+    monetization: process.env.MONETIZATION_ENABLED,
+    payouts: process.env.PAYOUTS_READY,
   }
   try {
     process.env.NODE_ENV = "production"
@@ -63,6 +67,14 @@ test("Stripe exige secreto de webhook antes de cobrar en cualquier entorno", () 
     delete process.env.STRIPE_WEBHOOK_SECRET
     assert.equal(stripeEnabled(), false)
     process.env.STRIPE_WEBHOOK_SECRET = "whsec_configured"
+    process.env.STRIPE_CONNECT_WEBHOOK_SECRET = "whsec_connect_configured"
+    process.env.STRIPE_CONNECT_ENABLED = "true"
+    delete process.env.MONETIZATION_ENABLED
+    delete process.env.PAYOUTS_READY
+    assert.equal(stripeEnabled(), false)
+    process.env.MONETIZATION_ENABLED = "true"
+    assert.equal(stripeEnabled(), false)
+    process.env.PAYOUTS_READY = "true"
     assert.equal(stripeEnabled(), true)
     process.env.NODE_ENV = "development"
     delete process.env.STRIPE_WEBHOOK_SECRET
@@ -72,6 +84,10 @@ test("Stripe exige secreto de webhook antes de cobrar en cualquier entorno", () 
       ["NODE_ENV", previous.nodeEnv],
       ["STRIPE_SECRET_KEY", previous.stripe],
       ["STRIPE_WEBHOOK_SECRET", previous.webhook],
+      ["STRIPE_CONNECT_WEBHOOK_SECRET", previous.connectWebhook],
+      ["STRIPE_CONNECT_ENABLED", previous.connectEnabled],
+      ["MONETIZATION_ENABLED", previous.monetization],
+      ["PAYOUTS_READY", previous.payouts],
     ] as const) {
       if (value === undefined) delete process.env[key]
       else process.env[key] = value
@@ -79,10 +95,55 @@ test("Stripe exige secreto de webhook antes de cobrar en cualquier entorno", () 
   }
 })
 
+test("la orden congela autor, reparto, tipo y revisión de la obra", () => {
+  const book = { authorId: 8, type: "story", revision: 4, chapters: [{}] }
+  const snapshot = economySnapshotForBook(book)
+  book.authorId = 99
+  book.type = "book"
+  book.revision = 12
+  book.chapters.push({})
+  assert.deepEqual(snapshot, {
+    authorUserId: 8,
+    authorShareBps: 5_000,
+    bookTypeSnapshot: "story",
+    bookRevisionSnapshot: 4,
+  })
+})
+
+test("el reembolso Stripe es idempotente y exige un PaymentIntent real", async () => {
+  const previousFetch = globalThis.fetch
+  const previousSecret = process.env.STRIPE_SECRET_KEY
+  let request: { input: string; init?: RequestInit } | null = null
+  process.env.STRIPE_SECRET_KEY = "sk_test_refund"
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    request = { input: String(input), init }
+    return new Response(JSON.stringify({ id: "re_test_1" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })
+  }) as typeof fetch
+  try {
+    await assert.rejects(() => refundStripePayment("checkout_session", 42), /Payment intent inválido/i)
+    assert.equal(await refundStripePayment("pi_valid_123", 42), "re_test_1")
+    assert.equal(request?.input, "https://api.stripe.com/v1/refunds")
+    assert.equal(new Headers(request?.init?.headers).get("Idempotency-Key"), "tloque-token-refund-42")
+    assert.match(String(request?.init?.body), /payment_intent=pi_valid_123/)
+  } finally {
+    globalThis.fetch = previousFetch
+    if (previousSecret === undefined) delete process.env.STRIPE_SECRET_KEY
+    else process.env.STRIPE_SECRET_KEY = previousSecret
+  }
+})
+
 test("codifica estructuras anidadas para Stripe", () => {
-  const encoded = stripeForm({ mode: "payment", line_items: [{ quantity: 1 }] }).join("&")
+  const encoded = stripeForm({
+    mode: "payment",
+    line_items: [{ quantity: 1 }],
+    payment_intent_data: { metadata: { orderId: "42" } },
+  }).join("&")
   assert.match(encoded, /mode=payment/)
   assert.match(encoded, /line_items%5B0%5D%5Bquantity%5D=1/)
+  assert.match(encoded, /payment_intent_data%5Bmetadata%5D%5BorderId%5D=42/)
 })
 
 test("verifica firma y ventana anti-replay del webhook", () => {

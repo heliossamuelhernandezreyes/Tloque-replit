@@ -4,11 +4,12 @@ const pool = createPool()
 let client
 try {
   client = await pool.connect()
-  const report = await inspectDatabase(client)
+  const report = await inspectDatabase(client, { allowEmpty: true })
   console.log(`\nTloque · preflight ${RELEASE_ID}`)
   console.log(`Base: ${report.details.database || "desconocida"}`)
   console.log(`PostgreSQL: ${report.details.version || "desconocido"}`)
   console.log(`Migraciones registradas: ${report.details.recordedMigrations?.length || 0}`)
+  if (report.details.emptyDatabase) console.log("Estado: base vacía; se usará el snapshot canónico 0000.")
 
   if (report.warnings.length) {
     console.log("\nAdvertencias de configuración:")

@@ -23,6 +23,7 @@ export const users = pgTable("users", {
   subscriptionPlan: text("subscription_plan").notNull().default("reader"),
   subscriptionStatus: text("subscription_status").notNull().default("inactive"),
   subscriptionExpiresAt: timestamp("subscription_expires_at"),
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
@@ -99,6 +100,9 @@ export const books = pgTable("books", {
   isAuthored:      boolean("is_authored").default(false).notNull(),
   // Interruptor maestro del autor: encender/apagar comentarios en su obra.
   commentsEnabled: boolean("comments_enabled").default(true).notNull(),
+  // Revisión canónica del manuscrito. Toda escritura del libro la incrementa
+  // y el cliente debe enviar expectedRevision para evitar last-write-wins.
+  revision:        integer("revision").default(1).notNull(),
   createdAt:       timestamp("created_at").defaultNow().notNull(),
   updatedAt:       timestamp("updated_at").defaultNow().notNull(),
 })
@@ -129,6 +133,33 @@ export type Book              = typeof books.$inferSelect
 export type InsertBook        = z.input<typeof insertBookSchema>
 export type CreateBookRequest = typeof books.$inferInsert
 export type UpdateBookRequest = Partial<CreateBookRequest>
+
+// ── HISTORIAL Y BORRADOR CLOUD DEL MANUSCRITO ────────────
+// El manuscrito sigue siendo propiedad del editor normal. Dirección avanzada
+// conserva sus sidecars separados y solo referencia una revisión publicada.
+export const bookRevisions = pgTable("book_revisions", {
+  id:         serial("id").primaryKey(),
+  bookId:     integer("book_id").references(() => books.id).notNull(),
+  revision:   integer("revision").notNull(),
+  snapshot:   jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+  changeType: text("change_type").notNull().default("update"),
+  createdBy:  integer("created_by").references(() => users.id),
+  createdAt:  timestamp("created_at").defaultNow().notNull(),
+}, table => ({
+  bookRevisionUnique: unique("book_revisions_book_revision_unique").on(table.bookId, table.revision),
+}))
+
+export const bookDrafts = pgTable("book_drafts", {
+  bookId:        integer("book_id").primaryKey().references(() => books.id),
+  authorId:      integer("author_id").references(() => users.id).notNull(),
+  baseRevision:  integer("base_revision").notNull(),
+  draftRevision: integer("draft_revision").notNull().default(1),
+  data:          jsonb("data").$type<Record<string, unknown>>().notNull(),
+  updatedAt:     timestamp("updated_at").defaultNow().notNull(),
+})
+
+export type BookRevision = typeof bookRevisions.$inferSelect
+export type BookDraft = typeof bookDrafts.$inferSelect
 
 // ── COMENTARIOS ────────────────────────────────────────────
 // Comentarios por libro y por capítulo. chapterIndex = -1 son
@@ -226,7 +257,8 @@ export const printCopies = pgTable("print_copies", {
   id:              serial("id").primaryKey(),
   tokenId:         integer("token_id").references(() => bookTokens.id).notNull(),
   folio:           text("folio").notNull().unique(),                  // TLQ-XXXX-XXXX
-  claimKey:        text("claim_key").notNull(),                       // clave impresa dentro
+  claimKey:        text("claim_key").notNull(),                       // cifrado autenticado o legado
+  claimKeyHash:    text("claim_key_hash").notNull().default(""),      // HMAC para verificar sin descifrar
   claimedByUserId: integer("claimed_by_user_id").references(() => users.id),
   claimedAt:       timestamp("claimed_at"),
   // Ciclo comercial del ejemplar. Nunca se infiere una venta a partir del
@@ -294,9 +326,59 @@ export const tokenOrders = pgTable("token_orders", {
   status:      text("status").default("pending").notNull(),// pending | paid | canceled
   provider:    text("provider").default("beta").notNull(), // beta | stripe
   providerRef: text("provider_ref").default(""),           // id de sesión de Stripe
+  paymentRef:  text("payment_ref").default(""),            // PaymentIntent de Stripe
+  refundRef:   text("refund_ref").default(""),
   tokenId:     integer("token_id"),                        // token emitido al pagar
+  // Instantánea económica: el webhook nunca recalcula el reparto usando una
+  // versión posterior del libro.
+  authorUserId: integer("author_user_id").references(() => users.id),
+  authorShareBps: integer("author_share_bps").default(0).notNull(),
+  bookTypeSnapshot: text("book_type_snapshot").default("").notNull(),
+  bookRevisionSnapshot: integer("book_revision_snapshot").default(1).notNull(),
+  // Efectivo real que respalda la operación. En compras directas coincide con
+  // amountCents; al gastar Tinta usa el costo real todavía disponible en el
+  // monedero (los bonos y créditos beta aportan cero).
+  cashBackingCents: integer("cash_backing_cents").default(0).notNull(),
   createdAt:   timestamp("created_at").defaultNow().notNull(),
   paidAt:      timestamp("paid_at"),
+  refundedAt:  timestamp("refunded_at"),
+})
+
+// Stripe Connect conserva la verificación y la cuenta bancaria fuera de
+// Tloque. Aquí solo se guarda el identificador opaco y un espejo no sensible
+// del estado necesario para decidir si una transferencia es segura.
+export const authorPayoutAccounts = pgTable("author_payout_accounts", {
+  userId:            integer("user_id").primaryKey().references(() => users.id).notNull(),
+  provider:          text("provider").notNull().default("stripe"),
+  providerAccountId: text("provider_account_id").notNull().unique(),
+  country:           text("country").notNull().default(""),
+  currency:          text("currency").notNull().default("mxn"),
+  detailsSubmitted:  boolean("details_submitted").notNull().default(false),
+  payoutsEnabled:    boolean("payouts_enabled").notNull().default(false),
+  transfersActive:   boolean("transfers_active").notNull().default(false),
+  disabledReason:    text("disabled_reason").notNull().default(""),
+  requirementsDue:   jsonb("requirements_due").$type<string[]>().notNull().default([]),
+  lastSyncedAt:      timestamp("last_synced_at"),
+  createdAt:         timestamp("created_at").defaultNow().notNull(),
+  updatedAt:         timestamp("updated_at").defaultNow().notNull(),
+})
+
+// Una solicitud reserva un conjunto inmutable de ganancias. La aprobación es
+// manual y la transferencia usa el id como clave idempotente en Stripe.
+export const authorPayouts = pgTable("author_payouts", {
+  id:            serial("id").primaryKey(),
+  authorUserId:  integer("author_user_id").references(() => users.id).notNull(),
+  amountCents:   integer("amount_cents").notNull(),
+  currency:      text("currency").notNull().default("mxn"),
+  status:        text("status").notNull().default("requested"),
+  provider:      text("provider").notNull().default("stripe"),
+  providerRef:   text("provider_ref").notNull().default(""),
+  failureCode:   text("failure_code").notNull().default(""),
+  adminUserId:   integer("admin_user_id").references(() => users.id),
+  requestedAt:   timestamp("requested_at").defaultNow().notNull(),
+  processedAt:   timestamp("processed_at"),
+  completedAt:   timestamp("completed_at"),
+  updatedAt:     timestamp("updated_at").defaultNow().notNull(),
 })
 
 export const authorEarnings = pgTable("author_earnings", {
@@ -308,12 +390,16 @@ export const authorEarnings = pgTable("author_earnings", {
   authorCents:   integer("author_cents").default(0).notNull(),   // 90%
   platformCents: integer("platform_cents").default(0).notNull(), // 10%
   currency:      text("currency").default("mxn").notNull(),
-  status:        text("status").default("accrued").notNull(),    // accrued | paid_out
+  status:        text("status").default("accrued").notNull(),    // accrued | reserved | paid_out | reversed
+  payoutEligible: boolean("payout_eligible").default(false).notNull(),
+  payoutId:       integer("payout_id").references(() => authorPayouts.id),
   createdAt:     timestamp("created_at").defaultNow().notNull(),
 })
 
 export type TokenOrder    = typeof tokenOrders.$inferSelect
 export type AuthorEarning = typeof authorEarnings.$inferSelect
+export type AuthorPayoutAccount = typeof authorPayoutAccounts.$inferSelect
+export type AuthorPayout = typeof authorPayouts.$inferSelect
 
 // ── MONEDERO (Tinta 🪙 y Papel 📄) ──────────────────────────
 // wallet_ledger es un libro contable INMUTABLE (solo se insertan
@@ -327,6 +413,10 @@ export const walletLedger = pgTable("wallet_ledger", {
   reason:    text("reason").notNull(),                      // purchase|spend_token|grant|refund
   refType:   text("ref_type").default(""),                  // wallet_order|token_order|admin
   refId:     integer("ref_id"),
+  // Porción de efectivo todavía atribuible a este movimiento. Nunca puede
+  // crear dinero: las compras suman y cada gasto resta como máximo lo que
+  // quedaba respaldado.
+  cashBackingCents: integer("cash_backing_cents").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
@@ -340,12 +430,38 @@ export const walletOrders = pgTable("wallet_orders", {
   status:      text("status").notNull().default("pending"), // pending|paid|failed
   provider:    text("provider").notNull().default("beta"),  // "stripe" | "beta"
   providerRef: text("provider_ref").default(""),
+  paymentRef:  text("payment_ref").default(""),
   createdAt:   timestamp("created_at").defaultNow().notNull(),
   paidAt:      timestamp("paid_at"),
 })
 
 export type WalletEntry = typeof walletLedger.$inferSelect
 export type WalletOrder = typeof walletOrders.$inferSelect
+
+// Registro mínimo, idempotente y sin PII de reembolsos/contracargos. Una
+// incidencia abierta congela aprobaciones de liquidación hasta conciliación.
+export const paymentIncidents = pgTable("payment_incidents", {
+  id:               serial("id").primaryKey(),
+  providerEventId:  text("provider_event_id").notNull().unique(),
+  providerObjectId: text("provider_object_id").notNull(),
+  kind:             text("kind").notNull(),
+  paymentRef:       text("payment_ref").notNull().default(""),
+  tokenOrderId:     integer("token_order_id").references(() => tokenOrders.id),
+  walletOrderId:    integer("wallet_order_id").references(() => walletOrders.id),
+  amountCents:      integer("amount_cents").notNull().default(0),
+  currency:         text("currency").notNull().default("mxn"),
+  providerStatus:   text("provider_status").notNull().default(""),
+  reason:           text("reason").notNull().default(""),
+  resolution:       text("resolution").notNull().default("open"),
+  resolutionNote:   text("resolution_note").notNull().default(""),
+  adminUserId:      integer("admin_user_id").references(() => users.id),
+  occurredAt:       timestamp("occurred_at").defaultNow().notNull(),
+  resolvedAt:       timestamp("resolved_at"),
+  createdAt:        timestamp("created_at").defaultNow().notNull(),
+  updatedAt:        timestamp("updated_at").defaultNow().notNull(),
+})
+
+export type PaymentIncident = typeof paymentIncidents.$inferSelect
 
 // Medición auditable de IA. El proveedor reporta tokens o caracteres reales;
 // la regla central de Papel los convierte a unidades enteras. requestKey hace

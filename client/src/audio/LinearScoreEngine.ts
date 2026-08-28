@@ -146,7 +146,7 @@ export class LinearScoreEngine {
   setMasterVolume(value: number) { this.master = Math.max(0, Math.min(1, value)); this.applyVolume() }
   setDucked(value: boolean) { this.duckFactor = value ? 0.16 : 1; this.applyVolume() }
   setNarrativeDirection(intensity: number, silence: boolean, seconds: number) {
-    this.narrativeGain = silence ? 0.08 : 0.72 + Math.max(0, Math.min(0.8, intensity)) * 0.35
+    this.narrativeGain = silence ? 0 : 0.72 + Math.max(0, Math.min(0.8, intensity)) * 0.35
     if (this.context && this.output) {
       this.output.gain.cancelScheduledValues(this.context.currentTime)
       this.output.gain.linearRampToValueAtTime(this.targetVolume(), this.context.currentTime + Math.max(0.25, seconds))

@@ -218,7 +218,7 @@ export class NativeSampleScoreEngine {
   setMasterVolume(value: number) { this.master = Math.max(0, Math.min(1, value)); this.applyVolume() }
   setDucked(value: boolean) { this.duckFactor = value ? 0.16 : 1; this.applyVolume() }
   setNarrativeDirection(intensity: number, silence: boolean, seconds: number) {
-    this.narrativeGain = silence ? 0.08 : 0.72 + Math.max(0, Math.min(0.8, intensity)) * 0.35
+    this.narrativeGain = silence ? 0 : 0.72 + Math.max(0, Math.min(0.8, intensity)) * 0.35
     if (this.context && this.output) { const now = this.context.currentTime; this.output.gain.cancelScheduledValues(now); this.output.gain.linearRampToValueAtTime(this.targetVolume(), now + Math.max(0.25, seconds)) }
   }
   pause() { if (this.context) void this.context.suspend(); this.listener("paused", this.cue) }

@@ -1,12 +1,8 @@
 # Tloque
 
 Tloque es una plataforma de lectura y publicación digital con biblioteca,
-lector, TTS, funcionamiento offline, comunidad, Fonoteca, cartas coleccionables,
+lector, TTS, lectura guardada sin conexión, comunidad, Fonoteca, cartas coleccionables,
 marcos y herramientas creativas.
-
-Este repositorio parte del baseline recibido el 8 de agosto de 2026. Los ZIP y
-sus hashes se conservan en `archive/` y `checksums/`; `BASELINE_AUDIT.md`
-documenta el estado anterior a las reparaciones.
 
 ## Requisitos
 
@@ -19,33 +15,28 @@ documenta el estado anterior a las reparaciones.
 ```bash
 cp .env.example .env
 npm ci
-npm run db:push
+npm run db:migrate
 npm run dev
 ```
 
 Drizzle usa las variables del entorno actual; carga `.env` con el mecanismo de
 tu plataforma o tu shell antes de ejecutar los comandos. Para actualizar una
-base existente, haz una copia de seguridad y aplica también:
+base existente, crea primero un respaldo recuperable y ejecuta el migrador
+versionado e idempotente:
 
 ```bash
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f migrations/0001_fonoteca_and_hardening.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f migrations/0002_paper_usage.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f migrations/0003_adaptive_fonoteca.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f migrations/0004_speech_and_audiobook_cache.sql
+npm run db:preflight
+npm run db:migrate
 ```
 
-La primera migración agrega la Fonoteca, endurece la unicidad de compras y
-asegura el borrado en cascada de copias de cartas. La segunda crea el registro
-auditable de consumo de Papel. La tercera agrega planes de suscripción,
-partituras por capas, proyectos narrativos laterales y perfiles compactos para
-el lector. La cuarta agrega dirección de voz, estado real de suscripción,
-trabajos con reserva de Papel y caché privada de audiolibros. Si detectan datos
-históricos inconsistentes, debe corregirse ese dato
-antes de reintentarlas; no lo eliminan a escondidas.
+El migrador puede reconstruir PostgreSQL vacío desde `0000`, aplica en orden
+las migraciones hasta `0016`, verifica checksums, restricciones e índices y
+valida la estructura antes del commit. `0012` agrega revisiones del manuscrito,
+`0013` introduce respaldo de Tinta y liquidaciones, `0014` fija los contratos
+SQL que no expresa Drizzle, `0015` protege las claves de reclamación y `0016`
+registra reembolsos/contracargos para congelar liquidaciones hasta conciliación.
+Si el preflight detecta datos históricos inconsistentes,
+debe corregirse el dato antes de reintentar; no se elimina a escondidas.
 
 ## Comandos
 
@@ -53,22 +44,34 @@ antes de reintentarlas; no lo eliminan a escondidas.
 npm run check   # TypeScript
 npm test        # pruebas unitarias y de seguridad
 npm run build   # cliente y servidor para producción
+npm run check:bundle # presupuesto del shell inicial ya construido
 npm start       # ejecuta dist/index.cjs
 ```
 
 ## Configuración de producción
 
 `APP_URL` debe ser el origen HTTPS canónico, sin una ruta al final.
-`SESSION_SECRET` debe tener por lo menos 32 caracteres. En producción son
+`SESSION_SECRET` y `CLAIM_KEY_SECRET` deben tener por lo menos 32 caracteres y
+permanecer estables. En producción son
 obligatorias las credenciales de Google; el proceso falla al iniciar si falta
 alguna de estas condiciones o si PostgreSQL no está disponible.
 
-Los pagos reales solo se habilitan cuando existen tanto `STRIPE_SECRET_KEY`
-como `STRIPE_WEBHOOK_SECRET`. Configura el webhook en:
+Los pagos reales fallan cerrados. Solo se habilitan cuando están configurados
+Checkout, Stripe Connect, ambos webhooks y los interruptores explícitos de
+monetización y liquidación. Configura:
 
 ```text
 POST https://tu-dominio/api/payments/webhook
+POST https://tu-dominio/api/payouts/webhook
 ```
+
+Variables necesarias: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
+`STRIPE_CONNECT_WEBHOOK_SECRET`, `STRIPE_CONNECT_ENABLED=true`,
+`MONETIZATION_ENABLED=true` y `PAYOUTS_READY=true`. Los autores completan el
+onboarding alojado por Stripe; Tloque no almacena cuentas bancarias. Cada
+solicitud queda reservada para revisión administrativa y la transferencia usa
+una clave idempotente. `PAYOUT_HOLD_DAYS` y `PAYOUT_MIN_CENTS` controlan la
+espera y el mínimo sin alterar el libro mayor.
 
 Mantén `PAYMENTS_BETA_MODE=false` y `ALLOW_GACHA_BETA_ADMIN=false` en
 producción, salvo una prueba administrativa deliberada y controlada.
@@ -119,6 +122,10 @@ producción, salvo una prueba administrativa deliberada y controlada.
 - Tinta es la unidad de apoyo y coleccionables. Los paquetes muestran precio
   final, precio unitario, bono real y una recomendación única, sin urgencia o
   escasez artificial. Los pagos permanecen apagados hasta configurar Stripe.
+- Cada crédito pagado conserva el efectivo real que lo respalda. Los bonos,
+  regalos y Tinta beta aportan cero; cada gasto consume como máximo el respaldo
+  restante. Así, una liquidación nunca usa el valor nominal de Tinta gratuita
+  ni paga por encima del efectivo conciliado.
 - Papel no es dinero ni premio de sorteo. Mide capacidad de IA con cargos
   enteros e idempotentes: tokens de entrada/salida del Oráculo y caracteres de
   voz. Las cuotas actuales son de pre-lanzamiento y deben calibrarse con costos

@@ -14,7 +14,3 @@ vite.config.ts.*
 .agents/
 *.zip
 *.tar.gz
-
-# La conexión OAuth de Replit no dispone del scope workflow. La integración
-# continua puede añadirse después directamente desde GitHub.
-.github/workflows/

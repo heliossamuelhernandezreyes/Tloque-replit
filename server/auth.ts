@@ -37,8 +37,8 @@ export async function refreshAdminCache(): Promise<void> {
     ])
     adminCacheTime = Date.now()
   } catch {
-    // Si falla la BD, mantener el caché anterior o solo el fundador
-    adminCache = new Set(FOUNDER_EMAIL ? [FOUNDER_EMAIL] : [])
+    // Mantener el último valor conocido. Vaciarlo aquí hacía que réplicas
+    // distintas retiraran temporalmente permisos a admins delegados.
   }
 }
 
@@ -97,7 +97,7 @@ passport.serializeUser((user: any, done) => {
 passport.deserializeUser(async (id: number, done) => {
   try {
     const [user] = await db.select().from(users).where(eq(users.id, id))
-    done(null, user || null)
+    done(null, user && !user.deletedAt ? user : null)
   } catch (err) {
     done(err, null)
   }

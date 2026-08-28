@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { useGenre } from "@/context/GenreContext"
 import { useAuth } from "@/hooks/useAuth"
 import { useSettings } from "@/context/SettingsContext"
-import { useBooks } from "@/hooks/use-books"
+import { useBooks, useMyBooks } from "@/hooks/use-books"
 import ImportPanel from "@/components/ImportPanel"
 import {
   DropdownMenu,
@@ -36,6 +36,7 @@ export default function Library() {
   const { t, settings } = useSettings()
   const isAdminActive = isAdmin && (settings?.adminMode ?? true)
   const { data: serverBooks, refetch: refetchBooks } = useBooks()
+  const { data: myServerBooks, refetch: refetchMyBooks } = useMyBooks()
 
   const [, setLocation] = useLocation()
   const searchQuery = useMemo(() => {
@@ -51,7 +52,7 @@ export default function Library() {
   const [editingName,   setEditingName]   = useState(false)
   const [nameInput,     setNameInput]     = useState("")
   const [activeTab,     setActiveTab]     = useState<"published"|"drafts"|"saved"|"cards"|"catalog">("published")
-  const [deleteConfirm, setDeleteConfirm] = useState<{id:any, store:string, isServer?:boolean} | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{id:any, store:string, server?: "author" | "admin"} | null>(null)
   const [showImport,    setShowImport]    = useState(false)
   const [deletingServer, setDeletingServer] = useState(false)
   const [reviewBooks,   setReviewBooks]   = useState<any[]>([])
@@ -71,15 +72,27 @@ export default function Library() {
     else if (user?.name) setProfileName(user.name)
   }, [user?.name])
 
+  const mergeCanonical = useCallback((local: any[], status: "published" | "draft") => {
+    const merged = new Map(local.map(book => [String(book.id), book]))
+    for (const book of myServerBooks || []) {
+      const belongs = status === "published" ? book.status === "published" : book.status !== "published"
+      if (belongs) merged.set(String(book.id), { ...book, _serverCanonical: true })
+      else merged.delete(String(book.id))
+    }
+    return [...merged.values()]
+  }, [myServerBooks])
+  const visiblePublished = useMemo(() => mergeCanonical(published, "published"), [mergeCanonical, published])
+  const visibleDrafts = useMemo(() => mergeCanonical(drafts, "draft"), [drafts, mergeCanonical])
+
   const allBooks = useMemo(() => {
     const seen = new Set<string>()
-    return [...published, ...savedBooks, ...(serverBooks || [])].filter((book: any) => {
+    return [...visiblePublished, ...savedBooks, ...(serverBooks || [])].filter((book: any) => {
       const id = String(book.id)
       if (seen.has(id)) return false
       seen.add(id)
       return true
     })
-  }, [published, savedBooks, serverBooks])
+  }, [visiblePublished, savedBooks, serverBooks])
   const searchResults = useMemo(() => {
     if (!searchQuery) return []
     return allBooks.filter((b: any) =>
@@ -152,10 +165,10 @@ export default function Library() {
     toast({ title: t("storyDeleted") })
   }
 
-  async function deleteServerBook(id: any) {
+  async function deleteServerBook(id: any, mode: "author" | "admin") {
     setDeletingServer(true)
     try {
-      const res = await fetch(`/api/admin/books/${id}`, {
+      const res = await fetch(mode === "admin" ? `/api/admin/books/${id}` : `/api/books/${id}`, {
         method:      "DELETE",
         credentials: "include",
       })
@@ -164,6 +177,13 @@ export default function Library() {
         throw new Error(data.message || "Error eliminando")
       }
       await refetchBooks()
+      await refetchMyBooks()
+      const nextPublished = loadAll(STORAGE_PUBLISHED).filter((book: any) => String(book.id) !== String(id))
+      const nextDrafts = loadAll(STORAGE_DRAFTS).filter((book: any) => String(book.id) !== String(id))
+      localStorage.setItem(STORAGE_PUBLISHED, JSON.stringify(nextPublished))
+      localStorage.setItem(STORAGE_DRAFTS, JSON.stringify(nextDrafts))
+      setPublished(nextPublished)
+      setDrafts(nextDrafts)
       setDeleteConfirm(null)
       toast({ title: `${t("catalogBookRemoved")} ✓` })
     } catch (err: any) {
@@ -203,8 +223,8 @@ export default function Library() {
   }
 
   const tabs = [
-    { key: "published" as const, label: t("published"), icon: BookOpen, count: published.length },
-    { key: "drafts"    as const, label: t("drafts"), icon: FileText, count: drafts.length },
+    { key: "published" as const, label: t("published"), icon: BookOpen, count: visiblePublished.length },
+    { key: "drafts"    as const, label: t("drafts"), icon: FileText, count: visibleDrafts.length },
     { key: "saved"     as const, label: t("readingsList"),   icon: BookOpen, count: savedBooks.length },
     { key: "cards"     as const, label: t("cardsTab"), icon: Sparkles },
     // Tab de catálogo — solo visible para admin
@@ -272,7 +292,7 @@ export default function Library() {
               </button>
             )}
             <p className="text-xs text-zinc-600 mt-0.5 font-sans">
-              {t("profileWorkCounts").replace("{published}", String(published.length)).replace("{drafts}", String(drafts.length))}
+              {t("profileWorkCounts").replace("{published}", String(visiblePublished.length)).replace("{drafts}", String(visibleDrafts.length))}
             </p>
             <div className="flex items-center gap-3 mt-1.5">
               {(profileName || user?.name) && (
@@ -401,20 +421,20 @@ export default function Library() {
               transition={{ duration: 0.15 }}
             >
               {activeTab === "published" && (
-                published.length === 0
+                visiblePublished.length === 0
                   ? <Empty msg={t("noPublished")} btn={t("writeNow")} onClick={() => setLocation("/editor")} />
-                  : <BookGrid books={published}
+                  : <BookGrid books={visiblePublished}
                       onEdit={id => setLocation(`/editor?id=${id}&status=published`)}
-                      onDelete={id => setDeleteConfirm({ id, store: STORAGE_PUBLISHED })}
+                      onDelete={id => setDeleteConfirm({ id, store: STORAGE_PUBLISHED, server: visiblePublished.find(book => String(book.id) === String(id))?._serverCanonical ? "author" : undefined })}
                       showEdit showDelete />
               )}
               {activeTab === "drafts" && (
-                drafts.length === 0
+                visibleDrafts.length === 0
                   ? <Empty msg={t("noDrafts")} btn={t("startDraft")} onClick={() => setLocation("/editor")} />
-                  : <BookGrid books={drafts} isDraft
+                  : <BookGrid books={visibleDrafts} isDraft
                       onRead={id   => setLocation(`/book/${id}`)}
                       onEdit={id   => setLocation(`/editor?id=${id}&status=draft`)}
-                      onDelete={id => setDeleteConfirm({ id, store: STORAGE_DRAFTS })}
+                      onDelete={id => setDeleteConfirm({ id, store: STORAGE_DRAFTS, server: visibleDrafts.find(book => String(book.id) === String(id))?._serverCanonical ? "author" : undefined })}
                       showEdit showDelete />
               )}
               {activeTab === "saved" && (
@@ -476,7 +496,7 @@ export default function Library() {
                       {/* Grid de libros del servidor */}
                       <BookGrid
                         books={serverClassics}
-                        onDelete={id => setDeleteConfirm({ id, store: "", isServer: true })}
+                        onDelete={id => setDeleteConfirm({ id, store: "", server: "admin" })}
                         showDelete
                       />
                     </div>
@@ -512,10 +532,10 @@ export default function Library() {
             >
               <div className="text-center space-y-2">
                 <p className="text-white font-semibold font-sans">
-                  {deleteConfirm.isServer ? t("deleteConfirmServer") : t("deleteConfirmTitle")}
+                  {deleteConfirm.server ? t("deleteConfirmServer") : t("deleteConfirmTitle")}
                 </p>
                 <p className="text-zinc-500 text-sm font-sans leading-relaxed">
-                  {deleteConfirm.isServer
+                  {deleteConfirm.server
                     ? t("deleteConfirmServer2")
                     : t("deleteConfirmBody")
                   }
@@ -531,8 +551,8 @@ export default function Library() {
                 <button
                   disabled={deletingServer}
                   onClick={() => {
-                    if (deleteConfirm.isServer) {
-                      deleteServerBook(deleteConfirm.id)
+                    if (deleteConfirm.server) {
+                      deleteServerBook(deleteConfirm.id, deleteConfirm.server)
                     } else {
                       deleteLocalBook(deleteConfirm.id, deleteConfirm.store)
                     }

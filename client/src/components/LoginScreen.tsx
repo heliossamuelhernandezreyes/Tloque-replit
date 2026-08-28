@@ -94,7 +94,12 @@ export default function LoginScreen() {
         transition={{ delay: 0.8 }}
         className="mt-6 text-zinc-700 text-[10px] font-sans text-center max-w-xs relative z-10"
       >
-        Solo usamos tu nombre y correo para identificarte. No compartimos tu información.
+        Usamos tus datos para operar tu cuenta. Las funciones opcionales de IA y voz pueden usar proveedores externos.
+        <span className="mt-2 block">
+          <a className="text-zinc-500 underline underline-offset-2" href="/privacy">Privacidad</a>
+          <span aria-hidden="true"> · </span>
+          <a className="text-zinc-500 underline underline-offset-2" href="/terms">Términos</a>
+        </span>
       </motion.p>
 
     </div>

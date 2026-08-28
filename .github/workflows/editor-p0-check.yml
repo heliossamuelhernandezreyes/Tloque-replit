@@ -2,18 +2,9 @@ name: Core app check
 
 on:
   pull_request:
-    paths:
-      - "client/src/App.tsx"
-      - "client/src/pages/editor.tsx"
-      - "client/src/pages/editor-direction.tsx"
-      - "client/src/lib/editor-*.ts"
-      - "client/src/audio/**"
-      - "client/src/pages/reader.tsx"
-      - "shared/music-brain.ts"
-      - "server/narrative.ts"
-      - "tests/music-brain.test.ts"
-      - "tests/editor-workspace.test.ts"
-      - ".github/workflows/editor-p0-check.yml"
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -22,19 +13,46 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tloque
+          POSTGRES_PASSWORD: tloque_ci
+          POSTGRES_DB: tloque_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tloque -d tloque_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://tloque:tloque_ci@localhost:5432/tloque_ci
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Rehearse database from empty PostgreSQL
+        run: |
+          npm run db:migrate
+          npm run db:migrate
+
+      - name: Rehearse upgrade from historical db:push installation
+        run: |
+          node --input-type=module -e "import pg from 'pg'; const c = new pg.Client({connectionString: process.env.DATABASE_URL}); await c.connect(); await c.query('create database tloque_upgrade_ci'); await c.end();"
+          DATABASE_URL=postgresql://tloque:tloque_ci@localhost:5432/tloque_upgrade_ci npx drizzle-kit push --force
+          DATABASE_URL=postgresql://tloque:tloque_ci@localhost:5432/tloque_upgrade_ci npm run db:migrate
 
       - name: Typecheck
         run: npm run check
@@ -43,4 +61,7 @@ jobs:
         run: npm test
 
       - name: Build
-        run: npm run build
+        run: npm run build && npm run check:bundle
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high

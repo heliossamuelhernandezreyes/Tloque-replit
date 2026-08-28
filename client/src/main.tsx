@@ -49,6 +49,13 @@ const root = createRoot(rootElement)
 
 installTloqueScoreFileBridge()
 
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js", { scope: "/" })
+      .catch(error => console.warn("No se pudo activar el modo offline", error))
+  })
+}
+
 // La importación diferida permite mostrar una recuperación legible si un
 // módulo de la aplicación falla durante su evaluación inicial.
 void import("./App")

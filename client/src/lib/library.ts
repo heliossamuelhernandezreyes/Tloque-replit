@@ -2,7 +2,7 @@
 // Clásicos, libros propios y libros DESBLOQUEADOS (token) no cuentan.
 
 // Cuántos libros de OTROS autores puede guardar offline el usuario gratis.
-export const FREE_SAVE_LIMIT = 4
+export const FREE_SAVE_LIMIT = 3
 
 // Libros desbloqueados con token (sincronizados desde la nube).
 export function getUnlockedSet(): Set<string> {

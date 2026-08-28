@@ -43,10 +43,16 @@ export const api = {
     update: {
       method: 'PUT' as const,
       path: '/api/books/:id' as const,
-      input: insertBookSchema.partial(),
+      input: insertBookSchema.partial().extend({
+        expectedRevision: z.number().int().min(1).optional(),
+      }),
       responses: {
         200: z.custom<typeof books.$inferSelect>(),
         400: errorSchemas.validation,
+        409: z.object({
+          message: z.string(),
+          currentRevision: z.number().int().min(1),
+        }),
         404: errorSchemas.notFound,
       },
     },

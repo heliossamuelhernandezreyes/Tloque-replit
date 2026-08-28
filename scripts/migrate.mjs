@@ -9,6 +9,11 @@ import {
   tableExists,
   validateExpectedSchema,
 } from "./db-common.mjs"
+import {
+  isProtectedClaimKey,
+  protectClaimKey,
+  revealClaimKey,
+} from "../shared/claim-key-crypto.mjs"
 
 if (!process.argv.includes("--apply")) {
   console.error("Ejecución bloqueada. Usa: node scripts/migrate.mjs --apply")
@@ -17,6 +22,7 @@ if (!process.argv.includes("--apply")) {
 
 const here = dirname(fileURLToPath(import.meta.url))
 const projectRoot = dirname(here)
+const BASELINE = "0000_canonical_base.sql"
 const migrations = [
   "0001_fonoteca_and_hardening.sql",
   "0002_paper_usage.sql",
@@ -29,6 +35,11 @@ const migrations = [
   "0009_direction_agent_v2.sql",
   "0010_hybrid_fonoteca.sql",
   "0011_audio_studio_and_ui_fonoteca.sql",
+  "0012_manuscript_integrity.sql",
+  "0013_author_payouts.sql",
+  "0014_canonical_constraints.sql",
+  "0015_claim_key_protection.sql",
+  "0016_payment_incidents.sql",
 ]
 
 const pool = createPool()
@@ -42,7 +53,7 @@ try {
   await client.query("SET LOCAL statement_timeout = '180s'")
   await client.query("SELECT pg_advisory_xact_lock(84673, 7001)")
 
-  const preflight = await inspectDatabase(client)
+  const preflight = await inspectDatabase(client, { allowEmpty: true })
   if (preflight.errors.length) {
     throw new Error(`Preflight rechazado: ${preflight.errors.join(" | ")}`)
   }
@@ -80,6 +91,30 @@ try {
 
   const applied = []
   const skipped = []
+
+  // Una instalación vacía nace únicamente de este snapshot versionado. En
+  // instalaciones históricas se registra el mismo punto de partida sin
+  // ejecutar CREATE TABLE sobre datos existentes; después, las migraciones
+  // incrementales conservan sus checksums y su recorrido normal.
+  const baselineSql = await readFile(join(projectRoot, "migrations", BASELINE), "utf8")
+  const baselineChecksum = createHash("sha256").update(baselineSql).digest("hex")
+  const baselinePrior = await client.query(`
+    SELECT checksum FROM tloque_schema_migrations WHERE migration_id = $1
+  `, [BASELINE])
+  if (baselinePrior.rowCount) {
+    if (baselinePrior.rows[0].checksum !== baselineChecksum) {
+      throw new Error(`La migración ${BASELINE} cambió después de aplicarse. No se continuará.`)
+    }
+    skipped.push(BASELINE)
+  } else {
+    if (preflight.details.emptyDatabase) await client.query(baselineSql)
+    await client.query(`
+      INSERT INTO tloque_schema_migrations (migration_id, checksum, release_id)
+      VALUES ($1, $2, $3)
+    `, [BASELINE, baselineChecksum, RELEASE_ID])
+    applied.push(preflight.details.emptyDatabase ? BASELINE : `${BASELINE} (registro histórico)`)
+  }
+
   for (const migration of migrations) {
     const sql = await readFile(join(projectRoot, "migrations", migration), "utf8")
     const checksum = createHash("sha256").update(sql).digest("hex")
@@ -101,6 +136,36 @@ try {
     applied.push(migration)
   }
 
+  // El SQL añade la columna sin tocar secretos. Con la clave disponible en el
+  // proceso, esta misma transacción cifra también todas las filas históricas;
+  // el runtime conserva compatibilidad perezosa para instalaciones antiguas
+  // que todavía no hayan pasado por este migrador canónico.
+  let protectedClaimKeys = 0
+  while (true) {
+    const legacy = await client.query(`
+      SELECT id, claim_key
+      FROM print_copies
+      WHERE claim_key_hash = ''
+      ORDER BY id
+      LIMIT 500
+      FOR UPDATE
+    `)
+    if (!legacy.rowCount) break
+    if (String(process.env.CLAIM_KEY_SECRET || "").length < 32) {
+      throw new Error("CLAIM_KEY_SECRET de al menos 32 caracteres es obligatorio para proteger claves históricas")
+    }
+    for (const row of legacy.rows) {
+      const plainKey = revealClaimKey(String(row.claim_key || ""))
+      const protectedKey = protectClaimKey(plainKey)
+      await client.query(`
+        UPDATE print_copies
+        SET claim_key = $1, claim_key_hash = $2
+        WHERE id = $3
+      `, [protectedKey.ciphertext, protectedKey.digest, row.id])
+      protectedClaimKeys += 1
+    }
+  }
+
   const schemaErrors = await validateExpectedSchema(client)
   if (schemaErrors.length) throw new Error(`Verificación final rechazada: ${schemaErrors.join(" | ")}`)
 
@@ -109,6 +174,7 @@ try {
   console.log("\nMigración completada correctamente.")
   console.log(`Aplicadas: ${applied.length ? applied.join(", ") : "ninguna"}`)
   console.log(`Ya presentes: ${skipped.length ? skipped.join(", ") : "ninguna"}`)
+  console.log(`Claves de reclamación protegidas: ${protectedClaimKeys}`)
   console.log("La estructura final y los índices fueron verificados antes del commit.")
 } catch (error) {
   if (transactionOpen) await client.query("ROLLBACK").catch(() => undefined)

@@ -5,6 +5,7 @@ import { useGenre } from "@/context/GenreContext"
 import { useSettings, LANGUAGE_LABELS, type ReadingMode, type FontSize, type AppLanguage } from "@/context/SettingsContext"
 import { useEffect, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
+import { clearLocalAccountData } from "@/lib/privacy"
 
 interface Props {
   open:    boolean
@@ -126,6 +127,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
   const { settings, updateSetting, resetSettings, t } = useSettings()
   const { toast } = useToast()
   const [exporting, setExporting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -160,6 +162,35 @@ export default function ConfigPanel({ open, onClose }: Props) {
       toast({ title: t("saveErr") })
     } finally {
       setExporting(false)
+    }
+  }
+
+  async function deleteAccount() {
+    if (deleting) return
+    const confirmation = window.prompt(
+      "Tus obras dejarán de ser públicas y tus datos personales se eliminarán. Escribe ELIMINAR para continuar.",
+    )
+    if (confirmation !== "ELIMINAR") return
+    setDeleting(true)
+    try {
+      const response = await fetch("/api/account", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ confirmation }),
+      })
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.message || "delete_failed")
+      }
+      await clearLocalAccountData()
+      await logout()
+    } catch (error) {
+      toast({
+        title: "No se pudo eliminar la cuenta",
+        description: error instanceof Error ? error.message : t("saveErr"),
+      })
+      setDeleting(false)
     }
   }
 
@@ -584,14 +615,14 @@ export default function ConfigPanel({ open, onClose }: Props) {
                     <span className="flex items-center gap-2"><Download className="w-4 h-4" />{exporting ? t("exportWorking") : t("exportData")}</span>
                     <ChevronRight className="w-4 h-4 text-zinc-600" />
                   </motion.button>
-                  <motion.button disabled
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={deleteAccount} disabled={deleting}
                     className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-sans"
-                    style={{ background: "rgba(255,60,60,0.04)", border: "1px solid rgba(255,60,60,0.1)", color: "rgba(255,100,100,0.35)" }}>
-                    {t("deleteAccount")}
+                    style={{ background: "rgba(255,60,60,0.04)", border: "1px solid rgba(255,60,60,0.15)", color: "rgba(255,110,110,0.7)" }}>
+                    {deleting ? "Eliminando…" : t("deleteAccount")}
                     <ChevronRight className="w-4 h-4" />
                   </motion.button>
                   <p className="text-[10px] text-zinc-700 font-sans leading-relaxed">
-                    {t("dataExportNote")} {t("deleteUnavailable")}
+                    {t("dataExportNote")}
                   </p>
                 </div>
               </Section>

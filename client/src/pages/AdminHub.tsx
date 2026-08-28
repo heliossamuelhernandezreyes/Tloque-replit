@@ -1,6 +1,7 @@
 import { useState } from "react"
 import {
   ChevronRight,
+  Banknote,
   FlaskConical,
   Headphones,
   Import,
@@ -107,6 +108,7 @@ export default function AdminHub() {
 
   const tools = [
     { label: copy("catalog"), Icon: Import, action: () => setShowImport(true) },
+    { label: "Liquidaciones", Icon: Banknote, action: () => setLocation("/admin/liquidaciones") },
     { label: t("gachaTitle"), Icon: Ticket, action: () => setLocation("/sorteo") },
     { label: copy("frames"), Icon: Sparkles, action: () => setLocation("/admin/marcos") },
     { label: copy("phonotheque"), Icon: Headphones, action: () => setLocation("/admin/fonoteca") },
@@ -122,7 +124,7 @@ export default function AdminHub() {
         <h1 className="mt-1 text-2xl text-white">{copy("adminCenter")}</h1>
         <p className="mt-2 text-sm text-zinc-500">{copy("adminCenterHint")}</p>
 
-        <div className="my-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
+        <div className="my-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
           {tools.map(({ label, Icon, action }) => (
             <button
               key={label}

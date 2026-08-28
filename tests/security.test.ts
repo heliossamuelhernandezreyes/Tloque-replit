@@ -1,5 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { isSafeHttpsUrl, isSafeStorageKey } from "../shared/media"
 import { checkInvariants, poolCushion, TICKET } from "../shared/gacha"
 import { rateLimit } from "../server/rateLimit"
@@ -64,7 +65,7 @@ test("las salidas HTTPS no aceptan credenciales ni esquemas alternos", () => {
   assert.equal(isSafeHttpsUrl("file:///etc/passwd"), false)
 })
 
-test("el límite global no se evade cambiando la ruta", () => {
+test("el límite global no se evade cambiando la ruta", async () => {
   const middleware = rateLimit(60_000, 2, "api-global")
   let allowed = 0
   let denied = 0
@@ -83,9 +84,9 @@ test("el límite global no se evade cambiando la ruta", () => {
     },
     json: () => undefined,
   } as any
-  middleware(request("/one"), response, () => { allowed++ })
-  middleware(request("/two"), response, () => { allowed++ })
-  middleware(request("/three"), response, () => { allowed++ })
+  await middleware(request("/one"), response, () => { allowed++ })
+  await middleware(request("/two"), response, () => { allowed++ })
+  await middleware(request("/three"), response, () => { allowed++ })
   assert.equal(allowed, 2)
   assert.equal(denied, 1)
 })
@@ -94,4 +95,9 @@ test("el sorteo cuesta veinte pesos y conserva solvencia matemática", () => {
   assert.deepEqual(TICKET, { price: 10, direct: 3, pool: 4, house: 3 })
   assert.deepEqual(checkInvariants(), { ok: true })
   assert.ok(poolCushion() > 0)
+})
+
+test("un autor no puede retirar por sí mismo el estado de revisión", () => {
+  const routes = readFileSync(new URL("../server/routes.ts", import.meta.url), "utf8")
+  assert.match(routes, /!userIsAdmin && existing\.status === "review"\) updates\.status = "review"/)
 })

@@ -142,14 +142,14 @@ export default function BookPage() {
     }
   }
 
-  function toggleSave() {
+  async function toggleSave() {
     if (!book) return
     const saved = JSON.parse(localStorage.getItem("novareads_saved") || "[]")
     if (isSaved) {
       localStorage.setItem("novareads_saved",
         JSON.stringify(saved.filter((b: any) => String(b.id) !== String(id))))
       setIsSaved(false)
-      removeOfflineContent(id)
+      void removeOfflineContent(id)
       if (/^\d+$/.test(String(id))) pushUnsaveBook(Number(id))
       toast({ title: t("removedFromLibrary") })
     } else {
@@ -162,9 +162,18 @@ export default function BookPage() {
           return
         }
       }
-      localStorage.setItem("novareads_saved",
-        JSON.stringify([...saved, { ...slimBook(book), isSaved: true }]))
-      saveOfflineContent(id, book)   // contenido pesado → IndexedDB
+      try {
+        await saveOfflineContent(id, book)   // confirmar contenido antes de prometer offline
+        localStorage.setItem("novareads_saved",
+          JSON.stringify([...saved, { ...slimBook(book), isSaved: true }]))
+      } catch {
+        await removeOfflineContent(id)
+        toast({
+          title: "No se pudo guardar offline",
+          description: "Libera espacio del dispositivo y vuelve a intentarlo.",
+        })
+        return
+      }
       setIsSaved(true)
       if (/^\d+$/.test(String(id))) pushSaveBook(Number(id))
       setShowBurst(true)

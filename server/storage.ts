@@ -1,14 +1,30 @@
 import { db } from "./db";
-import { books, comments, type CreateBookRequest, type UpdateBookRequest, type BookResponse, type Comment } from "@shared/schema";
+import { books, bookRevisions, comments, type CreateBookRequest, type UpdateBookRequest, type BookResponse, type Comment } from "@shared/schema";
 import { eq, and, desc, getTableColumns, sql } from "drizzle-orm";
+
+export type BookChangeType = "create" | "update" | "publish" | "unpublish" | "restore" | "delete"
+
+export class BookRevisionConflictError extends Error {
+  constructor(public readonly currentRevision: number) {
+    super("El manuscrito cambió en otra sesión")
+    this.name = "BookRevisionConflictError"
+  }
+}
+
+type BookUpdateOptions = {
+  expectedRevision?: number
+  changedBy?: number | null
+  changeType?: BookChangeType
+}
 
 export interface IStorage {
   getBooks(): Promise<any[]>;
+  getBooksByAuthor(authorId: number): Promise<any[]>;
   getBook(id: number): Promise<BookResponse | undefined>;
   findBookByGutenbergId(gutenbergId: number): Promise<BookResponse | undefined>;
   createBook(book: CreateBookRequest): Promise<BookResponse>;
-  updateBook(id: number, updates: UpdateBookRequest): Promise<BookResponse>;
-  deleteBook(id: number): Promise<void>;
+  updateBook(id: number, updates: UpdateBookRequest, options?: BookUpdateOptions): Promise<BookResponse>;
+  deleteBook(id: number, changedBy?: number | null): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -26,6 +42,20 @@ export class DatabaseStorage implements IStorage {
     }).from(books).where(eq(books.status, "published"))
   }
 
+  async getBooksByAuthor(authorId: number): Promise<any[]> {
+    const { content: _content, chapters: _chapters, ...summaryColumns } = getTableColumns(books)
+    return db.select({
+      ...summaryColumns,
+      chapterCount: sql<number>`case
+        when jsonb_typeof(${books.chapters}) = 'array' then jsonb_array_length(${books.chapters})
+        when length(${books.content}) > 0 then 1 else 0 end`,
+      openingLine: sql<string>`left(coalesce(nullif(${books.chapters}->0->>'content', ''), ${books.content}, ''), 320)`,
+    }).from(books).where(and(
+      eq(books.authorId, authorId),
+      sql`${books.status} <> 'deleted'`,
+    )).orderBy(desc(books.updatedAt))
+  }
+
   async getBook(id: number): Promise<BookResponse | undefined> {
     const [book] = await db.select().from(books).where(eq(books.id, id));
     return book;
@@ -37,25 +67,74 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createBook(insertBook: CreateBookRequest): Promise<BookResponse> {
-    const [book] = await db.insert(books).values(insertBook).returning();
-    return book;
+    return db.transaction(async tx => {
+      const [book] = await tx.insert(books).values({ ...insertBook, revision: 1, updatedAt: new Date() }).returning();
+      await tx.insert(bookRevisions).values({
+        bookId: book.id,
+        revision: book.revision,
+        snapshot: book as unknown as Record<string, unknown>,
+        changeType: "create",
+        createdBy: book.authorId,
+      })
+      return book;
+    })
   }
 
-  async updateBook(id: number, updates: UpdateBookRequest): Promise<BookResponse> {
-    const [updated] = await db.update(books)
-      .set(updates)
-      .where(eq(books.id, id))
-      .returning();
-    return updated;
+  async updateBook(id: number, updates: UpdateBookRequest, options: BookUpdateOptions = {}): Promise<BookResponse> {
+    return db.transaction(async tx => {
+      // revision y timestamps son propiedad del servidor, incluso para admin.
+      const safeUpdates = { ...updates } as Record<string, unknown>
+      delete safeUpdates.revision
+      delete safeUpdates.createdAt
+      delete safeUpdates.updatedAt
+
+      const condition = options.expectedRevision === undefined
+        ? eq(books.id, id)
+        : and(eq(books.id, id), eq(books.revision, options.expectedRevision))
+      const [updated] = await tx.update(books)
+        .set({
+          ...safeUpdates,
+          revision: sql`${books.revision} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(condition)
+        .returning()
+
+      if (!updated) {
+        const [current] = await tx.select({ revision: books.revision }).from(books).where(eq(books.id, id))
+        if (current) throw new BookRevisionConflictError(current.revision)
+        throw new Error("Book not found")
+      }
+
+      await tx.insert(bookRevisions).values({
+        bookId: updated.id,
+        revision: updated.revision,
+        snapshot: updated as unknown as Record<string, unknown>,
+        changeType: options.changeType ?? "update",
+        createdBy: options.changedBy ?? null,
+      })
+      return updated
+    })
   }
 
-  async deleteBook(id: number): Promise<void> {
+  async deleteBook(id: number, changedBy: number | null = null): Promise<void> {
     // Retiro lógico: las órdenes, ejemplares, cartas, desbloqueos y ganancias
     // conservan sus claves foráneas. La obra deja de ser pública sin destruir
     // el historial económico ni las colecciones de los lectores.
-    await db.update(books)
-      .set({ status: "deleted", updatedAt: new Date() })
-      .where(eq(books.id, id));
+    await db.transaction(async tx => {
+      const [updated] = await tx.update(books)
+        .set({ status: "deleted", revision: sql`${books.revision} + 1`, updatedAt: new Date() })
+        .where(eq(books.id, id))
+        .returning()
+      if (!updated) throw new Error("Book not found")
+      await tx.insert(bookRevisions).values({
+        bookId: updated.id,
+        revision: updated.revision,
+        snapshot: updated as unknown as Record<string, unknown>,
+        changeType: "delete",
+        createdBy: changedBy,
+      })
+    })
   }
 
   // ── COMENTARIOS ──────────────────────────────────────────

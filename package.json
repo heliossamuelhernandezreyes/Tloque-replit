@@ -1,16 +1,24 @@
 {
-  "name": "rest-express",
-  "version": "1.0.0",
+  "name": "tloque",
+  "version": "0.1.0",
+  "private": true,
   "type": "module",
   "license": "MIT",
   "scripts": {
     "dev": "NODE_ENV=development node --import tsx server/index.ts",
     "replit": "npm run build && NODE_ENV=development SERVE_STATIC=true node dist/index.cjs",
     "build": "node --import tsx script/build.ts",
+    "check:bundle": "node scripts/check-client-bundle.mjs",
     "start": "NODE_ENV=production node dist/index.cjs",
+    "start:migrated": "node scripts/migrate.mjs --apply && npm run start",
     "check": "tsc",
     "test": "node --import tsx --test tests/*.test.ts",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "db:migrate": "node scripts/migrate.mjs --apply",
+    "db:preflight": "node scripts/preflight.mjs"
+  },
+  "engines": {
+    "node": "20.x"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

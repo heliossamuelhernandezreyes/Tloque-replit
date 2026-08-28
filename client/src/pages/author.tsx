@@ -25,6 +25,24 @@ type AuthorProfile = {
   books:       any[]
 }
 
+type PayoutState = {
+  enabled: boolean
+  holdDays: number
+  minimumCents: number
+  currency: string
+  availableCents: number
+  heldCents: number
+  account: {
+    connected: boolean
+    ready: boolean
+    detailsSubmitted?: boolean
+    payoutsEnabled?: boolean
+    transfersActive?: boolean
+    disabledReason?: string
+  }
+  payouts: Array<{ id: number; amountCents: number; currency: string; status: string; requestedAt: string }>
+}
+
 export default function AuthorPage() {
   const [, params]      = useRoute("/author/:name")
   const [, setLocation] = useLocation()
@@ -35,16 +53,50 @@ export default function AuthorPage() {
   const { user, isAdmin } = useAuth()
   const [editing, setEditing] = useState(false)
   const [publicView, setPublicView] = useState(false)   // "cómo me ven los demás"
+  const [payoutBusy, setPayoutBusy] = useState(false)
+  const [payoutMessage, setPayoutMessage] = useState("")
 
-  const { data: earnings } = useQuery<{ currency: string; totalCents: number; count: number }>({
-    queryKey: ["/api/earnings/mine"],
+  const { data: payout, refetch: refetchPayout } = useQuery<PayoutState>({
+    queryKey: ["/api/payouts/mine"],
     queryFn: async () => {
-      const res = await fetch("/api/earnings/mine", { credentials: "include" })
-      if (!res.ok) return { currency: "mxn", totalCents: 0, count: 0 }
+      const res = await fetch("/api/payouts/mine", { credentials: "include" })
+      if (!res.ok) throw new Error("payout_unavailable")
       return res.json()
     },
     enabled: !!user,
   })
+
+  async function beginPayoutOnboarding() {
+    setPayoutBusy(true); setPayoutMessage("")
+    try {
+      const res = await fetch("/api/payouts/onboarding", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: "{}",
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok || typeof body.url !== "string") throw new Error(body.message || t("payoutError"))
+      window.location.assign(body.url)
+    } catch (error) {
+      setPayoutMessage(error instanceof Error ? error.message : t("payoutError"))
+      setPayoutBusy(false)
+    }
+  }
+
+  async function requestPayout() {
+    setPayoutBusy(true); setPayoutMessage("")
+    try {
+      const res = await fetch("/api/payouts/request", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: "{}",
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.message || t("payoutError"))
+      setPayoutMessage(t("payoutRequested"))
+      await refetchPayout()
+    } catch (error) {
+      setPayoutMessage(error instanceof Error ? error.message : t("payoutError"))
+    } finally {
+      setPayoutBusy(false)
+    }
+  }
 
   const { data: authorStats } = useQuery<{ totalHearts: number; totalSupports: number; totalReaders: number; perBook: any[] }>({
     queryKey: ["/api/author/stats"],
@@ -340,8 +392,8 @@ export default function AuthorPage() {
                       </motion.div>
                     )}
 
-                    {/* Ganancias */}
-                    {earnings && earnings.count > 0 && (
+                    {/* Ganancias y liquidación verificada */}
+                    {payout && (payout.availableCents > 0 || payout.heldCents > 0 || payout.payouts.length > 0) && (
                       <motion.div
                         initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                         className="w-full max-w-sm rounded-2xl px-4 py-3.5 mb-6"
@@ -355,11 +407,40 @@ export default function AuthorPage() {
                           <InfoDot text={t("earningsPayoutNote")} color={gc.color} size={12} align="left" />
                         </div>
                         <p className="text-xl font-display font-bold" style={{ color: gc.color }}>
-                          ${(earnings.totalCents / 100).toFixed(2)} {earnings.currency.toUpperCase()}
+                          ${(payout.availableCents / 100).toFixed(2)} {payout.currency.toUpperCase()}
                         </p>
                         <p className="text-[10px] font-sans mt-0.5" style={{ color: "rgba(255,255,255,0.45)" }}>
-                          {earnings.count} · {t("earningsCount")}
+                          {t("payoutAvailable")}
                         </p>
+                        {payout.heldCents > 0 && (
+                          <p className="text-[10px] font-sans mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>
+                            ${(payout.heldCents / 100).toFixed(2)} {payout.currency.toUpperCase()} · {t("payoutHeld").replace("{n}", String(payout.holdDays))}
+                          </p>
+                        )}
+                        {payout.payouts[0] && ["requested", "processing", "processing_unknown"].includes(payout.payouts[0].status) ? (
+                          <p className="text-[10px] font-sans mt-2" style={{ color: gc.color }}>{t("payoutPending")}</p>
+                        ) : payout.enabled && !payout.account.ready ? (
+                          <button
+                            type="button" disabled={payoutBusy} onClick={beginPayoutOnboarding}
+                            className="mt-3 w-full rounded-xl px-3 py-2 text-[11px] font-sans font-semibold disabled:opacity-50"
+                            style={{ background: gc.color, color: "rgba(0,0,0,0.88)" }}
+                          >
+                            {payoutBusy ? t("processing") : t("payoutVerify")}
+                          </button>
+                        ) : payout.enabled && payout.account.ready && payout.availableCents >= payout.minimumCents ? (
+                          <button
+                            type="button" disabled={payoutBusy} onClick={requestPayout}
+                            className="mt-3 w-full rounded-xl px-3 py-2 text-[11px] font-sans font-semibold disabled:opacity-50"
+                            style={{ background: gc.color, color: "rgba(0,0,0,0.88)" }}
+                          >
+                            {payoutBusy ? t("processing") : t("payoutRequest")}
+                          </button>
+                        ) : !payout.enabled ? (
+                          <p className="text-[10px] font-sans mt-2" style={{ color: "rgba(255,255,255,0.5)" }}>{t("payoutDisabled")}</p>
+                        ) : null}
+                        {payoutMessage && (
+                          <p className="text-[10px] font-sans mt-2" role="status" style={{ color: gc.color }}>{payoutMessage}</p>
+                        )}
                       </motion.div>
                     )}
                   </>

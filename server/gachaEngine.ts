@@ -9,6 +9,7 @@ import {
   type RarityKey,
 } from "@shared/gacha"
 import { randomBytes } from "node:crypto"
+import { debitTinta, refundTintaDebit } from "./economy"
 
 // Un candado global para el pozo: dos lectores no pueden cobrarle
 // al mismo tiempo. Serializa las tiradas — a cambio, el dinero nunca miente.
@@ -66,14 +67,10 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
     }
 
     // ── 2. Cobrar el boleto. El insert SOLO ocurre si el saldo alcanza.
-    const charged: any = await tx.execute(sql`
-      insert into wallet_ledger (user_id, currency, delta, reason, ref_type, ref_id)
-      select ${userId}, 'tinta', ${-price}, 'gacha_ticket', 'gacha', 0
-      where (select coalesce(sum(delta), 0) from wallet_ledger
-             where user_id = ${userId} and currency = 'tinta') >= ${price}
-      returning id
-    `)
-    if ((charged?.rows?.length ?? 0) === 0) {
+    const charged = await debitTinta(tx, {
+      userId, amount: price, reason: "gacha_ticket", refType: "gacha", refId: 0,
+    })
+    if (!charged) {
       const bal: any = await tx.execute(sql`
         select coalesce(sum(delta), 0) as b from wallet_ledger
         where user_id = ${userId} and currency = 'tinta'
@@ -107,10 +104,7 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
     }
     if (!Object.values(available).some(Boolean)) {
       // No hay NADA que sortear: devolvemos la Tinta y avisamos.
-      await tx.insert(walletLedger).values({
-        userId, currency: "tinta", delta: price, reason: "refund",
-        refType: "gacha", refId: 0,
-      })
+      await refundTintaDebit(tx, { userId, debitId: charged.id })
       return { ok: false as const, code: 404 as const, message: "No hay cartas en el sorteo todavía" }
     }
 
@@ -167,9 +161,7 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
     }
     const bookId = Number(obras?.rows?.[0]?.book_id)
     if (!bookId) {
-      await tx.insert(walletLedger).values({
-        userId, currency: "tinta", delta: price, reason: "refund", refType: "gacha", refId: 0,
-      })
+      await refundTintaDebit(tx, { userId, debitId: charged.id })
       return { ok: false as const, code: 404 as const, message: "No hay obras con esa rareza" }
     }
 
@@ -210,9 +202,14 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
     // ── 11. Pagar al autor: lo directo del boleto + el bono del pozo
     const authorPaid = direct + bonus
     if (authorId && authorPaid > 0) {
+      const authorBacking = Math.min(
+        charged.cashBackingCents,
+        Math.floor(charged.cashBackingCents * authorPaid / price),
+      )
       await tx.insert(walletLedger).values({
         userId: authorId, currency: "tinta", delta: authorPaid,
         reason: "gacha_earning", refType: "gacha_card", refId: cardId,
+        cashBackingCents: authorBacking,
       })
     }
 
