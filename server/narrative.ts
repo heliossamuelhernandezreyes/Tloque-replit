@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import type { Express } from "express"
-import { and, asc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm"
 import { z } from "zod"
 import {
   adaptiveScoreLayers,
@@ -21,7 +21,12 @@ import {
   type NarrativeProjectV1,
 } from "@shared/narrative"
 import { advancedDirectionProjectSchema } from "@shared/direction"
-import { musicBrainScoreForDirection, musicBrainScoreForExperience } from "@shared/music-brain"
+import {
+  musicBrainAudioLayerSchema,
+  musicBrainScoreForDirection,
+  musicBrainScoreForExperience,
+  type MusicBrainScoreV1,
+} from "@shared/music-brain"
 import { paperChargeFor } from "@shared/paper"
 import { db } from "./db"
 import { isAdmin } from "./auth"
@@ -113,6 +118,40 @@ async function oracleCatalog(): Promise<OracleScoreSummary[]> {
       .flatMap(layer => Array.isArray(layer.tags) ? layer.tags : [])
       .filter((tag): tag is string => typeof tag === "string"))],
   }))
+}
+
+async function readerAudioLayers(score: MusicBrainScoreV1 | null) {
+  if (!score) return []
+  const explicitIds = [...new Set(score.regions.flatMap(region => region.layerIds))]
+  const implicitScoreIds = [...new Set(score.regions
+    .filter(region => region.scoreId && region.layerIds.length === 0)
+    .map(region => region.scoreId as number))]
+  if (!explicitIds.length && !implicitScoreIds.length) return []
+  const selection = or(
+    explicitIds.length ? inArray(adaptiveScoreLayers.id, explicitIds) : undefined,
+    implicitScoreIds.length ? inArray(adaptiveScoreLayers.scoreId, implicitScoreIds) : undefined,
+  )
+  if (!selection) return []
+  const rows = await db.select({
+    id: adaptiveScoreLayers.id,
+    scoreId: adaptiveScoreLayers.scoreId,
+    assetId: adaptiveScoreLayers.assetId,
+    title: audioAssets.title,
+    url: audioAssets.url,
+    loop: audioAssets.loop,
+    defaultGain: adaptiveScoreLayers.defaultGain,
+    syncBars: adaptiveScoreLayers.syncBars,
+  }).from(adaptiveScoreLayers)
+    .innerJoin(adaptiveScores, eq(adaptiveScoreLayers.scoreId, adaptiveScores.id))
+    .innerJoin(audioAssets, eq(adaptiveScoreLayers.assetId, audioAssets.id))
+    .where(and(
+      selection,
+      eq(adaptiveScores.status, "published"),
+      eq(audioAssets.status, "published"),
+      eq(audioAssets.sourceType, "stream"),
+    ))
+    .orderBy(asc(adaptiveScoreLayers.scoreId), asc(adaptiveScoreLayers.position))
+  return rows.filter(row => Boolean(row.url)).map(row => musicBrainAudioLayerSchema.parse(row))
 }
 
 export function registerNarrativeRoutes(app: Express) {
@@ -458,7 +497,7 @@ export function registerNarrativeRoutes(app: Express) {
       ]
       if (!owner) conditions.push(eq(experienceProfiles.status, "approved"))
       const [profile] = await db.select().from(experienceProfiles).where(and(...conditions))
-      if (!profile) return res.json({ profile: null, musicBrain: null })
+      if (!profile) return res.json({ profile: null, musicBrain: null, audioLayers: [] })
       const compactProfile = experienceProfileSchema.parse(profile.data)
       const [advanced] = await db.select().from(advancedDirectionProjects).where(and(
         eq(advancedDirectionProjects.bookId, bookId),
@@ -469,7 +508,7 @@ export function registerNarrativeRoutes(app: Express) {
       const musicBrain = advancedProject.success && advancedProject.data.musicProject.regions.length > 0
         ? musicBrainScoreForDirection(advancedProject.data)
         : compactProfile.regions.length > 0 ? musicBrainScoreForExperience(compactProfile) : null
-      res.json({ profile: compactProfile, musicBrain })
+      res.json({ profile: compactProfile, musicBrain, audioLayers: await readerAudioLayers(musicBrain) })
     } catch (error) {
       console.error("Experience profile read failed:", error)
       res.status(500).json({ message: "No se pudo cargar la experiencia narrativa" })

@@ -1,14 +1,11 @@
 import { createHash } from "node:crypto"
 import type { Client } from "@replit/object-storage"
-import express, { type Express } from "express"
-import { compileSfzToTloqueSamplePack } from "./sfzSamplePackCompiler"
+import express, { type Express, type Request, type Response } from "express"
 import { requireAdmin } from "./auth"
 import { audioStorage } from "./audioStorage"
 import {
   curatedAudioModuleSource,
-  curatedSamplePackSource,
   downloadCuratedAudioModule,
-  downloadCuratedSamplePack,
 } from "./audioModuleInstaller"
 import { rateLimit } from "./rateLimit"
 import { detectSoundBankType } from "./soundBankDetection"
@@ -34,6 +31,70 @@ function errorMessage(error: unknown) {
 
 function safeModuleId(value: string) {
   return /^[a-z0-9][a-z0-9._-]{0,79}$/.test(value)
+}
+
+function requestedByteRange(header: string, total: number): { start: number; end: number } | null {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (!match || (!match[1] && !match[2]) || total <= 0) return null
+  if (!match[1]) {
+    const suffix = Number(match[2])
+    if (!Number.isInteger(suffix) || suffix <= 0) return null
+    return { start: Math.max(0, total - suffix), end: total - 1 }
+  }
+  const start = Number(match[1])
+  const requestedEnd = match[2] ? Number(match[2]) : total - 1
+  if (!Number.isInteger(start) || !Number.isInteger(requestedEnd) || start < 0 || start >= total || requestedEnd < start) return null
+  return { start, end: Math.min(total - 1, requestedEnd) }
+}
+
+/** Immutable App Storage response with conditional requests and byte ranges. */
+async function serveStoredObject(
+  req: Request,
+  res: Response,
+  options: { objectName: string; contentType: string; cacheControl: string; etag: string; errorLabel: string },
+) {
+  res.setHeader("Content-Type", options.contentType)
+  res.setHeader("Cache-Control", options.cacheControl)
+  res.setHeader("Accept-Ranges", "bytes")
+  res.setHeader("ETag", `"${options.etag}"`)
+  if (req.get("If-None-Match") === `"${options.etag}"`) return res.status(304).end()
+
+  let storage: Client | undefined
+  try {
+    storage = audioStorage.get()
+    const rangeHeader = req.get("Range")
+    if (rangeHeader) {
+      // App Storage v1 does not expose range reads or object byte metadata.
+      // Materialize only for an explicit client range; ordinary playback keeps
+      // the streaming path and therefore constant server memory.
+      const downloaded = await storage.downloadAsBytes(options.objectName, { decompress: false })
+      if (!downloaded.ok) throw downloaded.error
+      const bytes = downloaded.value[0]
+      const range = requestedByteRange(rangeHeader, bytes.length)
+      if (!range) {
+        res.setHeader("Content-Range", `bytes */${bytes.length}`)
+        return res.status(416).end()
+      }
+      const partial = bytes.subarray(range.start, range.end + 1)
+      res.status(206)
+      res.setHeader("Content-Range", `bytes ${range.start}-${range.end}/${bytes.length}`)
+      res.setHeader("Content-Length", String(partial.length))
+      return res.end(partial)
+    }
+    const stream = storage.downloadAsStream(options.objectName, { decompress: false })
+    stream.once("error", error => {
+      audioStorage.reset(storage)
+      console.error(`${options.errorLabel} stream failed:`, error)
+      if (!res.headersSent) res.status(404).end()
+      else res.destroy(error)
+    })
+    stream.pipe(res)
+  } catch (error) {
+    audioStorage.reset(storage)
+    console.error(`${options.errorLabel} stream initialization failed:`, error)
+    if (!res.headersSent) res.status(503).end()
+    else res.destroy(error as Error)
+  }
 }
 
 export function registerAudioUploadRoutes(app: Express) {
@@ -145,100 +206,6 @@ export function registerAudioUploadRoutes(app: Express) {
   )
 
   app.post(
-    "/api/admin/audio/sample-pack-catalog/:sourceId/install",
-    requireAdmin,
-    rateLimit(10 * 60_000, 2),
-    express.json({ limit: "8kb" }),
-    async (req, res) => {
-      const sourceId = Array.isArray(req.params.sourceId) ? req.params.sourceId[0] : req.params.sourceId
-      const source = curatedSamplePackSource(sourceId || "")
-      const install = source?.samplePackInstall
-      if (!source || !install) return res.status(404).json({ message: "El paquete de muestras no está disponible para instalación" })
-      if (req.body?.acknowledgement !== install.acknowledgement) {
-        return res.status(400).json({ message: "Debes aceptar la licencia y procedencia del paquete" })
-      }
-      if (!safeModuleId(install.moduleId)) return res.status(500).json({ message: "El id curado del módulo es inválido" })
-      let storage: Client | undefined
-      try {
-        const downloaded = await downloadCuratedSamplePack(source)
-        storage = audioStorage.get()
-        const sampleUrlByPath = new Map<string, string>()
-        const sampleShaByPath = new Map<string, string>()
-        let bytes = 0
-        let uploadedSamples = 0
-        for (const sample of downloaded.samples) {
-          const objectName = `audio/sample-packs/samples/${sample.sha256}.wav`
-          const exists = await storage.exists(objectName)
-          if (!exists.ok) throw exists.error
-          if (!exists.value) {
-            const uploaded = await storage.uploadFromBytes(objectName, sample.bytes, { compress: false })
-            if (!uploaded.ok) throw uploaded.error
-            uploadedSamples += 1
-          }
-          bytes += sample.bytes.length
-          const normalizedPath = sample.sourcePath.replace(/\\/g, "/")
-          sampleUrlByPath.set(normalizedPath, `/api/audio/sample-packs/samples/${sample.sha256}.wav`)
-          sampleShaByPath.set(normalizedPath, sample.sha256)
-        }
-
-        const pack = compileSfzToTloqueSamplePack(downloaded.sfzText, {
-          id: install.moduleId,
-          name: `${source.libraryName} · ${source.displayName}`,
-          instrumentManifestId: install.manifestId,
-          license: source.license,
-          sourceName: source.name,
-          sourceUrl: source.repositoryUrl,
-          sourceCommit: install.pinnedCommit,
-          sampleUrlForPath: path => {
-            const url = sampleUrlByPath.get(path.replace(/\\/g, "/"))
-            if (!url) throw new Error(`Muestra no instalada: ${path}`)
-            return url
-          },
-          sampleSha256ForPath: path => sampleShaByPath.get(path.replace(/\\/g, "/")),
-        })
-        const packBytes = Buffer.from(JSON.stringify(pack))
-        const packSha256 = createHash("sha256").update(packBytes).digest("hex")
-        const immutableObjectName = `audio/sample-packs/manifests/${packSha256}.json`
-        const moduleObjectName = `audio/sample-packs/modules/${install.moduleId}.json`
-        const packExists = await storage.exists(immutableObjectName)
-        if (!packExists.ok) throw packExists.error
-        if (!packExists.value) {
-          const uploaded = await storage.uploadFromBytes(immutableObjectName, packBytes, { compress: false })
-          if (!uploaded.ok) throw uploaded.error
-        }
-        const aliasUploaded = await storage.uploadFromBytes(moduleObjectName, packBytes, { compress: false })
-        if (!aliasUploaded.ok) throw aliasUploaded.error
-
-        res.status(201).json({
-          url: `/api/audio/sample-packs/modules/${install.moduleId}.json`,
-          immutableUrl: `/api/audio/sample-packs/manifests/${packSha256}.json`,
-          sha256: packSha256,
-          bytes,
-          sampleCount: downloaded.samples.length,
-          uploadedSamples,
-          deduplicated: packExists.value && uploadedSamples === 0,
-          manifestId: install.manifestId,
-          moduleId: install.moduleId,
-          version: install.version,
-          source: {
-            id: source.id,
-            name: source.name,
-            license: source.license,
-            repositoryUrl: source.repositoryUrl,
-            pinnedCommit: install.pinnedCommit,
-            sfzSha256: downloaded.sfzSha256,
-            tags: install.tags,
-          },
-        })
-      } catch (error) {
-        audioStorage.reset(storage)
-        console.error("Curated sample-pack installation failed:", error)
-        res.status(502).json({ message: "No se pudo descargar, verificar o publicar el paquete de muestras fijado." })
-      }
-    },
-  )
-
-  app.post(
     "/api/admin/audio/module-uploads",
     requireAdmin,
     rateLimit(60_000, 4),
@@ -282,24 +249,13 @@ export function registerAudioUploadRoutes(app: Express) {
     const match = /^([a-f0-9]{64})\.(mp3|wav)$/.exec(file || "")
     if (!match) return res.status(404).end()
     const objectName = `audio/fonoteca/${match[1]}.${match[2]}`
-    res.setHeader("Content-Type", match[2] === "wav" ? "audio/wav" : "audio/mpeg")
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable")
-    let storage: Client | undefined
-    try {
-      storage = audioStorage.get()
-      const stream = storage.downloadAsStream(objectName, { decompress: false })
-      stream.once("error", error => {
-        audioStorage.reset(storage)
-        console.error("Audio stream failed:", error)
-        if (!res.headersSent) res.status(404).end()
-        else res.destroy(error)
-      })
-      stream.pipe(res)
-    } catch (error) {
-      audioStorage.reset(storage)
-      console.error("Audio stream initialization failed:", error)
-      res.status(503).end()
-    }
+    void serveStoredObject(req, res, {
+      objectName,
+      contentType: match[2] === "wav" ? "audio/wav" : "audio/mpeg",
+      cacheControl: "public, max-age=31536000, immutable",
+      etag: match[1],
+      errorLabel: "Audio",
+    })
   })
 
   app.get("/api/audio/modules/:file", rateLimit(60_000, 240), (req, res) => {
@@ -307,24 +263,13 @@ export function registerAudioUploadRoutes(app: Express) {
     const match = /^([a-f0-9]{64})\.(sf2|sf3|dls)$/.exec(file || "")
     if (!match) return res.status(404).end()
     const objectName = `audio/modules/${match[1]}.${match[2]}`
-    res.setHeader("Content-Type", "application/octet-stream")
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable")
-    let storage: Client | undefined
-    try {
-      storage = audioStorage.get()
-      const stream = storage.downloadAsStream(objectName, { decompress: false })
-      stream.once("error", error => {
-        audioStorage.reset(storage)
-        console.error("Sound bank stream failed:", error)
-        if (!res.headersSent) res.status(404).end()
-        else res.destroy(error)
-      })
-      stream.pipe(res)
-    } catch (error) {
-      audioStorage.reset(storage)
-      console.error("Sound bank stream initialization failed:", error)
-      res.status(503).end()
-    }
+    void serveStoredObject(req, res, {
+      objectName,
+      contentType: "application/octet-stream",
+      cacheControl: "public, max-age=31536000, immutable",
+      etag: match[1],
+      errorLabel: "Sound bank",
+    })
   })
 
   app.get("/api/audio/sample-packs/samples/:file", rateLimit(60_000, 480), (req, res) => {
@@ -332,24 +277,13 @@ export function registerAudioUploadRoutes(app: Express) {
     const match = /^([a-f0-9]{64})\.wav$/.exec(file || "")
     if (!match) return res.status(404).end()
     const objectName = `audio/sample-packs/samples/${match[1]}.wav`
-    res.setHeader("Content-Type", "audio/wav")
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable")
-    let storage: Client | undefined
-    try {
-      storage = audioStorage.get()
-      const stream = storage.downloadAsStream(objectName, { decompress: false })
-      stream.once("error", error => {
-        audioStorage.reset(storage)
-        console.error("Sample-pack stream failed:", error)
-        if (!res.headersSent) res.status(404).end()
-        else res.destroy(error)
-      })
-      stream.pipe(res)
-    } catch (error) {
-      audioStorage.reset(storage)
-      console.error("Sample-pack stream initialization failed:", error)
-      res.status(503).end()
-    }
+    void serveStoredObject(req, res, {
+      objectName,
+      contentType: "audio/wav",
+      cacheControl: "public, max-age=31536000, immutable",
+      etag: match[1],
+      errorLabel: "Sample-pack",
+    })
   })
 
   app.get("/api/audio/sample-packs/manifests/:file", rateLimit(60_000, 240), (req, res) => {

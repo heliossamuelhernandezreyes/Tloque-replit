@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react"
 import { type MusicCue, type MusicState } from "./MusicEngine"
 import { useSettings } from "@/context/SettingsContext"
-import type { MusicBrainScoreV1 } from "@shared/music-brain"
+import type { MusicBrainAudioLayer, MusicBrainScoreV1 } from "@shared/music-brain"
 
 type HybridMusicEngine = import("./HybridMusicEngine").HybridMusicEngine
 
@@ -19,6 +19,7 @@ interface MusicContextValue {
   toggle: () => void
   duck: (active: boolean) => void
   loadNarrativeScore: (score: MusicBrainScoreV1 | null) => void
+  loadAdaptiveLayers: (layers: readonly MusicBrainAudioLayer[]) => void
   direct: (intensity: number, silence: boolean, transitionSeconds: number, regionId?: string) => void
   stop: () => void
 }
@@ -34,6 +35,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const generationRef = useRef(0)
   const desiredCueRef = useRef<MusicCue | null>(null)
   const narrativeScoreRef = useRef<MusicBrainScoreV1 | null>(null)
+  const adaptiveLayersRef = useRef<readonly MusicBrainAudioLayer[]>([])
   const directionRef = useRef({ intensity: 0, silence: false, seconds: 1, regionId: undefined as string | undefined })
   const duckedRef = useRef(false)
   const volumeRef = useRef(settings.musicVolume)
@@ -51,6 +53,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     engine.setMasterVolume(volumeRef.current)
     engine.setDucked(duckedRef.current)
     engine.setNarrativeScore(narrativeScoreRef.current)
+    engine.setAdaptiveLayers(adaptiveLayersRef.current)
     const direction = directionRef.current
     engine.setNarrativeDirection(direction.intensity, direction.silence, direction.seconds, direction.regionId)
     engineRef.current = engine
@@ -124,6 +127,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     narrativeScoreRef.current = score
     engineRef.current?.setNarrativeScore(score)
   }, [])
+  const loadAdaptiveLayers = useCallback((layers: readonly MusicBrainAudioLayer[]) => {
+    adaptiveLayersRef.current = layers
+    engineRef.current?.setAdaptiveLayers(layers)
+  }, [])
   const direct = useCallback((intensity: number, silence: boolean, seconds: number, regionId?: string) => {
     directionRef.current = { intensity, silence, seconds, regionId }
     engineRef.current?.setNarrativeDirection(intensity, silence, seconds, regionId)
@@ -135,7 +142,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <MusicContext.Provider value={{ state, cue, playCue, toggle, duck, loadNarrativeScore, direct, stop }}>
+    <MusicContext.Provider value={{ state, cue, playCue, toggle, duck, loadNarrativeScore, loadAdaptiveLayers, direct, stop }}>
       {children}
     </MusicContext.Provider>
   )

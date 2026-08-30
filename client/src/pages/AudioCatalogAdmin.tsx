@@ -22,6 +22,11 @@ import { musicCueFor, type CatalogAudioAsset as AudioAsset } from "@/audio/catal
 import { cacheAudioResource, isAudioResourceCached, removeCachedAudioResource } from "@/audio/AudioResourceCache"
 import { downloadWav, estimateScoreExport, renderTloqueScoreToWav } from "@/audio/ScoreExporter"
 import { renderTloqueScoreWithModuleToWav } from "@/audio/ScoreSampledExporter"
+import {
+  assessAudioMasteringSafety,
+  type AudioMasteringSafetyReport,
+  type AudioRenderAnalysis,
+} from "@/audio/AudioRenderAnalysis"
 import { compileTloqueScoreOnServer } from "@/lib/tloqueScoreApi"
 
 type AudioAssetForm = Omit<AudioAsset, "id" | "favorite">
@@ -146,6 +151,10 @@ export default function AudioCatalogAdmin() {
   const [scoreMeta, setScoreMeta] = useState({ ...SCORE_META })
   const [compiled, setCompiled] = useState<LinearScoreRecipe | null>(null)
   const [exportProgress, setExportProgress] = useState(0)
+  const [masteringResult, setMasteringResult] = useState<{
+    analysis: AudioRenderAnalysis
+    report: AudioMasteringSafetyReport
+  } | null>(null)
   const [uploadMessage, setUploadMessage] = useState("")
   const [moduleCache, setModuleCache] = useState<Record<number, boolean>>({})
   const [bindingDrafts, setBindingDrafts] = useState<Record<string, BindingDraft>>({})
@@ -245,7 +254,7 @@ export default function AudioCatalogAdmin() {
     mutationFn: async () => {
       const recipe = await compileTloqueScoreOnServer(scoreSource)
       const moduleAsset = resolveScoreModule(recipe)
-      if (recipe.version === 2 && recipe.plan.moduleId !== "builtin" && !moduleAsset) {
+      if (recipe.version === 2 && recipe.plan.moduleId !== "builtin" && recipe.plan.moduleId !== "native-auto" && !moduleAsset) {
         throw new Error(`Publica un banco instrumental con la etiqueta module:${recipe.plan.moduleId}`)
       }
       const payload: AudioAssetForm = {
@@ -290,10 +299,22 @@ export default function AudioCatalogAdmin() {
     mutationFn: async () => {
       if (!compiled) throw new Error("Valida y compila el código antes de exportar")
       setExportProgress(0)
+      setMasteringResult(null)
       const moduleAsset = resolveScoreModule(compiled)
+      const measurement: { current: AudioRenderAnalysis | null } = { current: null }
+      const options = {
+        onProgress: setExportProgress,
+        onAnalysis: (analysis: AudioRenderAnalysis) => { measurement.current = analysis },
+      }
       const blob = moduleAsset
-        ? await renderTloqueScoreWithModuleToWav(compiled, moduleAsset.packUrl, { onProgress: setExportProgress })
-        : await renderTloqueScoreToWav(compiled, { onProgress: setExportProgress })
+        ? await renderTloqueScoreWithModuleToWav(compiled, moduleAsset.packUrl, options)
+        : await renderTloqueScoreToWav(compiled, options)
+      if (!measurement.current) throw new Error("El render terminó sin medición de masterización")
+      const report = assessAudioMasteringSafety(measurement.current)
+      setMasteringResult({ analysis: measurement.current, report })
+      if (report.status === "fail") {
+        throw new Error(`Master rechazado por control de calidad:\n${report.reasons.map(reason => `• ${reason}`).join("\n")}`)
+      }
       downloadWav(blob, scoreMeta.title || (compiled.version === 2 ? compiled.plan.title : "tloque-score"))
       return blob.size
     },
@@ -691,6 +712,13 @@ export default function AudioCatalogAdmin() {
               </button>
             </div>
             {exportEstimate && <p className="text-[10px] text-zinc-500">Monitoreo de referencia independiente del volumen de lectura · {compiledModule ? `Render muestreado ${compiledModule.title} · 24-bit / 48 kHz` : `Render incorporado ${exportEstimate.bitDepth}-bit / ${(exportEstimate.sampleRate / 1000).toFixed(0)} kHz`} · {exportEstimate.audioProfile}{compiledModule ? " · en móvil, las obras muy largas se exportan por movimientos para proteger la memoria" : ` · tamaño estimado ${(exportEstimate.bytes / 1024 / 1024).toFixed(1)} MB · procesamiento por bloques`}.</p>}
+            {masteringResult && (
+              <div className={`rounded-xl border p-3 text-xs ${masteringResult.report.status === "pass" ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-200" : masteringResult.report.status === "warn" ? "border-amber-400/20 bg-amber-400/5 text-amber-200" : "border-red-400/20 bg-red-400/5 text-red-200"}`}>
+                <p className="font-semibold">Control de master: {masteringResult.report.status === "pass" ? "aprobado" : masteringResult.report.status === "warn" ? "aprobado con revisión" : "rechazado"}</p>
+                <p className="mt-1 tabular-nums">{Number.isFinite(masteringResult.analysis.integratedLufs) ? `${masteringResult.analysis.integratedLufs.toFixed(1)} LUFS-I` : "silencio"} · {masteringResult.analysis.truePeak4xDbtp.toFixed(2)} dBTP · crest {masteringResult.analysis.crestFactorDb.toFixed(1)} dB · {masteringResult.analysis.clippedSampleCount} clips</p>
+                {masteringResult.report.reasons.length > 0 && <ul className="mt-1 list-disc pl-4">{masteringResult.report.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
+              </div>
+            )}
             {(saveScore.isError || exportScore.isError) && <pre className="whitespace-pre-wrap text-xs text-red-300">{((saveScore.error || exportScore.error) as Error).message}</pre>}
           </section>
         )}

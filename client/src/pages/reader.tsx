@@ -19,7 +19,7 @@ import ReaderAudioMenu from "@/components/ReaderAudioMenu"
 import type { ChapterAudioAssignment } from "@/audio/catalog"
 import { useReadingAttention } from "@/narrative/useReadingAttention"
 import { narrativeParagraphsFor, resolveNarrativeRegion, type ExperienceProfileV1, type NarrativeRuntimeState } from "@shared/narrative"
-import type { MusicBrainScoreV1 } from "@shared/music-brain"
+import type { MusicBrainAudioLayer, MusicBrainScoreV1 } from "@shared/music-brain"
 import { FREE_SAVE_LIMIT, countsTowardLimit, countLimitedSaved } from "@/lib/library"
 import {
   useSettings,
@@ -98,11 +98,11 @@ export default function Reader() {
   })
   const soundtrack = soundtrackData?.assignments.find(item => item.chapterIndex === activeChapter) || null
 
-  const { data: experienceData } = useQuery<{ profile: ExperienceProfileV1 | null; musicBrain: MusicBrainScoreV1 | null }>({
+  const { data: experienceData } = useQuery<{ profile: ExperienceProfileV1 | null; musicBrain: MusicBrainScoreV1 | null; audioLayers: MusicBrainAudioLayer[] }>({
     queryKey: ["/api/books", numericBookId, "experience", activeChapter],
     queryFn: async () => {
       const response = await fetch(`/api/books/${numericBookId}/experience/${activeChapter}`, { credentials: "include" })
-      return response.ok ? response.json() : { profile: null, musicBrain: null }
+      return response.ok ? response.json() : { profile: null, musicBrain: null, audioLayers: [] }
     },
     enabled: numericBookId !== null,
   })
@@ -115,8 +115,14 @@ export default function Reader() {
 
   useEffect(() => {
     music.loadNarrativeScore(experienceData?.musicBrain ?? null)
-    return () => music.loadNarrativeScore(null)
-  }, [experienceData?.musicBrain, music.loadNarrativeScore])
+    music.loadAdaptiveLayers(experienceData?.audioLayers ?? [])
+    return () => { music.loadNarrativeScore(null); music.loadAdaptiveLayers([]) }
+  }, [experienceData?.musicBrain, experienceData?.audioLayers, music.loadNarrativeScore, music.loadAdaptiveLayers])
+
+  useEffect(() => {
+    if (soundtrack || experienceData?.musicBrain) return
+    music.stop()
+  }, [activeChapter, soundtrack?.assetId, experienceData?.musicBrain, music.stop])
 
   useEffect(() => {
     const profile = experienceData?.profile
@@ -586,7 +592,7 @@ export default function Reader() {
         </div>
 
         <div className="flex items-center gap-1">
-          {(soundtrack || book?.spotifyLink) && <ReaderAudioMenu bookId={bookId || "book"} soundtrack={soundtrack} spotifyLink={book?.spotifyLink || ""} accent={gc.color} iconColor={headerText} />}
+          {(soundtrack || experienceData?.musicBrain || book?.spotifyLink) && <ReaderAudioMenu bookId={bookId || "book"} soundtrack={soundtrack} musicBrain={experienceData?.musicBrain ?? null} audioLayers={experienceData?.audioLayers ?? []} spotifyLink={book?.spotifyLink || ""} accent={gc.color} iconColor={headerText} />}
           {/* Botón de lectura en voz alta */}
           {ttsSupported && (
             <motion.button

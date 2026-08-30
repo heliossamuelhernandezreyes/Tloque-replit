@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto"
 import type { Client } from "@replit/object-storage"
 import express, { type Express } from "express"
-import { CURATED_SAMPLE_PACKS } from "../shared/curated-sample-packs"
-import { CURATED_RAW_WAV_PACKS } from "../shared/curated-raw-wav-packs"
+import { CURATED_INSTALLABLE_SAMPLE_PACKS } from "../shared/curated-installable-sample-packs"
 import { requireAdmin } from "./auth"
 import { audioStorage } from "./audioStorage"
 import { curatedSamplePackSource, downloadCuratedSamplePack } from "./audioModuleInstaller"
@@ -41,12 +40,12 @@ async function probeAudioStorage() {
   }
 }
 
-const NATIVE_SAMPLE_PACK_CATALOG = [...CURATED_SAMPLE_PACKS, ...CURATED_RAW_WAV_PACKS] as const
+const NATIVE_SAMPLE_PACK_CATALOG = CURATED_INSTALLABLE_SAMPLE_PACKS
 
 /**
  * Registered before the legacy upload router. This endpoint is the canonical
- * installer for native TloqueSamplePack libraries; the old inline handler is
- * kept temporarily for backwards-compatible server structure but is shadowed.
+ * installer for every native TloqueSamplePack library, including externally
+ * hosted PCM sources that pass the curated license and integrity registry.
  */
 export function registerNativeSamplePackRoutes(app: Express) {
   app.get("/api/admin/audio/sample-pack-catalog", requireAdmin, (_req, res) => {

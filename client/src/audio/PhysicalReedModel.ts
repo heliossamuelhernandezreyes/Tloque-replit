@@ -1,5 +1,6 @@
 import type { NativePhysicalModelSource } from "@shared/native-acoustic-source"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
+import { deterministicNoiseOffset, sharedDeterministicNoiseBuffer } from "./DeterministicAudioNoise"
 
 type LinearScoreEventV2 = LinearScoreRecipeV2["plan"]["events"][number]
 type LinearScoreControlV2 = LinearScoreRecipeV2["plan"]["controls"][number]
@@ -17,19 +18,6 @@ export interface PhysicalModelVoiceOptions {
 function clamp01(value: number) { return Math.max(0, Math.min(1, value)) }
 function midiHz(midi: number) { return 440 * 2 ** ((midi - 69) / 12) }
 function centsForSemitones(semitones: number) { return semitones * 100 }
-
-function makeNoiseBuffer(context: BaseAudioContext, seconds = 0.2) {
-  const frames = Math.max(128, Math.ceil(context.sampleRate * seconds))
-  const buffer = context.createBuffer(1, frames, context.sampleRate)
-  const data = buffer.getChannelData(0)
-  let previous = 0
-  for (let i = 0; i < data.length; i += 1) {
-    const white = Math.random() * 2 - 1
-    previous = previous * 0.74 + white * 0.26
-    data[i] = previous
-  }
-  return buffer
-}
 
 function createSaturator(context: BaseAudioContext, amount: number) {
   const node = context.createWaveShaper()
@@ -152,7 +140,9 @@ export function schedulePhysicalReedVoice(
     oscillator.connect(gain); gain.connect(excitation); harmonicOscillators.push(oscillator)
   }
 
-  const noise = context.createBufferSource(); noise.buffer = makeNoiseBuffer(context); noise.loop = true
+  const noise = context.createBufferSource()
+  noise.buffer = sharedDeterministicNoiseBuffer(context, `reed:${source.modelId}`, 8, 0.74)
+  noise.loop = true
   const noiseBand = context.createBiquadFilter(); noiseBand.type = "bandpass"; noiseBand.frequency.value = isContrabassoon(source) ? 1_050 : 2_250; noiseBand.Q.value = 0.7
   const noiseGain = context.createGain(); noiseGain.gain.value = profile.noiseMix * (0.28 + pressure * 0.72)
   noise.connect(noiseBand); noiseBand.connect(noiseGain); noiseGain.connect(excitation)
@@ -229,7 +219,8 @@ export function schedulePhysicalReedVoice(
 
   fundamental.start(noteStart); fundamental.stop(stopAt)
   for (const oscillator of harmonicOscillators) { oscillator.start(noteStart); oscillator.stop(stopAt) }
-  noise.start(noteStart); noise.stop(stopAt); lfo.start(noteStart); lfo.stop(stopAt); pressureLfo.start(noteStart); pressureLfo.stop(stopAt)
+  const noiseOffset = deterministicNoiseOffset(`${source.modelId}:${event.trackId}:${event.timeSeconds}:${midi}`, noise.buffer.duration)
+  noise.start(noteStart, noiseOffset); noise.stop(stopAt); lfo.start(noteStart); lfo.stop(stopAt); pressureLfo.start(noteStart); pressureLfo.stop(stopAt)
 
   return { startSeconds: event.timeSeconds, endSeconds: stopAt - startAt, sourceKind: source.kind }
 }
