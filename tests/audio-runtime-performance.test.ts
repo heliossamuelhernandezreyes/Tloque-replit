@@ -98,10 +98,32 @@ test("look-ahead materializa sólo la ventana próxima y nunca duplica tareas", 
 
 test("realtime usa look-ahead y cancela su intervalo al detenerse", () => {
   const engine = read("client/src/audio/NativeSampleScoreEngine.ts")
-  assert.match(engine, /new NativeRealtimeLookahead\(realtimeTasks\)/)
+  assert.match(engine, /new NativeRealtimeLookahead\(realtimeTasks, shouldLoop \? recipe\.plan\.totalSeconds : 0\)/)
   assert.match(engine, /window\.setInterval\(pump, NATIVE_REALTIME_TICK_MS\)/)
   assert.match(engine, /window\.clearInterval\(this\.schedulerTimer\)/)
   assert.doesNotMatch(engine, /await Promise\.all\(scheduled\)/)
+})
+
+test("look-ahead repite el ciclo sin duplicar ataques ya programados", async () => {
+  const fired: number[] = []
+  const lookahead = new NativeRealtimeLookahead([
+    { timeSeconds: 0, run: offset => { fired.push(offset ?? -1) } },
+    { timeSeconds: 1, run: offset => { fired.push(offset ?? -1) } },
+  ], 2)
+  await Promise.all(lookahead.pump(0, 0))
+  await Promise.all(lookahead.pump(0.95, 0.1))
+  await Promise.all(lookahead.pump(1.95, 0.1))
+  await Promise.all(lookahead.pump(2.95, 0.1))
+  assert.deepEqual(fired, [0, 0, 2, 2])
+  assert.equal(lookahead.complete, false)
+})
+
+test("el cambio de región conserva dos decks, espera al próximo compás y cruza ganancias", () => {
+  const source = read("client/src/audio/NativeCrossfadeScoreEngine.ts")
+  assert.match(source, /NativeSampleScoreEngine, NativeSampleScoreEngine/)
+  assert.match(source, /secondsUntilNextBar/)
+  assert.match(source, /fadeOutAndStop\(seconds, startDelay\)/)
+  assert.match(source, /this\.listener\("crossfading"/)
 })
 
 test("Winter expone una presión de voces determinista para benchmarks", () => {

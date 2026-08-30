@@ -1,4 +1,5 @@
 import { cachedObjectUrl } from "./AudioResourceCache"
+import type { MusicBrainAudioLayer } from "@shared/music-brain"
 
 export type MusicState = "idle" | "loading" | "playing" | "paused" | "crossfading" | "blocked" | "error"
 
@@ -6,7 +7,7 @@ export interface MusicCue {
   id: number
   title: string
   artist?: string
-  sourceType?: "stream" | "procedural" | "soundfont" | "score" | "sfx"
+  sourceType?: "stream" | "procedural" | "soundfont" | "score" | "adaptive" | "sfx"
   url?: string
   recipe?: unknown
   packUrl?: string
@@ -20,6 +21,14 @@ export interface MusicCue {
   crossfadeSeconds: number
   /** Studio-only full-scale monitoring; reader cues never set this. */
   monitoring?: "program" | "reference"
+  /** Resolved live tier after native-pack preflight/load. */
+  playbackTier?: "native" | "hybrid" | "synth"
+  /** Instruments that are using the bounded synth fallback in this cue. */
+  fallbackInstrumentIds?: readonly string[]
+  /** Enables deterministic thinning/variation while a narrative region dwells. */
+  adaptiveDwell?: boolean
+  /** Published Fonoteca stems selected by stable Direction layer IDs. */
+  adaptiveLayers?: readonly MusicBrainAudioLayer[]
 }
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void

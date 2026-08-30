@@ -1,15 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Check, Download, ExternalLink, Headphones, Loader2, Music2, Volume2, VolumeX } from "lucide-react"
 import { useMusic } from "@/audio/MusicProvider"
-import { cacheAudioResource, isAudioResourceCached } from "@/audio/AudioResourceCache"
+import {
+  cacheAudioResource,
+  cacheMusicBrainScoreResources,
+  isAudioResourceCached,
+  isMusicBrainScoreCached,
+} from "@/audio/AudioResourceCache"
 import { musicCueFor, type ChapterAudioAssignment } from "@/audio/catalog"
+import type { MusicBrainAudioLayer, MusicBrainScoreV1 } from "@shared/music-brain"
+import type { MusicCue } from "@/audio/MusicEngine"
 import { useSettings } from "@/context/SettingsContext"
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer"
 
 type Preference = "tloque" | "spotify" | "off"
 
 const copy = {
-  es: { title: "Audio de lectura", description: "Tú eliges. Nada se reproduce automáticamente.", tloque: "Original Tloque", original: "Fonoteca y síntesis de la obra", spotify: "Recomendación del autor", external: "Se abre fuera de Tloque", off: "Sin música", silence: "Lectura en silencio", volume: "Volumen", download: "Guardar módulo", saved: "Disponible sin conexión", procedural: "No necesita descarga" },
+  es: { title: "Audio de lectura", description: "Tú eliges. Nada se reproduce automáticamente.", tloque: "Original Tloque", original: "Fonoteca y síntesis de la obra", spotify: "Recomendación del autor", external: "Se abre fuera de Tloque", off: "Sin música", silence: "Lectura en silencio", volume: "Volumen", download: "Guardar fonoteca", saved: "Disponible sin conexión", procedural: "No necesita descarga", unavailable: "El audio no pudo iniciar; revisa la conexión o guarda la fonoteca.", blocked: "Toca Original Tloque para desbloquear el audio.", native: "Acústico nativo", hybrid: "Acústico con apoyo sintético", synth: "Síntesis de respaldo" },
   en: { title: "Reading audio", description: "You choose. Nothing plays automatically.", tloque: "Tloque Original", original: "The work's library and synthesis", spotify: "Author recommendation", external: "Opens outside Tloque", off: "No music", silence: "Silent reading", volume: "Volume", download: "Save module", saved: "Available offline", procedural: "No download needed" },
   pt: { title: "Áudio de leitura", description: "Você escolhe. Nada toca automaticamente.", tloque: "Original Tloque", original: "Fonoteca e síntese da obra", spotify: "Recomendação do autor", external: "Abre fora do Tloque", off: "Sem música", silence: "Leitura silenciosa", volume: "Volume", download: "Salvar módulo", saved: "Disponível offline", procedural: "Não requer download" },
   fr: { title: "Audio de lecture", description: "Vous choisissez. Rien ne démarre automatiquement.", tloque: "Original Tloque", original: "Phonothèque et synthèse de l’œuvre", spotify: "Recommandation de l’auteur", external: "S’ouvre hors de Tloque", off: "Sans musique", silence: "Lecture silencieuse", volume: "Volume", download: "Enregistrer le module", saved: "Disponible hors ligne", procedural: "Aucun téléchargement" },
@@ -23,12 +30,16 @@ const copy = {
 export default function ReaderAudioMenu({
   bookId,
   soundtrack,
+  musicBrain,
+  audioLayers = [],
   spotifyLink,
   accent,
   iconColor,
 }: {
   bookId: string | number
   soundtrack: ChapterAudioAssignment | null
+  musicBrain?: MusicBrainScoreV1 | null
+  audioLayers?: readonly MusicBrainAudioLayer[]
   spotifyLink?: string
   accent: string
   iconColor: string
@@ -36,6 +47,13 @@ export default function ReaderAudioMenu({
   const { settings, updateSetting } = useSettings()
   const language = settings.language as keyof typeof copy
   const text = copy[language] ?? copy.es
+  const runtimeText = {
+    unavailable: "unavailable" in text ? text.unavailable : copy.es.unavailable,
+    blocked: "blocked" in text ? text.blocked : copy.es.blocked,
+    native: "native" in text ? text.native : copy.es.native,
+    hybrid: "hybrid" in text ? text.hybrid : copy.es.hybrid,
+    synth: "synth" in text ? text.synth : copy.es.synth,
+  }
   const music = useMusic()
   const preferenceKey = `tloque_audio_preference_${bookId}`
   const [preference, setPreference] = useState<Preference>(() => {
@@ -49,29 +67,45 @@ export default function ReaderAudioMenu({
   const [downloadError, setDownloadError] = useState("")
   const lastCueKey = useRef("")
   const resource = soundtrack?.asset.sourceType === "soundfont" ? soundtrack.asset.packUrl : soundtrack?.asset.url || ""
-
-  useEffect(() => {
-    if (!activated || preference !== "tloque" || !soundtrack) return
-    const cueKey = `${soundtrack.assetId}:${soundtrack.updatedAt || ""}`
-    if (lastCueKey.current === cueKey) return
-    lastCueKey.current = cueKey
-    music.playCue(musicCueFor(soundtrack.asset, {
+  const tloqueCue = useMemo<MusicCue | null>(() => {
+    if (soundtrack) return musicCueFor(soundtrack.asset, {
       volume: soundtrack.volume,
       loop: soundtrack.loop,
       crossfadeSeconds: soundtrack.crossfadeSeconds,
-    }))
-  }, [activated, preference, soundtrack?.assetId, soundtrack?.updatedAt])
+    })
+    if (!musicBrain) return null
+    return {
+      id: -(musicBrain.bookId * 1_000 + musicBrain.chapterIndex + 1),
+      title: "Music Brain",
+      artist: "Tloque",
+      sourceType: "procedural",
+      loop: true,
+      volume: 0.35,
+      crossfadeSeconds: musicBrain.regions[0]?.transitionSeconds ?? 8,
+    }
+  }, [musicBrain, soundtrack])
+
+  useEffect(() => {
+    if (!activated || preference !== "tloque" || !tloqueCue) return
+    const cueKey = soundtrack
+      ? `${soundtrack.assetId}:${soundtrack.updatedAt || ""}`
+      : `music-brain:${musicBrain?.sourceRevision ?? 0}`
+    if (lastCueKey.current === cueKey) return
+    lastCueKey.current = cueKey
+    music.playCue(tloqueCue)
+  }, [activated, preference, soundtrack?.assetId, soundtrack?.updatedAt, musicBrain?.sourceRevision, tloqueCue])
 
   useEffect(() => {
     let active = true
-    if (!resource || soundtrack?.asset.sourceType === "procedural") return setCached(false)
-    void isAudioResourceCached(resource).then(value => active && setCached(value))
+    if (musicBrain) void isMusicBrainScoreCached(musicBrain, audioLayers).then(value => active && setCached(value))
+    else if (resource && soundtrack?.asset.sourceType !== "procedural") void isAudioResourceCached(resource).then(value => active && setCached(value))
+    else setCached(false)
     return () => { active = false }
-  }, [resource, soundtrack?.asset.sourceType])
+  }, [resource, soundtrack?.asset.sourceType, musicBrain, audioLayers])
 
-  const selected = useMemo(() => preference === "tloque" && soundtrack
-    ? `${soundtrack.asset.title}${soundtrack.asset.artist ? ` · ${soundtrack.asset.artist}` : ""}`
-    : preference === "spotify" ? text.spotify : text.off, [preference, soundtrack, text.off, text.spotify])
+  const selected = useMemo(() => preference === "tloque" && tloqueCue
+    ? `${tloqueCue.title}${tloqueCue.artist ? ` · ${tloqueCue.artist}` : ""}`
+    : preference === "spotify" ? text.spotify : text.off, [preference, tloqueCue, text.off, text.spotify])
 
   function remember(next: Preference) {
     setPreference(next)
@@ -79,16 +113,14 @@ export default function ReaderAudioMenu({
   }
 
   function chooseTloque() {
-    if (!soundtrack) return
+    if (!tloqueCue) return
     remember("tloque")
     setActivated(true)
     updateSetting("musicEnabled", true)
-    lastCueKey.current = `${soundtrack.assetId}:${soundtrack.updatedAt || ""}`
-    music.playCue(musicCueFor(soundtrack.asset, {
-      volume: soundtrack.volume,
-      loop: soundtrack.loop,
-      crossfadeSeconds: soundtrack.crossfadeSeconds,
-    }))
+    lastCueKey.current = soundtrack
+      ? `${soundtrack.assetId}:${soundtrack.updatedAt || ""}`
+      : `music-brain:${musicBrain?.sourceRevision ?? 0}`
+    music.playCue(tloqueCue)
     setOpen(false)
   }
 
@@ -107,11 +139,12 @@ export default function ReaderAudioMenu({
   }
 
   async function download() {
-    if (!resource || downloading) return
+    if ((!resource && !musicBrain) || downloading) return
     setDownloading(true)
     setDownloadError("")
     try {
-      await cacheAudioResource(resource, soundtrack?.asset.sourceType === "soundfont" ? soundtrack.asset.packSha256 : "")
+      if (musicBrain) await cacheMusicBrainScoreResources(musicBrain, undefined, audioLayers)
+      else await cacheAudioResource(resource, soundtrack?.asset.sourceType === "soundfont" ? soundtrack.asset.packSha256 : "")
       setCached(true)
     } catch (error) {
       setDownloadError(error instanceof Error ? error.message : "No se pudo guardar el audio")
@@ -136,14 +169,17 @@ export default function ReaderAudioMenu({
             <DrawerDescription className="text-xs text-zinc-500">{text.description}</DrawerDescription>
           </DrawerHeader>
           <div className="space-y-2 px-4">
-            {soundtrack && (
+            {tloqueCue && (
               <button onClick={chooseTloque} className={optionClass} style={preference === "tloque" ? { borderColor: `${accent}55`, background: `${accent}0d` } : undefined}>
                 <Music2 className="h-4 w-4 shrink-0" style={{ color: accent }} />
-                <span className="min-w-0 flex-1"><span className="block text-xs font-medium">{text.tloque}</span><span className="mt-0.5 block truncate text-[10px] text-zinc-500">{soundtrack.asset.title} · {text.original}</span></span>
+                <span className="min-w-0 flex-1"><span className="block text-xs font-medium">{text.tloque}</span><span className="mt-0.5 block truncate text-[10px] text-zinc-500">{tloqueCue.title} · {text.original}</span></span>
                 {preference === "tloque" && <Check className="h-4 w-4" style={{ color: accent }} />}
               </button>
             )}
             {downloadError && <p className="px-1 text-center text-[10px] text-red-300/70">{downloadError}</p>}
+            {music.state === "error" && <p className="px-1 text-center text-[10px] text-red-300/70">{runtimeText.unavailable}</p>}
+            {music.state === "blocked" && <p className="px-1 text-center text-[10px] text-amber-200/70">{runtimeText.blocked}</p>}
+            {music.cue?.playbackTier && <p className="px-1 text-center text-[10px] text-zinc-500">{runtimeText[music.cue.playbackTier]}</p>}
             {spotifyLink && (
               <button onClick={chooseSpotify} className={optionClass} style={preference === "spotify" ? { borderColor: `${accent}55`, background: `${accent}0d` } : undefined}>
                 <ExternalLink className="h-4 w-4 shrink-0" style={{ color: accent }} />
@@ -162,12 +198,12 @@ export default function ReaderAudioMenu({
               <input className="mt-3 w-full" type="range" min={0} max={1} step={0.05} value={settings.musicVolume} onChange={event => updateSetting("musicVolume", Number(event.target.value))} />
             </div>
 
-            {soundtrack && (
-              soundtrack.asset.sourceType === "procedural"
+            {tloqueCue && (
+              soundtrack?.asset.sourceType === "procedural" && !musicBrain
                 ? <p className="px-1 py-2 text-center text-[10px] text-emerald-300/55">{text.procedural}</p>
-                : resource && <button onClick={() => void download()} disabled={cached || downloading} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-white/[.07] text-[11px] text-zinc-400 disabled:text-emerald-300/55">
+                : (resource || musicBrain) && <button onClick={() => void download()} disabled={cached || downloading} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-white/[.07] text-[11px] text-zinc-400 disabled:text-emerald-300/55">
                     {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : cached ? <Check className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />}
-                    {cached ? text.saved : text.download}{!cached && soundtrack.asset.packBytes ? ` · ${(soundtrack.asset.packBytes / 1_048_576).toFixed(1)} MB` : ""}
+                    {cached ? text.saved : text.download}{!cached && soundtrack?.asset.packBytes ? ` · ${(soundtrack.asset.packBytes / 1_048_576).toFixed(1)} MB` : ""}
                   </button>
             )}
           </div>

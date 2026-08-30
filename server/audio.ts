@@ -70,7 +70,10 @@ export const audioAssetInputSchema = z.object({
       if (!verified.ok || verified.recipe.plan.sourceHash !== recipe.data.plan.sourceHash) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La partitura compilada no corresponde al código fuente" })
       }
-      if (recipe.data.version === 2 && recipe.data.plan.moduleId !== "builtin" && !isSafeSoundBankSource(value.packUrl)) {
+      if (recipe.data.version === 2
+        && recipe.data.plan.moduleId !== "builtin"
+        && recipe.data.plan.moduleId !== "native-auto"
+        && !isSafeSoundBankSource(value.packUrl)) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["packUrl"], message: `El módulo ${recipe.data.plan.moduleId} necesita un banco SF2/SF3 publicado` })
       }
     }

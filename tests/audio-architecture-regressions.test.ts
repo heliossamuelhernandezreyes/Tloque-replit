@@ -27,6 +27,7 @@ test("los modelos físicos principales usan ruido determinista compartido y nunc
   for (const path of [
     "client/src/audio/PhysicalBowedStringOverlay.ts",
     "client/src/audio/PhysicalAirColumnOverlay.ts",
+    "client/src/audio/PhysicalReedModel.ts",
   ]) {
     const source = read(path)
     assert.doesNotMatch(source, /Math\.random/)
@@ -41,6 +42,67 @@ test("el cache no conserva aliases mutables de manifests", () => {
   assert.match(source, /\/api\/audio\/sample-packs\/modules\//)
   assert.match(source, /cache: "no-store"/)
   assert.match(source, /isMutableSamplePackAlias/)
+  assert.match(source, /cacheNativeSamplePack/)
+  assert.match(source, /zone\.sampleUrl/)
+  assert.match(source, /sha256/)
+  assert.match(source, /OFFLINE_MODULE_PREFIX/)
+})
+
+test("service worker conserva la fonoteca descargada entre despliegues", () => {
+  const source = read("client/public/sw.js")
+  assert.match(source, /AUDIO_CACHE = "tloque-audio-v2"/)
+  assert.match(source, /new Set\(\[SHELL_CACHE, RUNTIME_CACHE, AUDIO_CACHE\]\)/)
+})
+
+test("entrega de objetos soporta caché condicional y peticiones Range", () => {
+  const source = read("server/audioUploads.ts")
+  assert.match(source, /Accept-Ranges", "bytes"/)
+  assert.match(source, /Content-Range/)
+  assert.match(source, /status\(416\)\.end\(\)/)
+  assert.match(source, /status\(206\)/)
+  assert.match(source, /If-None-Match/)
+})
+
+test("hay un único instalador canónico e incluye todas las fuentes PCM aprobadas", () => {
+  const canonical = read("server/nativeSamplePackRoutes.ts")
+  const legacy = read("server/audioUploads.ts")
+  assert.match(canonical, /CURATED_INSTALLABLE_SAMPLE_PACKS/)
+  assert.equal((canonical.match(/sample-pack-catalog\/:sourceId\/install/g) ?? []).length, 1)
+  assert.equal((legacy.match(/sample-pack-catalog\/:sourceId\/install/g) ?? []).length, 0)
+})
+
+test("el lector puede arrancar Music Brain sin soundtrack y muestra el tier real", () => {
+  const menu = read("client/src/components/ReaderAudioMenu.tsx")
+  const reader = read("client/src/pages/reader.tsx")
+  assert.match(menu, /if \(!musicBrain\) return null/)
+  assert.match(menu, /title: "Music Brain"/)
+  assert.match(menu, /playbackTier/)
+  assert.match(menu, /cacheMusicBrainScoreResources/)
+  assert.match(reader, /soundtrack \|\| experienceData\?\.musicBrain \|\| book\?\.spotifyLink/)
+  assert.match(reader, /music\.loadAdaptiveLayers/)
+})
+
+test("scoreId y layerIds resuelven stems publicados y el motor corrige drift", () => {
+  const server = read("server/narrative.ts")
+  const hybrid = read("client/src/audio/HybridMusicEngine.ts")
+  const stems = read("client/src/audio/AdaptiveLayerMusicEngine.ts")
+  assert.match(server, /readerAudioLayers/)
+  assert.match(server, /eq\(audioAssets\.sourceType, "stream"\)/)
+  assert.match(hybrid, /adaptiveLayersForRegion/)
+  assert.match(hybrid, /sourceType: "adaptive"/)
+  assert.match(stems, /Promise\.allSettled/)
+  assert.match(stems, /currentTime - leader\.currentTime/)
+  assert.match(stems, /crossfading/)
+})
+
+test("cada exportación pasa por el medidor de master antes de descargar", () => {
+  const exporter = read("client/src/audio/ScoreExporter.ts")
+  const sampled = read("client/src/audio/ScoreSampledExporter.ts")
+  const admin = read("client/src/pages/AudioCatalogAdmin.tsx")
+  assert.match(exporter, /PcmAnalysisAccumulator/)
+  assert.match(sampled, /analyzeAudioBuffer/)
+  assert.match(admin, /assessAudioMasteringSafety/)
+  assert.match(admin, /Master rechazado por control de calidad/)
 })
 
 test("la matriz de certificación exige banco nativo real", () => {

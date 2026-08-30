@@ -15,7 +15,9 @@ test("native live preview freezes the audio clock before dense scheduling", () =
 test("quality master never silently becomes base synthesis", () => {
   assert.match(exporter, /profile\.quality === "master"/)
   assert.match(exporter, /Master premium requiere todos los bancos acústicos nativos/)
-  assert.ok(exporter.indexOf("profile.quality === \"master\"") < exporter.indexOf("return renderBaseFallback"))
+  assert.doesNotMatch(exporter, /return renderBaseFallback/)
+  assert.match(exporter, /fallbackTrackIds/)
+  assert.ok(exporter.indexOf("profile.quality === \"master\"") < exporter.indexOf("fallbackTrackIds"))
 })
 
 test("downloadable AI skill documents current premium behavior", () => {

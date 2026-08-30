@@ -115,9 +115,10 @@ test("el exportador WAV nativo queda expuesto como ruta independiente de SoundFo
   assert.equal(typeof renderTloqueScoreWithNativeSamplePackToWav, "function")
 })
 
-test("el exportador general deriva módulos VSCO curados hacia TloqueSamplePack", () => {
+test("el exportador general deriva VSCO y native-auto hacia TloqueSamplePack", () => {
   const source = readFileSync(new URL("../client/src/audio/ScoreExporter.ts", import.meta.url), "utf8")
   assert.match(source, /curatedSamplePackByModuleId\(recipe\.plan\.moduleId\)/)
   assert.match(source, /renderTloqueScoreWithNativeSamplePackToWav/)
+  assert.match(source, /recipe\.plan\.moduleId === NATIVE_AUTO_MODULE_ID/)
   assert.match(source, /\/api\/audio\/sample-packs\/modules\//)
 })

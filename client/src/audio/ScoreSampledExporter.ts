@@ -7,6 +7,7 @@ import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQualit
 import { buildPerformancePlan } from "./PerformanceEngine"
 import { buildSamplerEventPlan, spessaSynthActions } from "./SamplerAdapter"
 import { createSampledMixMaster } from "./ScoreMixMaster"
+import { analyzeAudioBuffer } from "./AudioRenderAnalysis"
 import {
   articulationDurationFactor, articulationVelocityFactor,
   scoreTrackBrightness, scoreTrackExpression, scoreTrackTimbre, scoreTrackVibrato, scoreVelocityGain,
@@ -196,6 +197,7 @@ export async function renderTloqueScoreWithModuleToWav(
   options.onProgress?.(0.2)
   const rendered = await context.startRendering()
   options.onProgress?.(0.82)
+  options.onAnalysis?.(analyzeAudioBuffer(rendered))
   synth.destroy()
   mix.disconnect()
   return encodeAudioBufferToWav(rendered, profile.bitDepth, progress => options.onProgress?.(0.82 + progress * 0.18))

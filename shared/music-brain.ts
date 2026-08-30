@@ -5,9 +5,21 @@ import type { ExperienceProfileV1, NarrativeMood } from "./narrative"
 export const MUSIC_BRAIN_SCORE_VERSION = 1 as const
 export const MUSIC_BRAIN_PLAN_VERSION = 1 as const
 export const MUSIC_BRAIN_TIMELINE_VERSION = 1 as const
-export const MUSIC_BRAIN_RULE_VERSION = "tloque-music-brain-2026-08-v1.1" as const
+export const MUSIC_BRAIN_RULE_VERSION = "tloque-music-brain-2026-08-v1.2" as const
 export const MUSIC_BRAIN_KNOWLEDGE_VERSION = "tloque-music-knowledge-2026-08-v1" as const
 export const MUSIC_BRAIN_CONTENT_MODE = "instrumental_only" as const
+
+export const musicBrainAudioLayerSchema = z.object({
+  id: z.number().int().positive(),
+  scoreId: z.number().int().positive(),
+  assetId: z.number().int().positive(),
+  title: z.string().max(160),
+  url: z.string().min(1).max(2_048),
+  loop: z.boolean(),
+  defaultGain: z.number().min(0).max(1.5),
+  syncBars: z.number().int().min(1).max(64),
+}).strict()
+export type MusicBrainAudioLayer = z.infer<typeof musicBrainAudioLayerSchema>
 
 const unitSchema = z.number().finite().min(0).max(1)
 const readingIntensitySchema = z.number().finite().min(0).max(0.65)
@@ -53,6 +65,8 @@ export const musicBrainRegionIntentSchema = z.object({
   transitionSeconds: z.number().finite().min(0.25).max(30),
   characterIds: z.array(identifierSchema).max(12),
   layerTags: z.array(z.string().trim().min(1).max(80)).max(12),
+  scoreId: z.number().int().positive().nullable().default(null),
+  layerIds: z.array(z.number().int().positive()).max(24).default([]),
 }).strict().superRefine((region, ctx) => {
   if (region.endParagraph < region.startParagraph) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endParagraph"], message: "La región musical termina antes de comenzar" })
@@ -117,6 +131,8 @@ export const musicBrainRegionPlanSchema = z.object({
   maxPolyphony: z.number().int().min(0).max(6),
   silence: z.boolean(),
   characterIds: z.array(identifierSchema).max(12),
+  scoreId: z.number().int().positive().nullable().default(null),
+  layerIds: z.array(z.number().int().positive()).max(24).default([]),
   dwellPhases: z.array(musicBrainDwellPhaseSchema).length(4),
 }).strict().superRefine((region, ctx) => {
   if (region.musicEndBeat < region.musicStartBeat) {
@@ -340,6 +356,8 @@ function regionIntent(input: {
   pauseBeforeMs?: number
   pauseAfterMs?: number
   characterIds?: string[]
+  scoreId?: number | null
+  layerIds?: number[]
 }): MusicBrainRegionIntentV1 {
   const emotion = input.notes?.length ? dominantEmotion(input.notes) : EMOTION_BY_MOOD[input.mood]
   const arousal = clamp(AROUSAL_BY_EMOTION[emotion] * 0.55 + input.tension * 0.3 + input.density * 0.15, 0, 1)
@@ -364,6 +382,8 @@ function regionIntent(input: {
     transitionSeconds: input.transitionSeconds,
     characterIds: [...new Set(input.characterIds ?? [])].sort().slice(0, 12),
     layerTags: [...new Set(input.layerTags)].sort().slice(0, 12),
+    scoreId: input.scoreId ?? null,
+    layerIds: [...new Set(input.layerIds ?? [])].sort((a, b) => a - b).slice(0, 24),
   })
 }
 
@@ -372,10 +392,12 @@ export function musicBrainScoreForDirection(
   seed = defaultMusicBrainSeed(project.bookId, project.chapterIndex, project.revision),
 ): MusicBrainScoreV1 {
   const noteBySpan = new Map(project.voiceNotes.map(note => [note.spanId, note]))
+  const musicNodeByRegion = new Map(project.musicNodes.map(node => [node.regionId, node]))
   const orderedCharacters = [...project.voiceProject.characters].sort((a, b) => a.id.localeCompare(b.id))
   const regions = [...project.musicProject.regions]
     .sort((a, b) => a.startParagraph - b.startParagraph || a.id.localeCompare(b.id))
     .map(region => {
+      const node = musicNodeByRegion.get(region.id)
       const spans = project.voiceProject.spans.filter(span =>
         span.paragraphIndex >= region.startParagraph && span.paragraphIndex <= region.endParagraph,
       )
@@ -397,6 +419,8 @@ export function musicBrainScoreForDirection(
         pauseBeforeMs: Math.max(0, ...spans.map(span => span.pauseBeforeMs)),
         pauseAfterMs: Math.max(0, ...spans.map(span => span.pauseAfterMs)),
         characterIds: spans.filter(span => span.kind === "dialogue").map(span => span.speakerId),
+        scoreId: node?.scoreId ?? region.scoreId,
+        layerIds: node?.layerIds ?? [],
       })
     })
   return musicBrainScoreSchema.parse({
@@ -436,6 +460,7 @@ export function musicBrainScoreForExperience(
     percussion: region.percussion,
     transitionSeconds: region.transition.preferredSeconds,
     layerTags: region.layerTags,
+    scoreId: region.scoreId,
   }))
   return musicBrainScoreSchema.parse({
     version: MUSIC_BRAIN_SCORE_VERSION,
@@ -501,10 +526,11 @@ export function musicBrainScoreForProceduralRecipe(recipe: LegacyProceduralRecip
 
 function modeFor(score: MusicBrainScoreV1, region: MusicBrainRegionIntentV1): Exclude<MusicBrainScoreV1["preferredMode"], null> {
   if (score.preferredMode) return score.preferredMode
+  const selection = `${region.id}:${region.scoreId ?? "procedural"}:${region.layerIds.join(",")}`
   const ambiguity = region.tension * 0.5 + region.arousal * 0.25 + (1 - region.warmth) * 0.25
-  if (ambiguity > 0.66) return deterministicUnit(score.seed, `${region.id}:mode`) > 0.48 ? "dorian" : "minor"
-  if (region.valence > 0.35 && region.warmth > 0.55) return deterministicUnit(score.seed, `${region.id}:mode`) > 0.35 ? "major" : "pentatonic"
-  return deterministicUnit(score.seed, `${region.id}:mode`) > 0.5 ? "dorian" : "pentatonic"
+  if (ambiguity > 0.66) return deterministicUnit(score.seed, `${selection}:mode`) > 0.48 ? "dorian" : "minor"
+  if (region.valence > 0.35 && region.warmth > 0.55) return deterministicUnit(score.seed, `${selection}:mode`) > 0.35 ? "major" : "pentatonic"
+  return deterministicUnit(score.seed, `${selection}:mode`) > 0.5 ? "dorian" : "pentatonic"
 }
 
 function instrumentsFor(region: MusicBrainRegionIntentV1): MusicBrainRegionPlanV1["instruments"] {
@@ -558,12 +584,13 @@ export function compileMusicBrainScore(input: MusicBrainScoreV1): MusicBrainComp
   let cursor = 0
 
   for (const region of [...score.regions].sort((a, b) => a.startParagraph - b.startParagraph || a.id.localeCompare(b.id))) {
+    const selection = `${region.id}:${region.scoreId ?? "procedural"}:${region.layerIds.join(",")}`
     const mode = modeFor(score, region)
     const bpm = score.preferredBpm ?? Math.round(clamp(50 + region.arousal * 22 + region.density * 8, 44, 88))
     const beatMs = 60_000 / bpm
     const pauseBeforeBeats = clamp(region.pauseBeforeMs / beatMs, 0, 4)
     const pauseAfterBeats = clamp(region.pauseAfterMs / beatMs, 0, 4)
-    const meter: [number, 4] = region.texture === "suspended" && deterministicUnit(score.seed, `${region.id}:meter`) > 0.62 ? [3, 4] : [4, 4]
+    const meter: [number, 4] = region.texture === "suspended" && deterministicUnit(score.seed, `${selection}:meter`) > 0.62 ? [3, 4] : [4, 4]
     const barBeats = meter[0]
     const musicBeats = barsFor(region) * barBeats
     const musicStartBeat = cursor + pauseBeforeBeats
@@ -579,7 +606,7 @@ export function compileMusicBrainScore(input: MusicBrainScoreV1): MusicBrainComp
       bpm,
       meter,
       mode,
-      progressionDegrees: progressionFor(mode, score.seed, region.id),
+      progressionDegrees: progressionFor(mode, score.seed, selection),
       harmonicRhythmBeats: density > 0.5 ? barBeats : barBeats * 2,
       texture: region.texture,
       instruments: instrumentsFor(region),
@@ -588,6 +615,8 @@ export function compileMusicBrainScore(input: MusicBrainScoreV1): MusicBrainComp
       maxPolyphony: region.silence ? 0 : density > 0.52 ? 6 : density > 0.28 ? 5 : 4,
       silence: region.silence,
       characterIds: region.characterIds,
+      scoreId: region.scoreId,
+      layerIds: region.layerIds,
       dwellPhases: dwellPhasesFor(score, region),
     })
     plans.push(plan)
@@ -622,7 +651,7 @@ export function compileMusicBrainScore(input: MusicBrainScoreV1): MusicBrainComp
         if (density >= 0.24 && chordIndex < chordCount - 1) {
           const subdivision = density > 0.48 ? 1 : 2
           for (let offset = subdivision; offset < plan.harmonicRhythmBeats; offset += subdivision) {
-            if (deterministicUnit(score.seed, `${region.id}:motion:${chordIndex}:${offset}`) > density) continue
+            if (deterministicUnit(score.seed, `${selection}:motion:${chordIndex}:${offset}`) > density) continue
             const midi = voicing[(chordIndex + Math.round(offset)) % voicing.length] + 12
             events.push({
               id: `${region.id}:motion:${chordIndex}:${offset}`,

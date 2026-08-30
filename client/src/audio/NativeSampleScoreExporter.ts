@@ -1,7 +1,8 @@
 import { linearScoreRecipeFor } from "@shared/audio"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
 import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared/native-hybrid-source"
-import { analyzeAudioBuffer, type AudioRenderAnalysis } from "./AudioRenderAnalysis"
+import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
+import { analyzeAudioBuffer } from "./AudioRenderAnalysis"
 import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
@@ -10,6 +11,10 @@ import { buildNativeRecipeIndex, nativeTrackAtTime } from "./NativeRecipeIndex"
 import { createNativeRenderGraph } from "./NativeRenderGraph"
 import { assessNativePremiumReadiness, premiumReadinessError } from "./NativePremiumReadiness"
 import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQuality } from "./ScoreExporter"
+import { schedulePhysicalReedVoice } from "./PhysicalReedModel"
+import { scheduleFallbackSynthVoice } from "./FallbackScoreSynth"
+import { scoreTrackExpression, scoreTrackTimbre } from "./ScoreAudioMath"
+import { fetchAudioResource } from "./AudioResourceCache"
 
 const MAX_OFFLINE_FLOAT_BYTES = 220 * 1024 * 1024
 const MAX_OFFLINE_TOTAL_FLOAT_BYTES = 300 * 1024 * 1024
@@ -19,8 +24,6 @@ export interface NativeSampleScoreExportOptions extends ScoreExportOptions {
   hybridMode?: HybridExportMode
   /** Diagnostic/certification renders must never become builtin synthesis after preflight. */
   strictNativeSources?: boolean
-  /** Optional post-render diagnostics; does not alter gain or mastering. */
-  onAnalysis?: (analysis: AudioRenderAnalysis) => void
 }
 interface LoadedOfflinePlan { moduleId: string; plan: NativeSampleScorePlan }
 
@@ -71,9 +74,13 @@ export async function preflightNativeSamplePacks(value: unknown, packUrl?: strin
   for (const group of groups) {
     assertNotAborted(signal)
     const instruments = [...new Set(group.trackIds.map(id => trackById.get(id)?.instrument).filter((value): value is string => Boolean(value)))]
+    if (nativePhysicalModelByModuleId(group.moduleId)) {
+      items.push({ moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "ready" })
+      continue
+    }
     const url = modulePackUrlFor(recipe, group.moduleId, packUrl)
     try {
-      const response = await fetch(url, { credentials: "include", signal, cache: "no-store" })
+      const response = await fetchAudioResource(url)
       if (!response.ok) { items.push({ moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "missing", message: `HTTP ${response.status}` }); continue }
       const manifest = await response.json().catch(() => null) as { instrumentManifestId?: string } | null
       if (!manifest || manifest.instrumentManifestId !== group.moduleId) { items.push({ moduleId: group.moduleId, trackIds: group.trackIds, instruments, status: "invalid", message: "El manifest publicado no corresponde al módulo solicitado" }); continue }
@@ -100,13 +107,6 @@ function strictNativePreflightError(preflight: NativeSamplePackPreflight) {
     ...preflight.missing.map(item => `• ${item.instruments.join(", ") || "instrumento"} → module:${item.moduleId}${item.message ? ` (${item.message})` : ""}`),
   ].join("\n")
 }
-async function renderBaseFallback(recipe: ReturnType<typeof linearScoreRecipeFor>, options: ScoreExportOptions) {
-  if (recipe.version !== 2) throw new Error("La partitura no puede usar el fallback de síntesis base")
-  const baseRecipe = { ...recipe, plan: { ...recipe.plan, moduleId: "builtin" } }
-  const { renderTloqueScoreToWav } = await import("./ScoreExporter")
-  return renderTloqueScoreToWav(baseRecipe, options)
-}
-
 export async function renderTloqueScoreWithNativeSamplePackToWav(
   value: unknown,
   packUrl: string,
@@ -121,8 +121,6 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   if (!preflight.ready) {
     if (profile.quality === "master") throw new Error(premiumPreflightError(preflight))
     if (options.strictNativeSources) throw new Error(strictNativePreflightError(preflight))
-    options.onProgress?.(0)
-    return renderBaseFallback(recipe, options)
   }
   if (profile.quality === "master") {
     const readiness = await assessNativePremiumReadiness(recipe, options.signal)
@@ -130,21 +128,36 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   }
 
   options.onProgress?.(0.03)
-  const decodeContext = new OfflineAudioContext(2, 1, profile.sampleRate), decodedByUrl = new Map<string, AudioBuffer>(), loaded: LoadedOfflinePlan[] = [], groups = nativeModuleGroupsForRecipe(recipe)
-  for (let index = 0; index < groups.length; index += 1) {
-    const group = groups[index], decodePlayer = new NativeSamplePackPlayer(decodeContext, decodedByUrl), url = modulePackUrlFor(recipe, group.moduleId, packUrl)
+  const decodeContext = new OfflineAudioContext(2, 1, profile.sampleRate)
+  const decodedByUrl = new Map<string, AudioBuffer>(), loaded: LoadedOfflinePlan[] = []
+  const groups = nativeModuleGroupsForRecipe(recipe)
+  const physicalGroups = groups.filter(group => nativePhysicalModelByModuleId(group.moduleId))
+  const sampleGroups = groups.filter(group => !nativePhysicalModelByModuleId(group.moduleId))
+  const unavailableModules = new Set(preflight.missing.map(item => item.moduleId))
+  const fallbackTrackIds = new Set<string>()
+  for (const group of sampleGroups) if (unavailableModules.has(group.moduleId)) group.trackIds.forEach(trackId => fallbackTrackIds.add(trackId))
+  for (let index = 0; index < sampleGroups.length; index += 1) {
+    const group = sampleGroups[index]
+    if (unavailableModules.has(group.moduleId)) continue
+    const decodePlayer = new NativeSamplePackPlayer(decodeContext, decodedByUrl), url = modulePackUrlFor(recipe, group.moduleId, packUrl)
     let pack
     try { pack = await decodePlayer.loadPack(url) }
     catch (error) {
-      if (options.strictNativeSources) throw new Error(`El banco nativo ${group.moduleId} dejó de estar disponible durante el render: ${error instanceof Error ? error.message : String(error)}`)
-      throw error
+      if (options.strictNativeSources || profile.quality === "master") throw new Error(`El banco nativo ${group.moduleId} dejó de estar disponible durante el render: ${error instanceof Error ? error.message : String(error)}`)
+      group.trackIds.forEach(trackId => fallbackTrackIds.add(trackId))
+      continue
     }
-    if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde al módulo solicitado`)
-    const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack), decoded = await decodePlayer.preload(plan.zones)
-    plan.zones.forEach((zone, i) => { const buffer = decoded[i]; if (buffer) decodedByUrl.set(zone.sampleUrl, buffer) })
-    loaded.push({ moduleId: group.moduleId, plan })
+    try {
+      if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde al módulo solicitado`)
+      const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack), decoded = await decodePlayer.preload(plan.zones)
+      plan.zones.forEach((zone, i) => { const buffer = decoded[i]; if (buffer) decodedByUrl.set(zone.sampleUrl, buffer) })
+      loaded.push({ moduleId: group.moduleId, plan })
+    } catch (error) {
+      if (options.strictNativeSources || profile.quality === "master") throw new Error(`El banco nativo ${group.moduleId} no pudo cubrir o decodificar la obra: ${error instanceof Error ? error.message : String(error)}`)
+      group.trackIds.forEach(trackId => fallbackTrackIds.add(trackId))
+    }
     if (decodedFloatBytes(decodedByUrl) > MAX_OFFLINE_TOTAL_FLOAT_BYTES) throw new Error("Las muestras decodificadas exceden la memoria segura del navegador móvil; reduce instrumentos o exporta por movimientos")
-    options.onProgress?.(0.04 + ((index + 1) / Math.max(1, groups.length)) * 0.08); assertNotAborted(options.signal)
+    options.onProgress?.(0.04 + ((index + 1) / Math.max(1, sampleGroups.length)) * 0.08); assertNotAborted(options.signal)
   }
 
   let naturalEnd = recipe.plan.totalSeconds
@@ -161,8 +174,22 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate)
   const index = buildNativeRecipeIndex(recipe)
   const graph = createNativeRenderGraph(context, index.trackById, context.destination)
-  for (const { plan } of loaded) for (const track of plan.tracks) graph.createTrackPath(track.id, track.gain, track.brightness, track.pan)
-  for (const { plan } of loaded) for (const control of plan.controls) graph.scheduleTrackControl(control)
+  for (const track of recipe.plan.tracks) {
+    const timbre = scoreTrackTimbre(track)
+    graph.createTrackPath(track.id, track.gain * timbre.level * scoreTrackExpression(track), track.brightness, track.pan)
+  }
+  for (const control of recipe.plan.controls) {
+    const track = index.trackById.get(control.trackId)
+    if (!track || (control.expression === null && control.brightness === null)) continue
+    const timbre = scoreTrackTimbre(track)
+    graph.scheduleTrackControl({
+      trackId: control.trackId,
+      timeSeconds: control.timeSeconds,
+      rampSeconds: control.rampSeconds,
+      gain: control.expression === null ? null : Math.max(0, Math.min(1.5, track.gain * timbre.level * control.expression)),
+      brightness: control.brightness,
+    })
+  }
 
   const scheduled: Promise<unknown>[] = []
   for (const { plan } of loaded) {
@@ -177,6 +204,35 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
       if (!destination || !zone) continue
       scheduled.push(player.playSelection({ zone, playbackRate: auxiliary.playbackRate, gain: auxiliary.sampleGain }, auxiliary.startSeconds, auxiliary.durationSeconds, destination, 0, true, auxiliary.fadeOutSeconds > 0 ? { fadeOutSeconds: auxiliary.fadeOutSeconds } : undefined))
     }
+  }
+
+  for (const group of physicalGroups) {
+    const model = nativePhysicalModelByModuleId(group.moduleId)
+    if (!model) continue
+    const previousEndByTrack = new Map<string, number>()
+    for (const trackId of group.trackIds) {
+      const track = index.trackById.get(trackId), destination = graph.trackGain.get(trackId)
+      if (!track || !destination) continue
+      const controls = index.controlsByTrack.get(trackId) ?? []
+      for (const event of index.eventsByTrack.get(trackId) ?? []) {
+        const previousEnd = previousEndByTrack.get(trackId)
+        const legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
+        const effectiveTrack = nativeTrackAtTime(track, controls, event.timeSeconds)
+        try {
+          for (const midi of event.notes) schedulePhysicalReedVoice(context, model, { startAt: 0, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
+        } catch (error) {
+          if (options.strictNativeSources) throw error
+          scheduleFallbackSynthVoice(context, destination, 0, event, track)
+        }
+        previousEndByTrack.set(trackId, event.timeSeconds + event.durationSeconds)
+      }
+    }
+  }
+
+  for (const trackId of fallbackTrackIds) {
+    const track = index.trackById.get(trackId), destination = graph.trackGain.get(trackId)
+    if (!track || !destination) continue
+    for (const event of index.eventsByTrack.get(trackId) ?? []) scheduleFallbackSynthVoice(context, destination, 0, event, track)
   }
 
   const previousHybridEndByTrack = new Map<string, number>()

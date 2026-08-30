@@ -1,5 +1,8 @@
 const SHELL_CACHE = "tloque-shell-v1"
 const RUNTIME_CACHE = "tloque-static-v1"
+// AudioResourceCache owns this cache. Service-worker upgrades must preserve it:
+// deleting it here silently removes every module the reader explicitly saved.
+const AUDIO_CACHE = "tloque-audio-v2"
 const SHELL = ["/", "/favicon.png", "/icon-192.png", "/icon-512.png", "/manifest.webmanifest"]
 
 self.addEventListener("install", event => {
@@ -8,7 +11,7 @@ self.addEventListener("install", event => {
 
 self.addEventListener("activate", event => {
   event.waitUntil((async () => {
-    const keep = new Set([SHELL_CACHE, RUNTIME_CACHE])
+    const keep = new Set([SHELL_CACHE, RUNTIME_CACHE, AUDIO_CACHE])
     await Promise.all((await caches.keys()).filter(key => !keep.has(key)).map(key => caches.delete(key)))
     await self.clients.claim()
   })())

@@ -4,6 +4,8 @@ import {
   TLOQUE_SCORE_AUDIO_PROFILE, articulationDurationFactor, articulationVelocityFactor, midiNoteToFrequency, scoreTrackEnvelope,
   scoreExpressionStateAt, scorePedalReleaseTime, scoreRenderProfile, scoreTrackTimbre, scoreVelocityGain,
 } from "./ScoreAudioMath"
+import { PcmAnalysisAccumulator, type AudioRenderAnalysis } from "./AudioRenderAnalysis"
+import { NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
 
 export type ScoreExportQuality = "preview" | "studio" | "master"
 
@@ -20,6 +22,8 @@ export interface ScoreExportOptions {
   quality?: ScoreExportQuality
   onProgress?: (value: number) => void
   signal?: AbortSignal
+  /** Receives deterministic post-master diagnostics before WAV encoding completes. */
+  onAnalysis?: (analysis: AudioRenderAnalysis) => void
 }
 
 const QUALITY = {
@@ -192,7 +196,8 @@ export async function encodeAudioBufferToWav(
 
 export async function renderTloqueScoreToWav(value: unknown, options: ScoreExportOptions = {}): Promise<Blob> {
   const recipe = linearScoreRecipeFor(value)
-  if (recipe.version === 2 && recipe.plan.moduleId !== "builtin" && curatedSamplePackByModuleId(recipe.plan.moduleId)) {
+  if (recipe.version === 2 && recipe.plan.moduleId !== "builtin"
+    && (recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID || curatedSamplePackByModuleId(recipe.plan.moduleId))) {
     const { renderTloqueScoreWithNativeSamplePackToWav } = await import("./NativeSampleScoreExporter")
     return renderTloqueScoreWithNativeSamplePackToWav(
       recipe,
@@ -251,6 +256,7 @@ export async function renderTloqueScoreToWav(value: unknown, options: ScoreExpor
   let previousOutputRight = 0
   let dynamicsEnvelope = 0
   let dynamicsGain = 1
+  const analyzer = new PcmAnalysisAccumulator(2, sampleRate)
   options.onProgress?.(0)
 
   for (let frameStart = 0; frameStart < totalFrames; frameStart += chunkFrames) {
@@ -328,11 +334,13 @@ export async function renderTloqueScoreToWav(value: unknown, options: ScoreExpor
       earlyIndex = (earlyIndex + 1) % earlyFrames
     }
 
+    analyzer.push([left, right])
     parts.push(encodePcm(left, right, bitDepth, frameStart))
     options.onProgress?.(Math.min(1, (frameStart + length) / totalFrames))
     await nextFrame()
   }
 
+  options.onAnalysis?.(analyzer.result())
   return new Blob(parts, { type: "audio/wav" })
 }
 

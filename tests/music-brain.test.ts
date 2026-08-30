@@ -18,6 +18,7 @@ import {
   renderMusicBrainRegion,
 } from "../shared/music-brain-renderer.ts"
 import { TLOQUE_SCORE_COMPILER_V2, linearScoreRecipeV2Schema } from "../shared/tloque-score-v2.ts"
+import { adaptiveLayersForRegion } from "../client/src/audio/AdaptiveScoreLayers.ts"
 
 function directionFixture() {
   return advancedDirectionProjectSchema.parse({
@@ -191,6 +192,41 @@ test("Music Brain llega de forma determinista al renderer TloqueScore 2.2", () =
   assert.deepEqual(first.recipe?.plan.tracks.map(track => track.id), ["foundation", "motion", "leitmotif"])
   assert.ok(first.recipe?.plan.events.every(event => event.velocity <= 0.42))
   assert.ok(first.recipe?.source.includes("content=instrumental_only"))
+})
+
+test("scoreId y layerIds editoriales llegan al plan y cambian el render determinista", () => {
+  const project = directionFixture()
+  project.musicProject.regions[0].layerTags = []
+  project.musicProject.regions[0].scoreId = 41
+  project.musicNodes[0].scoreId = 41
+  project.musicNodes[0].layerIds = [7, 11]
+  const selected = musicBrainScoreForDirection(project, 8_117)
+  const planRegion = compileMusicBrainScore(selected).plan.regions.find(region => region.regionId === "encuentro")!
+  assert.equal(planRegion.scoreId, 41)
+  assert.deepEqual(planRegion.layerIds, [7, 11])
+
+  const alternate = musicBrainScoreSchema.parse({
+    ...selected,
+    regions: selected.regions.map(region => region.id === "encuentro" ? { ...region, layerIds: [19, 23] } : region),
+  })
+  const first = renderMusicBrainRegion(selected, "encuentro").recipe!
+  const second = renderMusicBrainRegion(alternate, "encuentro").recipe!
+  assert.notEqual(first.plan.sourceHash, second.plan.sourceHash)
+})
+
+test("los IDs editoriales seleccionan únicamente stems publicados de esa partitura", () => {
+  const project = directionFixture()
+  project.musicProject.regions[0].scoreId = 41
+  project.musicNodes[0].scoreId = 41
+  project.musicNodes[0].layerIds = [7, 11]
+  const score = musicBrainScoreForDirection(project, 17)
+  const selected = adaptiveLayersForRegion(score, [
+    { id: 7, scoreId: 41, assetId: 70, title: "Cuerdas", url: "/api/audio/uploads/a.mp3", loop: true, defaultGain: 0.5, syncBars: 4 },
+    { id: 11, scoreId: 41, assetId: 71, title: "Aire", url: "/api/audio/uploads/b.mp3", loop: true, defaultGain: 0.4, syncBars: 4 },
+    { id: 12, scoreId: 41, assetId: 72, title: "No elegida", url: "/api/audio/uploads/c.mp3", loop: true, defaultGain: 0.4, syncBars: 4 },
+    { id: 7, scoreId: 99, assetId: 73, title: "Otra partitura", url: "/api/audio/uploads/d.mp3", loop: true, defaultGain: 0.4, syncBars: 4 },
+  ], "encuentro")
+  assert.deepEqual(selected.map(layer => layer.id), [7, 11])
 })
 
 test("una región de silencio no inventa eventos para satisfacer al renderer", () => {

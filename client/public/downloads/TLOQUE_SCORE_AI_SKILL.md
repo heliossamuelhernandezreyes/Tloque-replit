@@ -10,8 +10,8 @@ Create only instrumental music. The TloqueScore code is the master work: Tloque 
 ## Compatibility
 
 - Audio contract: `tloque-audio-2026-08-v2`
-- Compiler: `tloque-score-compiler-v2.1`
-- Skill version: `1.7.0`
+- Compiler: `tloque-score-compiler-v2.2`
+- Skill version: `1.8.0`
 - Built-in module: `builtin`
 - Native multi-instrument router: `native-auto`
 - Premium native master: physical verified sample packs required
@@ -129,7 +129,7 @@ For monumental/cinematic organ writing, combine these as separate tracks. Build 
 
 ### Preview versus premium master
 
-- Live preview may fall back to Tloque base synthesis when a required package is absent. That fallback is for auditioning, not proof of acoustic fidelity.
+- Live preview and Studio export fall back only for the affected track when a required package is absent; every available acoustic track stays native. That fallback is for auditioning, not proof of acoustic fidelity.
 - `quality master` with native instruments requires every physical pack used by the score. A synthesis fallback is never described as a premium/native master.
 - `core` or `studio` may prioritize portability or memory.
 - Never silently substitute an unrelated semantic instrument because a pack is unavailable.
