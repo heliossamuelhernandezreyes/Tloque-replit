@@ -19,10 +19,14 @@ const waves = new WeakMap<BaseAudioContext, Map<string, PeriodicWave>>()
 const reservations = new WeakMap<BaseAudioContext, { start: number; end: number; cost: number }[]>()
 
 /** Bounded source admission in audio time, including release tails and future notes.
- * Realtime and offline callers schedule in chronological order. */
+ * Offline plans are chronological. Realtime recovery can arrive after a later
+ * look-ahead task: retain all not-yet-ended reservations against the live clock. */
 function reserve(context: BaseAudioContext, start: number, end: number, cost: number) {
-  const previous = (reservations.get(context) ?? []).filter(item => item.end > start)
-  const points = previous.flatMap(item => [{ time: Math.max(start, item.start), delta: item.cost }, { time: item.end, delta: -item.cost }])
+  const offline = typeof (context as OfflineAudioContext).startRendering === "function"
+  const discardBefore = offline ? start : context.currentTime
+  const previous = (reservations.get(context) ?? []).filter(item => item.end > discardBefore)
+  const points = previous.filter(item => item.end > start && item.start < end)
+    .flatMap(item => [{ time: Math.max(start, item.start), delta: item.cost }, { time: item.end, delta: -item.cost }])
     .filter(point => point.time < end).sort((a, b) => a.time - b.time || a.delta - b.delta)
   let active = cost
   for (const point of points) { active += point.delta; if (active > ORCHESTRAL_SYNTH_MAX_SOURCES) return false }

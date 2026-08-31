@@ -95,6 +95,22 @@ test("presupuesto de fuentes incluye colas y se libera en tiempo de audio", () =
   assert.equal(scheduleOrchestralSynthVoice(context, context.destination, 0, { timeSeconds: 5, durationSeconds: 0.5, notes: [64], velocity: 0.3 }, track), 1)
 })
 
+test("recuperación realtime tardía no olvida voces aún activas tras el look-ahead", () => {
+  const offline = new OfflineAudioContext(2, 48_000, 48_000)
+  // Reuse actual AudioNodes with the live-clock admission path, without opening
+  // a hardware audio device or claiming a browser transport test.
+  const context = new Proxy(offline, { get(target, key) {
+    if (key === "startRendering") return undefined
+    const value = Reflect.get(target, key)
+    return typeof value === "function" ? value.bind(target) : value
+  } })
+  const track = { ...recipe.plan.tracks[0], instrument: "strings.violin-section" }
+  const event = { timeSeconds: 0, durationSeconds: 1, notes: [60], velocity: 0.3 }
+  for (let i = 0; i < ORCHESTRAL_SYNTH_MAX_SOURCES / 4; i++) assert.equal(scheduleOrchestralSynthVoice(context, context.destination, 0, event, track), 1)
+  assert.equal(scheduleOrchestralSynthVoice(context, context.destination, 0, { ...event, timeSeconds: 5 }, track), 1)
+  assert.equal(scheduleOrchestralSynthVoice(context, context.destination, 0, { ...event, timeSeconds: 0.1 }, track), 0)
+})
+
 test("audio real: interrumpir un crescendo conserva su tramo anterior", async () => {
   const context = new OfflineAudioContext(2, 48_000 * 7, 48_000), track = recipe.plan.tracks[0]
   const graph = createNativeRenderGraph(context, new Map([[track.id, track]]), context.destination)

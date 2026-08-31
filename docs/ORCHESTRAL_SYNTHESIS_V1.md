@@ -43,7 +43,7 @@ npm run build
 npm run check:bundle
 ```
 
-Verified locally on Node 20.20.2: 433 general tests and 8 offline-audio tests pass. The audio CI workflow runs both suites. Tests cover real PCM rendering at 32/48/96 kHz, ten distinct family outputs, equal repeated render hashes, finite/non-silent data, clipping, DC, stereo/mono compatibility, source admission, interrupted ramps, event non-vibrato, held-note bend and native one-shot preservation. These checks are technical evidence, not listening votes.
+Verified locally on Node 20.20.2: 433 general tests and 9 audio-render/runtime tests pass. The audio CI workflow runs both suites. Tests cover real PCM rendering at 32/48/96 kHz, ten distinct family outputs, equal repeated render hashes, finite/non-silent data, clipping, DC, stereo/mono compatibility, source admission (including out-of-order realtime recovery), interrupted ramps, event non-vibrato, held-note bend and native one-shot preservation. These checks are technical evidence, not listening votes.
 
 The original 8-track, 4-bar fixture is `tests/fixtures/orchestral-score.ts`. Node offline renderer results:
 
