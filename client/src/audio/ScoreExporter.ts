@@ -6,11 +6,12 @@ import {
 } from "./ScoreAudioMath"
 import { PcmAnalysisAccumulator, type AudioRenderAnalysis } from "./AudioRenderAnalysis"
 import { NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
+import { ORCHESTRAL_SYNTH_MODULE_ID, ORCHESTRAL_SYNTH_VERSION } from "@shared/orchestral-synthesis"
 
 export type ScoreExportQuality = "preview" | "studio" | "master"
 
 export interface ScoreExportEstimate {
-  audioProfile: typeof TLOQUE_SCORE_AUDIO_PROFILE
+  audioProfile: string
   quality: ScoreExportQuality
   sampleRate: number
   bitDepth: 16 | 24
@@ -43,10 +44,13 @@ function defaultQuality(recipe: LinearScoreRecipe): ScoreExportQuality {
 export function estimateScoreExport(value: unknown, requested?: ScoreExportQuality): ScoreExportEstimate {
   const recipe = linearScoreRecipeFor(value)
   const quality = requested ?? defaultQuality(recipe)
-  const profile = QUALITY[quality]
-  const durationSeconds = ("totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * 60 / recipe.plan.bpm) + TAIL_SECONDS[quality]
+  const native = recipe.version === 2 && (recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID || Boolean(curatedSamplePackByModuleId(recipe.plan.moduleId)))
+  const orchestral = recipe.version === 2 && recipe.plan.moduleId === ORCHESTRAL_SYNTH_MODULE_ID
+  const profile = { ...QUALITY[quality], ...(native && quality === "master" ? { sampleRate: 48_000 } : {}) }
+  const tail = (native || orchestral) && quality === "studio" ? 7 : TAIL_SECONDS[quality]
+  const durationSeconds = ("totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * 60 / recipe.plan.bpm) + tail
   const bytes = 44 + Math.ceil(durationSeconds * profile.sampleRate) * 2 * (profile.bitDepth / 8)
-  return { audioProfile: TLOQUE_SCORE_AUDIO_PROFILE, quality, sampleRate: profile.sampleRate, bitDepth: profile.bitDepth, durationSeconds, bytes }
+  return { audioProfile: orchestral ? ORCHESTRAL_SYNTH_VERSION : native ? "tloque-native-concert-v2" : TLOQUE_SCORE_AUDIO_PROFILE, quality, sampleRate: profile.sampleRate, bitDepth: profile.bitDepth, durationSeconds, bytes }
 }
 
 function partial(phase: number, multiple: number, frequency: number, sampleRate: number) {
@@ -197,7 +201,7 @@ export async function encodeAudioBufferToWav(
 export async function renderTloqueScoreToWav(value: unknown, options: ScoreExportOptions = {}): Promise<Blob> {
   const recipe = linearScoreRecipeFor(value)
   if (recipe.version === 2 && recipe.plan.moduleId !== "builtin"
-    && (recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID || curatedSamplePackByModuleId(recipe.plan.moduleId))) {
+    && (recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID || recipe.plan.moduleId === ORCHESTRAL_SYNTH_MODULE_ID || curatedSamplePackByModuleId(recipe.plan.moduleId))) {
     const { renderTloqueScoreWithNativeSamplePackToWav } = await import("./NativeSampleScoreExporter")
     return renderTloqueScoreWithNativeSamplePackToWav(
       recipe,

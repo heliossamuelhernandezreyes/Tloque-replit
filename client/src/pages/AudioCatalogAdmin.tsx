@@ -28,6 +28,7 @@ import {
   type AudioRenderAnalysis,
 } from "@/audio/AudioRenderAnalysis"
 import { compileTloqueScoreOnServer } from "@/lib/tloqueScoreApi"
+import { ORCHESTRAL_SYNTH_MODULE_ID, withOrchestralModule } from "@shared/orchestral-synthesis"
 
 type AudioAssetForm = Omit<AudioAsset, "id" | "favorite">
 type StudioTab = "library" | "composer" | "modules" | "interface"
@@ -254,7 +255,7 @@ export default function AudioCatalogAdmin() {
     mutationFn: async () => {
       const recipe = await compileTloqueScoreOnServer(scoreSource)
       const moduleAsset = resolveScoreModule(recipe)
-      if (recipe.version === 2 && recipe.plan.moduleId !== "builtin" && recipe.plan.moduleId !== "native-auto" && !moduleAsset) {
+      if (recipe.version === 2 && !["builtin", "native-auto", ORCHESTRAL_SYNTH_MODULE_ID].includes(recipe.plan.moduleId) && !moduleAsset) {
         throw new Error(`Publica un banco instrumental con la etiqueta module:${recipe.plan.moduleId}`)
       }
       const payload: AudioAssetForm = {
@@ -486,7 +487,7 @@ export default function AudioCatalogAdmin() {
   }), [assets])
 
   function resolveScoreModule(recipe: LinearScoreRecipe) {
-    if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") return null
+    if (recipe.version !== 2 || ["builtin", "native-auto", ORCHESTRAL_SYNTH_MODULE_ID].includes(recipe.plan.moduleId)) return null
     return qualityModules.find(asset => asset.tags.includes(`module:${recipe.plan.moduleId}`)) || null
   }
 
@@ -617,10 +618,27 @@ export default function AudioCatalogAdmin() {
         {tab === "composer" && (
           <section className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.035] p-4 space-y-4">
             <div>
-              <h2 className="text-sm font-semibold">Compositor de obras · TloqueScore V2.1</h2>
+              <h2 className="text-sm font-semibold">Compositor de obras · TloqueScore 2.2</h2>
               <p className="mt-1 text-xs text-zinc-500">El código es la obra maestra: editarlo recompila y cambia el audio. La reproducción no crea archivos; Exportar genera un WAV sólo cuando lo pides.</p>
-              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code> activa 128 voces e interpretación expresiva. Con <code>module builtin</code> exporta 24-bit / 96 kHz; un módulo SF2/SF3 reproduce y exporta sus muestras a 24-bit / 48 kHz, sin inflar artificialmente la frecuencia original.</p>
+              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code>: síntesis clásica u orquestal a 24-bit / 96 kHz; bancos nativos y SF2/SF3 a 24-bit / 48 kHz. La frecuencia de exportación no certifica realismo acústico. La síntesis orquestal admite hasta 192 fuentes simultáneas, incluidas sus colas; una nota puede usar varias fuentes.</p>
             </div>
+            <fieldset className="rounded-xl border border-sky-300/20 bg-sky-300/5 p-3">
+              <legend className="px-1 text-xs font-semibold text-sky-100">Fuente de interpretación</legend>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  ["native-auto", "Instrumentos grabados"],
+                  [ORCHESTRAL_SYNTH_MODULE_ID, "Síntesis orquestal"],
+                  ["builtin", "Síntesis clásica"],
+                ] as const).map(([moduleId, label]) => (
+                  <button key={moduleId} type="button" aria-pressed={scoreSource.match(/^module\s+(\S+)/m)?.[1] === moduleId} disabled={!/^TLOQUE_SCORE\s+2\s*$/m.test(scoreSource) || compile.isPending || saveScore.isPending || exportScore.isPending} onClick={() => {
+                    music.stop()
+                    setScoreSource(source => withOrchestralModule(source, moduleId))
+                    setCompiled(null); compile.reset(); setMasteringResult(null)
+                  }} className="min-h-11 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs aria-pressed:border-sky-300/60 aria-pressed:bg-sky-300/15 disabled:opacity-40">{label}</button>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] leading-5 text-zinc-400">La síntesis orquestal tiene timbres por familia, secciones de cuerda, respiración y sala compartida con el WAV. No necesita bancos; sigue siendo síntesis, no una grabación certificada. Los instrumentos grabados requieren sus bancos instalados. Cambiar la fuente conserva las notas: vuelve a compilar para escuchar.</p>
+            </fieldset>
             <div className="grid sm:grid-cols-2 gap-3">
               <input className={inputClass} placeholder="Título del tema" value={scoreMeta.title} onChange={e => setScoreMeta(meta => ({ ...meta, title: e.target.value }))} />
               <input className={inputClass} placeholder="Compositor / DA" value={scoreMeta.artist} onChange={e => setScoreMeta(meta => ({ ...meta, artist: e.target.value }))} />
@@ -689,7 +707,7 @@ export default function AudioCatalogAdmin() {
                 <span>Compilada: {compiled.plan.totalBars} compases · {compiled.plan.tracks.length} pistas · {compiled.plan.events.length} notas{compiled.version === 2 ? ` · ${compiled.plan.controls.length} gestos` : ""} · {compiled.plan.bpm} BPM · {compiled.plan.sourceHash}{compiled.version === 2 ? ` · ${compiled.plan.quality} · módulo ${compiled.plan.moduleId}` : ""}</span>
               </div>
             )}
-            {compiled?.version === 2 && compiled.plan.moduleId !== "builtin" && !compiledModule && (
+            {compiled?.version === 2 && !["builtin", "native-auto", ORCHESTRAL_SYNTH_MODULE_ID].includes(compiled.plan.moduleId) && !compiledModule && (
               <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-200">Falta el módulo <code>module:{compiled.plan.moduleId}</code>. Tloque puede previsualizar con síntesis base, pero exige el banco publicado para guardar esta versión.</p>
             )}
             {compile.isError && <pre role="alert" className="whitespace-pre-wrap rounded-xl border border-red-400/20 bg-red-950/30 p-3 text-xs text-red-200">{(compile.error as Error).message}</pre>}
@@ -711,7 +729,7 @@ export default function AudioCatalogAdmin() {
                 {saveScore.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : `${scoreEditingId ? "Actualizar" : "Guardar"} en Fonoteca`}
               </button>
             </div>
-            {exportEstimate && <p className="text-[10px] text-zinc-500">Monitoreo de referencia independiente del volumen de lectura · {compiledModule ? `Render muestreado ${compiledModule.title} · 24-bit / 48 kHz` : `Render incorporado ${exportEstimate.bitDepth}-bit / ${(exportEstimate.sampleRate / 1000).toFixed(0)} kHz`} · {exportEstimate.audioProfile}{compiledModule ? " · en móvil, las obras muy largas se exportan por movimientos para proteger la memoria" : ` · tamaño estimado ${(exportEstimate.bytes / 1024 / 1024).toFixed(1)} MB · procesamiento por bloques`}.</p>}
+            {exportEstimate && <p className="text-[10px] text-zinc-500">Monitoreo de referencia independiente del volumen de lectura · {compiledModule ? `Render muestreado ${compiledModule.title} · 24-bit / 48 kHz` : `Render ${exportEstimate.bitDepth}-bit / ${(exportEstimate.sampleRate / 1000).toFixed(0)} kHz`} · {exportEstimate.audioProfile} · tamaño estimado {(exportEstimate.bytes / 1024 / 1024).toFixed(1)} MB · las obras muy largas pueden requerir exportación por movimientos para proteger la memoria.</p>}
             {masteringResult && (
               <div className={`rounded-xl border p-3 text-xs ${masteringResult.report.status === "pass" ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-200" : masteringResult.report.status === "warn" ? "border-amber-400/20 bg-amber-400/5 text-amber-200" : "border-red-400/20 bg-red-400/5 text-red-200"}`}>
                 <p className="font-semibold">Control de master: {masteringResult.report.status === "pass" ? "aprobado" : masteringResult.report.status === "warn" ? "aprobado con revisión" : "rechazado"}</p>

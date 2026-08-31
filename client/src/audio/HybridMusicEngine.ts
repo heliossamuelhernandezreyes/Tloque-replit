@@ -10,6 +10,7 @@ import { SoundFontMusicEngine } from "./SoundFontMusicEngine"
 import { NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
 import { AdaptiveLayerMusicEngine } from "./AdaptiveLayerMusicEngine"
 import { adaptiveLayersForRegion } from "./AdaptiveScoreLayers"
+import { ORCHESTRAL_SYNTH_MODULE_ID } from "@shared/orchestral-synthesis"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 type Engine = Pick<MusicEngine, "play" | "pause" | "resume" | "stop" | "dispose" | "setMasterVolume" | "setDucked" | "setNarrativeDirection">
@@ -94,7 +95,7 @@ export class HybridMusicEngine {
         const recipe = linearScoreRecipeFor(cue.recipe)
         scoreRecipe = recipe
         if (recipe.version === 2) {
-          nativeAuto = recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID
+          nativeAuto = recipe.plan.moduleId === NATIVE_AUTO_MODULE_ID || recipe.plan.moduleId === ORCHESTRAL_SYNTH_MODULE_ID
           if (recipe.plan.moduleId !== "builtin" && !nativeAuto && !cue.instrumentManifestId) {
             resolvedCue = { ...cue, instrumentManifestId: recipe.plan.moduleId }
           }

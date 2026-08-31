@@ -22,9 +22,10 @@ export class NativeCrossfadeScoreEngine {
 
   constructor(private readonly listener: Listener) {
     this.decks = [0, 1].map(index => new NativeSampleScoreEngine((state, cue) => {
+      const previousTier = this.cues[index]?.playbackTier
       this.states[index] = state
       this.cues[index] = cue
-      if (index === this.active && this.pending < 0 && (state === "paused" || state === "error")) {
+      if (index === this.active && this.pending < 0 && (state === "paused" || state === "error" || (state === "playing" && previousTier !== cue?.playbackTier))) {
         this.listener(state, cue)
       }
     })) as [NativeSampleScoreEngine, NativeSampleScoreEngine]

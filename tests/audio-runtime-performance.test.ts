@@ -40,7 +40,9 @@ test("realtime indexa eventos y automatización en una sola estructura", () => {
   assert.doesNotMatch(engine, /recipe\.plan\.events\.filter\(/)
   assert.match(index, /for \(const control of recipe\.plan\.controls\)/)
   assert.match(index, /for \(const event of recipe\.plan\.events\)/)
-  assert.match(index, /if \(control\.timeSeconds > timeSeconds\) break/)
+  assert.match(index, /numericCurves = new WeakMap/)
+  assert.match(index, /while \(low < high\)/)
+  assert.match(index, /segments\[middle\]\.start <= timeSeconds/)
 })
 
 test("realtime y WAV comparten el mismo índice temporal nativo", () => {

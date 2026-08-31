@@ -6,6 +6,8 @@ import type { LinearScoreRecipeV2, ScoreTimbre } from "@shared/tloque-score-v2"
 import { selectNativeSampleZone } from "./NativeSamplePackEngine"
 import { selectNativeSampleVelocityBlend } from "./NativeSampleVelocityBlend"
 import { buildPerformancePlan } from "./PerformanceEngine"
+import { orchestralNoteExpression, type OrchestralNoteExpression } from "./OrchestralExpression"
+import { buildNativeRecipeIndex, nativeControlValueAt } from "./NativeRecipeIndex"
 import { articulationDurationFactor, articulationVelocityFactor, scoreTrackExpression, scoreTrackTimbre, scoreVelocityGain } from "./ScoreAudioMath"
 
 export interface NativeSampleTrackPlan { id: string; gain: number; pan: number; micPosition: TloqueMicPosition; brightness: number }
@@ -30,6 +32,7 @@ export interface NativeSampleVoicePlan {
   sampleGain: number
   oneShot: boolean
   fadeInSeconds: number
+  expression?: OrchestralNoteExpression
 }
 export interface NativeSampleAuxiliaryVoicePlan {
   kind: "release" | "legato-transition"
@@ -86,28 +89,11 @@ function blendHasExactNoteCoverage(blend: ReturnType<typeof selectNativeSampleVe
   return blend.some(selection => note >= selection.zone.loMidi && note <= selection.zone.hiMidi)
 }
 
-function vibratoAtTime(recipe: LinearScoreRecipeV2, trackId: string, timeSeconds: number, initial: number) {
-  const controls = recipe.plan.controls
-    .filter(control => control.trackId === trackId && control.vibrato !== null)
-    .sort((a, b) => a.timeSeconds - b.timeSeconds)
-  let value = Math.max(0, Math.min(1, initial))
-  for (const control of controls) {
-    if (control.timeSeconds > timeSeconds) break
-    const target = control.vibrato
-    if (target === null) continue
-    if (control.rampSeconds > 0 && timeSeconds < control.timeSeconds + control.rampSeconds) {
-      const t = Math.max(0, Math.min(1, (timeSeconds - control.timeSeconds) / control.rampSeconds))
-      return value + (target - value) * t
-    }
-    value = target
-  }
-  return Math.max(0, Math.min(1, value))
-}
-
 export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: TloqueSamplePack, options: NativeSampleScorePlanOptions = {}): NativeSampleScorePlan {
   if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita un paquete nativo")
 
   const performance = buildPerformancePlan(recipe, options.manifests ?? manifestsForModule(pack.instrumentManifestId))
+  const index = buildNativeRecipeIndex(recipe)
   const playableTracks = recipe.plan.tracks.slice(0, 16)
   const trackById = new Map(playableTracks.map(track => [track.id, track]))
   const micForTrack = (trackId: string): TloqueMicPosition => options.micPositionByTrack?.[trackId] ?? pack.defaultMicPosition ?? pack.micPositions?.[0] ?? "default"
@@ -160,7 +146,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     )
     const oneShot = track.instrument === "percussion.orchestral-kit"
     const requestedTimbre = event.timbre ?? track.timbre ?? "natural"
-    const performedVibrato = vibratoAtTime(recipe, track.id, event.timeSeconds, track.vibrato ?? 0)
+    const performedVibrato = requestedTimbre === "non-vibrato" ? 0 : nativeControlValueAt(index.controlsByTrack.get(track.id) ?? [], "vibrato", event.timeSeconds, track.vibrato ?? 0)
     const candidates = timbreCandidates(pack.instrumentManifestId, requestedTimbre, performedVibrato)
     const performedVelocity = Math.max(0.01, Math.min(1, event.velocity * decision.velocityScale))
     const velocity = Math.round(Math.min(1, scoreVelocityGain(performedVelocity) * articulationVelocityFactor(decision.articulation)) * 127)
@@ -217,6 +203,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           sampleGain: selected.gain,
           oneShot,
           fadeInSeconds: 0,
+          expression: orchestralNoteExpression(track.instrument, decision.articulation, durationSeconds, performedVibrato, physical.vibratoColour !== "none", `${recipe.plan.seed}:${event.trackId}:${event.timeSeconds}:${note}`),
         }
         voices.push(voice)
         return voice

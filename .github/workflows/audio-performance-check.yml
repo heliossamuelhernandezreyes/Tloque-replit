@@ -12,6 +12,7 @@ on:
       - 'shared/audio.ts'
       - 'shared/music-brain.ts'
       - 'shared/music-brain-renderer.ts'
+      - 'shared/orchestral-synthesis.ts'
       - 'shared/direction.ts'
       - 'shared/narrative.ts'
       - 'shared/curated-*.ts'
@@ -45,6 +46,7 @@ on:
       - 'shared/audio.ts'
       - 'shared/music-brain.ts'
       - 'shared/music-brain-renderer.ts'
+      - 'shared/orchestral-synthesis.ts'
       - 'shared/direction.ts'
       - 'shared/narrative.ts'
       - 'shared/curated-*.ts'
@@ -95,6 +97,9 @@ jobs:
 
       - name: Full tests
         run: npm test
+
+      - name: Offline orchestral waveform checks
+        run: npm run test:audio:render
 
       - name: Build
         run: npm run build

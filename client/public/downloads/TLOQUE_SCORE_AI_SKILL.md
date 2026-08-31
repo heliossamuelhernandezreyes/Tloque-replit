@@ -1,6 +1,6 @@
 ---
 name: compose-tloque-score
-description: Compose, revise, or repair instrumental TloqueScore 2 code for Tloque Audio Studio, including multi-instrument native orchestration and premium acoustic rendering.
+description: Compose, revise, or repair instrumental TloqueScore 2 code for Tloque Audio Studio, including expressive orchestral synthesis, native orchestration and premium acoustic rendering.
 ---
 
 # Compose TloqueScore 2
@@ -11,8 +11,9 @@ Create only instrumental music. The TloqueScore code is the master work: Tloque 
 
 - Audio contract: `tloque-audio-2026-08-v2`
 - Compiler: `tloque-score-compiler-v2.2`
-- Skill version: `1.8.0`
+- Skill version: `1.9.0`
 - Built-in module: `builtin`
+- Expressive orchestral synthesis: `orchestra-synth` (`tloque-orchestral-synth-v1`)
 - Native multi-instrument router: `native-auto`
 - Premium native master: physical verified sample packs required
 - Performance engine: deterministic family-aware micro-timing, duration and performed-velocity shaping driven by `humanize`
@@ -25,9 +26,9 @@ Never invent commands or execute JavaScript. Never add lyrics, sung words, audio
 1. Determine purpose, duration, mood, form, instruments and whether the piece loops.
 2. Plan form and bar count before writing notes; keep motifs recognizable but developed.
 3. Declare every track before the first section.
-4. Use `module native-auto` for multi-instrument premium work. Use `builtin` only when portability matters more than acoustic quality.
+4. Choose the source explicitly: `native-auto` for installed recorded instruments, `orchestra-synth` for expressive orchestral synthesis without sample downloads, or `builtin` for the legacy synthesis sound.
 5. Never claim a physical articulation, timbre, true-legato transition, release layer, stop or microphone that the installed library does not contain.
-6. For `quality master`, use only native semantic instruments expected to have their physical packs installed.
+6. A native `quality master` requires installed, verified physical packs. `orchestra-synth` also supports `quality master`, but this means a 96 kHz/24-bit synthetic WAV, never an acoustic/native certification.
 7. Use `humanize` deliberately: it drives deterministic family-aware imperfection and enables bounded Performance Director shaping while preserving authored notes and articulations.
 8. Write musically meaningful rests and phrase boundaries. The Director can interpret them; it cannot infer breathing space that the score never contains.
 9. Validate the full score and return one complete code block when code is requested.
@@ -43,7 +44,7 @@ loop true|false
 seed 0..2147483647
 humanize 0..1
 quality core|studio|master
-module builtin|native-auto|installed-module-id
+module builtin|native-auto|orchestra-synth|installed-module-id
 track id synth=warm|pad|bell|pluck|bass instrument=instrument.id program=0..127 role=melody|harmony|bass|pulse|texture|accent gain=0..1 pan=-1..1 attack=0.001..8 release=0.01..12 expression=0..1 brightness=0..1 vibrato=0..1 timbre=natural|non-vibrato|vibrato|expression-vibrato|mute|harmon-mute|straight-mute
 section id form=exposition|development|recapitulation|coda|interlude|custom bars=1..128 repeat=1..4 fade=0..16 tempo=32..180 rubato=0..0.35
 use track-id
@@ -56,6 +57,22 @@ end
 `timbre=` on an event overrides the track default. Fractional beat positions are valid throughout the whole beat: in 4/4, `4:4.25`, `4:4.5`, and `4:4.75` are valid; `4:5` is outside the bar.
 
 Unpitched orchestral percussion uses semantic `hit` events on `instrument=percussion.orchestral-kit`, for example `hit 1:1 bass-drum 0.5 velocity=0.8`. Do not encode percussion names as fake pitches.
+
+## Expressive orchestral synthesis
+
+Use `module orchestra-synth` when the work must play without downloading recorded banks. It uses semantic instrument identities, family-shaped spectra, modal decays for struck/plucked instruments, small section detuning, delayed numeric vibrato and bounded within-note dynamics. The same voice and directional concert-stage graph serve playback and WAV export.
+
+- Preserve the authored score when changing the module; changing the renderer is not rewriting the composition.
+- Use `strings.violin` for a solo and `strings.violin-section` for a small synthetic section. Do not describe three synthesized members as a recorded full string orchestra.
+- Winds and brass have distinct synthetic family colours; piano, harp and mallet instruments have decaying partials. These are original timbre heuristics, not physically calibrated acoustic models.
+- Numeric `vibrato` and `bend` controls work over a sustained synthetic note. `timbre=non-vibrato` suppresses vibrato. Recorded mute/colour commands do not provide recorded colours in this source: prefer `native-auto` when those physical distinctions are essential.
+- `humanize` uses the existing deterministic Performance Director. Explicit rests, phrase boundaries, expression and brightness still matter more than maximizing humanization.
+- `quality core` exports Preview 32 kHz/16-bit; `studio` exports 48 kHz/24-bit; `master` exports 96 kHz/24-bit. Higher sample rate does not make synthesized instruments recorded or perceptually authentic.
+- The graph admits at most 192 active synthesis sources, including release tails (one note can use several sources). Excessive overlap is reported; do not hide it by deleting authored notes. Reduce orchestration density or export sections.
+- The stereo room is a designed virtual stage, not a measured concert-hall impulse response, surround decoder or personalized binaural/HRTF system.
+- Missing native tracks use this synthesis for recovery in eligible previews/Studio renders and remain explicitly labelled as fallback. Native Master still refuses missing physical sources.
+
+For an existing complete TloqueScore 2, changing only its module line to `module orchestra-synth` selects this renderer. Do not invent a new score version or additional orchestral commands.
 
 ## Native acoustic routing
 
@@ -228,11 +245,12 @@ end
 - First line is exactly `TLOQUE_SCORE 2`; the work is instrumental.
 - Tracks precede sections; every `use` is declared; every section has `end`.
 - Bars, beats, fractional positions, repeats and values are in range.
-- Native identities have verified physical packages for the intended master.
+- The chosen source is explicit; native identities have verified physical packages for an acoustic master.
 - Requested timbres/articulations exist physically and unavailable capabilities are not approximated dishonestly.
 - Do not claim true-legato for the current author-facing acoustic orchestra.
 - `humanize` is chosen for the idiom rather than maximized blindly; `humanize 0` remains neutral.
 - Phrase boundaries are authored with meaningful duration/rest structure so the Performance Director has musical context.
 - Guitar, colour winds and organ writing stays within their installed physical capabilities.
 - A synthesis fallback is never described as a premium/native master.
+- An explicit `orchestra-synth` Master is labelled synthetic, even at 96 kHz; no recorded timbre or concert-hall authenticity is claimed.
 - Fast passages have deliberate phrasing rather than machine-identical events.
