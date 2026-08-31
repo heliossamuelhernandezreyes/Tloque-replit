@@ -1,4 +1,5 @@
 import { linearScoreRecipeFor } from "@shared/audio"
+import { ORCHESTRAL_SYNTH_MODULE_ID } from "@shared/orchestral-synthesis"
 import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
 import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared/native-hybrid-source"
@@ -15,8 +16,11 @@ import { schedulePhysicalReedVoice } from "./PhysicalReedModel"
 import {
   scoreTrackExpression,
   scoreTrackTimbre,
+  scoreMonitorVolume,
 } from "./ScoreAudioMath"
 import { scheduleFallbackSynthVoice } from "./FallbackScoreSynth"
+import { scheduleOrchestralSynthVoice } from "./OrchestralSynthVoice"
+import { buildOrchestralSynthPlan } from "./OrchestralSynthPlan"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 
@@ -77,12 +81,13 @@ export class NativeSampleScoreEngine {
       const recipe = linearScoreRecipeFor(cue.recipe)
       if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita fuentes acústicas nativas")
       const context = createRealtimeAudioContext()
-      const groups = nativeModuleGroupsForRecipe(recipe)
+      const orchestralSynthesis = recipe.plan.moduleId === ORCHESTRAL_SYNTH_MODULE_ID
+      const groups = orchestralSynthesis ? [] : nativeModuleGroupsForRecipe(recipe)
       const sampleGroups: NativeModuleGroup[] = [], physicalGroups: NativeModuleGroup[] = []
       for (const group of groups) (nativePhysicalModelByModuleId(group.moduleId) ? physicalGroups : sampleGroups).push(group)
 
       const loaded: LoadedNativePlan[] = []
-      const fallbackTrackIds = new Set<string>()
+      const fallbackTrackIds = new Set<string>(orchestralSynthesis ? recipe.plan.tracks.map(track => track.id) : [])
       for (const group of sampleGroups) {
         try {
           const player = new NativeSamplePackPlayer(context)
@@ -123,7 +128,8 @@ export class NativeSampleScoreEngine {
       let runtimeCue: MusicCue = {
         ...cue,
         playbackTier: fallbackTrackIds.size === 0 ? "native" : fallbackTrackIds.size < recipe.plan.tracks.length ? "hybrid" : "synth",
-        fallbackInstrumentIds: fallbackInstruments,
+        fallbackInstrumentIds: orchestralSynthesis ? [] : fallbackInstruments,
+        orchestralSynthesis,
       }
       this.context = context; this.output = output; this.cue = runtimeCue
       const markFallback = (trackId: string, error: unknown) => {
@@ -187,7 +193,7 @@ export class NativeSampleScoreEngine {
                 destination,
                 0,
                 voice.oneShot,
-                voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : undefined,
+                { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression },
               ).catch(error => {
                 if (!semanticTrack || this.context !== context) return null
                 markFallback(voice.trackId, error)
@@ -197,6 +203,8 @@ export class NativeSampleScoreEngine {
                   notes: [voice.note],
                   velocity: Math.max(0.01, Math.min(1, voice.velocity / 127)) * scale,
                   articulation: voice.articulation,
+                  timbre: voice.timbre,
+                  durationIsPerformed: true,
                 }, semanticTrack)
                 return null
               })
@@ -226,7 +234,7 @@ export class NativeSampleScoreEngine {
       const previousHybridEndByTrack = new Map<string, number>()
       for (const event of index.chronologicalEvents) {
         const track = index.trackById.get(event.trackId), destination = graph.trackGain.get(event.trackId)
-        if (!track || !destination || !hybridEnabledForArticulation(track.instrument, event.articulation)) continue
+        if (!track || !destination || fallbackTrackIds.has(event.trackId) || !hybridEnabledForArticulation(track.instrument, event.articulation)) continue
         const hybrid = nativeHybridForInstrument(track.instrument)
         if (!hybrid || (recipe.plan.quality === "master" && !hybridSourceMasterApproved(hybrid))) continue
         const controls = index.controlsByTrack.get(event.trackId) ?? []
@@ -299,14 +307,21 @@ export class NativeSampleScoreEngine {
             brightness: control.brightness,
           }, startAt + cycleOffset),
         })
-        for (const event of index.eventsByTrack.get(trackId) ?? []) realtimeTasks.push({
+      }
+      for (const event of buildOrchestralSynthPlan(recipe, fallbackTrackIds)) {
+        const track = index.trackById.get(event.trackId), destination = graph.trackGain.get(event.trackId)
+        if (!track || !destination) continue
+        const controls = index.controlsByTrack.get(event.trackId) ?? []
+        realtimeTasks.push({
           timeSeconds: event.timeSeconds,
           run: (cycleOffset = 0) => {
             const scale = dwellGain(cue, track.role, cycleOffset, recipe.plan.totalSeconds, `${event.trackId}:${event.timeSeconds}`)
             if (scale <= 0) return
-            scheduleFallbackSynthVoice(context, destination, startAt + cycleOffset, { ...event, velocity: event.velocity * scale }, track)
+            const count = scheduleOrchestralSynthVoice(context, destination, startAt + cycleOffset, { ...event, velocity: event.velocity * scale }, track, orchestralSynthesis ? 1 : 0.72, controls)
+            if (count < event.notes.length) throw new Error("La orquesta supera el presupuesto de voces; reduce acordes simultáneos o divide la obra por secciones")
           },
         })
+        naturalEnd = Math.max(naturalEnd, event.timeSeconds + event.durationSeconds + 6)
       }
 
       const lookahead = new NativeRealtimeLookahead(realtimeTasks, shouldLoop ? recipe.plan.totalSeconds : 0)
@@ -372,7 +387,7 @@ export class NativeSampleScoreEngine {
   async resume() { if (this.context) await this.context.resume(); if (this.cue) this.listener("playing", this.cue) }
   stop() { this.playToken += 1; this.stopRuntime(); this.cue = null; this.listener("idle", null) }
   dispose() { this.stop() }
-  private targetVolume() { return Math.max(0, Math.min(1, this.master * (this.cue?.volume ?? 1) * this.duckFactor * this.narrativeGain)) }
+  private targetVolume() { return scoreMonitorVolume(this.master, this.cue?.volume ?? 1, this.duckFactor, this.narrativeGain, this.cue?.monitoring === "reference") }
   private applyVolume() { if (!this.context || !this.output) return; const now = this.context.currentTime; this.output.gain.cancelScheduledValues(now); this.output.gain.linearRampToValueAtTime(this.targetVolume(), now + 0.18) }
   private stopRuntime() {
     window.clearInterval(this.schedulerTimer); this.schedulerTimer = 0

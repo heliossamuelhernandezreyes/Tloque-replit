@@ -179,7 +179,7 @@ export default function ReaderAudioMenu({
             {downloadError && <p className="px-1 text-center text-[10px] text-red-300/70">{downloadError}</p>}
             {music.state === "error" && <p className="px-1 text-center text-[10px] text-red-300/70">{runtimeText.unavailable}</p>}
             {music.state === "blocked" && <p className="px-1 text-center text-[10px] text-amber-200/70">{runtimeText.blocked}</p>}
-            {music.cue?.playbackTier && <p className="px-1 text-center text-[10px] text-zinc-500">{runtimeText[music.cue.playbackTier]}</p>}
+            {music.cue?.playbackTier && <p className="px-1 text-center text-[10px] text-zinc-500">{music.cue.orchestralSynthesis ? (language === "en" ? "Orchestral synthesis" : "Síntesis orquestal") : runtimeText[music.cue.playbackTier]}</p>}
             {spotifyLink && (
               <button onClick={chooseSpotify} className={optionClass} style={preference === "spotify" ? { borderColor: `${accent}55`, background: `${accent}0d` } : undefined}>
                 <ExternalLink className="h-4 w-4 shrink-0" style={{ color: accent }} />

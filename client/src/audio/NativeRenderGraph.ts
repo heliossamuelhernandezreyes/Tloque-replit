@@ -43,6 +43,7 @@ export function createNativeRenderGraph(
   const trackGain = new Map<string, GainNode>()
   const trackTone = new Map<string, BiquadFilterNode>()
   const trackNodes: AudioNode[] = []
+  const automation = new Map<AudioParam, { from: number; target: number; start: number; end: number; exponential: boolean }>()
 
   if (destination) mix.output.connect(destination)
 
@@ -51,7 +52,7 @@ export function createNativeRenderGraph(
     if (existing) return existing
     const semanticTrack = trackById.get(trackId)
     const gain = context.createGain(); gain.gain.value = gainValue
-    const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = nativeBrightnessCutoff(brightness); tone.Q.value = 0.12
+    const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = Math.min(context.sampleRate * 0.45, nativeBrightnessCutoff(brightness)); tone.Q.value = 0.12
     const stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", pan)
     gain.connect(tone); tone.connect(stageInput)
     trackNodes.push(gain, tone)
@@ -64,16 +65,33 @@ export function createNativeRenderGraph(
     const tone = trackTone.get(control.trackId)
     const at = startAt + control.timeSeconds
     if (gain && control.gain !== null) {
-      gain.gain.cancelScheduledValues(at)
-      if (control.rampSeconds > 0) gain.gain.linearRampToValueAtTime(control.gain, at + control.rampSeconds)
-      else gain.gain.setValueAtTime(control.gain, at)
+      schedule(gain.gain, Math.max(0, control.gain), at, control.rampSeconds, false)
     }
     if (tone && control.brightness !== null) {
-      const cutoff = nativeBrightnessCutoff(control.brightness)
-      tone.frequency.cancelScheduledValues(at)
-      if (control.rampSeconds > 0) tone.frequency.exponentialRampToValueAtTime(cutoff, at + control.rampSeconds)
-      else tone.frequency.setValueAtTime(cutoff, at)
+      const cutoff = Math.min(context.sampleRate * 0.45, nativeBrightnessCutoff(control.brightness))
+      schedule(tone.frequency, cutoff, at, control.rampSeconds, true)
     }
+  }
+
+  function schedule(param: AudioParam, target: number, at: number, seconds: number, exponential: boolean) {
+    const previous = automation.get(param)
+    let from = param.value
+    if (previous) {
+      const progress = previous.end > previous.start ? Math.max(0, Math.min(1, (at - previous.start) / (previous.end - previous.start))) : 1
+      from = previous.exponential ? previous.from * (previous.target / previous.from) ** progress : previous.from + (previous.target - previous.from) * progress
+    }
+    param.cancelScheduledValues(at)
+    // Cancelling a future endpoint also removes its preceding ramp. Restore the
+    // truncated ramp, otherwise an interrupted crescendo becomes a held step.
+    if (previous && previous.start < at && previous.end > at) {
+      if (previous.exponential) param.exponentialRampToValueAtTime(from, at)
+      else param.linearRampToValueAtTime(from, at)
+    } else param.setValueAtTime(from, at)
+    if (seconds > 0) {
+      if (exponential) param.exponentialRampToValueAtTime(target, at + seconds)
+      else param.linearRampToValueAtTime(target, at + seconds)
+    } else param.setValueAtTime(target, at)
+    automation.set(param, { from, target, start: at, end: at + Math.max(0, seconds), exponential })
   }
 
   return {

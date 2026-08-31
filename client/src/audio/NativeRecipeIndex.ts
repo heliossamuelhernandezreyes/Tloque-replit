@@ -45,14 +45,35 @@ export function nativeTrackAtTime(
   controls: readonly ScoreControl[],
   timeSeconds: number,
 ): LinearScoreTrackV2 {
-  let expression = track.expression
-  let brightness = track.brightness
-  let vibrato = track.vibrato
-  for (const control of controls) {
-    if (control.timeSeconds > timeSeconds) break
-    if (control.expression !== null) expression = control.expression
-    if (control.brightness !== null) brightness = control.brightness
-    if (control.vibrato !== null) vibrato = control.vibrato
-  }
+  const expression = nativeControlValueAt(controls, "expression", timeSeconds, track.expression)
+  const brightness = nativeControlValueAt(controls, "brightness", timeSeconds, track.brightness)
+  const vibrato = nativeControlValueAt(controls, "vibrato", timeSeconds, track.vibrato)
   return { ...track, expression, brightness, vibrato }
+}
+
+/** A new ramp begins at the interpolated value of the previous ramp, not at its
+ * future target. Authored crescendo/bend automation therefore never jumps early. */
+type ControlSegment = { from: number; target: number; start: number; ramp: number }
+const numericCurves = new WeakMap<readonly ScoreControl[], Map<string, readonly ControlSegment[]>>()
+function segmentValue(segment: ControlSegment, time: number) {
+  return segment.ramp > 0 ? segment.from + (segment.target - segment.from) * Math.max(0, Math.min(1, (time - segment.start) / segment.ramp)) : segment.target
+}
+export function nativeControlValueAt(controls: readonly ScoreControl[], axis: "expression" | "brightness" | "vibrato" | "pitchBend", timeSeconds: number, initial: number) {
+  let cached = numericCurves.get(controls)
+  if (!cached) { cached = new Map(); numericCurves.set(controls, cached) }
+  const key = `${axis}:${initial}`
+  let segments = cached.get(key)
+  if (!segments) {
+    const compiled: ControlSegment[] = []
+    for (const control of controls) {
+      const target = control[axis]
+      if (target === null) continue
+      const previous = compiled[compiled.length - 1]
+      compiled.push({ from: previous ? segmentValue(previous, control.timeSeconds) : initial, target, start: control.timeSeconds, ramp: control.rampSeconds })
+    }
+    segments = compiled; cached.set(key, segments)
+  }
+  let low = 0, high = segments.length
+  while (low < high) { const middle = (low + high) >>> 1; if (segments[middle].start <= timeSeconds) low = middle + 1; else high = middle }
+  return low === 0 ? initial : segmentValue(segments[low - 1], timeSeconds)
 }

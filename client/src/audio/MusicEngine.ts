@@ -23,6 +23,8 @@ export interface MusicCue {
   monitoring?: "program" | "reference"
   /** Resolved live tier after native-pack preflight/load. */
   playbackTier?: "native" | "hybrid" | "synth"
+  /** Explicit asset-free orchestral synthesis, never labeled as recorded native. */
+  orchestralSynthesis?: boolean
   /** Instruments that are using the bounded synth fallback in this cue. */
   fallbackInstrumentIds?: readonly string[]
   /** Enables deterministic thinning/variation while a narrative region dwells. */

@@ -1,4 +1,5 @@
 import { linearScoreRecipeFor } from "@shared/audio"
+import { ORCHESTRAL_SYNTH_MODULE_ID } from "@shared/orchestral-synthesis"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
 import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared/native-hybrid-source"
 import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
@@ -13,6 +14,8 @@ import { assessNativePremiumReadiness, premiumReadinessError } from "./NativePre
 import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQuality } from "./ScoreExporter"
 import { schedulePhysicalReedVoice } from "./PhysicalReedModel"
 import { scheduleFallbackSynthVoice } from "./FallbackScoreSynth"
+import { scheduleOrchestralSynthVoice } from "./OrchestralSynthVoice"
+import { buildOrchestralSynthPlan } from "./OrchestralSynthPlan"
 import { scoreTrackExpression, scoreTrackTimbre } from "./ScoreAudioMath"
 import { fetchAudioResource } from "./AudioResourceCache"
 
@@ -48,7 +51,7 @@ function nativeSampleQuality(value: unknown, options: ScoreExportOptions) {
   const requested: ScoreExportQuality = options.quality ?? recipeQuality
   return requested === "preview"
     ? { quality: requested, sampleRate: 32_000, bitDepth: 16 as const, tail: 2.5 }
-    : { quality: requested, sampleRate: 48_000, bitDepth: 24 as const, tail: requested === "master" ? 8 : 5 }
+    : { quality: requested, sampleRate: recipe.version === 2 && recipe.plan.moduleId === ORCHESTRAL_SYNTH_MODULE_ID && requested === "master" ? 96_000 : 48_000, bitDepth: 24 as const, tail: requested === "master" ? 8 : 5 }
 }
 function assertNotAborted(signal?: AbortSignal) { if (signal?.aborted) throw new DOMException("Exportación cancelada", "AbortError") }
 function modulePackUrlFor(recipe: ReturnType<typeof linearScoreRecipeFor>, moduleId: string, packUrl?: string) {
@@ -70,6 +73,7 @@ function decodedFloatBytes(buffers: ReadonlyMap<string, AudioBuffer>) {
 export async function preflightNativeSamplePacks(value: unknown, packUrl?: string, signal?: AbortSignal): Promise<NativeSamplePackPreflight> {
   const recipe = linearScoreRecipeFor(value)
   if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") return { ready: true, items: [], missing: [] }
+  if (recipe.plan.moduleId === ORCHESTRAL_SYNTH_MODULE_ID) return { ready: true, items: [], missing: [] }
   const groups = nativeModuleGroupsForRecipe(recipe), trackById = new Map(recipe.plan.tracks.map(track => [track.id, track])), items: NativeSamplePackPreflightItem[] = []
   for (const group of groups) {
     assertNotAborted(signal)
@@ -114,7 +118,9 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
 ): Promise<Blob> {
   const recipe = linearScoreRecipeFor(value)
   if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita paquetes nativos")
-  if (recipe.plan.moduleId !== NATIVE_AUTO_MODULE_ID && !packUrl.startsWith("/api/audio/sample-packs/modules/")) throw new Error("El módulo nativo debe provenir del almacenamiento interno de Tloque")
+  const orchestralSynthesis = recipe.plan.moduleId === ORCHESTRAL_SYNTH_MODULE_ID
+  if (orchestralSynthesis && options.strictNativeSources) throw new Error("Síntesis orquestal no es una fuente acústica grabada y no puede usarse para certificación nativa")
+  if (!orchestralSynthesis && recipe.plan.moduleId !== NATIVE_AUTO_MODULE_ID && !packUrl.startsWith("/api/audio/sample-packs/modules/")) throw new Error("El módulo nativo debe provenir del almacenamiento interno de Tloque")
   const profile = nativeSampleQuality(recipe, options), hybridMode = options.hybridMode ?? "quality"
   assertNotAborted(options.signal); options.onProgress?.(0.01)
   const preflight = await preflightNativeSamplePacks(recipe, packUrl, options.signal)
@@ -122,7 +128,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
     if (profile.quality === "master") throw new Error(premiumPreflightError(preflight))
     if (options.strictNativeSources) throw new Error(strictNativePreflightError(preflight))
   }
-  if (profile.quality === "master") {
+  if (profile.quality === "master" && !orchestralSynthesis) {
     const readiness = await assessNativePremiumReadiness(recipe, options.signal)
     if (!readiness.ready) throw new Error(premiumReadinessError(readiness))
   }
@@ -130,11 +136,11 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   options.onProgress?.(0.03)
   const decodeContext = new OfflineAudioContext(2, 1, profile.sampleRate)
   const decodedByUrl = new Map<string, AudioBuffer>(), loaded: LoadedOfflinePlan[] = []
-  const groups = nativeModuleGroupsForRecipe(recipe)
+  const groups = orchestralSynthesis ? [] : nativeModuleGroupsForRecipe(recipe)
   const physicalGroups = groups.filter(group => nativePhysicalModelByModuleId(group.moduleId))
   const sampleGroups = groups.filter(group => !nativePhysicalModelByModuleId(group.moduleId))
   const unavailableModules = new Set(preflight.missing.map(item => item.moduleId))
-  const fallbackTrackIds = new Set<string>()
+  const fallbackTrackIds = new Set<string>(orchestralSynthesis ? recipe.plan.tracks.map(track => track.id) : [])
   for (const group of sampleGroups) if (unavailableModules.has(group.moduleId)) group.trackIds.forEach(trackId => fallbackTrackIds.add(trackId))
   for (let index = 0; index < sampleGroups.length; index += 1) {
     const group = sampleGroups[index]
@@ -197,7 +203,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
     for (const voice of plan.voices) {
       const destination = graph.trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
       if (!destination || !zone) continue
-      scheduled.push(player.playSelection({ zone, playbackRate: voice.playbackRate, gain: voice.sampleGain }, voice.startSeconds, voice.durationSeconds, destination, 0, voice.oneShot, voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : undefined))
+      scheduled.push(player.playSelection({ zone, playbackRate: voice.playbackRate, gain: voice.sampleGain }, voice.startSeconds, voice.durationSeconds, destination, 0, voice.oneShot, { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression }))
     }
     for (const auxiliary of plan.auxiliaryVoices) {
       const destination = graph.trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
@@ -229,16 +235,17 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
     }
   }
 
-  for (const trackId of fallbackTrackIds) {
-    const track = index.trackById.get(trackId), destination = graph.trackGain.get(trackId)
+  for (const event of buildOrchestralSynthPlan(recipe, fallbackTrackIds)) {
+    const track = index.trackById.get(event.trackId), destination = graph.trackGain.get(event.trackId)
     if (!track || !destination) continue
-    for (const event of index.eventsByTrack.get(trackId) ?? []) scheduleFallbackSynthVoice(context, destination, 0, event, track)
+    const count = scheduleOrchestralSynthVoice(context, destination, 0, event, track, orchestralSynthesis ? 1 : 0.72, index.controlsByTrack.get(track.id))
+    if (count < event.notes.length) throw new Error("El render supera el presupuesto de voces sintéticas; reduce la polifonía o exporta por secciones")
   }
 
   const previousHybridEndByTrack = new Map<string, number>()
   for (const event of index.chronologicalEvents) {
     const track = index.trackById.get(event.trackId), destination = graph.trackGain.get(event.trackId)
-    if (!track || !destination || !hybridEnabledForArticulation(track.instrument, event.articulation)) continue
+    if (!track || !destination || fallbackTrackIds.has(event.trackId) || !hybridEnabledForArticulation(track.instrument, event.articulation)) continue
     const source = nativeHybridForInstrument(track.instrument)
     if (!source || !hybridEnabledForExport(source, profile.quality, hybridMode)) continue
     const previousEnd = previousHybridEndByTrack.get(event.trackId), legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08

@@ -14,6 +14,7 @@ import { db } from "./db"
 import { isAdmin, requireAdmin } from "./auth"
 import { rateLimit } from "./rateLimit"
 import { registerAudioUploadRoutes } from "./audioUploads"
+import { ORCHESTRAL_SYNTH_MODULE_ID } from "@shared/orchestral-synthesis"
 
 export const audioAssetInputSchema = z.object({
   title: z.string().trim().min(1).max(160),
@@ -73,6 +74,7 @@ export const audioAssetInputSchema = z.object({
       if (recipe.data.version === 2
         && recipe.data.plan.moduleId !== "builtin"
         && recipe.data.plan.moduleId !== "native-auto"
+        && recipe.data.plan.moduleId !== ORCHESTRAL_SYNTH_MODULE_ID
         && !isSafeSoundBankSource(value.packUrl)) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["packUrl"], message: `El módulo ${recipe.data.plan.moduleId} necesita un banco SF2/SF3 publicado` })
       }

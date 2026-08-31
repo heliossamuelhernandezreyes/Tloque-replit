@@ -9,6 +9,7 @@ import {
   type TloqueVibratoColour,
 } from "@shared/native-sample-pack"
 import { fetchAudioResource } from "./AudioResourceCache"
+import { orchestralExpressionCurve, type OrchestralNoteExpression } from "./OrchestralExpression"
 
 export interface NativeSampleSelection { zone: TloqueSampleZone; playbackRate: number; gain: number }
 export interface NativeSampleTimbreRequest {
@@ -23,6 +24,7 @@ export interface NativeSampleTimbreRequest {
 export interface NativeSamplePlaybackEnvelope {
   fadeInSeconds?: number
   fadeOutSeconds?: number
+  expression?: OrchestralNoteExpression
 }
 
 const MAX_EDGE_TRANSPOSE_SEMITONES = 4
@@ -182,10 +184,16 @@ export class NativeSamplePackPlayer {
     const gain = this.context.createGain()
     let tail: AudioNode = gain; let panner: StereoPannerNode | null = null
     if (typeof this.context.createStereoPanner === "function") { panner = this.context.createStereoPanner(); panner.pan.value = Math.max(-1, Math.min(1, pan)); gain.connect(panner); tail = panner }
-    tail.connect(destination); source.connect(gain)
+    const phrasing = this.context.createGain()
+    tail.connect(destination); source.connect(phrasing); phrasing.connect(gain)
     const loopStart = selection.zone.loopStartSeconds, loopEnd = selection.zone.loopEndSeconds
     if (loopStart !== undefined && loopEnd !== undefined && loopEnd > loopStart) { source.loop = true; source.loopStart = loopStart; source.loopEnd = loopEnd }
     const startAt = Math.max(this.context.currentTime, startTime)
+    if (!oneShot && envelope.expression) {
+      const duration = Math.max(0.01, durationSeconds)
+      if (envelope.expression.swell > 0) phrasing.gain.setValueCurveAtTime(orchestralExpressionCurve(envelope.expression, duration, "gain"), startAt, duration)
+      if (envelope.expression.vibratoCents > 0) source.detune.setValueCurveAtTime(orchestralExpressionCurve(envelope.expression, duration, "detune"), startAt, duration)
+    }
     const sourceEnvelope = {
       fadeInSeconds: envelope.fadeInSeconds ?? selection.zone.amplitudeAttackSeconds,
       fadeOutSeconds: envelope.fadeOutSeconds ?? selection.zone.amplitudeReleaseSeconds,
@@ -205,7 +213,7 @@ export class NativeSamplePackPlayer {
     }
     source.start(startAt)
     if (!oneShot || source.loop) source.stop(stopAt)
-    source.addEventListener("ended", () => { source.disconnect(); gain.disconnect(); panner?.disconnect() }, { once: true })
+    source.addEventListener("ended", () => { source.disconnect(); phrasing.disconnect(); gain.disconnect(); panner?.disconnect() }, { once: true })
     return source
   }
 
