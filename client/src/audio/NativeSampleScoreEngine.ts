@@ -2,7 +2,7 @@ import { linearScoreRecipeFor } from "@shared/audio"
 import { ORCHESTRAL_SYNTH_MODULE_ID } from "@shared/orchestral-synthesis"
 import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
-import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared/native-hybrid-source"
+import { buildNativeHybridPerformancePlan } from "@shared/native-hybrid-performance"
 import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import type { MusicCue, MusicState } from "./MusicEngine"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, type NativeModuleGroup } from "./NativeAutoModule"
@@ -106,6 +106,7 @@ export class NativeSampleScoreEngine {
       if (playToken !== this.playToken) { void context.close(); return 0 }
 
       const index = buildNativeRecipeIndex(recipe)
+      const hybridPerformance = buildNativeHybridPerformancePlan(recipe)
       const graph = createNativeRenderGraph(context, index.trackById)
       const output = context.createGain(); output.gain.value = 0; graph.output.connect(output); output.connect(context.destination)
 
@@ -231,26 +232,21 @@ export class NativeSampleScoreEngine {
         }
       }
 
-      const previousHybridEndByTrack = new Map<string, number>()
-      for (const event of index.chronologicalEvents) {
+      for (const decision of hybridPerformance.decisions) {
+        const { event, source: hybrid } = decision
         const track = index.trackById.get(event.trackId), destination = graph.trackGain.get(event.trackId)
-        if (!track || !destination || fallbackTrackIds.has(event.trackId) || !hybridEnabledForArticulation(track.instrument, event.articulation)) continue
-        const hybrid = nativeHybridForInstrument(track.instrument)
-        if (!hybrid || (recipe.plan.quality === "master" && !hybridSourceMasterApproved(hybrid))) continue
+        if (!track || !destination || fallbackTrackIds.has(event.trackId) || (recipe.plan.quality === "master" && !hybridSourceMasterApproved(hybrid))) continue
         const controls = index.controlsByTrack.get(event.trackId) ?? []
         const effectiveTrack = nativeTrackAtTime(track, controls, event.timeSeconds)
-        const previousEnd = previousHybridEndByTrack.get(event.trackId)
-        const legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
         realtimeTasks.push({
           timeSeconds: event.timeSeconds,
           run: (cycleOffset = 0) => {
             const scale = dwellGain(cue, track.role, cycleOffset, recipe.plan.totalSeconds, `${event.trackId}:${event.timeSeconds}`)
             if (scale <= 0) return
-            for (const midi of event.notes) scheduleHybridPhysicalOverlay(context, hybrid, { startAt: startAt + cycleOffset, event, track: { ...effectiveTrack, expression: effectiveTrack.expression * scale }, midi, destination, controls, legatoFromPrevious })
+            for (const midi of decision.midis) scheduleHybridPhysicalOverlay(context, hybrid, { startAt: startAt + cycleOffset, event, track: { ...effectiveTrack, expression: effectiveTrack.expression * scale }, midi, destination, controls, legatoFromPrevious: decision.legatoFromPrevious, performance: decision })
           },
         })
         naturalEnd = Math.max(naturalEnd, event.timeSeconds + event.durationSeconds + 7)
-        previousHybridEndByTrack.set(event.trackId, event.timeSeconds + event.durationSeconds)
       }
 
       for (const group of physicalGroups) {

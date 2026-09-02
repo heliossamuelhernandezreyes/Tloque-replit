@@ -1,7 +1,9 @@
 import { linearScoreRecipeFor } from "@shared/audio"
 import { ORCHESTRAL_SYNTH_MODULE_ID } from "@shared/orchestral-synthesis"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
-import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared/native-hybrid-source"
+import { buildNativeHybridPerformancePlan } from "@shared/native-hybrid-performance"
+import { nativeHybridForInstrument, type NativeHybridSource } from "@shared/native-hybrid-source"
+import type { CalibratedHybridSource } from "@shared/native-hybrid-calibration"
 import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
 import { analyzeAudioBuffer } from "./AudioRenderAnalysis"
 import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
@@ -27,6 +29,8 @@ export interface NativeSampleScoreExportOptions extends ScoreExportOptions {
   hybridMode?: HybridExportMode
   /** Diagnostic/certification renders must never become builtin synthesis after preflight. */
   strictNativeSources?: boolean
+  /** Lab-only exact-version tuning. Rejected in Master and never persisted as approval. */
+  hybridCalibrationSource?: CalibratedHybridSource
 }
 interface LoadedOfflinePlan { moduleId: string; plan: NativeSampleScorePlan }
 
@@ -60,9 +64,13 @@ function modulePackUrlFor(recipe: ReturnType<typeof linearScoreRecipeFor>, modul
   if (!packUrl?.startsWith("/api/audio/sample-packs/modules/")) throw new Error("El módulo nativo debe provenir del almacenamiento interno de Tloque")
   return packUrl
 }
-function hybridEnabledForExport(source: NonNullable<ReturnType<typeof nativeHybridForInstrument>>, quality: ScoreExportQuality, mode: HybridExportMode) {
+function hybridEnabledForExport(source: NativeHybridSource, quality: ScoreExportQuality, mode: HybridExportMode) {
   if (mode === "none" || quality === "preview") return false
   return quality !== "master" || hybridSourceMasterApproved(source)
+}
+function calibratedHybridSource(source: NativeHybridSource, candidate?: CalibratedHybridSource) {
+  if (!candidate?.calibrationTuning || candidate.instrumentId !== source.instrumentId) return source
+  return candidate
 }
 function decodedFloatBytes(buffers: ReadonlyMap<string, AudioBuffer>) {
   let bytes = 0
@@ -122,6 +130,23 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   if (orchestralSynthesis && options.strictNativeSources) throw new Error("Síntesis orquestal no es una fuente acústica grabada y no puede usarse para certificación nativa")
   if (!orchestralSynthesis && recipe.plan.moduleId !== NATIVE_AUTO_MODULE_ID && !packUrl.startsWith("/api/audio/sample-packs/modules/")) throw new Error("El módulo nativo debe provenir del almacenamiento interno de Tloque")
   const profile = nativeSampleQuality(recipe, options), hybridMode = options.hybridMode ?? "quality"
+  if (options.hybridCalibrationSource) {
+    if (profile.quality === "master") throw new Error("Master no admite ajustes híbridos efímeros; promueve y versiona la calibración antes de certificar")
+    const candidate = options.hybridCalibrationSource
+    const registered = nativeHybridForInstrument(candidate.instrumentId)
+    const exactIdentity = registered &&
+      registered.kind === candidate.kind &&
+      registered.engineVersion === candidate.engineVersion &&
+      registered.physicalLayer === candidate.physicalLayer &&
+      registered.baseSource === candidate.baseSource &&
+      registered.approval === candidate.approval &&
+      registered.masterApproved === candidate.masterApproved &&
+      registered.midiMin === candidate.midiMin &&
+      registered.midiMax === candidate.midiMax &&
+      registered.wet === candidate.wet
+    const scoreUsesInstrument = recipe.plan.tracks.some(track => track.instrument === candidate.instrumentId)
+    if (!candidate.calibrationTuning || !exactIdentity || !scoreUsesInstrument) throw new Error("La calibración híbrida no corresponde exactamente a la fuente y obra del laboratorio")
+  }
   assertNotAborted(options.signal); options.onProgress?.(0.01)
   const preflight = await preflightNativeSamplePacks(recipe, packUrl, options.signal)
   if (!preflight.ready) {
@@ -179,6 +204,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   options.onProgress?.(0.20)
   const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate)
   const index = buildNativeRecipeIndex(recipe)
+  const hybridPerformance = buildNativeHybridPerformancePlan(recipe)
   const graph = createNativeRenderGraph(context, index.trackById, context.destination)
   for (const track of recipe.plan.tracks) {
     const timbre = scoreTrackTimbre(track)
@@ -242,16 +268,13 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
     if (count < event.notes.length) throw new Error("El render supera el presupuesto de voces sintéticas; reduce la polifonía o exporta por secciones")
   }
 
-  const previousHybridEndByTrack = new Map<string, number>()
-  for (const event of index.chronologicalEvents) {
+  for (const decision of hybridPerformance.decisions) {
+    const { event } = decision
+    const source = calibratedHybridSource(decision.source, options.hybridCalibrationSource)
     const track = index.trackById.get(event.trackId), destination = graph.trackGain.get(event.trackId)
-    if (!track || !destination || fallbackTrackIds.has(event.trackId) || !hybridEnabledForArticulation(track.instrument, event.articulation)) continue
-    const source = nativeHybridForInstrument(track.instrument)
-    if (!source || !hybridEnabledForExport(source, profile.quality, hybridMode)) continue
-    const previousEnd = previousHybridEndByTrack.get(event.trackId), legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
+    if (!track || !destination || fallbackTrackIds.has(event.trackId) || !hybridEnabledForExport(source, profile.quality, hybridMode)) continue
     const controls = index.controlsByTrack.get(event.trackId) ?? [], effectiveTrack = nativeTrackAtTime(track, controls, event.timeSeconds)
-    for (const midi of event.notes) scheduleHybridPhysicalOverlay(context, source, { startAt: 0, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
-    previousHybridEndByTrack.set(event.trackId, event.timeSeconds + event.durationSeconds)
+    for (const midi of decision.midis) scheduleHybridPhysicalOverlay(context, source, { startAt: 0, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious: decision.legatoFromPrevious, performance: decision })
   }
 
   await Promise.all(scheduled); assertNotAborted(options.signal); options.onProgress?.(0.28)

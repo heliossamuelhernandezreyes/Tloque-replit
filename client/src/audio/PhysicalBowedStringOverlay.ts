@@ -1,4 +1,5 @@
 import type { NativeHybridSource } from "@shared/native-hybrid-source"
+import { boundedHybridOverlayGain, type NativeHybridOverlayPerformance } from "@shared/native-hybrid-performance"
 import { boundedHybridCalibrationTuning, type HybridCalibrationTuning } from "@shared/native-hybrid-tuning"
 import { physicalPerformanceStateAt } from "@shared/physical-performance-control"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
@@ -16,6 +17,7 @@ export interface BowedStringOverlayOptions {
   controls?: readonly LinearScoreControlV2[]
   legatoFromPrevious?: boolean
   calibrationTuning?: HybridCalibrationTuning
+  performance?: NativeHybridOverlayPerformance
 }
 
 function clamp01(value: number) { return Math.max(0, Math.min(1, value)) }
@@ -35,7 +37,7 @@ function profileFor(source: NativeHybridSource) {
   return { body: [278, 552, 980], bodyQ: 2.8, bowNoise: 0.095, brightness: 5_800, delayMix: 0.22, feedback: 0.75 }
 }
 
-/** Hybrid Strings v1.1: sample identity + shared physical performance controls. */
+/** Bowed-string engine v1 under the sample-dominant performance-v2 contract. */
 export function scheduleBowedStringOverlay(
   context: BaseAudioContext,
   source: NativeHybridSource,
@@ -127,11 +129,11 @@ export function scheduleBowedStringOverlay(
     }
   }
 
-  const attack = legatoFromPrevious ? 0.01 : Math.max(0.018, Math.min(0.075, track.attack * 0.42))
-  const peak = source.wet * tuning.wetScale * (0.64 + pressure * 0.31 + coupling * 0.05)
+  const attack = legatoFromPrevious ? 0.035 : Math.max(0.018, Math.min(0.075, track.attack * 0.42))
+  const peak = boundedHybridOverlayGain(source, source.wet * tuning.wetScale * (0.64 + pressure * 0.31 + coupling * 0.05), options.performance)
   output.gain.setValueAtTime(0.0001, start)
-  output.gain.exponentialRampToValueAtTime(Math.max(0.001, peak), start + attack)
-  output.gain.setValueAtTime(Math.max(0.001, peak * 0.9), Math.max(start + attack, start + duration - 0.012))
+  output.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak), start + attack)
+  output.gain.setValueAtTime(Math.max(0.0001, peak * 0.9), Math.max(start + attack, start + duration - 0.012))
   output.gain.exponentialRampToValueAtTime(0.0001, stop)
 
   fundamental.start(start); fundamental.stop(stop)

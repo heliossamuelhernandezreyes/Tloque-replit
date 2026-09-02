@@ -1,4 +1,5 @@
 import type { NativeHybridSource } from "./native-hybrid-source"
+import { NATIVE_HYBRID_PERFORMANCE_VERSION } from "./native-hybrid-performance"
 import { boundedHybridCalibrationTuning, tuningChangedAxes, type HybridCalibrationTuning } from "./native-hybrid-tuning"
 import type { HybridAbCellResult, HybridAbMetric, HybridAbMetricId, HybridAbValidationReport } from "./native-hybrid-validation"
 
@@ -8,6 +9,7 @@ export interface HybridCalibrationCandidate {
   id: string
   instrumentId: string
   baseEngineVersion: NativeHybridSource["engineVersion"]
+  performanceVersion: typeof NATIVE_HYBRID_PERFORMANCE_VERSION
   wet: number
   wetScale: number
   tuning: HybridCalibrationTuning
@@ -61,7 +63,7 @@ function familySpecificTuning(source: NativeHybridSource, metric: HybridAbMetric
   return boundedHybridCalibrationTuning(tuning)
 }
 export function proposeHybridCalibrationCandidate(source: NativeHybridSource, report: HybridAbValidationReport): HybridCalibrationCandidate | null {
-  if (report.instrumentId !== source.instrumentId || report.engineVersion !== source.engineVersion) return null
+  if (report.instrumentId !== source.instrumentId || report.engineVersion !== source.engineVersion || report.performanceVersion !== NATIVE_HYBRID_PERFORMANCE_VERSION) return null
   const failure = worstHybridCalibrationFailure(report)
   if (!failure) return null
   const tuning = familySpecificTuning(source, failure.metric, failure.deficit)
@@ -71,13 +73,13 @@ export function proposeHybridCalibrationCandidate(source: NativeHybridSource, re
   const axisSummary = changedAxes.map(axis => `${axis}=${normalizedTuning[axis].toFixed(3)}x`).join(", ")
   return {
     id: `${source.instrumentId}:${source.engineVersion}:${failure.cell.register}:${failure.cell.gesture}:${failure.metric.id}:${changedAxes.map(axis => normalizedTuning[axis].toFixed(3)).join("-")}`,
-    instrumentId: source.instrumentId, baseEngineVersion: source.engineVersion, wet, wetScale: normalizedTuning.wetScale, tuning: normalizedTuning, changedAxes,
+    instrumentId: source.instrumentId, baseEngineVersion: source.engineVersion, performanceVersion: NATIVE_HYBRID_PERFORMANCE_VERSION, wet, wetScale: normalizedTuning.wetScale, tuning: normalizedTuning, changedAxes,
     triggerCell: { register: failure.cell.register, gesture: failure.cell.gesture, metricId: failure.metric.id, value: failure.metric.value },
     reason: `${failure.cell.register}/${failure.cell.gesture}: ${failure.metric.label}=${failure.metric.value.toFixed(3)}. Candidato físico acotado: ${axisSummary}.`, generatedAt: new Date().toISOString(),
   }
 }
 export function sourceWithCalibrationCandidate(source: NativeHybridSource, candidate: HybridCalibrationCandidate): CalibratedHybridSource {
-  if (candidate.instrumentId !== source.instrumentId || candidate.baseEngineVersion !== source.engineVersion) return source
+  if (candidate.instrumentId !== source.instrumentId || candidate.baseEngineVersion !== source.engineVersion || candidate.performanceVersion !== NATIVE_HYBRID_PERFORMANCE_VERSION) return source
   return { ...source, calibrationTuning: candidate.tuning }
 }
 export function hybridCalibrationScore(report: HybridAbValidationReport) {

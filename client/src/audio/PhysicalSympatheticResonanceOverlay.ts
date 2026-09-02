@@ -1,4 +1,5 @@
 import type { NativeHybridSource } from "@shared/native-hybrid-source"
+import { boundedHybridOverlayGain, type NativeHybridOverlayPerformance } from "@shared/native-hybrid-performance"
 import { boundedHybridCalibrationTuning, type HybridCalibrationTuning } from "@shared/native-hybrid-tuning"
 import { physicalPerformanceStateAt } from "@shared/physical-performance-control"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
@@ -14,6 +15,7 @@ export interface SympatheticResonanceOptions {
   destination: AudioNode
   controls?: readonly LinearScoreControlV2[]
   calibrationTuning?: HybridCalibrationTuning
+  performance?: NativeHybridOverlayPerformance
 }
 
 function clamp01(value: number) { return Math.max(0, Math.min(1, value)) }
@@ -70,14 +72,14 @@ function bodyBusGainFor(profile: ResonanceProfile, coupling: number, damper: num
 function toneHzFor(profile: ResonanceProfile, brightness: number, pluckPosition: number, damper: number, dampingScale: number) {
   return profile.brightness * dampingScale * (0.52 + brightness * 0.46 + pluckPosition * 0.18) * (1 - damper * 0.16)
 }
-function wetGainFor(source: NativeHybridSource, pressure: number, coupling: number, pedal: number, damper: number, wetScale: number) {
-  return Math.max(0.001, source.wet * wetScale * (0.58 + pressure * 0.17 + coupling * 0.2 + pedal * 0.12) * (1 - damper * 0.18))
+function wetGainFor(source: NativeHybridSource, pressure: number, coupling: number, pedal: number, damper: number, wetScale: number, performance?: NativeHybridOverlayPerformance) {
+  return Math.max(0.0001, boundedHybridOverlayGain(source, source.wet * wetScale * (0.58 + pressure * 0.17 + coupling * 0.2 + pedal * 0.12) * (1 - damper * 0.18), performance))
 }
 function tailFor(profile: ResonanceProfile, pressure: number, coupling: number, pedal: number, damper: number, decayScale: number) {
   return profile.decay * decayScale * (0.5 + pressure * 0.22 + coupling * 0.34 + pedal * 0.48) * (1 - damper * 0.42)
 }
 
-/** Hybrid Resonance v1.2: fully automated pedal/damper/coupling/pluck/pressure body response. */
+/** Sympathetic engine v1.1 under the sample-dominant performance-v2 contract. */
 export function scheduleSympatheticResonanceOverlay(
   context: BaseAudioContext,
   source: NativeHybridSource,
@@ -131,7 +133,7 @@ export function scheduleSympatheticResonanceOverlay(
   const output = context.createGain(); output.gain.value = 0
   resonanceBus.connect(tone); tone.connect(output); output.connect(destination)
 
-  const initialPeak = wetGainFor(source, pressure, coupling, pedal, damper, tuning.wetScale)
+  const initialPeak = wetGainFor(source, pressure, coupling, pedal, damper, tuning.wetScale, options.performance)
   output.gain.setValueAtTime(0.0001, start)
   output.gain.exponentialRampToValueAtTime(initialPeak, start + Math.min(0.11, sustain * 0.35))
 
@@ -148,15 +150,15 @@ export function scheduleSympatheticResonanceOverlay(
     for (const gain of bodyExcitationGains) scheduleParam(gain.gain, at, bodyExcitationGainFor(p, couplingNow, tuning.bodyScale), control.rampSeconds)
     scheduleParam(bodyBus.gain, at, bodyBusGainFor(profile, couplingNow, damperNow, tuning.bodyScale), control.rampSeconds)
     scheduleParam(tone.frequency, at, toneHzFor(profile, control.brightness ?? brightness, pluckNow, damperNow, tuning.dampingScale), control.rampSeconds, true)
-    scheduleParam(output.gain, at, wetGainFor(source, p, couplingNow, state.pedal, damperNow, tuning.wetScale), control.rampSeconds, true)
+    scheduleParam(output.gain, at, wetGainFor(source, p, couplingNow, state.pedal, damperNow, tuning.wetScale, options.performance), control.rampSeconds, true)
     if (control.pitchBend !== null) {
       const cents = control.pitchBend * 100
       for (const oscillator of partialOscillators) scheduleParam(oscillator.detune, at, cents, control.rampSeconds)
     }
   }
 
-  const finalPeak = wetGainFor(source, endPressure, stateEnd.sympatheticCoupling, stateEnd.pedal, stateEnd.damper, tuning.wetScale)
-  output.gain.setValueAtTime(Math.max(0.001, finalPeak * (0.58 + stateEnd.pedal * 0.18) * (1 - stateEnd.damper * 0.16)), start + sustain)
+  const finalPeak = wetGainFor(source, endPressure, stateEnd.sympatheticCoupling, stateEnd.pedal, stateEnd.damper, tuning.wetScale, options.performance)
+  output.gain.setValueAtTime(Math.max(0.0001, finalPeak * (0.58 + stateEnd.pedal * 0.18) * (1 - stateEnd.damper * 0.16)), start + sustain)
   output.gain.exponentialRampToValueAtTime(0.0001, stop)
 
   for (const oscillator of partialOscillators) { oscillator.start(start); oscillator.stop(stop + 0.04) }

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs"
 import { deterministicNoiseOffset } from "../client/src/audio/DeterministicAudioNoise"
 import { NativeRealtimeLookahead, NATIVE_REALTIME_LOOKAHEAD_SECONDS } from "../client/src/audio/NativeRealtimeLookahead"
 import { measureNativeRuntimeBudget } from "../client/src/audio/NativeRuntimeBudget"
+import { buildNativeHybridPerformancePlan } from "../shared/native-hybrid-performance"
 import { compileViolinWinterStressV1 } from "../shared/violin-winter-stress"
 
 const read = (path: string) => readFileSync(path, "utf8")
@@ -45,14 +46,15 @@ test("realtime indexa eventos y automatización en una sola estructura", () => {
   assert.match(index, /segments\[middle\]\.start <= timeSeconds/)
 })
 
-test("realtime y WAV comparten el mismo índice temporal nativo", () => {
+test("realtime y WAV comparten índice temporal y contrato híbrido compilado", () => {
   const engine = read("client/src/audio/NativeSampleScoreEngine.ts")
   const exporter = read("client/src/audio/NativeSampleScoreExporter.ts")
   for (const source of [engine, exporter]) {
     assert.match(source, /buildNativeRecipeIndex\(recipe\)/)
+    assert.match(source, /buildNativeHybridPerformancePlan\(recipe\)/)
+    assert.match(source, /hybridPerformance\.decisions/)
     assert.match(source, /nativeTrackAtTime/)
   }
-  assert.match(exporter, /index\.chronologicalEvents/)
   assert.match(exporter, /index\.controlsByTrack\.get\(event\.trackId\)/)
   assert.doesNotMatch(exporter, /recipe\.plan\.controls\.filter\(/)
   assert.doesNotMatch(exporter, /\[\.\.\.recipe\.plan\.events\]\.sort/)
@@ -139,6 +141,7 @@ test("Winter expone una presión de voces determinista para benchmarks", () => {
   assert.equal(a.controlCount, compiled.recipe.plan.controls.length)
   assert.ok(a.noteVoiceCount > 0)
   assert.ok(a.hybridVoiceCount > 0)
+  assert.equal(a.hybridVoiceCount, buildNativeHybridPerformancePlan(compiled.recipe).scheduledVoiceCount)
   assert.ok(a.peakNoteVoices >= a.peakHybridVoices)
   assert.ok(a.peakHybridVoices > 0)
 })
