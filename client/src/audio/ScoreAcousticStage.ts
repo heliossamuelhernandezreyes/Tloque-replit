@@ -32,11 +32,13 @@ function deterministicNoise(index: number) {
 }
 
 function createEarlyReflectionImpulse(context: BaseAudioContext, seconds = 0.62) {
-  return createCachedDeterministicStereoImpulse(context, "acoustic-stage-early-v1", seconds, (channel, i, t) => {
+  return createCachedDeterministicStereoImpulse(context, "acoustic-stage-early-v2", seconds, (channel, i, t) => {
     const envelope = Math.exp(-t * 6.8)
     const early = t < 0.16 ? (1 - t / 0.16) * 0.24 : 0
     const diffusion = 0.07 + Math.min(0.10, t * 0.22)
-    return deterministicNoise(i * 2 + channel * 7919) * envelope * (diffusion + early)
+    const common = deterministicNoise(i * 3 + 4513)
+    const decorrelated = deterministicNoise(i * 7 + channel * 7919)
+    return (common * 0.28 + decorrelated * 0.72) * envelope * (diffusion + early)
   })
 }
 

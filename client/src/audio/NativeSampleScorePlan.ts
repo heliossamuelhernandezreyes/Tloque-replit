@@ -7,6 +7,7 @@ import { selectNativeSampleZone } from "./NativeSamplePackEngine"
 import { selectNativeSampleVelocityBlend } from "./NativeSampleVelocityBlend"
 import { buildPerformancePlan } from "./PerformanceEngine"
 import { orchestralNoteExpression, type OrchestralNoteExpression } from "./OrchestralExpression"
+import { orchestralContinuousDynamics, type OrchestralContinuousDynamics } from "./OrchestralDynamics"
 import { buildNativeRecipeIndex, nativeControlValueAt } from "./NativeRecipeIndex"
 import { articulationDurationFactor, articulationVelocityFactor, scoreTrackExpression, scoreTrackTimbre, scoreVelocityGain } from "./ScoreAudioMath"
 
@@ -33,6 +34,7 @@ export interface NativeSampleVoicePlan {
   oneShot: boolean
   fadeInSeconds: number
   expression?: OrchestralNoteExpression
+  dynamics?: OrchestralContinuousDynamics
 }
 export interface NativeSampleAuxiliaryVoicePlan {
   kind: "release" | "legato-transition"
@@ -152,6 +154,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     const velocity = Math.round(Math.min(1, scoreVelocityGain(performedVelocity) * articulationVelocityFactor(decision.articulation)) * 127)
     const durationSeconds = Math.max(0.01, event.durationSeconds * articulationDurationFactor(decision.articulation) * decision.durationScale)
     const startSeconds = Math.max(0, event.timeSeconds + decision.startOffsetSeconds)
+    const dynamics = orchestralContinuousDynamics(track, index.controlsByTrack.get(track.id) ?? [], startSeconds, durationSeconds, performedVelocity, decision.articulation)
     const micPosition = micForTrack(track.id)
     for (const note of event.notes) {
       let selections: ReturnType<typeof selectNativeSampleVelocityBlend> = []
@@ -204,6 +207,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           oneShot,
           fadeInSeconds: 0,
           expression: orchestralNoteExpression(track.instrument, decision.articulation, durationSeconds, performedVibrato, physical.vibratoColour !== "none", `${recipe.plan.seed}:${event.trackId}:${event.timeSeconds}:${note}`),
+          ...(!oneShot && dynamics.sustained ? { dynamics } : {}),
         }
         voices.push(voice)
         return voice

@@ -193,7 +193,7 @@ export class NativeSampleScoreEngine {
                 destination,
                 0,
                 voice.oneShot,
-                { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression },
+                { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression, dynamics: voice.dynamics },
               ).catch(error => {
                 if (!semanticTrack || this.context !== context) return null
                 markFallback(voice.trackId, error)

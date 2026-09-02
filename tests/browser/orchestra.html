@@ -1,6 +1,9 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Tloque · QA orquestal</title>
 <style>body{font:16px system-ui;max-width:880px;margin:40px auto;padding:20px;background:#10131b;color:#eee}button{font:inherit;padding:12px;margin:4px;border-radius:8px;background:#d9b36b;color:#111;border:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#1d2430;padding:20px}audio{width:100%}</style></head>
-<body><h1>Tloque · laboratorio orquestal</h1><p>Partitura original de prueba: ocho familias, 4 compases. Las métricas no certifican realismo perceptual. No se accede a cuentas, bancos ni datos reales.</p>
+<body><h1>Tloque · laboratorio orquestal V2</h1><p>Partitura original de prueba: ocho familias, 4 compases. Las métricas no certifican realismo perceptual. No se accede a cuentas, bancos ni datos reales.</p>
 <button id="render">Renderizar y verificar</button><button id="play">Reproducción nativa</button><button id="pause">Pausar</button><button id="resume">Continuar</button><button id="stop">Detener</button>
-<p id="state">Sin reproducción</p><pre id="result">Listo para probar</pre><div id="listening"></div><script type="module" src="/orchestra.js"></script></body></html>
+<p id="state">Sin reproducción</p><pre id="result">Listo para probar</pre>
+<section><h2>A/B ciego con volumen igualado</h2><p>Escucha A y B antes de revelar. Evalúa por separado: ataque, continuidad legato, crescendo dentro de una nota, ubicación frontal/profundidad y cola de sala. No cambies el volumen entre referencias.</p><div id="listening"></div></section>
+<section><h2>Validación física objetivo</h2><ol><li>Poco X7 Pro + audífonos: solo de flauta, cuerdas y corno; después tutti.</li><li>Play, pausa, continuar y stop tres veces; comprobar que no quedan colas fantasma.</li><li>Activar mute/duck de lectura y confirmar silencio/atenuación inmediata.</li><li>Repetir Studio dos veces: hash idéntico, cero clipping y sin chasquidos.</li><li>Anotar A/B sin mirar el revelado; repetir con altavoz del teléfono.</li></ol></section>
+<script type="module" src="/orchestra.js"></script></body></html>

@@ -21,12 +21,15 @@ test("stage y master reutilizan plantillas PCM deterministas sin compartir Audio
   assert.doesNotMatch(master, /for \(let channel = 0; channel < 2/)
 })
 
-test("las ecuaciones acústicas originales permanecen en stage y master", () => {
+test("stage y sala V3 conservan ecuaciones originales, difusión y doble caída", () => {
   const stage = read("client/src/audio/ScoreAcousticStage.ts")
   const master = read("client/src/audio/ScoreMixMaster.ts")
+  const room = read("client/src/audio/OrchestralRoom.ts")
   assert.match(stage, /Math\.exp\(-t \* 6\.8\)/)
   assert.match(stage, /t < 0\.16/)
-  assert.match(master, /Math\.exp\(-t \* decay\)/)
-  assert.match(master, /t < 0\.14/)
-  assert.match(master, /Math\.min\(1, t \/ 0\.32\)/)
+  assert.match(room, /Math\.exp\(-time \* decay \* 1\.34\)/)
+  assert.match(room, /Math\.exp\(-time \* decay \* 0\.86\)/)
+  assert.match(master, /density = 0\.08 \+ 0\.54/)
+  assert.match(master, /diffusionState\[channel\] \* 0\.67/)
+  assert.doesNotMatch(`${stage}${master}${room}`, /Math\.random/)
 })
