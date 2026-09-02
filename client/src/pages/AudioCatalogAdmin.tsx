@@ -72,7 +72,7 @@ loop false
 seed 20260822
 humanize 0.10
 quality master
-module builtin
+module ${ORCHESTRAL_SYNTH_MODULE_ID}
 
 track piano synth=warm instrument=piano.grand program=0 role=harmony gain=0.30 pan=-0.10 attack=0.04 release=1.8 expression=0.86 brightness=0.54 vibrato=0
 track violin synth=pad instrument=strings.violin program=40 role=melody gain=0.24 pan=0.12 attack=0.14 release=1.6 expression=0.72 brightness=0.62 vibrato=0.14
@@ -84,10 +84,10 @@ use piano
 3:1 G3,B3,D4 4 velocity=0.46
 4:1 C3,E3,G3 4 velocity=0.40 articulation=tenuto
 use violin
-control 1:1 expression=0.58 brightness=0.48 vibrato=0.08 ramp=0
+control 1:1 expression=0.58 brightness=0.48 vibrato=0.08 pressure=0.52 bow=0.38 coupling=0.30 ramp=0
 1:1 E4 2 velocity=0.42 articulation=legato
 2:1 A4 2 velocity=0.46 articulation=legato
-control 3:1 expression=0.76 brightness=0.66 vibrato=0.24 ramp=2
+control 3:1 expression=0.76 brightness=0.66 vibrato=0.24 pressure=0.72 bow=0.56 coupling=0.44 ramp=2
 3:1 B4 2 velocity=0.50 articulation=tenuto
 4:1 E4 4 velocity=0.38 articulation=harmonic
 end`
@@ -128,6 +128,15 @@ const SCORE_PALETTE = [
       { label: "Pedal arriba", snippet: "control 2:1 pedal=up\n" },
       { label: "Bend arriba", snippet: "control 1:1 bend=1 ramp=1\n" },
       { label: "Bend al centro", snippet: "control 1:2 bend=0 ramp=0.5\n" },
+    ],
+  },
+  {
+    title: "Control físico",
+    items: [
+      { label: "Cuerda · arco", snippet: "control 1:1 pressure=0.62 bow=0.42 coupling=0.34 ramp=1\n" },
+      { label: "Viento · aire", snippet: "control 1:1 pressure=0.60 embouchure=0.48 ramp=1\n" },
+      { label: "Piano · resonancia", snippet: "control 1:1 pedal=down damper=0.10 coupling=0.82 ramp=0.5\n" },
+      { label: "Arpa · pulsación", snippet: "control 1:1 pluck=0.38 damper=0.22 coupling=0.46 ramp=0.5\n" },
     ],
   },
 ] as const
@@ -620,7 +629,7 @@ export default function AudioCatalogAdmin() {
             <div>
               <h2 className="text-sm font-semibold">Compositor de obras · TloqueScore 2.2</h2>
               <p className="mt-1 text-xs text-zinc-500">El código es la obra maestra: editarlo recompila y cambia el audio. La reproducción no crea archivos; Exportar genera un WAV sólo cuando lo pides.</p>
-              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code>: síntesis clásica u orquestal a 24-bit / 96 kHz; bancos nativos y SF2/SF3 a 24-bit / 48 kHz. La frecuencia de exportación no certifica realismo acústico. La síntesis orquestal admite hasta 192 fuentes simultáneas, incluidas sus colas; una nota puede usar varias fuentes.</p>
+              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code>: síntesis clásica u orquestal a 24-bit / 96 kHz; bancos nativos y SF2/SF3 a 24-bit / 48 kHz. La frecuencia de exportación no certifica realismo acústico. La síntesis orquestal V2 modela cambios tímbricos dentro de notas largas y admite hasta 192 fuentes simultáneas, incluidas sus colas.</p>
             </div>
             <fieldset className="rounded-xl border border-sky-300/20 bg-sky-300/5 p-3">
               <legend className="px-1 text-xs font-semibold text-sky-100">Fuente de interpretación</legend>
@@ -686,19 +695,34 @@ export default function AudioCatalogAdmin() {
             </details>
             <details className="rounded-xl border border-white/10 p-3 text-xs text-zinc-400">
               <summary className="cursor-pointer text-zinc-300">Referencia rápida del lenguaje</summary>
-              <p className="mt-2 font-mono leading-5">humanize 0..1 · quality core|studio|master · module builtin|id<br />track id synth=… instrument=… program=0..127 role=… gain=… pan=… expression=… brightness=… vibrato=…<br />section id form=exposition|development|recapitulation|coda bars=N repeat=N fade=N tempo=32..180 rubato=0..0.35<br />use track · control compás:tiempo expression=… brightness=… vibrato=… pedal=down|up bend=-2..2 ramp=0..16<br />compás:tiempo C3,Eb3,G3 duración velocity=… articulation=normal|legato|staccato|tenuto|accent|spiccato|pizzicato|tremolo|harmonic · rest posición duración · end</p>
-            </details>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-sky-400/20 bg-sky-400/5 p-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium text-sky-100">¿Quieres componer con una IA?</p>
-                <p className="mt-1 text-[11px] text-zinc-400">Descarga la skill oficial, entrégasela a tu IA y pídele una obra. Después pega aquí únicamente el código TloqueScore.</p>
+              <div className="mt-2 space-y-2 font-mono text-[11px] leading-5">
+                <p><strong className="font-sans text-zinc-300">1 · Fuente</strong><br />quality core|studio|master · module orchestra-synth|native-auto|builtin|id-instalado</p>
+                <p><strong className="font-sans text-zinc-300">2 · Instrumentos</strong><br />track id synth=warm|pad|bell|pluck|bass instrument=… program=0..127 role=melody|harmony|bass|pulse|texture|accent gain=0..1 pan=-1..1 attack=0.001..8 release=0.01..12 expression=0..1 brightness=0..1 vibrato=0..1 timbre=…</p>
+                <p><strong className="font-sans text-zinc-300">3 · Forma</strong><br />section id form=exposition|development|recapitulation|coda|interlude|custom bars=1..128 repeat=1..4 fade=0..16 tempo=32..180 rubato=0..0.35</p>
+                <p><strong className="font-sans text-zinc-300">4 · Música</strong><br />use track · control posición expression=0..1 brightness=0..1 vibrato=0..1 pressure=0..1 embouchure=0..1 bow=0..1 pluck=0..1 damper=0..1 coupling=0..1 pedal=down|up bend=-2..2 ramp=0..16 · posición C3,Eb3,G3 duración velocity=0.01..1 articulation=… · rest posición duración · end</p>
               </div>
+            </details>
+            <div className="rounded-xl border border-sky-400/20 bg-sky-400/5 p-3">
+              <p className="text-xs font-semibold text-sky-100">Componer con una IA · cinco pasos</p>
+              <ol className="mt-3 grid gap-2 text-[11px] leading-5 text-zinc-300 sm:grid-cols-5">
+                {[
+                  "Descarga las instrucciones.",
+                  "Adjúntalas a tu IA y describe la obra.",
+                  "Copia el único bloque TloqueScore.",
+                  "Pégalo en el editor de arriba.",
+                  "Pulsa Validar y compilar.",
+                ].map((step, index) => (
+                  <li key={step} className="rounded-lg border border-sky-300/10 bg-black/15 p-2">
+                    <span className="mr-1 font-semibold text-sky-200">{index + 1}.</span>{step}
+                  </li>
+                ))}
+              </ol>
               <a
                 href="/downloads/TLOQUE_SCORE_AI_SKILL.md"
                 download="TLOQUE_SCORE_AI_SKILL.md"
-                className="inline-flex w-full sm:w-auto items-center justify-center rounded-lg bg-sky-300 px-4 py-2 text-xs font-semibold text-sky-950"
+                className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-sky-300 px-4 py-2 text-xs font-semibold text-sky-950 sm:w-auto"
               >
-                <FileDown className="mr-2 h-4 w-4" /> Descargar skill para IA
+                <FileDown className="mr-2 h-4 w-4" /> 1 · Descargar instrucciones para IA
               </a>
             </div>
             {compiled && (

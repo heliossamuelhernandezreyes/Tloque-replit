@@ -105,6 +105,14 @@ test("cada exportación pasa por el medidor de master antes de descargar", () =>
   assert.match(admin, /Master rechazado por control de calidad/)
 })
 
+test("el Laboratorio enseña la fuente V2 y el flujo completo para una IA", () => {
+  const admin = read("client/src/pages/AudioCatalogAdmin.tsx")
+  assert.match(admin, /module \$\{ORCHESTRAL_SYNTH_MODULE_ID\}/)
+  assert.match(admin, /pressure=0\.\.1.*embouchure=0\.\.1.*bow=0\.\.1.*pluck=0\.\.1.*damper=0\.\.1.*coupling=0\.\.1/)
+  assert.match(admin, /Descarga las instrucciones/)
+  assert.match(admin, /Pulsa Validar y compilar/)
+})
+
 test("la matriz de certificación exige banco nativo real", () => {
   const source = read("client/src/audio/HybridAbCalibrationRunner.ts")
   assert.match(source, /preflightNativeSamplePacks/)

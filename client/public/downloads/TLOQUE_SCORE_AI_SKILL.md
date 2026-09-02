@@ -1,82 +1,275 @@
 ---
-name: compose-tloque-score
-description: Compose, revise, or repair instrumental TloqueScore 2 code for Tloque Audio Studio, including expressive orchestral synthesis, native orchestration and premium acoustic rendering.
+name: tloque-score
+description: Write, revise, repair, or explain deterministic instrumental TloqueScore 2 for Tloque's Audio Laboratory. Use when an AI must turn a musical request into valid score code, orchestrate semantic instruments, select orchestral synthesis or native rendering, add physical performance controls, or fix compiler diagnostics.
+metadata:
+  version: "3.0.0"
+  compiler: "tloque-score-compiler-v2.2"
 ---
 
-# Compose TloqueScore 2
+# TloqueScore 2 · instrucciones para IA
 
-Create only instrumental music. The TloqueScore code is the master work: Tloque compiles it for live playback and can export it as WAV.
+## Tu trabajo, en una frase
 
-## Compatibility
+Convierte lo que pide el usuario en **una partitura instrumental válida**, completa y lista para pegar en el Laboratorio de Tloque.
 
-- Audio contract: `tloque-audio-2026-08-v2`
-- Compiler: `tloque-score-compiler-v2.2`
-- Skill version: `1.9.0`
-- Built-in module: `builtin`
-- Expressive orchestral synthesis: `orchestra-synth` (`tloque-orchestral-synth-v1`)
-- Native multi-instrument router: `native-auto`
-- Premium native master: physical verified sample packs required
-- Performance engine: deterministic family-aware micro-timing, duration and performed-velocity shaping driven by `humanize`
-- Performance Director v1: contextual phrase-entry/release, leap-destination, repeated-note and sustained-destination shaping without changing authored notes or articulations
+## Regla de salida
 
-Never invent commands or execute JavaScript. Never add lyrics, sung words, audio URLs, Markdown, or explanations inside a score.
+Cuando el usuario pida crear, cambiar o reparar una obra:
 
-## Required workflow
+1. Devuelve **un solo bloque** con etiqueta `tloque-score`.
+2. La primera línea del bloque debe ser exactamente `TLOQUE_SCORE 2`.
+3. No escribas explicaciones antes ni después del bloque.
+4. Dentro del bloque no escribas Markdown, JavaScript, letras, voces, URLs ni comandos inventados.
+5. Devuelve la obra completa. Nunca devuelvas un parche o sólo las líneas cambiadas.
 
-1. Determine purpose, duration, mood, form, instruments and whether the piece loops.
-2. Plan form and bar count before writing notes; keep motifs recognizable but developed.
-3. Declare every track before the first section.
-4. Choose the source explicitly: `native-auto` for installed recorded instruments, `orchestra-synth` for expressive orchestral synthesis without sample downloads, or `builtin` for the legacy synthesis sound.
-5. Never claim a physical articulation, timbre, true-legato transition, release layer, stop or microphone that the installed library does not contain.
-6. A native `quality master` requires installed, verified physical packs. `orchestra-synth` also supports `quality master`, but this means a 96 kHz/24-bit synthetic WAV, never an acoustic/native certification.
-7. Use `humanize` deliberately: it drives deterministic family-aware imperfection and enables bounded Performance Director shaping while preserving authored notes and articulations.
-8. Write musically meaningful rests and phrase boundaries. The Director can interpret them; it cannot infer breathing space that the score never contains.
-9. Validate the full score and return one complete code block when code is requested.
+Si el usuario sólo pide una explicación, puedes responder con prosa y no necesitas crear una partitura.
 
-## Grammar
+## Compatibilidad actual
 
-```text
+- Skill: `3.0.0`
+- Lenguaje fuente: `TLOQUE_SCORE 2`
+- Compilador: `tloque-score-compiler-v2.2`
+- Síntesis orquestal: `orchestra-synth` / `tloque-orchestral-synth-v2`
+- Dinámica tímbrica continua: `tloque-orchestral-dynamics-v2`
+- Sala estéreo diseñada: `tloque-concert-stage-v3`
+- Enrutador de bancos grabados: `native-auto`
+- Síntesis clásica heredada: `builtin`
+
+No cambies el encabezado a `TLOQUE_SCORE 2.2` ni a `TLOQUE_SCORE 3`. El encabezado correcto sigue siendo `TLOQUE_SCORE 2`.
+
+## Haz esto, en este orden
+
+### Paso 1 · Entiende el encargo
+
+Decide antes de escribir notas:
+
+- propósito y emoción;
+- duración aproximada;
+- si debe repetir en bucle;
+- tempo y compás;
+- forma musical;
+- instrumentos y función de cada uno;
+- fuente de interpretación.
+
+Si falta un dato, elige un valor musical razonable. No detengas la composición por detalles pequeños.
+
+### Paso 2 · Elige una sola fuente
+
+| Si el usuario necesita… | Escribe… | Significa… |
+|---|---|---|
+| Una obra orquestal que funcione sin descargar bancos | `module orchestra-synth` | Síntesis orquestal V2. Es la opción recomendada por defecto. |
+| Instrumentos grabados y los bancos ya están instalados | `module native-auto` | Cada `instrument=` busca su banco físico verificado. |
+| El sonido sintético clásico | `module builtin` | Motor heredado, menos orquestal. |
+| Un módulo concreto que el usuario confirmó como instalado | `module id-confirmado` | Usa únicamente el ID exacto dado por el usuario o por Tloque. |
+
+Nunca inventes un ID de módulo. `quality master` con `orchestra-synth` produce un WAV sintético de alta resolución; no certifica que suene como una grabación acústica. `quality master` con `native-auto` exige todos los bancos físicos usados por la obra.
+
+### Paso 3 · Copia esta estructura
+
+Esta plantilla es pequeña, completa y compilable. Sustituye sus valores, tracks y notas; conserva el orden.
+
+```tloque-score
 TLOQUE_SCORE 2
-title "Title"
-tempo 32..180
-meter 2..12/4 or 2..12/8
-loop true|false
-seed 0..2147483647
-humanize 0..1
-quality core|studio|master
-module builtin|native-auto|orchestra-synth|installed-module-id
-track id synth=warm|pad|bell|pluck|bass instrument=instrument.id program=0..127 role=melody|harmony|bass|pulse|texture|accent gain=0..1 pan=-1..1 attack=0.001..8 release=0.01..12 expression=0..1 brightness=0..1 vibrato=0..1 timbre=natural|non-vibrato|vibrato|expression-vibrato|mute|harmon-mute|straight-mute
-section id form=exposition|development|recapitulation|coda|interlude|custom bars=1..128 repeat=1..4 fade=0..16 tempo=32..180 rubato=0..0.35
-use track-id
-control bar:beat expression=0..1 brightness=0..1 vibrato=0..1 pedal=down|up bend=-2..2 ramp=0..16
-bar:beat C3,Eb3,G3 duration velocity=0.01..1 articulation=normal|legato|staccato|tenuto|accent|spiccato|pizzicato|tremolo|harmonic timbre=...
-rest bar:beat duration
+title "Título de la obra"
+tempo 72
+meter 4/4
+loop false
+seed 20260902
+humanize 0.08
+quality master
+module orchestra-synth
+
+track melody synth=pad instrument=strings.violin program=40 role=melody gain=0.26 pan=0.12 attack=0.08 release=1.2 expression=0.72 brightness=0.56 vibrato=0.12 timbre=natural
+
+section opening form=exposition bars=2 repeat=1 fade=1 tempo=72 rubato=0.04
+use melody
+control 1:1 expression=0.48 brightness=0.44 pressure=0.52 bow=0.38 coupling=0.30 ramp=0
+1:1 E4 2 velocity=0.48 articulation=legato
+control 1:3 expression=0.76 brightness=0.62 pressure=0.70 bow=0.54 coupling=0.42 ramp=2
+1:3 G4 2 velocity=0.54 articulation=legato
+2:1 B4 2 velocity=0.58 articulation=tenuto
+2:3 E5 2 velocity=0.50 articulation=normal
 end
 ```
 
-`timbre=` on an event overrides the track default. Fractional beat positions are valid throughout the whole beat: in 4/4, `4:4.25`, `4:4.5`, and `4:4.75` are valid; `4:5` is outside the bar.
+### Paso 4 · Escribe globals, tracks y secciones
 
-Unpitched orchestral percussion uses semantic `hit` events on `instrument=percussion.orchestral-kit`, for example `hit 1:1 bass-drum 0.5 velocity=0.8`. Do not encode percussion names as fake pitches.
+El orden siempre es:
 
-## Expressive orchestral synthesis
+1. `TLOQUE_SCORE 2`
+2. ajustes globales;
+3. todos los `track`;
+4. una o más `section`;
+5. dentro de cada sección: `use`, controles, notas, silencios o golpes;
+6. un único `end` para cerrar cada sección.
 
-Use `module orchestra-synth` when the work must play without downloading recorded banks. It uses semantic instrument identities, family-shaped spectra, modal decays for struck/plucked instruments, small section detuning, delayed numeric vibrato and bounded within-note dynamics. The same voice and directional concert-stage graph serve playback and WAV export.
+No declares un `track` después de abrir la primera sección.
 
-- Preserve the authored score when changing the module; changing the renderer is not rewriting the composition.
-- Use `strings.violin` for a solo and `strings.violin-section` for a small synthetic section. Do not describe three synthesized members as a recorded full string orchestra.
-- Winds and brass have distinct synthetic family colours; piano, harp and mallet instruments have decaying partials. These are original timbre heuristics, not physically calibrated acoustic models.
-- Numeric `vibrato` and `bend` controls work over a sustained synthetic note. `timbre=non-vibrato` suppresses vibrato. Recorded mute/colour commands do not provide recorded colours in this source: prefer `native-auto` when those physical distinctions are essential.
-- `humanize` uses the existing deterministic Performance Director. Explicit rests, phrase boundaries, expression and brightness still matter more than maximizing humanization.
-- `quality core` exports Preview 32 kHz/16-bit; `studio` exports 48 kHz/24-bit; `master` exports 96 kHz/24-bit. Higher sample rate does not make synthesized instruments recorded or perceptually authentic.
-- The graph admits at most 192 active synthesis sources, including release tails (one note can use several sources). Excessive overlap is reported; do not hide it by deleting authored notes. Reduce orchestration density or export sections.
-- The stereo room is a designed virtual stage, not a measured concert-hall impulse response, surround decoder or personalized binaural/HRTF system.
-- Missing native tracks use this synthesis for recovery in eligible previews/Studio renders and remain explicitly labelled as fallback. Native Master still refuses missing physical sources.
+### Paso 5 · Interpreta, no sólo coloques notas
 
-For an existing complete TloqueScore 2, changing only its module line to `module orchestra-synth` selects this renderer. Do not invent a new score version or additional orchestral commands.
+- Da a cada track una función clara: melodía, armonía, bajo, pulso, textura o acento.
+- Escribe frases con dirección: inicio, crecimiento, punto alto y resolución.
+- Usa dinámicas con `expression`, no sólo con `gain`.
+- Usa `brightness`, vibrato, articulación, registro y silencios con intención.
+- Para un crescendo dentro de una nota larga, coloca un `control` después del inicio de la nota y usa `ramp=`.
+- Deja respirar a vientos y metales. Una pista solista de viento debe ser monofónica.
+- Evita que todos los instrumentos toquen todo el tiempo.
+- Conserva el mismo `seed` al revisar una obra para mantener la interpretación determinista.
 
-## Native acoustic routing
+### Paso 6 · Revisa antes de responder
 
-With `module native-auto`, every semantic `instrument=` resolves independently to a verified physical package. Useful native identities include:
+Comprueba cada punto:
+
+- [ ] Hay un solo encabezado y dice `TLOQUE_SCORE 2`.
+- [ ] Hay entre 1 y 16 tracks, todos declarados antes de las secciones.
+- [ ] Hay al menos una sección y al menos una nota o golpe.
+- [ ] Cada sección termina una sola vez con `end`.
+- [ ] Cada `use` nombra un track existente.
+- [ ] Cada compás local está entre `1` y `bars=` de su sección.
+- [ ] Cada tiempo cabe en el compás. En 4/4, `4:4.75` es válido y `4:5` no lo es.
+- [ ] Cada nota está entre C1 y C8, es decir MIDI 24..108.
+- [ ] Cada eje físico corresponde a la familia del instrumento.
+- [ ] No hay comandos, instrumentos, timbres o módulos inventados.
+- [ ] La respuesta contiene la obra completa en un solo bloque y nada más.
+
+## Gramática exacta
+
+### Ajustes globales
+
+```text
+title "Texto de hasta 160 caracteres"
+tempo 32..180
+meter 2..12/4 | 2..12/8
+loop true | false
+seed 0..2147483647
+humanize 0..1
+quality core | studio | master
+module builtin | orchestra-synth | native-auto | id-instalado-confirmado
+```
+
+Usa `humanize` con moderación. `0.04..0.14` suele conservar precisión y dar variación determinista. No promete interpretación humana ni cambia las notas escritas.
+
+### Track
+
+Escribe cada track en una sola línea:
+
+```text
+track id synth=warm|pad|bell|pluck|bass instrument=instrumento.id program=0..127 role=melody|harmony|bass|pulse|texture|accent gain=0..1 pan=-1..1 attack=0.001..8 release=0.01..12 expression=0..1 brightness=0..1 vibrato=0..1 timbre=natural|non-vibrato|vibrato|expression-vibrato|mute|harmon-mute|straight-mute
+```
+
+El `id` empieza con una letra minúscula y sólo usa minúsculas, números, `_` o `-`. `instrument=` es la identidad semántica; no es la ruta de un archivo ni el ID de almacenamiento de un banco.
+
+### Sección
+
+```text
+section id form=exposition|development|recapitulation|coda|interlude|custom bars=1..128 repeat=1..4 fade=0..16 tempo=32..180 rubato=0..0.35
+```
+
+- `bars=` es la longitud local antes de repetir.
+- `repeat=` repite la sección al compilar.
+- El total compilado no puede superar 256 compases.
+- Puede haber como máximo 32 secciones.
+- Cierra cada sección únicamente con `end`.
+
+### Elegir track
+
+```text
+use track-id
+```
+
+Todo lo que sigue pertenece a ese track hasta el próximo `use`.
+
+### Nota o acorde
+
+```text
+bar:beat C3,Eb3,G3 duration velocity=0.01..1 articulation=normal|legato|staccato|tenuto|accent|spiccato|pizzicato|tremolo|harmonic timbre=...
+```
+
+- Una nota: `2:1 G4 2 velocity=0.58 articulation=tenuto`
+- Un acorde: `2:1 C3,E3,G3 4 velocity=0.48`
+- Usa sostenidos o bemoles como `F#4` o `Bb3`.
+- `duration` admite `0.03125..64` tiempos.
+- `timbre=` en una nota sustituye el timbre del track sólo para esa nota.
+- Un evento admite de 1 a 12 notas.
+
+### Silencio
+
+```text
+rest bar:beat duration
+```
+
+Ejemplo: `rest 3:3 2`. El silencio es explícito y ayuda a separar frases. No escribas una nota con velocity cero.
+
+### Control expresivo o físico
+
+```text
+control bar:beat expression=0..1 brightness=0..1 vibrato=0..1 pedal=down|up bend=-2..2 pressure=0..1 embouchure=0..1 bow=0..1 pluck=0..1 damper=0..1 coupling=0..1 ramp=0..16
+```
+
+Una línea necesita al menos un valor. Sólo escribe los valores que cambian. El nuevo valor persiste hasta que otro control del mismo eje lo cambie. `ramp=` expresa la transición en tiempos.
+
+Usa los ejes por familia:
+
+| Familia | Controles adecuados |
+|---|---|
+| Cuerdas frotadas | `expression`, `brightness`, `vibrato`, `pressure`, `bow`, `coupling` |
+| Vientos madera y metales | `expression`, `brightness`, `vibrato`, `pressure`, `embouchure` |
+| Piano y celesta | `expression`, `brightness`, `pedal`, `damper`, `coupling` |
+| Arpa y guitarras | `expression`, `brightness`, `pluck`, `damper`, `coupling` |
+
+`pressure` no es volumen. `bow` y `pluck` no son un ecualizador genérico. `embouchure` no es un control genérico de tono. `coupling` modela acoplamiento resonante, no un aumento de ganancia. No añadas todos los ejes a todos los instrumentos sólo porque el compilador acepta los números.
+
+### Percusión orquestal sin altura
+
+Primero declara un track con `instrument=percussion.orchestral-kit`. Después usa:
+
+```text
+hit bar:beat nombre-del-golpe duration velocity=0.01..1
+```
+
+Nombres permitidos:
+
+```text
+bass-drum
+snare-taps
+snare-hit
+snare-roll
+snare-hit-alt
+snare-roll-alt
+crash-cymbal
+suspended-cymbal
+tambourine-shake
+tambourine-hit
+tambourine-roll
+cowbell
+suspended-cymbal-stick
+triangle-muted-small
+triangle-open-small
+triangle-muted-large
+triangle-open-large
+sleigh-bells
+```
+
+No conviertas esos nombres en notas falsas. Un golpe de una sola toma conserva su ataque definido por `velocity`; los controles continuos no inventan una interpretación dentro de ese golpe.
+
+## Cómo aprovechar la síntesis orquestal V2
+
+Con `module orchestra-synth`:
+
+- no hacen falta bancos descargados;
+- las notas largas responden a cambios continuos de `expression` y `brightness` dentro de la nota;
+- notas consecutivas, monofónicas y con `articulation=legato` pueden enlazarse con una transición sintetizada;
+- un acorde, un silencio o una interrupción rompe ese enlace;
+- esa transición no es true legato grabado y no debes describirla así;
+- `strings.violin` representa un solista sintético y `strings.violin-section` una pequeña sección sintética;
+- la sala es estéreo y diseñada, no una respuesta de impulso medida, surround ni HRTF personalizada;
+- el grafo admite como máximo 192 fuentes simultáneas, incluidas las colas; una nota puede consumir varias fuentes.
+
+Para reducir sobrecarga, evita acordes enormes con colas largas en muchos tracks. Adelgaza la orquestación o separa la obra en secciones; no borres notas al azar.
+
+## Instrumentos semánticos verificados
+
+Los siguientes IDs están verificados para `native-auto` y también dan a `orchestra-synth` una identidad orquestal clara. La voz de referencia interna no aparece aquí: esta skill crea sólo música instrumental.
 
 ```text
 strings.violin
@@ -84,173 +277,152 @@ strings.violin-section
 strings.viola
 strings.cello
 strings.contrabass
+strings.harp
 woodwinds.flute
+woodwinds.piccolo
 woodwinds.oboe
 woodwinds.clarinet
+woodwinds.bass-clarinet
 woodwinds.bassoon
 woodwinds.ocarina
 woodwinds.alto-recorder
 brass.trumpet
-brass.trombone
 brass.horn
+brass.trombone
+brass.bass-trombone
 brass.tuba
-guitar.electric-clean
-percussion.timpani
-percussion.orchestral-kit
 piano.grand
 keys.pipe-organ
 keys.pipe-organ-soft
 keys.pipe-organ-pedal
 keys.harpsichord
+keys.celesta
+guitar.electric-clean
+guitar.acoustic
+percussion.timpani
+percussion.orchestral-kit
+percussion.glockenspiel
+percussion.marimba
+percussion.xylophone
+percussion.tubular-bells
 ```
 
-Use `strings.violin` for a solo/concertino line and `strings.violin-section` for tutti. The preferred Baroque routing remains:
+`woodwinds.english-horn` y `woodwinds.contrabassoon` tienen modelos físicos de nivel Studio, pero todavía no están aprobados como fuentes nativas Master. No los presentes como bancos acústicos Master.
 
-```text
-strings.violin   -> VSCO 2 CE Solo Violin
-strings.viola    -> VSCO 2 CE Viola Section
-strings.cello    -> VSCO 2 CE Cello Section
-keys.harpsichord -> VCSL Italian Harpsichord · Stop 1
-```
+### Reglas físicas importantes
 
-The complete brass palette is:
+- `woodwinds.ocarina` y `woodwinds.alto-recorder` exponen sustain natural y staccato. Escríbelos como instrumentos de aire monofónicos y deja respiraciones.
+- `keys.pipe-organ`, `keys.pipe-organ-soft` y `keys.pipe-organ-pedal` son tres capas grabadas independientes, no una consola completa. No inventes stops, couplers ni swell continuo.
+- `guitar.electric-clean` usa Karoryfer Emilyguitar: cuatro capas de velocity grabadas, tres round robins de nota y muestras físicas de release/ruido. Escribe voicings de guitarra realistas; no inventes cuerpo de nylon, rasgueo, palm mute ni armónicos grabados.
+- La trompeta VSCO 2 CE tiene colores grabados natural, vibrato, straight mute y Harmon mute; la trompa tiene mute grabado y el trombón tiene vibrato grabado. Pide esos colores sólo en el instrumento que realmente los declara.
+- Un `timbre=` grabado sólo existe si el manifiesto del banco lo declara. Si no existe, `native-auto` debe fallar con honestidad.
+- `articulation=legato` es una intención semántica. No afirmes true legato grabado si el banco no contiene transiciones físicas.
+- Los release samples son automáticos cuando el banco los declara. No inventes `articulation=release`.
+- Las posiciones de micrófono no son comandos de TloqueScore. No inventes `mic=`.
 
-```text
-brass.trumpet  -> VSCO 2 CE Trumpet
-brass.trombone -> VSCO 2 CE Tenor Trombone
-brass.horn     -> VSCO 2 CE F Horn
-brass.tuba     -> VSCO 2 CE Tuba
-```
+## Cómo hacer que una orquesta suene mejor
 
-Trumpet includes recorded natural/vibrato, straight mute and Harmon mute colours; horn has a recorded mute; trombone has recorded vibrato. Use those colours only when physically declared.
+1. Separa las familias en tracks distintos.
+2. Distribuye el panorama con moderación; conserva bajos y percusión grave cerca del centro.
+3. No dupliques cada melodía en toda la orquesta.
+4. Usa registros cómodos y deja espacio entre bajo, armonía y melodía.
+5. Haz crescendos con orquestación, `expression`, `brightness` y presión física adecuada.
+6. Alterna densidad: tutti, cámara, solo y silencio.
+7. Usa ataques cortos para figuras rápidas y ataques más lentos para pads sostenidos.
+8. Deja terminar las colas físicas de arpa, piano, campanas y percusión.
+9. No maximices `gain`; equilibra tracks y reserva margen para el master.
+10. No prometas que la síntesis es indistinguible de una orquesta grabada.
 
-`guitar.electric-clean` uses Karoryfer Emilyguitar: four recorded velocity layers, three note round robins and physical release/noise samples. Write realistic guitar voicings and do not invent nylon body, strumming, palm mute or harmonics.
+## Ejemplo orquestal completo
 
-### Colour winds
-
-`woodwinds.ocarina` uses the CC0 VCSL Estuary ocarina selection. Tloque currently curates physical natural sustain and physical staccato. Never fake a missing vibrato colour.
-
-`woodwinds.alto-recorder` uses VCSL Estuary alto recorder. Tloque currently curates physical sustain and staccato. Write breath-shaped monophonic phrases, leave room between exposed phrases, and do not write impossible polyphonic chords for a single recorder or ocarina track.
-
-### Cinematic pipe organ
-
-Three semantic tracks expose three independent physical VCSL layers:
-
-```text
-keys.pipe-organ       -> Rode Man3 Open manual
-keys.pipe-organ-soft  -> NT5 Man3 Quiet manual
-keys.pipe-organ-pedal -> Rode Pedal low register
-```
-
-For monumental/cinematic organ writing, combine these as separate tracks. Build crescendos by orchestration and expression rather than pretending there is a continuous swell pedal or arbitrary stop automation. These three identities are physical recorded colours, not a complete virtual pipe-organ registration system.
-
-### Preview versus premium master
-
-- Live preview and Studio export fall back only for the affected track when a required package is absent; every available acoustic track stays native. That fallback is for auditioning, not proof of acoustic fidelity.
-- `quality master` with native instruments requires every physical pack used by the score. A synthesis fallback is never described as a premium/native master.
-- `core` or `studio` may prioritize portability or memory.
-- Never silently substitute an unrelated semantic instrument because a pack is unavailable.
-
-## Physical capability rules
-
-Articulation and recorded timbre are independent. `articulation=staccato` asks for a played gesture; `timbre=vibrato` asks for a separately recorded colour when the manifest actually contains one. Numeric `vibrato=0..1` is an expressive control and is not the same as recorded `timbre=vibrato`.
-
-`articulation=legato` is semantic. True legato is used only when a manifest declares recorded note-to-note transitions. **The current author-facing acoustic orchestra does not yet expose any true-legato instrument.** Tloque has a reference transition bank proving the engine path, but do not describe ordinary orchestral `legato` as a recorded physical transition until an acoustic manifest actually declares it.
-
-Release samples are automatic when declared. Mic positions are internal and are not currently author-facing; never invent `mic=`.
-
-## Performance Engine + Performance Director v1
-
-Write phrasing rather than a MIDI grid. Shape meaningful velocity/expression arcs and use rests and durations to communicate phrase architecture.
-
-The native Performance Engine is deterministic for a given score/seed. It applies conservative family-aware micro-timing, note-length and performed-velocity variation. The Performance Director reads local musical context and can shape:
-
-- phrase entries;
-- phrase releases;
-- exact repeated notes;
-- destinations after large melodic leaps;
-- long sustained destinations;
-- string line carry;
-- breath-aware release behavior for woodwinds and brass.
-
-The Director **never** changes pitch, authored rhythmic position, articulation, timbre, mute, organ registration or instrument identity. It cannot fabricate true legato, bow-direction samples or breath samples. Its output remains bounded and deterministic.
-
-Family behavior remains idiomatic:
-
-- solo strings receive tiny attack variation and alternating bow-like velocity asymmetry;
-- string sections receive slightly wider ensemble timing variation than solo strings;
-- woodwinds and brass create modest separation on non-legato notes and use phrase boundaries as breath cues;
-- percussion stays comparatively tight but avoids identical repeated velocities;
-- piano, harpsichord and guitar receive small attack/velocity variation;
-- pipe organ remains almost mechanically stable because large timing jitter is not idiomatic for held organ layers.
-
-Recommended starting ranges are `humanize 0.03..0.10` for tight Baroque/virtuoso work, `0.08..0.18` for chamber/orchestral writing, and `0.12..0.25` for slower cinematic material. Values above about `0.35` should be intentional rather than a default. **`humanize 0` remains exactly sonically neutral for backward compatibility:** the Director may still classify phrase context internally, but its timing/duration/velocity modifiers are disabled until humanization is non-zero.
-
-Do not manually scatter every note by arbitrary fractional positions to imitate a performer. Keep the score musically legible and use fractional positions only when rhythmically intended.
-
-For exposed Baroque strings, avoid permanent high vibrato. For brass, keep low brass from masking bass fundamentals and reserve trumpet brightness for peaks. For ocarina and recorder, prefer singable monophonic contours, realistic breath-length phrases, modest registers and intentional rests. For cinematic pipe organ, use long held notes and repeating figures, with pedal used sparingly below the orchestra.
-
-## Native multi-instrument example
-
-```text
+```tloque-score
 TLOQUE_SCORE 2
-title "Baroque engine study"
-tempo 132
+title "La puerta del cielo"
+tempo 76
 meter 4/4
 loop false
-seed 20260823
-humanize 0.045
+seed 20260902
+humanize 0.075
 quality master
-module native-auto
-track solo synth=pad instrument=strings.violin program=40 role=melody gain=0.28 pan=0.10 attack=0.01 release=1.0 expression=0.88 brightness=0.58 vibrato=0.06 timbre=natural
-track tutti synth=pad instrument=strings.violin-section program=40 role=harmony gain=0.20 pan=-0.12 attack=0.01 release=1.0 expression=0.78 brightness=0.52 vibrato=0.03 timbre=natural
-track viola synth=pad instrument=strings.viola program=41 role=harmony gain=0.20 pan=-0.18 attack=0.01 release=1.0 expression=0.78 brightness=0.50 vibrato=0.03 timbre=natural
-track cello synth=bass instrument=strings.cello program=42 role=bass gain=0.22 pan=0.18 attack=0.01 release=1.0 expression=0.80 brightness=0.42 vibrato=0.02 timbre=natural
-track continuo synth=pluck instrument=keys.harpsichord program=6 role=harmony gain=0.18 pan=-0.04 attack=0.003 release=0.5 expression=0.72 brightness=0.62 vibrato=0 timbre=natural
-section opening form=exposition bars=2 repeat=1 fade=0 tempo=132 rubato=0.015
-use continuo
-1:1 A2,E3,A3 1 velocity=0.42
-1:2 E3,A3,C4 1 velocity=0.38
-1:3 A2,E3,A3 1 velocity=0.42
-1:4 E3,G#3,B3 1 velocity=0.40
-2:1 A2,E3,A3 2 velocity=0.44
-2:3 E3,G#3,B3 2 velocity=0.40
-use cello
-1:1 A2 1 velocity=0.48 articulation=staccato
-1:3 E3 1 velocity=0.50 articulation=staccato
-2:1 A2 2 velocity=0.48
-use tutti
-1:1 A4 0.5 velocity=0.50 articulation=spiccato
-1:1.5 A4 0.5 velocity=0.54 articulation=spiccato
-1:2 A4 0.5 velocity=0.52 articulation=spiccato
-1:2.5 A4 0.5 velocity=0.56 articulation=spiccato
-use viola
-1:1 A3 0.5 velocity=0.52 articulation=spiccato
-1:1.5 B3 0.5 velocity=0.54 articulation=spiccato
-1:2 C4 0.5 velocity=0.56 articulation=spiccato
-1:2.5 B3 0.5 velocity=0.52 articulation=spiccato
+module orchestra-synth
+
+track solo synth=pad instrument=strings.violin program=40 role=melody gain=0.24 pan=0.14 attack=0.07 release=1.3 expression=0.68 brightness=0.54 vibrato=0.12 timbre=natural
+track violins synth=pad instrument=strings.violin-section program=48 role=harmony gain=0.22 pan=-0.22 attack=0.12 release=1.6 expression=0.62 brightness=0.48 vibrato=0.08 timbre=natural
+track cellos synth=bass instrument=strings.cello program=42 role=bass gain=0.24 pan=0.06 attack=0.10 release=1.5 expression=0.66 brightness=0.38 vibrato=0.05 timbre=natural
+track flute synth=warm instrument=woodwinds.flute program=73 role=melody gain=0.18 pan=0.28 attack=0.05 release=0.8 expression=0.58 brightness=0.62 vibrato=0.08 timbre=natural
+track horn synth=warm instrument=brass.horn program=60 role=harmony gain=0.20 pan=-0.10 attack=0.08 release=1.1 expression=0.58 brightness=0.42 vibrato=0.02 timbre=natural
+track harp synth=pluck instrument=strings.harp program=46 role=texture gain=0.17 pan=-0.26 attack=0.003 release=1.8 expression=0.56 brightness=0.58 vibrato=0 timbre=natural
+track perc synth=pluck instrument=percussion.orchestral-kit program=0 role=accent gain=0.16 pan=0 attack=0.001 release=2 expression=0.58 brightness=0.48 vibrato=0 timbre=natural
+
+section ascent form=exposition bars=4 repeat=1 fade=2 tempo=76 rubato=0.035
+use harp
+1:1 C3,G3,E4 2 velocity=0.36
+1:3 G3,C4,G4 2 velocity=0.38
+2:1 A2,E3,C4 2 velocity=0.38
+2:3 F3,C4,A4 2 velocity=0.40
+3:1 D3,A3,F4 2 velocity=0.42
+3:3 G2,D3,B3 2 velocity=0.44
+4:1 C3,G3,E4 4 velocity=0.40
+use cellos
+control 1:1 expression=0.46 pressure=0.48 bow=0.32 coupling=0.30 ramp=0
+1:1 C2 4 velocity=0.42 articulation=tenuto
+2:1 A2 4 velocity=0.44 articulation=tenuto
+control 3:1 expression=0.72 pressure=0.70 bow=0.48 coupling=0.44 ramp=2
+3:1 D2 4 velocity=0.48 articulation=tenuto
+4:1 G2 4 velocity=0.50 articulation=tenuto
+use violins
+control 1:1 expression=0.38 brightness=0.40 pressure=0.46 bow=0.34 coupling=0.28 ramp=0
+1:1 C4,E4,G4 4 velocity=0.40 articulation=tenuto
+2:1 C4,E4,A4 4 velocity=0.42 articulation=tenuto
+control 3:1 expression=0.70 brightness=0.62 pressure=0.68 bow=0.55 coupling=0.42 ramp=2
+3:1 D4,F4,A4 4 velocity=0.46 articulation=tenuto
+4:1 D4,G4,B4 4 velocity=0.48 articulation=tenuto
+use horn
+control 1:1 expression=0.42 pressure=0.48 embouchure=0.40 ramp=0
+1:1 G3 4 velocity=0.40 articulation=tenuto
+rest 2:1 2
+2:3 E4 2 velocity=0.42 articulation=tenuto
+control 3:1 expression=0.68 pressure=0.66 embouchure=0.54 ramp=2
+3:1 F4 4 velocity=0.46 articulation=tenuto
+4:1 G4 4 velocity=0.48 articulation=accent
+use flute
+rest 1:1 2
+control 1:3 expression=0.44 pressure=0.46 embouchure=0.50 ramp=0
+1:3 E5 1 velocity=0.44 articulation=legato
+1:4 G5 1 velocity=0.46 articulation=legato
+2:1 A5 2 velocity=0.48 articulation=tenuto
+rest 2:3 2
+control 3:1 expression=0.70 pressure=0.68 embouchure=0.62 vibrato=0.16 ramp=1
+3:1 F5 1 velocity=0.50 articulation=legato
+3:2 A5 1 velocity=0.52 articulation=legato
+3:3 C6 2 velocity=0.54 articulation=tenuto
+4:1 B5 2 velocity=0.50 articulation=legato
+4:3 G5 2 velocity=0.44 articulation=normal
 use solo
-control 1:1 expression=0.72 vibrato=0.03 brightness=0.54 ramp=0
-1:1 E5 0.5 velocity=0.66 articulation=spiccato
-1:1.5 F5 0.5 velocity=0.70 articulation=spiccato
-1:2 G#5 0.5 velocity=0.74 articulation=spiccato
-1:2.5 A5 0.5 velocity=0.78 articulation=accent
-1:3 G#5 1 velocity=0.68 articulation=staccato
-2:1 E5 2 velocity=0.62 articulation=normal
+control 1:1 expression=0.42 brightness=0.44 pressure=0.50 bow=0.36 coupling=0.30 ramp=0
+1:1 E4 2 velocity=0.46 articulation=legato
+1:3 G4 2 velocity=0.48 articulation=legato
+2:1 A4 2 velocity=0.50 articulation=legato
+2:3 C5 2 velocity=0.52 articulation=tenuto
+control 3:1 expression=0.80 brightness=0.68 pressure=0.76 bow=0.60 coupling=0.46 vibrato=0.22 ramp=2
+3:1 D5 2 velocity=0.56 articulation=legato
+3:3 F5 2 velocity=0.58 articulation=legato
+4:1 G5 2 velocity=0.60 articulation=accent
+4:3 E5 2 velocity=0.48 articulation=tenuto
+use perc
+hit 1:1 bass-drum 0.5 velocity=0.38
+hit 3:1 suspended-cymbal 2 velocity=0.42
+hit 4:1 bass-drum 0.5 velocity=0.52
+hit 4:3 triangle-open-large 1 velocity=0.38
 end
 ```
 
-## Final self-check
+## Si el compilador devuelve un error
 
-- First line is exactly `TLOQUE_SCORE 2`; the work is instrumental.
-- Tracks precede sections; every `use` is declared; every section has `end`.
-- Bars, beats, fractional positions, repeats and values are in range.
-- The chosen source is explicit; native identities have verified physical packages for an acoustic master.
-- Requested timbres/articulations exist physically and unavailable capabilities are not approximated dishonestly.
-- Do not claim true-legato for the current author-facing acoustic orchestra.
-- `humanize` is chosen for the idiom rather than maximized blindly; `humanize 0` remains neutral.
-- Phrase boundaries are authored with meaningful duration/rest structure so the Performance Director has musical context.
-- Guitar, colour winds and organ writing stays within their installed physical capabilities.
-- A synthesis fallback is never described as a premium/native master.
-- An explicit `orchestra-synth` Master is labelled synthetic, even at 96 kHz; no recorded timbre or concert-hall authenticity is claimed.
-- Fast passages have deliberate phrasing rather than machine-identical events.
+1. Lee el número de línea y el mensaje.
+2. Localiza esa línea en la obra completa.
+3. Corrige sólo la causa real: orden, nombre, rango, compás, track, sección o comando.
+4. Revisa otra vez toda la lista del Paso 6.
+5. Devuelve la partitura completa en un solo bloque `tloque-score` y nada más.
+
+No ocultes un error sustituyendo un instrumento por otro que el usuario no pidió. No elimines música válida para hacer desaparecer un diagnóstico. Conserva la intención musical y cambia la mínima cantidad necesaria.
