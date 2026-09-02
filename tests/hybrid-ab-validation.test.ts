@@ -1,6 +1,7 @@
 import { describe, expect, it } from "./test-compat"
 import { hybridSourceMasterApproved } from "../shared/native-hybrid-approval-registry"
 import { nativeHybridForInstrument } from "../shared/native-hybrid-source"
+import { NATIVE_HYBRID_PERFORMANCE_VERSION } from "../shared/native-hybrid-performance"
 import {
   buildHybridAbReport,
   hybridMasterEvidenceValid,
@@ -38,11 +39,13 @@ describe("hybrid A/B validation", () => {
     expect(hybridMasterEvidenceValid(source, report)).toBe(false)
   })
 
-  it("requires exact engine version, full 3x3 coverage, blind review and a human hybrid win", () => {
+  it("requires exact engine and performance versions, full 3x3 coverage, blind review and a human hybrid win", () => {
     const source = nativeHybridForInstrument("piano.grand")!
     const report = buildHybridAbReport(source, "vcsl-estuary-grand-piano", matrixFor(source.instrumentId), { preference: "hybrid", mode: "blind-ab", note: "La opción elegida conserva ataque y mejora resonancia en toda la matriz." })
     expect(hybridMasterEvidenceValid(source, report)).toBe(true)
     expect(hybridMasterEvidenceValid({ ...source, engineVersion: "air-column-overlay-v1.1" } as any, report)).toBe(false)
+    expect(report.performanceVersion).toBe(NATIVE_HYBRID_PERFORMANCE_VERSION)
+    expect(hybridMasterEvidenceValid(source, { ...report, performanceVersion: "legacy-performance-v1" as any })).toBe(false)
     expect(hybridMasterEvidenceValid(source, { ...report, cellResults: report.cellResults.slice(0, 8) })).toBe(false)
   })
 

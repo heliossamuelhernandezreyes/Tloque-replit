@@ -1,4 +1,5 @@
 import type { NativeHybridSource } from "@shared/native-hybrid-source"
+import { boundedHybridOverlayGain, type NativeHybridOverlayPerformance } from "@shared/native-hybrid-performance"
 import { boundedHybridCalibrationTuning, type HybridCalibrationTuning } from "@shared/native-hybrid-tuning"
 import { physicalPerformanceStateAt } from "@shared/physical-performance-control"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
@@ -17,6 +18,7 @@ export interface AirColumnOverlayOptions {
   controls?: readonly LinearScoreControlV2[]
   legatoFromPrevious?: boolean
   calibrationTuning?: HybridCalibrationTuning
+  performance?: NativeHybridOverlayPerformance
 }
 
 function clamp01(value: number) { return Math.max(0, Math.min(1, value)) }
@@ -47,9 +49,11 @@ function brightnessAt(track: LinearScoreTrackV2, controls: readonly LinearScoreC
 function pressureFor(velocity: number, pressure: number) { return clamp01(velocity * 0.44 + pressure * 0.56) }
 function embouchureTone(embouchure: number) { return 0.78 + embouchure * 0.42 }
 function embouchureFeedback(embouchure: number) { return 0.94 + (1 - Math.abs(embouchure - 0.5) * 2) * 0.06 }
-function wetGainFor(source: NativeHybridSource, pressure: number, embouchure: number, wetScale: number) { return Math.max(0.001, source.wet * wetScale * (0.65 + pressure * 0.3 + embouchure * 0.05)) }
+function wetGainFor(source: NativeHybridSource, pressure: number, embouchure: number, wetScale: number, performance?: NativeHybridOverlayPerformance) {
+  return Math.max(0.0001, boundedHybridOverlayGain(source, source.wet * wetScale * (0.65 + pressure * 0.3 + embouchure * 0.05), performance))
+}
 
-/** Air-column overlay v1.2: continuous pressure, embouchure, formant and harmonic automation. */
+/** Air-column engine v1.1 under the sample-dominant performance-v2 contract. */
 export function scheduleAirColumnOverlay(context: BaseAudioContext, source: NativeHybridSource, options: AirColumnOverlayOptions) {
   if (source.physicalLayer === "sympathetic-resonance") return scheduleSympatheticResonanceOverlay(context, source, options)
   const { startAt, event, track, midi, destination, controls = [], legatoFromPrevious = false } = options
@@ -79,8 +83,8 @@ export function scheduleAirColumnOverlay(context: BaseAudioContext, source: Nati
 
   const lfo = context.createOscillator(), lfoDepth = context.createGain(), delayMod = context.createGain(); lfo.type = "sine"; lfo.frequency.value = source.instrumentId.startsWith("brass.") ? 5 : 5.2; const vibratoCents = source.instrumentId.includes("bass-") || source.instrumentId === "brass.tuba" ? 6 : 10; lfoDepth.gain.value = vibrato * vibratoCents; lfo.connect(lfoDepth); lfoDepth.connect(fundamental.detune); lfoDepth.connect(h2.detune); lfoDepth.connect(h3.detune); delayMod.gain.value = baseDelay * vibrato * 0.003; lfo.connect(delayMod); delayMod.connect(delay.delayTime)
 
-  const attack = legatoFromPrevious ? 0.009 : Math.max(0.016, Math.min(0.065, track.attack * 0.35))
-  output.gain.setValueAtTime(0.0001, start); output.gain.exponentialRampToValueAtTime(wetGainFor(source, pressure, embouchure, tuning.wetScale), start + attack)
+  const attack = legatoFromPrevious ? 0.032 : Math.max(0.016, Math.min(0.065, track.attack * 0.35))
+  output.gain.setValueAtTime(0.0001, start); output.gain.exponentialRampToValueAtTime(wetGainFor(source, pressure, embouchure, tuning.wetScale, options.performance), start + attack)
 
   for (const control of controls) {
     if (control.trackId !== event.trackId || control.timeSeconds <= event.timeSeconds || control.timeSeconds > event.timeSeconds + duration) continue
@@ -95,13 +99,13 @@ export function scheduleAirColumnOverlay(context: BaseAudioContext, source: Nati
     scheduleParam(damping.frequency, at, profile.damping * tuning.dampingScale * (0.64 + b * 0.35 + e * 0.28), control.rampSeconds, true)
     scheduleParam(breathBand.frequency, at, profile.damping * tuning.dampingScale * (0.48 + b * 0.35 + e * 0.28), control.rampSeconds, true)
     for (let i = 0; i < formantFilters.length; i += 1) scheduleParam(formantFilters[i].frequency, at, profile.formants[i] * (0.94 + e * 0.12), control.rampSeconds, true)
-    scheduleParam(output.gain, at, wetGainFor(source, p, e, tuning.wetScale), control.rampSeconds, true)
+    scheduleParam(output.gain, at, wetGainFor(source, p, e, tuning.wetScale, options.performance), control.rampSeconds, true)
     if (control.vibrato !== null) scheduleParam(lfoDepth.gain, at, clamp01(control.vibrato) * vibratoCents, control.rampSeconds)
     if (control.pitchBend !== null) { const cents = control.pitchBend * 100; scheduleParam(fundamental.detune, at, cents, control.rampSeconds); scheduleParam(h2.detune, at, cents, control.rampSeconds); scheduleParam(h3.detune, at, cents, control.rampSeconds); const bentHz = hz * 2 ** (control.pitchBend / 12); scheduleParam(delay.delayTime, at, Math.min(0.08, Math.max(1 / 18_000, 1 / bentHz)), control.rampSeconds) }
   }
 
-  const endState = physicalPerformanceStateAt(track, controls, event.timeSeconds + duration), endPressure = pressureFor(event.velocity, endState.pressure), finalPeak = wetGainFor(source, endPressure, endState.embouchure, tuning.wetScale)
-  output.gain.setValueAtTime(Math.max(0.001, finalPeak * 0.9), Math.max(start + attack, start + duration - 0.012)); output.gain.exponentialRampToValueAtTime(0.0001, stop)
+  const endState = physicalPerformanceStateAt(track, controls, event.timeSeconds + duration), endPressure = pressureFor(event.velocity, endState.pressure), finalPeak = wetGainFor(source, endPressure, endState.embouchure, tuning.wetScale, options.performance)
+  output.gain.setValueAtTime(Math.max(0.0001, finalPeak * 0.9), Math.max(start + attack, start + duration - 0.012)); output.gain.exponentialRampToValueAtTime(0.0001, stop)
   fundamental.start(start); fundamental.stop(stop); h2.start(start); h2.stop(stop); h3.start(start); h3.stop(stop); breath.start(start, deterministicNoiseOffset(breathIdentity, breathBuffer.duration)); breath.stop(stop); lfo.start(start); lfo.stop(stop)
   return { endSeconds: event.timeSeconds + duration + release }
 }

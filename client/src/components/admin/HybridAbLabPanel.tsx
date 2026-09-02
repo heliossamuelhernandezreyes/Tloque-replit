@@ -3,6 +3,7 @@ import { Download, FlaskConical, Loader2, Pause, Play, Search, ShieldCheck, Spar
 import { hybridBlindAssignment, hybridPreferenceForBlindVote, type HybridAbBlindAssignment, type HybridAbBlindSide, type HybridAbBlindVote } from "@shared/hybrid-ab-blind"
 import { hybridCalibrationScore, proposeHybridCalibrationCandidate, type HybridCalibrationCandidate } from "@shared/native-hybrid-calibration"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
+import { NATIVE_HYBRID_PERFORMANCE_VERSION } from "@shared/native-hybrid-performance"
 import { NATIVE_HYBRID_SOURCES, type NativeHybridSource } from "@shared/native-hybrid-source"
 import type { HybridAbValidationReport } from "@shared/native-hybrid-validation"
 import { hybridMetricTargets } from "@shared/native-hybrid-validation"
@@ -10,7 +11,7 @@ import { runHybridAbCalibration, type HybridAbCalibrationResult } from "@/audio/
 import { runHybridCalibrationCandidate } from "@/audio/HybridCalibrationCandidateRunner"
 import { runHybridLocalSearch, type HybridLocalSearchResult } from "@/audio/HybridLocalSearchRunner"
 
-const STORAGE_KEY = "tloque_hybrid_ab_reports_v1"
+const STORAGE_KEY = "tloque_hybrid_ab_reports_v2"
 type SavedReports = Record<string, HybridAbValidationReport>
 type BlindVotes = Record<string, HybridAbBlindVote>
 type BlindAssignments = Record<string, HybridAbBlindAssignment>
@@ -26,7 +27,7 @@ function layerLabel(layer: NativeHybridSource["physicalLayer"]) {
 }
 function downloadJson(report: HybridAbValidationReport) {
   const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }), url = URL.createObjectURL(blob), a = document.createElement("a")
-  a.href = url; a.download = `${report.instrumentId.replaceAll(".", "-")}-${report.engineVersion}-ab.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1_000)
+  a.href = url; a.download = `${report.instrumentId.replaceAll(".", "-")}-${report.engineVersion}-${report.performanceVersion}-ab.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1_000)
 }
 function randomBlindAssignment() {
   try { const value = new Uint32Array(1); crypto.getRandomValues(value); return hybridBlindAssignment((value[0] & 1) === 1) }
@@ -117,7 +118,7 @@ export function HybridAbLabPanel() {
   }
 
   return <section className="mt-10">
-    <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="tloque-eyebrow">Sampled vs Hybrid</p><h2 className="mt-1 text-xl text-white">Laboratorio A/B ciego</h2><p className="mt-1 max-w-3xl text-xs leading-5 text-white/35">Matriz 3×3 de registro y gesto. Cuando falla, puedes probar una hipótesis o lanzar una búsqueda local de tres intensidades. Las variantes son efímeras y nunca pueden aprobar Master hasta promoverse y versionarse.</p></div><span className="text-xs text-white/30">{hybrids.filter(source => hybridSourceMasterApproved(source)).length}/{hybrids.length} Master</span></div>
+    <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="tloque-eyebrow">Sampled vs Hybrid</p><h2 className="mt-1 text-xl text-white">Laboratorio A/B ciego</h2><p className="mt-1 max-w-3xl text-xs leading-5 text-white/35">Matriz 3×3 de registro y gesto bajo {NATIVE_HYBRID_PERFORMANCE_VERSION}. Cuando falla, puedes probar una hipótesis o lanzar una búsqueda local de tres intensidades. Las variantes son efímeras y nunca pueden aprobar Master hasta promoverse y versionarse.</p></div><span className="text-xs text-white/30">{hybrids.filter(source => hybridSourceMasterApproved(source)).length}/{hybrids.length} Master</span></div>
     {error && <p className="mt-4 rounded-xl border border-red-300/10 bg-red-300/[.04] px-4 py-3 text-xs text-red-200/70">{error}</p>}
     <div className="mt-4 grid gap-3 md:grid-cols-2">{hybrids.map(source => {
       const targets = hybridMetricTargets(source.physicalLayer), report = reports[source.instrumentId], pair = urls[source.instrumentId], assignment = assignments[source.instrumentId], vote = votes[source.instrumentId]

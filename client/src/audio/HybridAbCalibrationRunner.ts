@@ -1,4 +1,5 @@
 import { compileTloqueScore } from "@shared/audio"
+import type { CalibratedHybridSource } from "@shared/native-hybrid-calibration"
 import type { NativeHybridSource } from "@shared/native-hybrid-source"
 import {
   buildHybridAbReport,
@@ -165,7 +166,7 @@ function metricsAt(a: Float32Array, b: Float32Array, sampleRate: number, offset:
   return { "transient-preservation": transient, "sustain-continuity": continuity, "dynamic-response": dynamic, "spectral-deviation": spectral, "tail-naturalness": tail }
 }
 
-export async function runHybridAbCalibration(source: NativeHybridSource, signal?: AbortSignal): Promise<HybridAbCalibrationResult> {
+export async function runHybridAbCalibration(source: CalibratedHybridSource, signal?: AbortSignal): Promise<HybridAbCalibrationResult> {
   const compiled = compileTloqueScore(probeScore(source))
   if (!compiled.ok || compiled.recipe.version !== 2) throw new Error(`No se pudo compilar probe A/B: ${compiled.ok ? "versión inválida" : compiled.diagnostics.map(item => item.message).join(" · ")}`)
   const recipe = compiled.recipe, moduleId = preferredNativeModuleForInstrument(source.instrumentId)
@@ -179,7 +180,7 @@ export async function runHybridAbCalibration(source: NativeHybridSource, signal?
 
   const sampled = await renderTloqueScoreWithNativeSamplePackToWav(recipe, "/api/audio/sample-packs/modules/native-auto.json", { quality: "studio", signal, hybridMode: "none" })
   if (signal?.aborted) throw new DOMException("Calibración cancelada", "AbortError")
-  const hybrid = await renderTloqueScoreWithNativeSamplePackToWav(recipe, "/api/audio/sample-packs/modules/native-auto.json", { quality: "studio", signal, hybridMode: "quality" })
+  const hybrid = await renderTloqueScoreWithNativeSamplePackToWav(recipe, "/api/audio/sample-packs/modules/native-auto.json", { quality: "studio", signal, hybridMode: "quality", ...(source.calibrationTuning ? { hybridCalibrationSource: source } : {}) })
   if (signal?.aborted) throw new DOMException("Calibración cancelada", "AbortError")
 
   // Metrics compare two complete production renders. Both have the same sample path,

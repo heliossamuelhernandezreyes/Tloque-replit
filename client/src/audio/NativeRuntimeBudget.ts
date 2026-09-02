@@ -1,4 +1,4 @@
-import { hybridEnabledForArticulation, nativeHybridForInstrument } from "@shared/native-hybrid-source"
+import { buildNativeHybridPerformancePlan } from "@shared/native-hybrid-performance"
 import type { LinearScoreRecipeV2 } from "@shared/tloque-score-v2"
 
 export interface NativeRuntimeBudget {
@@ -30,7 +30,6 @@ function peakConcurrent(points: Point[]) {
  * browser/device profiling can correlate these stable counts with real timings.
  */
 export function measureNativeRuntimeBudget(recipe: LinearScoreRecipeV2): NativeRuntimeBudget {
-  const trackById = new Map(recipe.plan.tracks.map(track => [track.id, track]))
   const notePoints: Point[] = []
   const hybridPoints: Point[] = []
   let noteVoiceCount = 0
@@ -44,8 +43,13 @@ export function measureNativeRuntimeBudget(recipe: LinearScoreRecipeV2): NativeR
     noteVoiceCount += voices
     notePoints.push({ time: start, delta: voices }, { time: end, delta: -voices })
 
-    const track = trackById.get(event.trackId)
-    if (!track || !nativeHybridForInstrument(track.instrument) || !hybridEnabledForArticulation(track.instrument, event.articulation)) continue
+  }
+
+  const hybridPerformance = buildNativeHybridPerformancePlan(recipe)
+  for (const decision of hybridPerformance.decisions) {
+    const voices = decision.midis.length
+    const start = decision.event.timeSeconds
+    const end = decision.event.timeSeconds + Math.max(0, decision.event.durationSeconds)
     hybridVoiceCount += voices
     hybridPoints.push({ time: start, delta: voices }, { time: end, delta: -voices })
   }
