@@ -33,11 +33,11 @@ test("premium UI makes guitar and full brass easy to install through the unified
 })
 
 test("AI skill documents guitar and brass physical capabilities", () => {
-  const version = /Skill version: `(\d+)\.(\d+)\.(\d+)`/.exec(skill)
+  const version = /version: "(\d+)\.(\d+)\.(\d+)"/.exec(skill)
   assert.ok(version)
-  assert.ok(Number(version![1]) > 1 || Number(version![2]) >= 4)
+  assert.ok(Number(version![1]) >= 3)
   assert.match(skill, /guitar\.electric-clean/)
-  assert.match(skill, /VSCO 2 CE Trumpet/)
-  assert.match(skill, /straight mute and Harmon mute/)
-  assert.match(skill, /four recorded velocity layers, three note round robins/)
+  assert.match(skill, /trompeta VSCO 2 CE/i)
+  assert.match(skill, /straight mute y Harmon mute/)
+  assert.match(skill, /cuatro capas de velocity grabadas, tres round robins/)
 })

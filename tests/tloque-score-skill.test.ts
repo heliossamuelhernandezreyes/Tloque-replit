@@ -3,21 +3,76 @@ import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { compileTloqueScore } from "../shared/audio"
+import { NATIVE_LIBRARY_INDEX } from "../shared/native-library-index"
+import { TLOQUE_SCORE_COMPILER_V2 } from "../shared/tloque-score-v2"
+import { ORCHESTRAL_SYNTH_VERSION } from "../shared/orchestral-synthesis"
+import { ORCHESTRAL_DYNAMICS_VERSION } from "../client/src/audio/OrchestralDynamics"
+import { ORCHESTRAL_ROOM_VERSION } from "../client/src/audio/OrchestralRoom"
 
 const skillPath = resolve(process.cwd(), "skills/tloque-score/SKILL.md")
 const downloadableSkillPath = resolve(process.cwd(), "client/public/downloads/TLOQUE_SCORE_AI_SKILL.md")
 
-test("la skill canónica declara el contrato y contiene un ejemplo completo compilable", async () => {
+function scoreExamples(content: string) {
+  return [...content.matchAll(/```tloque-score\n([\s\S]*?)```/g)].map(match => match[1].trim())
+}
+
+test("la skill canónica y la descarga son exactamente la misma fuente", async () => {
+  const [canonical, download] = await Promise.all([
+    readFile(skillPath, "utf8"),
+    readFile(downloadableSkillPath, "utf8"),
+  ])
+  assert.equal(download, canonical)
+  assert.match(canonical, /version: "3\.0\.0"/)
+})
+
+test("todos los ejemplos de la skill compilan con el contrato actual", async () => {
   const content = await readFile(skillPath, "utf8")
-  assert.match(content, /TLOQUE_SCORE 2/)
-  assert.match(content, /instrumental/i)
-  assert.match(content, /module/i)
-  assert.match(content, /velocity/i)
-  assert.match(content, /articulation/i)
-  const fence = content.match(/## Complete native-auto example[\s\S]*?```tloque-score\n([\s\S]*?)```/)
-  assert.ok(fence, "La skill canónica debe contener el ejemplo native-auto completo")
-  const result = compileTloqueScore(fence![1].trim())
+  const examples = scoreExamples(content)
+  assert.equal(examples.length, 2, "La skill debe tener una plantilla y un ejemplo orquestal completo")
+
+  for (const [index, source] of examples.entries()) {
+    const result = compileTloqueScore(source)
+    assert.equal(result.ok, true, result.ok ? undefined : `Ejemplo ${index + 1}: ${JSON.stringify(result.diagnostics)}`)
+    if (!result.ok || result.recipe.version !== 2) continue
+    assert.equal(result.recipe.plan.compilerVersion, TLOQUE_SCORE_COMPILER_V2)
+    assert.equal(result.recipe.plan.moduleId, "orchestra-synth")
+  }
+})
+
+test("el ejemplo completo demuestra controles físicos y percusión de forma semántica", async () => {
+  const content = await readFile(skillPath, "utf8")
+  const complete = scoreExamples(content)[1]
+  const result = compileTloqueScore(complete)
   assert.equal(result.ok, true, result.ok ? undefined : JSON.stringify(result.diagnostics))
+  if (!result.ok || result.recipe.version !== 2) return
+
+  const controls = result.recipe.plan.controls
+  assert.ok(controls.some(control => control.pressure !== null && control.bowPosition !== null && control.sympatheticCoupling !== null))
+  assert.ok(controls.some(control => control.pressure !== null && control.embouchure !== null))
+  assert.deepEqual(
+    result.recipe.plan.events.filter(event => event.trackId === "perc").map(event => event.notes[0]),
+    [36, 51, 36, 81],
+  )
+})
+
+test("la documentación anuncia exactamente las versiones orquestales implementadas", async () => {
+  const content = await readFile(skillPath, "utf8")
+  for (const version of [TLOQUE_SCORE_COMPILER_V2, ORCHESTRAL_SYNTH_VERSION, ORCHESTRAL_DYNAMICS_VERSION, ORCHESTRAL_ROOM_VERSION]) {
+    assert.match(content, new RegExp(version.replace(/[.]/g, "\\.")))
+  }
+  assert.doesNotMatch(content, /tloque-orchestral-synth-v1(?![0-9])/)
+})
+
+test("el inventario Master documentado sigue al índice nativo real", async () => {
+  const content = await readFile(skillPath, "utf8")
+  const block = content.match(/## Instrumentos semánticos verificados[\s\S]*?```text\n([\s\S]*?)```/)
+  assert.ok(block, "Falta el inventario semántico verificado")
+  const documented = block![1].trim().split("\n")
+  const actual = NATIVE_LIBRARY_INDEX
+    .filter(entry => entry.masterApproved && entry.family !== "voice")
+    .map(entry => entry.instrumentId)
+  assert.deepEqual(documented, actual)
+  assert.doesNotMatch(block![1], /voice\./)
 })
 
 test("timbre a nivel de track forma parte del contrato real del compilador", () => {
@@ -41,13 +96,10 @@ end`)
   assert.equal(result.recipe.plan.events[0].timbre, "natural")
 })
 
-test("la skill descargable no puede enseñar timbre= en track si el runtime deja de aceptarlo", async () => {
-  const content = await readFile(downloadableSkillPath, "utf8")
+test("la gramática documentada conserva timbre de track y todos los ejes físicos 2.2", async () => {
+  const content = await readFile(skillPath, "utf8")
   assert.match(content, /track id .*timbre=natural\|non-vibrato\|vibrato\|expression-vibrato\|mute\|harmon-mute\|straight-mute/)
-  const example = content.match(/## Native multi-instrument example[\s\S]*?```text\n([\s\S]*?)```/)
-  assert.ok(example, "La skill descargable debe incluir el ejemplo native multi-instrument")
-  const result = compileTloqueScore(example![1].trim())
-  assert.equal(result.ok, true)
+  assert.match(content, /control bar:beat .*pressure=0\.\.1 .*embouchure=0\.\.1 .*bow=0\.\.1 .*pluck=0\.\.1 .*damper=0\.\.1 .*coupling=0\.\.1/)
 })
 
 test("TloqueScore admite percusión semántica sin tratar el nombre del golpe como pitch", () => {

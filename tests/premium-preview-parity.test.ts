@@ -21,13 +21,12 @@ test("quality master never silently becomes base synthesis", () => {
 })
 
 test("downloadable AI skill documents current premium behavior", () => {
-  const match = skill.match(/Skill version: `(\d+)\.(\d+)\.(\d+)`/)
+  const match = skill.match(/version: "(\d+)\.(\d+)\.(\d+)"/)
   assert.ok(match, "La skill debe declarar una versión semántica")
-  const [, major, minor] = match
-  assert.equal(Number(major), 1)
-  assert.ok(Number(minor) >= 3, "La skill no puede retroceder por debajo del contrato premium 1.3")
-  assert.match(skill, /Preview versus premium master/)
+  const [, major] = match
+  assert.ok(Number(major) >= 3, "La skill no puede retroceder por debajo del contrato unificado 3.0")
+  assert.match(skill, /quality master.*native-auto.*bancos físicos/is)
   assert.match(skill, /4:4\.75/)
-  assert.match(skill, /strings\.violin\s+-> VSCO 2 CE Solo Violin/)
-  assert.match(skill, /synthesis fallback is never described as a premium\/native master/i)
+  assert.match(skill, /strings\.violin/)
+  assert.match(skill, /No prometas que la síntesis es indistinguible de una orquesta grabada/)
 })
