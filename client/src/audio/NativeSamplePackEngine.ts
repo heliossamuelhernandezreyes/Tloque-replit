@@ -10,6 +10,7 @@ import {
 } from "@shared/native-sample-pack"
 import { fetchAudioResource } from "./AudioResourceCache"
 import { orchestralExpressionCurve, type OrchestralNoteExpression } from "./OrchestralExpression"
+import { orchestralDynamicCutoffCurve, type OrchestralContinuousDynamics } from "./OrchestralDynamics"
 
 export interface NativeSampleSelection { zone: TloqueSampleZone; playbackRate: number; gain: number }
 export interface NativeSampleTimbreRequest {
@@ -25,6 +26,7 @@ export interface NativeSamplePlaybackEnvelope {
   fadeInSeconds?: number
   fadeOutSeconds?: number
   expression?: OrchestralNoteExpression
+  dynamics?: OrchestralContinuousDynamics
 }
 
 const MAX_EDGE_TRANSPOSE_SEMITONES = 4
@@ -182,10 +184,15 @@ export class NativeSamplePackPlayer {
     const buffer = await this.buffer(selection.zone)
     const source = this.context.createBufferSource(); source.buffer = buffer; source.playbackRate.value = selection.playbackRate
     const gain = this.context.createGain()
-    let tail: AudioNode = gain; let panner: StereoPannerNode | null = null
+    let tail: AudioNode = gain; let panner: StereoPannerNode | null = null; let tone: BiquadFilterNode | null = null
     if (typeof this.context.createStereoPanner === "function") { panner = this.context.createStereoPanner(); panner.pan.value = Math.max(-1, Math.min(1, pan)); gain.connect(panner); tail = panner }
     const phrasing = this.context.createGain()
-    tail.connect(destination); source.connect(phrasing); phrasing.connect(gain)
+    tail.connect(destination); source.connect(phrasing)
+    if (!oneShot && envelope.dynamics?.sustained) {
+      tone = this.context.createBiquadFilter(); tone.type = "lowpass"; tone.Q.value = 0.24
+      tone.frequency.setValueCurveAtTime(orchestralDynamicCutoffCurve(envelope.dynamics, this.context.sampleRate, "recorded"), Math.max(this.context.currentTime, startTime), Math.max(0.01, durationSeconds))
+      phrasing.connect(tone); tone.connect(gain)
+    } else phrasing.connect(gain)
     const loopStart = selection.zone.loopStartSeconds, loopEnd = selection.zone.loopEndSeconds
     if (loopStart !== undefined && loopEnd !== undefined && loopEnd > loopStart) { source.loop = true; source.loopStart = loopStart; source.loopEnd = loopEnd }
     const startAt = Math.max(this.context.currentTime, startTime)
@@ -213,7 +220,7 @@ export class NativeSamplePackPlayer {
     }
     source.start(startAt)
     if (!oneShot || source.loop) source.stop(stopAt)
-    source.addEventListener("ended", () => { source.disconnect(); phrasing.disconnect(); gain.disconnect(); panner?.disconnect() }, { once: true })
+    source.addEventListener("ended", () => { source.disconnect(); phrasing.disconnect(); tone?.disconnect(); gain.disconnect(); panner?.disconnect() }, { once: true })
     return source
   }
 

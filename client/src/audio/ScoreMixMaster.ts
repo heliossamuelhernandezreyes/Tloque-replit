@@ -1,4 +1,5 @@
 import { createCachedDeterministicStereoImpulse } from "./DeterministicImpulseCache"
+import { ORCHESTRAL_ROOM_MAX_SECONDS, ORCHESTRAL_ROOM_VERSION, orchestralLateFieldEnvelope } from "./OrchestralRoom"
 
 export interface SampledMixMasterProfile {
   lowShelfHz: number
@@ -37,11 +38,11 @@ export const SAMPLED_MIX_MASTER_PROFILE: Readonly<SampledMixMasterProfile> = {
   limiterRatio: 20,
   limiterAttack: 0.002,
   limiterRelease: 0.09,
-  roomSeconds: 3.15,
-  roomDecay: 2.35,
-  roomMix: 0.245,
-  roomPredelaySeconds: 0.024,
-  roomLowpassHz: 8_800,
+  roomSeconds: ORCHESTRAL_ROOM_MAX_SECONDS,
+  roomDecay: 1.92,
+  roomMix: 0.235,
+  roomPredelaySeconds: 0.026,
+  roomLowpassHz: 8_100,
 }
 
 export interface SampledMixMasterChain {
@@ -57,13 +58,18 @@ function deterministicNoise(index: number) {
 }
 
 function createConcertRoomImpulse(context: BaseAudioContext, seconds: number, decay: number) {
-  return createCachedDeterministicStereoImpulse(context, `sampled-concert-room-v1:decay=${decay}`, seconds, (channel, i, t) => {
-    const tail = Math.exp(-t * decay)
-    const earlyWindow = t < 0.14 ? (1 - t / 0.14) : 0
-    const lateBloom = Math.min(1, t / 0.32)
-    const early = deterministicNoise(i * 2 + channel * 7919) * earlyWindow * 0.16
-    const late = deterministicNoise(i * 5 + channel * 3571) * tail * (0.055 + lateBloom * 0.085)
-    return early + late
+  const diffusionState = [0, 0]
+  const boundedSeconds = Math.min(ORCHESTRAL_ROOM_MAX_SECONDS, seconds)
+  return createCachedDeterministicStereoImpulse(context, `${ORCHESTRAL_ROOM_VERSION}:decay=${decay}`, boundedSeconds, (channel, i, t) => {
+    const envelope = orchestralLateFieldEnvelope(t, boundedSeconds, decay)
+    const density = 0.08 + 0.54 * Math.min(1, t / 0.38)
+    const gate = Math.abs(deterministicNoise(i * 17 + channel * 104_729)) < density ? 1 / Math.sqrt(density) : 0
+    const shared = deterministicNoise(i * 5 + 12_347)
+    const independent = deterministicNoise(i * 11 + channel * 65_537)
+    const raw = gate * (shared * 0.22 + independent * 0.78)
+    diffusionState[channel] = diffusionState[channel] * 0.67 + raw * 0.33
+    const slowAir = 0.96 + 0.04 * Math.sin(2 * Math.PI * (0.31 + channel * 0.07) * t + channel * 1.7)
+    return (raw * 0.24 + diffusionState[channel] * 0.76) * envelope * slowAir
   })
 }
 

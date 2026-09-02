@@ -10,6 +10,7 @@ import { scheduleOrchestralSynthVoice } from "../../client/src/audio/OrchestralS
 import { createNativeRenderGraph } from "../../client/src/audio/NativeRenderGraph"
 import { NativeSamplePackPlayer } from "../../client/src/audio/NativeSamplePackEngine"
 import { orchestralNoteExpression } from "../../client/src/audio/OrchestralExpression"
+import { orchestralContinuousDynamics } from "../../client/src/audio/OrchestralDynamics"
 import { ORCHESTRAL_QA_SCORE } from "../fixtures/orchestral-score"
 
 // Offline DSP only: no audio device, browser, credentials, samples or network.
@@ -150,6 +151,50 @@ test("bend recorre la altura durante la nota, no sólo en su ataque", async () =
   assert.ok(Math.abs(frequency(1.2, 1.7) - 440 * 2 ** (2 / 12)) < 8)
 })
 
+test("audio real: un crescendo sostenido abre el color durante la misma nota", async () => {
+  const context = new OfflineAudioContext(2, 48_000 * 4, 48_000)
+  const track = { ...recipe.plan.tracks[0], instrument: "strings.violin", expression: 0.16, brightness: 0.18, vibrato: 0 }
+  const control = { ...recipe.plan.controls[0], trackId: track.id, timeSeconds: 0, expression: 1, brightness: 0.95, rampSeconds: 3.2 }
+  scheduleOrchestralSynthVoice(context, context.destination, 0, { timeSeconds: 0, durationSeconds: 3.5, notes: [57], velocity: 0.42, articulation: "legato" }, track, 1, [control])
+  const pcm = (await context.startRendering()).getChannelData(0)
+  const harmonicEnergy = (start: number, end: number, from: number, to: number) => {
+    let energy = 0
+    for (let harmonic = from; harmonic <= to; harmonic++) {
+      const frequency = 220 * harmonic
+      let sine = 0, cosine = 0
+      for (let i = Math.ceil(start * 48_000); i < end * 48_000; i++) {
+        const phase = 2 * Math.PI * frequency * i / 48_000
+        sine += pcm[i] * Math.sin(phase); cosine += pcm[i] * Math.cos(phase)
+      }
+      energy += sine ** 2 + cosine ** 2
+    }
+    return energy
+  }
+  const early = harmonicEnergy(0.45, 0.9, 24, 32) / harmonicEnergy(0.45, 0.9, 1, 5)
+  const late = harmonicEnergy(2.6, 3.05, 24, 32) / harmonicEnergy(2.6, 3.05, 1, 5)
+  assert.ok(late > early * 1.1, `expected upper-partial opening: ${early} -> ${late}`)
+})
+
+test("audio real: enlace legato reduce la nueva excitación y alcanza la altura destino", async () => {
+  const render = async (linked: boolean, includePrevious = true) => {
+    const context = new OfflineAudioContext(2, 48_000 * 2, 48_000)
+    const track = { ...recipe.plan.tracks[0], instrument: "woodwinds.flute", vibrato: 0 }
+    if (includePrevious) scheduleOrchestralSynthVoice(context, context.destination, 0, { timeSeconds: 0, durationSeconds: 1, notes: [69], velocity: 0.5, articulation: "legato" }, track)
+    scheduleOrchestralSynthVoice(context, context.destination, 0, { timeSeconds: 1, durationSeconds: 0.8, notes: [71], velocity: 0.5, articulation: "legato", ...(linked ? { legatoFromPrevious: true, transitionFromMidi: 69 } : {}) }, track)
+    return (await context.startRendering()).getChannelData(0)
+  }
+  const connected = await render(true), connectedIncoming = await render(true, false), detachedIncoming = await render(false, false)
+  const boundaryDerivative = (pcm: Float32Array) => {
+    let peak = 0
+    for (let i = 48_000; i < 48_000 * 1.05; i++) peak = Math.max(peak, Math.abs(pcm[i] - pcm[i - 1]))
+    return peak
+  }
+  assert.ok(boundaryDerivative(connectedIncoming) < boundaryDerivative(detachedIncoming))
+  let crossings = 0
+  for (let i = Math.ceil(1.18 * 48_000); i < 1.58 * 48_000; i++) if (connected[i - 1] < 0 && connected[i] >= 0) crossings++
+  assert.ok(Math.abs(crossings / 0.4 - 493.88) < 12)
+})
+
 test("envolvente nativa funciona sobre un buffer y no altera los one-shots", async () => {
   const render = async (oneShot: boolean, expressive: boolean) => {
     const context = new OfflineAudioContext(2, 48_000 * 2, 48_000)
@@ -166,4 +211,21 @@ test("envolvente nativa funciona sobre un buffer y no altera los one-shots", asy
   }
   assert.equal(await render(true, true), await render(true, false))
   assert.notEqual(await render(false, true), await render(false, false))
+})
+
+test("audio real: muestra sostenida sigue color continuo y one-shot permanece intacto", async () => {
+  const render = async (oneShot: boolean, dynamic: boolean) => {
+    const context = new OfflineAudioContext(2, 48_000 * 2, 48_000)
+    const buffer = context.createBuffer(1, 48_000, 48_000), pcm = buffer.getChannelData(0)
+    for (let i = 0; i < pcm.length; i++) pcm[i] = 0.08 * Math.sin(2 * Math.PI * 440 * i / 48_000) + 0.035 * Math.sin(2 * Math.PI * 5_280 * i / 48_000)
+    const zone = { id: "dynamic-qa", articulation: "normal" as const, sampleUrl: "/dynamic-qa.wav", rootMidi: 69, loMidi: 69, hiMidi: 69, loVelocity: 0, hiVelocity: 127, velocityLayer: 0, roundRobin: 0, gainDb: 0, tuneCents: 0 }
+    const player = new NativeSamplePackPlayer(context, new Map([[zone.sampleUrl, buffer]]))
+    const track = { ...recipe.plan.tracks[0], instrument: "strings.violin", expression: 0.2, brightness: 0.1 }
+    const control = { ...recipe.plan.controls[0], trackId: track.id, timeSeconds: 0, expression: 1, brightness: 1, rampSeconds: 0.9 }
+    const dynamics = dynamic ? orchestralContinuousDynamics(track, [control], 0, 0.9, 0.5, "normal") : undefined
+    await player.playSelection({ zone, playbackRate: 1, gain: 0.8 }, 0, 0.9, context.destination, 0, oneShot, { dynamics })
+    return hash((await context.startRendering()).getChannelData(0).buffer as ArrayBuffer)
+  }
+  assert.notEqual(await render(false, true), await render(false, false))
+  assert.equal(await render(true, true), await render(true, false))
 })

@@ -203,7 +203,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
     for (const voice of plan.voices) {
       const destination = graph.trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
       if (!destination || !zone) continue
-      scheduled.push(player.playSelection({ zone, playbackRate: voice.playbackRate, gain: voice.sampleGain }, voice.startSeconds, voice.durationSeconds, destination, 0, voice.oneShot, { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression }))
+      scheduled.push(player.playSelection({ zone, playbackRate: voice.playbackRate, gain: voice.sampleGain }, voice.startSeconds, voice.durationSeconds, destination, 0, voice.oneShot, { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression, dynamics: voice.dynamics }))
     }
     for (const auxiliary of plan.auxiliaryVoices) {
       const destination = graph.trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)

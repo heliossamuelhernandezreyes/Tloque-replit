@@ -2,9 +2,10 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { compileTloqueScore } from "../shared/audio"
-import { ORCHESTRAL_SYNTH_MODULE_ID, ORCHESTRAL_SYNTH_MAX_SOURCES, orchestralSpectrum, orchestralTimbreFor, withOrchestralModule } from "../shared/orchestral-synthesis"
-import { orchestralEarlyReflections } from "../client/src/audio/OrchestralRoom"
+import { ORCHESTRAL_SYNTH_MODULE_ID, ORCHESTRAL_SYNTH_MAX_SOURCES, ORCHESTRAL_SYNTH_VERSION, orchestralSpectrum, orchestralTimbreFor, withOrchestralModule } from "../shared/orchestral-synthesis"
+import { ORCHESTRAL_ROOM_MAX_SECONDS, ORCHESTRAL_ROOM_VERSION, orchestralEarlyReflections, orchestralLateFieldEnvelope } from "../client/src/audio/OrchestralRoom"
 import { orchestralExpressionCurve, orchestralNoteExpression } from "../client/src/audio/OrchestralExpression"
+import { ORCHESTRAL_DYNAMICS_MAX_POINTS, ORCHESTRAL_DYNAMICS_VERSION, orchestralContinuousDynamics, orchestralDynamicCutoffCurve } from "../client/src/audio/OrchestralDynamics"
 import { nativeControlValueAt, nativeTrackAtTime } from "../client/src/audio/NativeRecipeIndex"
 import { buildOrchestralSynthPlan } from "../client/src/audio/OrchestralSynthPlan"
 import { estimateScoreExport } from "../client/src/audio/ScoreExporter"
@@ -53,6 +54,26 @@ test("la dinámica abre el espectro y las secciones no duplican un solista idén
   assert.equal(orchestralTimbreFor("strings.violin").ensemble, 1)
   assert.equal(orchestralTimbreFor("strings.violin-section").ensemble, 3)
   assert.ok(ORCHESTRAL_SYNTH_MAX_SOURCES <= 192)
+})
+
+test("dinámica V2 recorre una nota sostenida de forma determinista, finita y Nyquist-safe", () => {
+  const score = recipe(), track = { ...score.plan.tracks[0], expression: 0.2, brightness: 0.25 }
+  const base = score.plan.controls[0]
+  const controls = [{ ...base, trackId: track.id, timeSeconds: 0, expression: 1, brightness: 0.9, rampSeconds: 4 }]
+  const first = orchestralContinuousDynamics(track, controls, 0, 4, 0.5, "legato")
+  const again = orchestralContinuousDynamics(track, controls, 0, 4, 0.5, "legato")
+  assert.equal(ORCHESTRAL_DYNAMICS_VERSION, "tloque-orchestral-dynamics-v2")
+  assert.deepEqual(first, again)
+  assert.equal(first.sustained, true)
+  assert.ok(first.effort.length <= ORCHESTRAL_DYNAMICS_MAX_POINTS)
+  assert.ok(first.effort.every(value => Number.isFinite(value) && value >= 0 && value <= 1))
+  assert.ok(first.brightness.at(-1)! > first.brightness[0])
+  for (const sampleRate of [32_000, 48_000, 96_000]) {
+    const cutoff = orchestralDynamicCutoffCurve(first, sampleRate, "synth")
+    assert.ok(cutoff.at(-1)! > cutoff[0])
+    assert.ok(cutoff.every(value => Number.isFinite(value) && value >= 250 && value <= sampleRate * 0.44))
+  }
+  assert.equal(orchestralContinuousDynamics(track, controls, 0, 0.15, 1, "staccato").sustained, false)
 })
 
 test("piano, arpa y percusión usan decaimientos modales, no sustains de pad", () => {
@@ -108,6 +129,16 @@ test("sala direccional conserva simetría, tiempos físicos y energía limitada"
   }
 })
 
+test("sala V3 tiene bloom y doble caída acotada sin fingir una IR medida", () => {
+  assert.equal(ORCHESTRAL_ROOM_VERSION, "tloque-concert-stage-v3")
+  assert.equal(ORCHESTRAL_ROOM_MAX_SECONDS, 3.6)
+  const values = [0, 0.04, 0.3, 1.2, 2.5, 3.59, 3.6].map(time => orchestralLateFieldEnvelope(time, 3.6, 1.92))
+  assert.equal(values[0], 0)
+  assert.ok(values[1] > 0 && values[2] > values[3] && values[3] > values[4] && values[4] > values[5])
+  assert.equal(values.at(-1), 0)
+  assert.ok(values.every(value => Number.isFinite(value) && value >= 0 && value <= 1))
+})
+
 test("el plan interpretado es estable, ordenado y no cambia las alturas", () => {
   const score = recipe(), ids = new Set(score.plan.tracks.map(track => track.id))
   const first = buildOrchestralSynthPlan(score, ids)
@@ -116,6 +147,10 @@ test("el plan interpretado es estable, ordenado y no cambia las alturas", () => 
   assert.ok(first.every((event, i) => event.timeSeconds >= 0 && (i === 0 || event.timeSeconds >= first[i - 1].timeSeconds)))
   assert.ok(first.every(event => event.durationIsPerformed && event.velocity <= 1))
   assert.deepEqual(first.map(event => [...event.notes].sort()).sort(), score.plan.events.map(event => [...event.notes].sort()).sort())
+  const linked = first.filter(event => event.legatoFromPrevious)
+  assert.ok(linked.length > 0)
+  assert.ok(linked.every(event => event.notes.length === 1 && event.articulation === "legato" && event.transitionFromMidi !== undefined))
+  assert.ok(first.filter(event => event.notes.length > 1).every(event => !event.legatoFromPrevious))
 })
 
 test("síntesis explícita no descarga bancos ni se hace pasar por certificación nativa", async () => {
@@ -132,7 +167,9 @@ test("realtime y WAV consumen las mismas voces, interpretación y envolventes", 
     assert.match(code, /scheduleOrchestralSynthVoice/)
     assert.match(code, /buildOrchestralSynthPlan/)
     assert.match(code, /expression: voice.expression/)
+    assert.match(code, /dynamics: voice.dynamics/)
     assert.match(code, /fallbackTrackIds.has\(event.trackId\)/)
   }
   assert.match(readFileSync("client/src/audio/NativeSampleScoreEngine.ts", "utf8"), /scoreMonitorVolume\(this.master/)
+  assert.equal(ORCHESTRAL_SYNTH_VERSION, "tloque-orchestral-synth-v2")
 })

@@ -41,6 +41,7 @@ document.querySelector<HTMLButtonElement>("#render")!.addEventListener("click", 
   button.disabled = true; output.textContent = "Renderizando…"
   try {
     const started = performance.now(), results: Record<string, unknown> = {}, hashes: string[] = []
+    const listeningClips: Array<{ source: "Orquesta V2" | "Síntesis builtin"; blob: Blob; lufs: number }> = []
     for (const mode of ["studio-a", "studio-b", "preview", "master", "builtin"] as const) {
       output.textContent = `Renderizando ${mode}…`
       const quality = mode === "master" ? "master" : mode === "preview" ? "preview" : "studio"
@@ -54,11 +55,7 @@ document.querySelector<HTMLButtonElement>("#render")!.addEventListener("click", 
       assert(Number.isFinite(analysis.integratedLufs), `${mode}: render silencioso/no finito`)
       results[mode] = { ...analysis, ...spatial, sha256: digest, bytes: blob.size }
       if (mode.startsWith("studio")) hashes.push(digest)
-      if (mode === "studio-a" || mode === "builtin") {
-        const label = document.createElement("p"); label.textContent = mode === "builtin" ? "Síntesis clásica — referencia" : "Nueva síntesis orquestal"
-        const player = document.createElement("audio"); player.controls = true; player.src = URL.createObjectURL(blob)
-        listening.append(label, player)
-      }
+      if (mode === "studio-a" || mode === "builtin") listeningClips.push({ source: mode === "builtin" ? "Síntesis builtin" : "Orquesta V2", blob, lufs: analysis.integratedLufs })
     }
     assert(hashes[0] === hashes[1], "Los renders repetidos no son idénticos")
     const profiles: Record<string, unknown> = {}
@@ -70,7 +67,21 @@ document.querySelector<HTMLButtonElement>("#render")!.addEventListener("click", 
       assert(analysis.clippedSampleCount === 0 && Number.isFinite(analysis.integratedLufs), `${instrument}: voz inválida`)
       profiles[instrument] = { peak: analysis.peakLinear, lufs: analysis.integratedLufs }
     }
-    output.textContent = JSON.stringify({ status: "PASS", identical: hashes[0] === hashes[1], milliseconds: Math.round(performance.now() - started), results, profiles }, null, 2)
+    listening.replaceChildren()
+    const matchedLufs = Math.min(...listeningClips.map(item => item.lufs))
+    const shuffled = listeningClips.map(item => ({ item, order: crypto.getRandomValues(new Uint32Array(1))[0] })).sort((a, b) => a.order - b.order)
+    const reveal: string[] = []
+    shuffled.forEach(({ item }, index) => {
+      const letter = String.fromCharCode(65 + index)
+      const label = document.createElement("p"); label.textContent = `Referencia ${letter} · volumen igualado a ${matchedLufs.toFixed(2)} LUFS`
+      const player = document.createElement("audio"); player.controls = true; player.preload = "metadata"; player.src = URL.createObjectURL(item.blob)
+      player.volume = Math.min(1, 10 ** ((matchedLufs - item.lufs) / 20))
+      listening.append(label, player); reveal.push(`${letter} = ${item.source}`)
+    })
+    const revealButton = document.createElement("button"); revealButton.textContent = "Revelar referencias"
+    revealButton.addEventListener("click", () => { revealButton.replaceWith(document.createTextNode(reveal.join(" · "))) })
+    listening.append(revealButton)
+    output.textContent = JSON.stringify({ status: "PASS", identical: hashes[0] === hashes[1], matchedListeningLufs: matchedLufs, milliseconds: Math.round(performance.now() - started), results, profiles }, null, 2)
   } catch (error) { output.textContent = `FAIL: ${error instanceof Error ? error.stack : String(error)}` }
   finally { button.disabled = false }
 })
