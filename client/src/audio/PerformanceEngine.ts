@@ -1,11 +1,17 @@
 import type { LinearScoreRecipe, LinearScoreTrack } from "@shared/audio"
+import type { LinearScoreRecipeV2 } from "@shared/tloque-score-v2"
 import {
   BUILTIN_INSTRUMENT_MANIFESTS,
   type InstrumentArticulationRoute,
   type InstrumentManifest,
   type TloqueArticulation,
 } from "@shared/instrument-manifest"
-import { directPerformanceEvent } from "./PerformanceDirector"
+import {
+  UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION,
+  directPerformanceEvent,
+  type MetricEmphasis,
+  type PerformancePhraseContext,
+} from "./PerformanceDirector"
 
 export interface PerformanceRoute {
   manifestId: string | null
@@ -33,6 +39,12 @@ export interface PerformanceEventDecision {
   velocityScale: number
   phraseStart: boolean
   phraseEnd: boolean
+  phraseIndex: number
+  phrasePosition: number
+  phraseLength: number
+  phraseProgress: number
+  phraseClimaxPosition: number
+  metricEmphasis: MetricEmphasis
   directorReasons: readonly string[]
   identity: string
 }
@@ -56,9 +68,16 @@ export interface PerformanceRoutingPlan {
 }
 
 export interface PerformancePlan extends PerformanceRoutingPlan {
+  directorVersion: typeof UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION
   events: PerformanceEventDecision[]
   channelForEventIndex(eventIndex: number): number | undefined
   decisionForEvent(eventIndex: number): PerformanceEventDecision | undefined
+}
+
+export interface PerformedEventValues {
+  startSeconds: number
+  durationSeconds: number
+  velocity: number
 }
 
 export function baseProgramForTrack(track: LinearScoreTrack): number {
@@ -68,6 +87,171 @@ export function baseProgramForTrack(track: LinearScoreTrack): number {
 
 function semanticInstrumentId(track: LinearScoreTrack): string | null {
   return "instrument" in track ? track.instrument : null
+}
+
+type ScoreEvent = LinearScoreRecipe["plan"]["events"][number]
+type ScoreRestV2 = LinearScoreRecipeV2["plan"]["rests"][number]
+
+function eventStartSeconds(recipe: LinearScoreRecipe, event: ScoreEvent) {
+  return "timeSeconds" in event ? event.timeSeconds : event.timeBeats * 60 / recipe.plan.bpm
+}
+
+function eventDurationSeconds(recipe: LinearScoreRecipe, event: ScoreEvent) {
+  return "durationSeconds" in event ? event.durationSeconds : event.durationBeats * 60 / recipe.plan.bpm
+}
+
+function metricEmphasisFor(recipe: LinearScoreRecipe, event: ScoreEvent): MetricEmphasis {
+  const beat = event.beat
+  const { numerator, denominator } = recipe.plan.meter
+  if (Math.abs(beat - 1) < 1e-6) return "primary"
+  if (denominator === 8 && numerator >= 6 && numerator % 3 === 0) {
+    const groupOffset = beat - 1
+    if (Math.abs(groupOffset - Math.round(groupOffset)) < 1e-6 && Math.round(groupOffset) % 3 === 0) return "secondary"
+  }
+  if (numerator >= 4 && numerator % 2 === 0 && Math.abs(beat - (numerator / 2 + 1)) < 1e-6) return "secondary"
+  return "light"
+}
+
+function sectionBeatSeconds(recipe: LinearScoreRecipe, event: ScoreEvent) {
+  if (recipe.version !== 2 || !("sectionId" in event)) return 60 / recipe.plan.bpm
+  const section = recipe.plan.sections.find(item => item.id === event.sectionId)
+  return 60 / (section?.bpm ?? recipe.plan.bpm)
+}
+
+function explicitRestBreaksPhrase(recipe: LinearScoreRecipe, previous: ScoreEvent, current: ScoreEvent, rests: readonly ScoreRestV2[]) {
+  if (recipe.version !== 2 || !rests.length) return false
+  const previousStart = eventStartSeconds(recipe, previous)
+  const previousEnd = previousStart + eventDurationSeconds(recipe, previous)
+  const currentStart = eventStartSeconds(recipe, current)
+  let low = 0
+  let high = rests.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if (rests[middle].timeSeconds < previousStart - 1e-6) low = middle + 1
+    else high = middle
+  }
+  for (let index = low; index < rests.length && rests[index].timeSeconds < currentStart - 1e-6; index += 1) {
+    if (rests[index].timeSeconds + rests[index].durationSeconds > previousEnd - 1e-6) return true
+  }
+  return false
+}
+
+function phraseClimaxPosition(recipe: LinearScoreRecipe, indices: readonly number[], track: LinearScoreTrack) {
+  if (indices.length <= 2) return Math.max(0, indices.length - 1)
+  const events = indices.map(index => recipe.plan.events[index])
+  const pitches = events.map(event => event.notes.reduce((sum, note) => sum + note, 0) / event.notes.length)
+  const minPitch = Math.min(...pitches)
+  const pitchSpan = Math.max(1, Math.max(...pitches) - minPitch)
+  const role = "role" in track ? track.role : "harmony"
+  const pitchWeight = role === "melody" || role === "accent" ? 0.38 : role === "bass" ? 0.18 : 0.12
+  let winner = 0
+  let winnerScore = Number.NEGATIVE_INFINITY
+  for (let position = 0; position < events.length; position += 1) {
+    const event = events[position]
+    const progress = position / (events.length - 1)
+    const preferredLatePeak = 1 - Math.min(1, Math.abs(progress - 0.62) / 0.62)
+    const metric = metricEmphasisFor(recipe, event) === "primary" ? 1 : metricEmphasisFor(recipe, event) === "secondary" ? 0.5 : 0
+    const articulationEnergy = "articulation" in event && event.articulation === "accent" ? 1 : 0
+    const score = ((pitches[position] - minPitch) / pitchSpan) * pitchWeight
+      + event.velocity * 0.34
+      + preferredLatePeak * 0.2
+      + metric * 0.06
+      + articulationEnergy * 0.12
+    if (score > winnerScore) {
+      winner = position
+      winnerScore = score
+    }
+  }
+  return Math.max(1, Math.min(events.length - 2, winner))
+}
+
+function buildPhraseContexts(
+  recipe: LinearScoreRecipe,
+  tracksById: ReadonlyMap<string, LinearScoreTrack>,
+  indicesByTrack: ReadonlyMap<string, number[]>,
+) {
+  const result = new Map<number, PerformancePhraseContext>()
+  const restsByTrack = new Map<string, ScoreRestV2[]>()
+  if (recipe.version === 2) {
+    for (const rest of recipe.plan.rests) {
+      const rests = restsByTrack.get(rest.trackId) ?? []
+      rests.push(rest)
+      restsByTrack.set(rest.trackId, rests)
+    }
+  }
+  for (const [trackId, indices] of indicesByTrack) {
+    const track = tracksById.get(trackId)
+    if (!track) continue
+    const rests = restsByTrack.get(trackId) ?? []
+    const phrases: number[][] = []
+    let phrase: number[] = []
+    let phraseStartSeconds = 0
+    for (const eventIndex of indices) {
+      const event = recipe.plan.events[eventIndex]
+      const previousIndex = phrase.at(-1)
+      const previous = previousIndex === undefined ? null : recipe.plan.events[previousIndex]
+      const currentStart = eventStartSeconds(recipe, event)
+      const beatSeconds = sectionBeatSeconds(recipe, event)
+      const barSeconds = beatSeconds * recipe.plan.meter.numerator * (4 / recipe.plan.meter.denominator)
+      const maximumPhraseSeconds = Math.max(4, Math.min(14, barSeconds * 4))
+      const previousEnd = previous ? eventStartSeconds(recipe, previous) + eventDurationSeconds(recipe, previous) : Number.NEGATIVE_INFINITY
+      const gap = currentStart - previousEnd
+      const sectionChanged = Boolean(previous && "sectionId" in previous && "sectionId" in event && previous.sectionId !== event.sectionId)
+      const gapBreak = Boolean(previous && gap >= Math.max(0.09, Math.min(0.24, beatSeconds * 0.24)))
+      const boundedPhraseBreak = Boolean(previous && phrase.length >= 2 && currentStart - phraseStartSeconds >= maximumPhraseSeconds && metricEmphasisFor(recipe, event) === "primary")
+      const shouldBreak = !previous || sectionChanged || gapBreak || explicitRestBreaksPhrase(recipe, previous, event, rests) || boundedPhraseBreak
+      if (shouldBreak && phrase.length) {
+        phrases.push(phrase)
+        phrase = []
+      }
+      if (!phrase.length) phraseStartSeconds = currentStart
+      phrase.push(eventIndex)
+    }
+    if (phrase.length) phrases.push(phrase)
+
+    phrases.forEach((phraseIndices, phraseIndex) => {
+      const climaxPosition = phraseClimaxPosition(recipe, phraseIndices, track)
+      phraseIndices.forEach((eventIndex, position) => {
+        result.set(eventIndex, {
+          phraseIndex,
+          position,
+          length: phraseIndices.length,
+          climaxPosition,
+          metricEmphasis: metricEmphasisFor(recipe, recipe.plan.events[eventIndex]),
+        })
+      })
+    })
+  }
+  return result
+}
+
+/** One renderer-neutral transformation used by realtime, MIDI/WAV, native samples
+ * and orchestral synthesis. Articulation-specific duration and gain remain the
+ * responsibility of the renderer because they describe the selected source. */
+export function performedEventValues(
+  recipe: LinearScoreRecipe,
+  event: ScoreEvent,
+  decision?: Pick<PerformanceEventDecision, "startOffsetSeconds" | "durationScale" | "velocityScale">,
+): PerformedEventValues {
+  return {
+    startSeconds: Math.max(0, eventStartSeconds(recipe, event) + (decision?.startOffsetSeconds ?? 0)),
+    durationSeconds: Math.max(0.01, eventDurationSeconds(recipe, event) * (decision?.durationScale ?? 1)),
+    velocity: Math.max(0.01, Math.min(1, event.velocity * (decision?.velocityScale ?? 1))),
+  }
+}
+
+export function performedV2Event(
+  recipe: LinearScoreRecipeV2,
+  event: LinearScoreRecipeV2["plan"]["events"][number],
+  decision?: PerformanceEventDecision,
+) {
+  const performed = performedEventValues(recipe, event, decision)
+  return {
+    ...event,
+    timeSeconds: performed.startSeconds,
+    durationSeconds: performed.durationSeconds,
+    velocity: performed.velocity,
+  }
 }
 
 export function resolveInstrumentManifest(
@@ -180,10 +364,10 @@ export function velocityLayerIndex(velocity: number, layers: number): number {
   return Math.min(layers - 1, Math.floor(Math.max(0, Math.min(0.999999, velocity)) * layers))
 }
 
-function eventIdentity(recipe: LinearScoreRecipe, event: LinearScoreRecipe["plan"]["events"][number], index: number) {
+function eventIdentity(recipe: LinearScoreRecipe, event: LinearScoreRecipe["plan"]["events"][number], trackOrdinal: number) {
   const articulation = "articulation" in event ? event.articulation : "normal"
   const time = "timeSeconds" in event ? event.timeSeconds : event.timeBeats
-  return `${recipe.plan.seed}:${index}:${event.trackId}:${time}:${event.notes.join(",")}:${articulation}`
+  return `${recipe.plan.seed}:${event.trackId}:${trackOrdinal}:${time}:${event.notes.join(",")}:${articulation}`
 }
 
 export function buildPerformanceRoutingPlan(
@@ -255,6 +439,7 @@ export function buildPerformancePlan(
       })
     }
   }
+  const phraseContexts = buildPhraseContexts(recipe, tracksById, indicesByTrack)
 
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
@@ -262,20 +447,32 @@ export function buildPerformancePlan(
     if (!track) continue
     const articulation = ("articulation" in event ? event.articulation : "normal") as TloqueArticulation
     const resolved = resolvePerformanceRoute(track, articulation, manifests)
-    const identity = eventIdentity(recipe, event, eventIndex)
-    const startSeconds = "timeSeconds" in event ? event.timeSeconds : event.timeBeats * 60 / recipe.plan.bpm
-    const durationSeconds = "durationSeconds" in event ? event.durationSeconds : event.durationBeats * 60 / recipe.plan.bpm
+    const ordinal = ordinalByTrack.get(track.id) ?? 0
+    ordinalByTrack.set(track.id, ordinal + 1)
+    const identity = eventIdentity(recipe, event, ordinal)
+    const startSeconds = eventStartSeconds(recipe, event)
+    const durationSeconds = eventDurationSeconds(recipe, event)
     const previous = previousByTrack.get(track.id)
+    const phrase = phraseContexts.get(eventIndex) ?? {
+      phraseIndex: 0,
+      position: 0,
+      length: 1,
+      climaxPosition: 0,
+      metricEmphasis: metricEmphasisFor(recipe, event),
+    }
+    const authoredGap = previous ? startSeconds - previous.endSeconds : Number.POSITIVE_INFINITY
     const connected = Boolean(
       resolved.route?.articulation === articulation
       && resolved.route?.trueLegato
       && previous
+      && phrase.position > 0
       && previous.notes.length === 1
       && event.notes.length === 1
-      && startSeconds - previous.endSeconds <= 0.08,
+      && previous.notes[0] !== event.notes[0]
+      && Math.abs(previous.notes[0] - event.notes[0]) <= 12
+      && authoredGap >= -0.12
+      && authoredGap <= 0.08,
     )
-    const ordinal = ordinalByTrack.get(track.id) ?? 0
-    ordinalByTrack.set(track.id, ordinal + 1)
     const performed = familyPerformanceHumanization(semanticInstrumentId(track), humanize, identity, articulation, ordinal)
     const neighbour = neighbours.get(eventIndex)
     const director = directPerformanceEvent(recipe, {
@@ -284,6 +481,7 @@ export function buildPerformancePlan(
       previous: neighbour?.previous === null || neighbour?.previous === undefined ? null : recipe.plan.events[neighbour.previous],
       next: neighbour?.next === null || neighbour?.next === undefined ? null : recipe.plan.events[neighbour.next],
       articulation,
+      phrase,
     })
     // Compatibility contract: humanize=0 remains exactly neutral. Once enabled, the
     // Director gets a useful but bounded strength even at restrained musical values.
@@ -313,6 +511,12 @@ export function buildPerformancePlan(
       velocityScale,
       phraseStart: director.phraseStart,
       phraseEnd: director.phraseEnd,
+      phraseIndex: phrase.phraseIndex,
+      phrasePosition: phrase.position,
+      phraseLength: phrase.length,
+      phraseProgress: director.phraseProgress,
+      phraseClimaxPosition: phrase.climaxPosition,
+      metricEmphasis: phrase.metricEmphasis,
       directorReasons: director.reason,
       identity,
     })
@@ -323,11 +527,29 @@ export function buildPerformancePlan(
   const decisionByIndex = new Map(decisions.map(decision => [decision.eventIndex, decision]))
   return {
     ...routing,
+    directorVersion: UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION,
     events: decisions,
     channelForEventIndex: eventIndex => {
       const decision = decisionByIndex.get(eventIndex)
       return decision ? routing.channelForEvent(decision.trackId, decision.articulation) : undefined
     },
     decisionForEvent: eventIndex => decisionByIndex.get(eventIndex),
+  }
+}
+
+export function buildPerformedRecipeV2(
+  recipe: LinearScoreRecipeV2,
+  manifests: readonly InstrumentManifest[] = [],
+) {
+  const performance = buildPerformancePlan(recipe, manifests)
+  const events = recipe.plan.events.map((event, eventIndex) =>
+    performedV2Event(recipe, event, performance.decisionForEvent(eventIndex)),
+  )
+  return {
+    performance,
+    recipe: {
+      ...recipe,
+      plan: { ...recipe.plan, events },
+    } satisfies LinearScoreRecipeV2,
   }
 }

@@ -61,16 +61,19 @@ Reference/test capability only:
 
 This distinction is intentional. `articulation=legato` remains a musical instruction, but Tloque only renders a separate physical transition sample when the selected manifest explicitly declares `trueLegato: true` and the requested transition exists.
 
-## Performance Director v1 contract
+## Universal Performance Director v2 contract
 
-Performance Director v1 may:
+`tloque-universal-performance-director-v2` may:
 
-- detect phrase entries and releases from local event context;
+- segment complete per-track phrases from sections, authored rests, temporal gaps and bounded musical spans;
+- locate a deterministic phrase climax and shape rise/release by track role;
+- interpret primary, secondary and light metric positions in simple and compound meters;
 - shape performed velocity conservatively;
 - make tiny contextual duration changes;
 - add tiny family-appropriate attack offsets;
-- emphasize a melodic leap destination modestly;
+- emphasize melodic leaps, peaks and valleys modestly;
 - soften exact repeated notes slightly;
+- carry connected string lines and leave family-appropriate wind/brass releases;
 - preserve organ stability;
 - combine with deterministic family humanization.
 
@@ -80,5 +83,7 @@ It may **not**:
 - replace an authored articulation;
 - fabricate bow samples, breaths, mutes, stops or legato transitions;
 - claim a synthesis approximation as a physical capability.
+
+All render paths consume the same `performedEventValues` decision. `humanize=0` remains bit-neutral at the interpretation layer for backward compatibility.
 
 This audit should be updated whenever a native manifest gains a verified physical capability.

@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { compileTloqueScore } from "../shared/audio"
-import { estimateScoreExport, renderTloqueScoreToWav } from "../client/src/audio/ScoreExporter"
+import { TLOQUE_NATIVE_CONCERT_PROFILE, estimateScoreExport, renderTloqueScoreToWav } from "../client/src/audio/ScoreExporter"
 import {
   TLOQUE_SCORE_AUDIO_PROFILE, articulationDurationFactor, articulationVelocityFactor, midiNoteToFrequency,
   midiNotesToFrequencies, scoreBrightnessFrequency, scoreExpressionStateAt, scoreMonitorVolume,
@@ -65,7 +65,8 @@ test("el exportador calcula PCM profesional sin guardar audio durante la edició
 })
 
 test("la preescucha y el WAV comparten afinación, articulación y envolvente", () => {
-  assert.equal(TLOQUE_SCORE_AUDIO_PROFILE, "tloque-score-audio-v6-performance")
+  assert.equal(TLOQUE_SCORE_AUDIO_PROFILE, "tloque-score-audio-v7-universal-performance")
+  assert.equal(TLOQUE_NATIVE_CONCERT_PROFILE, "tloque-native-concert-v3-universal-performance")
   assert.equal(midiNoteToFrequency(69), 440)
   assert.ok(Math.abs(midiNoteToFrequency(60) - 261.625565) < 0.000001)
   assert.deepEqual(midiNotesToFrequencies([60, 64, 67]).map(value => Math.round(value)), [262, 330, 392])

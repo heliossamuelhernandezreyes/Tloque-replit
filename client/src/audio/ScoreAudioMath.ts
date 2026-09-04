@@ -1,7 +1,7 @@
 import type { LinearScoreRecipe, LinearScoreTrack } from "@shared/audio"
 import { baseProgramForTrack, buildPerformanceRoutingPlan, resolvePerformanceRoute } from "./PerformanceEngine"
 
-export const TLOQUE_SCORE_AUDIO_PROFILE = "tloque-score-audio-v6-performance" as const
+export const TLOQUE_SCORE_AUDIO_PROFILE = "tloque-score-audio-v7-universal-performance" as const
 
 export interface ScoreEnvelope {
   attack: number

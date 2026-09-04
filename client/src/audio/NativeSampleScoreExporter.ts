@@ -18,6 +18,7 @@ import { schedulePhysicalReedVoice } from "./PhysicalReedModel"
 import { scheduleFallbackSynthVoice } from "./FallbackScoreSynth"
 import { scheduleOrchestralSynthVoice } from "./OrchestralSynthVoice"
 import { buildOrchestralSynthPlan } from "./OrchestralSynthPlan"
+import { buildPerformedRecipeV2 } from "./PerformanceEngine"
 import { scoreTrackExpression, scoreTrackTimbre } from "./ScoreAudioMath"
 import { fetchAudioResource } from "./AudioResourceCache"
 
@@ -204,7 +205,10 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   options.onProgress?.(0.20)
   const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate)
   const index = buildNativeRecipeIndex(recipe)
-  const hybridPerformance = buildNativeHybridPerformancePlan(recipe)
+  const { performance: universalPerformance, recipe: performedRecipe } = buildPerformedRecipeV2(recipe)
+  const performedByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, performedRecipe.plan.events[eventIndex]] as const))
+  const decisionByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, universalPerformance.decisionForEvent(eventIndex)] as const))
+  const hybridPerformance = buildNativeHybridPerformancePlan(performedRecipe)
   const graph = createNativeRenderGraph(context, index.trackById, context.destination)
   for (const track of recipe.plan.tracks) {
     const timbre = scoreTrackTimbre(track)
@@ -241,14 +245,27 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   for (const group of physicalGroups) {
     const model = nativePhysicalModelByModuleId(group.moduleId)
     if (!model) continue
-    const previousEndByTrack = new Map<string, number>()
+    const previousByTrack = new Map<string, (typeof recipe.plan.events)[number]>()
     for (const trackId of group.trackIds) {
       const track = index.trackById.get(trackId), destination = graph.trackGain.get(trackId)
       if (!track || !destination) continue
       const controls = index.controlsByTrack.get(trackId) ?? []
-      for (const event of index.eventsByTrack.get(trackId) ?? []) {
-        const previousEnd = previousEndByTrack.get(trackId)
-        const legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
+      for (const authoredEvent of index.eventsByTrack.get(trackId) ?? []) {
+        const event = performedByOriginal.get(authoredEvent) ?? authoredEvent
+        const directorDecision = decisionByOriginal.get(authoredEvent)
+        const previous = previousByTrack.get(trackId)
+        const authoredGap = previous ? authoredEvent.timeSeconds - (previous.timeSeconds + previous.durationSeconds) : Number.POSITIVE_INFINITY
+        const legatoFromPrevious = Boolean(
+          event.articulation === "legato"
+          && directorDecision
+          && !directorDecision.phraseStart
+          && previous?.notes.length === 1
+          && authoredEvent.notes.length === 1
+          && previous.notes[0] !== authoredEvent.notes[0]
+          && Math.abs(previous.notes[0] - authoredEvent.notes[0]) <= 12
+          && authoredGap >= -0.12
+          && authoredGap <= 0.08,
+        )
         const effectiveTrack = nativeTrackAtTime(track, controls, event.timeSeconds)
         try {
           for (const midi of event.notes) schedulePhysicalReedVoice(context, model, { startAt: 0, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious })
@@ -256,7 +273,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
           if (options.strictNativeSources) throw error
           scheduleFallbackSynthVoice(context, destination, 0, event, track)
         }
-        previousEndByTrack.set(trackId, event.timeSeconds + event.durationSeconds)
+        previousByTrack.set(trackId, authoredEvent)
       }
     }
   }

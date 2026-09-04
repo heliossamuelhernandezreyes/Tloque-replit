@@ -5,6 +5,8 @@
 - General MIDI sigue siendo el fallback compatible; los módulos premium se activan explícitamente.
 - `InstrumentManifest` describe únicamente capacidades verificadas de la librería.
 - `PerformancePlan` compila por evento articulación, programa/selector, velocity layer, round-robin, true legato y release samples.
+- `tloque-universal-performance-director-v2` segmenta frases por track, respeta silencios y secciones, localiza un clímax estable y aplica jerarquía métrica, contorno y respiración/arco sin reescribir la partitura.
+- `performedEventValues` es el contrato único de tiempo, duración y velocity para reproducción SoundFont, MIDI/WAV, muestras nativas y síntesis orquestal.
 - Los keyswitches son locales al instrumento. Nunca se interpretan como números universales entre librerías.
 - Live y WAV muestreado comparten `NativeSampleScorePlan` y `createSampledMixMaster`.
 
@@ -79,6 +81,8 @@ Los `hit` son one-shots físicos. La duración escrita conserva el significado r
 ## Exportación
 
 Los módulos nativos se renderizan con `OfflineAudioContext` usando exactamente el mismo plan acústico del live. El master WAV no imprime ducking ni fades narrativos dependientes de la lectura. Preview usa 32 kHz/16-bit; Studio/Master 48 kHz/24-bit, con límite de 220 MB de buffers float para proteger navegadores móviles. Para one-shots, el límite de memoria se calcula después de conocer la cola física real de las muestras seleccionadas.
+
+El perfil general `tloque-score-audio-v7-universal-performance` garantiza que live y exportación consuman la misma interpretación. `humanize=0` conserva neutralidad exacta; un valor positivo activa variación determinista y el Director V2 dentro de límites acotados.
 
 ## Estado
 

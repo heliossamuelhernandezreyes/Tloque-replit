@@ -110,7 +110,8 @@ end`)
   it("routes realtime and WAV through the exact same compiled performance decisions", () => {
     for (const file of ["client/src/audio/NativeSampleScoreEngine.ts", "client/src/audio/NativeSampleScoreExporter.ts"]) {
       const source = readFileSync(file, "utf8")
-      expect(source).toMatch(/buildNativeHybridPerformancePlan\(recipe\)/)
+      expect(source).toMatch(/buildPerformedRecipeV2\(recipe\)/)
+      expect(source).toMatch(/buildNativeHybridPerformancePlan\(performedRecipe\)/)
       expect(source).toMatch(/hybridPerformance\.decisions/)
       expect(source).toMatch(/performance: decision/)
       expect(source).toMatch(/decision\.midis/)

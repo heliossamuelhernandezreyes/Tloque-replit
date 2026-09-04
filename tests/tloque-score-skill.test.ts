@@ -8,6 +8,8 @@ import { TLOQUE_SCORE_COMPILER_V2 } from "../shared/tloque-score-v2"
 import { ORCHESTRAL_SYNTH_VERSION } from "../shared/orchestral-synthesis"
 import { ORCHESTRAL_DYNAMICS_VERSION } from "../client/src/audio/OrchestralDynamics"
 import { ORCHESTRAL_ROOM_VERSION } from "../client/src/audio/OrchestralRoom"
+import { UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION } from "../client/src/audio/PerformanceDirector"
+import { TLOQUE_SCORE_AUDIO_PROFILE } from "../client/src/audio/ScoreAudioMath"
 
 const skillPath = resolve(process.cwd(), "skills/tloque-score/SKILL.md")
 const downloadableSkillPath = resolve(process.cwd(), "client/public/downloads/TLOQUE_SCORE_AI_SKILL.md")
@@ -22,7 +24,7 @@ test("la skill canónica y la descarga son exactamente la misma fuente", async (
     readFile(downloadableSkillPath, "utf8"),
   ])
   assert.equal(download, canonical)
-  assert.match(canonical, /version: "3\.0\.0"/)
+  assert.match(canonical, /version: "3\.1\.0"/)
 })
 
 test("todos los ejemplos de la skill compilan con el contrato actual", async () => {
@@ -57,7 +59,14 @@ test("el ejemplo completo demuestra controles físicos y percusión de forma sem
 
 test("la documentación anuncia exactamente las versiones orquestales implementadas", async () => {
   const content = await readFile(skillPath, "utf8")
-  for (const version of [TLOQUE_SCORE_COMPILER_V2, ORCHESTRAL_SYNTH_VERSION, ORCHESTRAL_DYNAMICS_VERSION, ORCHESTRAL_ROOM_VERSION]) {
+  for (const version of [
+    TLOQUE_SCORE_COMPILER_V2,
+    ORCHESTRAL_SYNTH_VERSION,
+    ORCHESTRAL_DYNAMICS_VERSION,
+    ORCHESTRAL_ROOM_VERSION,
+    UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION,
+    TLOQUE_SCORE_AUDIO_PROFILE,
+  ]) {
     assert.match(content, new RegExp(version.replace(/[.]/g, "\\.")))
   }
   assert.doesNotMatch(content, /tloque-orchestral-synth-v1(?![0-9])/)
