@@ -19,8 +19,9 @@ import {
   scoreMonitorVolume,
 } from "./ScoreAudioMath"
 import { scheduleFallbackSynthVoice } from "./FallbackScoreSynth"
-import { scheduleOrchestralSynthVoice } from "./OrchestralSynthVoice"
-import { buildOrchestralSynthPlan } from "./OrchestralSynthPlan"
+import { reserveOrchestralSynthSources, scheduleOrchestralSynthVoice } from "./OrchestralSynthVoice"
+import { buildOrchestralSynthPlan, buildOrchestralSynthRenderUnits } from "./OrchestralSynthPlan"
+import { prepareOrchestralStringDsp, scheduleOrchestralStringPhrase } from "./OrchestralStringVoice"
 import { buildPerformedRecipeV2 } from "./PerformanceEngine"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
@@ -125,6 +126,8 @@ export class NativeSampleScoreEngine {
         const timbre = scoreTrackTimbre(track)
         graph.createTrackPath(track.id, track.gain * timbre.level * scoreTrackExpression(track), track.brightness, track.pan)
       }
+
+      await prepareOrchestralStringDsp(context)
 
       if (context.state === "running") await context.suspend()
       const fallbackInstruments = [...new Set([...fallbackTrackIds]
@@ -321,7 +324,11 @@ export class NativeSampleScoreEngine {
           }, startAt + cycleOffset),
         })
       }
-      for (const event of buildOrchestralSynthPlan(recipe, fallbackTrackIds)) {
+      const orchestralUnits = cue.adaptiveDwell
+        ? buildOrchestralSynthPlan(recipe, fallbackTrackIds).map(event => ({ kind: "event" as const, timeSeconds: event.timeSeconds, event }))
+        : buildOrchestralSynthRenderUnits(recipe, fallbackTrackIds)
+      for (const unit of orchestralUnits) {
+        const event = unit.kind === "event" ? unit.event : unit.events[0]
         const track = index.trackById.get(event.trackId), destination = graph.trackGain.get(event.trackId)
         if (!track || !destination) continue
         const controls = index.controlsByTrack.get(event.trackId) ?? []
@@ -330,11 +337,24 @@ export class NativeSampleScoreEngine {
           run: (cycleOffset = 0) => {
             const scale = dwellGain(cue, track.role, cycleOffset, recipe.plan.totalSeconds, `${event.trackId}:${event.timeSeconds}`)
             if (scale <= 0) return
-            const count = scheduleOrchestralSynthVoice(context, destination, startAt + cycleOffset, { ...event, velocity: event.velocity * scale }, track, orchestralSynthesis ? 1 : 0.72, controls)
-            if (count < event.notes.length) throw new Error("La orquesta supera el presupuesto de voces; reduce acordes simultáneos o divide la obra por secciones")
+            const count = unit.kind === "string-phrase"
+              ? scheduleOrchestralStringPhrase(
+                  context,
+                  destination,
+                  startAt + cycleOffset,
+                  unit.events.map(item => ({ ...item, velocity: item.velocity * scale })),
+                  track,
+                  orchestralSynthesis ? 1 : 0.72,
+                  controls,
+                  (start, end, cost) => reserveOrchestralSynthSources(context, start, end, cost),
+                )
+              : scheduleOrchestralSynthVoice(context, destination, startAt + cycleOffset, { ...event, velocity: event.velocity * scale }, track, orchestralSynthesis ? 1 : 0.72, controls)
+            const expected = unit.kind === "string-phrase" ? unit.events.length : event.notes.length
+            if (count < expected) throw new Error("La orquesta supera el presupuesto de voces; reduce acordes simultáneos o divide la obra por secciones")
           },
         })
-        naturalEnd = Math.max(naturalEnd, event.timeSeconds + event.durationSeconds + 6)
+        const last = unit.kind === "string-phrase" ? unit.events.at(-1)! : event
+        naturalEnd = Math.max(naturalEnd, last.timeSeconds + last.durationSeconds + 6)
       }
 
       const lookahead = new NativeRealtimeLookahead(realtimeTasks, shouldLoop ? recipe.plan.totalSeconds : 0)

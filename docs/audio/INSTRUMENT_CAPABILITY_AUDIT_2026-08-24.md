@@ -16,6 +16,8 @@ The current acoustic orchestra is already strongest in velocity-layer and altern
 
 Priority: improve phrase continuity, bow-direction asymmetry and dynamic shaping now; add a verified transition library later rather than faking legato.
 
+Synthetic note: `orchestra-synth` V3 now provides a separate physical-string waveguide and can keep one model state across explicitly linked monophonic notes. That is a synthesis capability, not a new capability of the VSCO manifests and not recorded true legato.
+
 ## Woodwinds
 
 - `woodwinds.flute` — sustain + staccato, 2 RR on staccato.

@@ -41,7 +41,7 @@ document.querySelector<HTMLButtonElement>("#render")!.addEventListener("click", 
   button.disabled = true; output.textContent = "Renderizando…"
   try {
     const started = performance.now(), results: Record<string, unknown> = {}, hashes: string[] = []
-    const listeningClips: Array<{ source: "Orquesta V2" | "Síntesis builtin"; blob: Blob; lufs: number }> = []
+    const listeningClips: Array<{ source: "Orquesta V3" | "Síntesis builtin"; blob: Blob; lufs: number }> = []
     for (const mode of ["studio-a", "studio-b", "preview", "master", "builtin"] as const) {
       output.textContent = `Renderizando ${mode}…`
       const quality = mode === "master" ? "master" : mode === "preview" ? "preview" : "studio"
@@ -55,7 +55,7 @@ document.querySelector<HTMLButtonElement>("#render")!.addEventListener("click", 
       assert(Number.isFinite(analysis.integratedLufs), `${mode}: render silencioso/no finito`)
       results[mode] = { ...analysis, ...spatial, sha256: digest, bytes: blob.size }
       if (mode.startsWith("studio")) hashes.push(digest)
-      if (mode === "studio-a" || mode === "builtin") listeningClips.push({ source: mode === "builtin" ? "Síntesis builtin" : "Orquesta V2", blob, lufs: analysis.integratedLufs })
+      if (mode === "studio-a" || mode === "builtin") listeningClips.push({ source: mode === "builtin" ? "Síntesis builtin" : "Orquesta V3", blob, lufs: analysis.integratedLufs })
     }
     assert(hashes[0] === hashes[1], "Los renders repetidos no son idénticos")
     const profiles: Record<string, unknown> = {}

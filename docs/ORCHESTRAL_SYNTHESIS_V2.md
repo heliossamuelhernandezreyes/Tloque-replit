@@ -1,4 +1,6 @@
-# Orchestral synthesis V2 — implementation and audit
+# Orchestral synthesis V2 — historical implementation audit
+
+Superseded for current playback by `docs/ORCHESTRAL_SYNTHESIS_V3.md`. This file preserves the V2 evidence and limitations instead of rewriting historical measurements.
 
 Date: 2026-09-02. Base: `bbe235afcdf03d84dd2a986cf77949545891065d`.
 

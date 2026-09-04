@@ -16,8 +16,9 @@ import { assessNativePremiumReadiness, premiumReadinessError } from "./NativePre
 import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQuality } from "./ScoreExporter"
 import { schedulePhysicalReedVoice } from "./PhysicalReedModel"
 import { scheduleFallbackSynthVoice } from "./FallbackScoreSynth"
-import { scheduleOrchestralSynthVoice } from "./OrchestralSynthVoice"
-import { buildOrchestralSynthPlan } from "./OrchestralSynthPlan"
+import { reserveOrchestralSynthSources, scheduleOrchestralSynthVoice } from "./OrchestralSynthVoice"
+import { buildOrchestralSynthRenderUnits } from "./OrchestralSynthPlan"
+import { prepareOrchestralStringDsp, scheduleOrchestralStringPhrase } from "./OrchestralStringVoice"
 import { buildPerformedRecipeV2 } from "./PerformanceEngine"
 import { scoreTrackExpression, scoreTrackTimbre } from "./ScoreAudioMath"
 import { fetchAudioResource } from "./AudioResourceCache"
@@ -204,6 +205,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
 
   options.onProgress?.(0.20)
   const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate)
+  await prepareOrchestralStringDsp(context)
   const index = buildNativeRecipeIndex(recipe)
   const { performance: universalPerformance, recipe: performedRecipe } = buildPerformedRecipeV2(recipe)
   const performedByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, performedRecipe.plan.events[eventIndex]] as const))
@@ -278,11 +280,25 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
     }
   }
 
-  for (const event of buildOrchestralSynthPlan(recipe, fallbackTrackIds)) {
+  for (const unit of buildOrchestralSynthRenderUnits(recipe, fallbackTrackIds)) {
+    const event = unit.kind === "event" ? unit.event : unit.events[0]
     const track = index.trackById.get(event.trackId), destination = graph.trackGain.get(event.trackId)
     if (!track || !destination) continue
-    const count = scheduleOrchestralSynthVoice(context, destination, 0, event, track, orchestralSynthesis ? 1 : 0.72, index.controlsByTrack.get(track.id))
-    if (count < event.notes.length) throw new Error("El render supera el presupuesto de voces sintéticas; reduce la polifonía o exporta por secciones")
+    const controls = index.controlsByTrack.get(track.id) ?? []
+    const count = unit.kind === "string-phrase"
+      ? scheduleOrchestralStringPhrase(
+          context,
+          destination,
+          0,
+          unit.events,
+          track,
+          orchestralSynthesis ? 1 : 0.72,
+          controls,
+          (start, end, cost) => reserveOrchestralSynthSources(context, start, end, cost),
+        )
+      : scheduleOrchestralSynthVoice(context, destination, 0, event, track, orchestralSynthesis ? 1 : 0.72, controls)
+    const expected = unit.kind === "string-phrase" ? unit.events.length : event.notes.length
+    if (count < expected) throw new Error("El render supera el presupuesto de voces sintéticas; reduce la polifonía o exporta por secciones")
   }
 
   for (const decision of hybridPerformance.decisions) {

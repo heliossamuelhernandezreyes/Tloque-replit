@@ -9,6 +9,7 @@
 - `performedEventValues` es el contrato único de tiempo, duración y velocity para reproducción SoundFont, MIDI/WAV, muestras nativas y síntesis orquestal.
 - Los keyswitches son locales al instrumento. Nunca se interpretan como números universales entre librerías.
 - Live y WAV muestreado comparten `NativeSampleScorePlan` y `createSampledMixMaster`.
+- Live y WAV sintético comparten `buildOrchestralSynthRenderUnits`; las cuerdas V3 agrupan únicamente legatos monofónicos de una misma frase y cortan en silencios, acordes y nuevos ataques.
 
 ## VSCO 2 Community Edition
 
