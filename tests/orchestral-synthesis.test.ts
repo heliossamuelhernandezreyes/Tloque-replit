@@ -165,11 +165,11 @@ test("realtime y WAV consumen las mismas voces, interpretación y envolventes", 
   for (const file of ["NativeSampleScoreEngine.ts", "NativeSampleScoreExporter.ts"]) {
     const code = readFileSync(`client/src/audio/${file}`, "utf8")
     assert.match(code, /scheduleOrchestralSynthVoice/)
-    assert.match(code, /buildOrchestralSynthPlan/)
+    assert.match(code, /buildOrchestralSynth(?:Plan|RenderUnits)/)
     assert.match(code, /expression: voice.expression/)
     assert.match(code, /dynamics: voice.dynamics/)
     assert.match(code, /fallbackTrackIds.has\(event.trackId\)/)
   }
   assert.match(readFileSync("client/src/audio/NativeSampleScoreEngine.ts", "utf8"), /scoreMonitorVolume\(this.master/)
-  assert.equal(ORCHESTRAL_SYNTH_VERSION, "tloque-orchestral-synth-v2.1")
+  assert.equal(ORCHESTRAL_SYNTH_VERSION, "tloque-orchestral-synth-v3-physical-strings")
 })

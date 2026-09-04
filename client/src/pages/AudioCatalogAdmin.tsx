@@ -629,7 +629,7 @@ export default function AudioCatalogAdmin() {
             <div>
               <h2 className="text-sm font-semibold">Compositor de obras · TloqueScore 2.2</h2>
               <p className="mt-1 text-xs text-zinc-500">El código es la obra maestra: editarlo recompila y cambia el audio. La reproducción no crea archivos; Exportar genera un WAV sólo cuando lo pides.</p>
-              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code>: síntesis clásica u orquestal a 24-bit / 96 kHz; bancos nativos y SF2/SF3 a 24-bit / 48 kHz. La frecuencia de exportación no certifica realismo acústico. La síntesis orquestal V2 modela cambios tímbricos dentro de notas largas y admite hasta 192 fuentes simultáneas, incluidas sus colas.</p>
+              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code>: síntesis clásica u orquestal a 24-bit / 96 kHz; bancos nativos y SF2/SF3 a 24-bit / 48 kHz. La frecuencia de exportación no certifica realismo acústico. La síntesis orquestal V3 añade cuerdas físicas continuas y mantiene el límite de 192 fuentes simultáneas, incluidas sus colas.</p>
             </div>
             <fieldset className="rounded-xl border border-sky-300/20 bg-sky-300/5 p-3">
               <legend className="px-1 text-xs font-semibold text-sky-100">Fuente de interpretación</legend>

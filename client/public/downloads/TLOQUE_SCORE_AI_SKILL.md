@@ -2,7 +2,7 @@
 name: tloque-score
 description: Write, revise, repair, or explain deterministic instrumental TloqueScore 2 for Tloque's Audio Laboratory. Use when an AI must turn a musical request into valid score code, orchestrate semantic instruments, select orchestral synthesis or native rendering, add physical performance controls, or fix compiler diagnostics.
 metadata:
-  version: "3.1.0"
+  version: "3.2.0"
   compiler: "tloque-score-compiler-v2.2"
 ---
 
@@ -26,10 +26,11 @@ Si el usuario sólo pide una explicación, puedes responder con prosa y no neces
 
 ## Compatibilidad actual
 
-- Skill: `3.1.0`
+- Skill: `3.2.0`
 - Lenguaje fuente: `TLOQUE_SCORE 2`
 - Compilador: `tloque-score-compiler-v2.2`
-- Síntesis orquestal: `orchestra-synth` / `tloque-orchestral-synth-v2.1`
+- Síntesis orquestal: `orchestra-synth` / `tloque-orchestral-synth-v3-physical-strings`
+- Cuerdas físicas: `tloque-bowed-string-dsp-v3`
 - Dinámica tímbrica continua: `tloque-orchestral-dynamics-v2`
 - Director interpretativo: `tloque-universal-performance-director-v2`
 - Perfil común live/WAV: `tloque-score-audio-v7-universal-performance`
@@ -59,7 +60,7 @@ Si falta un dato, elige un valor musical razonable. No detengas la composición 
 
 | Si el usuario necesita… | Escribe… | Significa… |
 |---|---|---|
-| Una obra orquestal que funcione sin descargar bancos | `module orchestra-synth` | Síntesis orquestal V2. Es la opción recomendada por defecto. |
+| Una obra orquestal que funcione sin descargar bancos | `module orchestra-synth` | Síntesis orquestal V3. Es la opción recomendada por defecto. |
 | Instrumentos grabados y los bancos ya están instalados | `module native-auto` | Cada `instrument=` busca su banco físico verificado. |
 | El sonido sintético clásico | `module builtin` | Motor heredado, menos orquestal. |
 | Un módulo concreto que el usuario confirmó como instalado | `module id-confirmado` | Usa únicamente el ID exacto dado por el usuario o por Tloque. |
@@ -256,18 +257,20 @@ sleigh-bells
 
 No conviertas esos nombres en notas falsas. Un golpe de una sola toma conserva su ataque definido por `velocity`; los controles continuos no inventan una interpretación dentro de ese golpe.
 
-## Cómo aprovechar la síntesis orquestal V2
+## Cómo aprovechar la síntesis orquestal V3
 
 Con `module orchestra-synth`:
 
 - no hacen falta bancos descargados;
 - las notas largas responden a cambios continuos de `expression` y `brightness` dentro de la nota;
-- notas consecutivas, monofónicas y con `articulation=legato` pueden enlazarse con una transición sintetizada;
+- en violín, viola, chelo y contrabajo, una frase monofónica enlazada conserva una sola cuerda física entre sus notas;
+- `expression`, `brightness`, `vibrato` y `pitchBend` actúan continuamente sobre la excitación, el arco y el cuerpo durante la nota;
 - un acorde, un silencio o una interrupción rompe ese enlace;
-- esa transición no es true legato grabado y no debes describirla así;
+- esa continuidad es modelado físico, no true legato grabado; no la describas como una grabación real;
 - `strings.violin` representa un solista sintético y `strings.violin-section` una pequeña sección sintética;
 - la sala es estéreo y diseñada, no una respuesta de impulso medida, surround ni HRTF personalizada;
-- el grafo admite como máximo 192 fuentes simultáneas, incluidas las colas; una nota puede consumir varias fuentes.
+- el DSP usa sobremuestreo adaptativo 1x/2x/4x según la frecuencia de muestreo y conserva un fallback Web Audio determinista si `AudioWorklet` no existe;
+- el grafo admite como máximo 192 fuentes simultáneas, incluidas las colas; una frase física consume una reserva continua en vez de reiniciar una voz por nota.
 
 Para reducir sobrecarga, evita acordes enormes con colas largas en muchos tracks. Adelgaza la orquestación o separa la obra en secciones; no borres notas al azar.
 

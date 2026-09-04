@@ -5,6 +5,7 @@ import { deterministicNoiseOffset, sharedDeterministicNoiseBuffer } from "./Dete
 import { orchestralExpressionCurve, orchestralNoteExpression } from "./OrchestralExpression"
 import { nativeControlValueAt } from "./NativeRecipeIndex"
 import { orchestralContinuousDynamics, orchestralDynamicCutoffCurve } from "./OrchestralDynamics"
+import { isBowedOrchestralString, scheduleOrchestralStringPhrase } from "./OrchestralStringVoice"
 
 export interface OrchestralSynthEvent {
   timeSeconds: number
@@ -24,7 +25,7 @@ const reservations = new WeakMap<BaseAudioContext, { start: number; end: number;
 /** Bounded source admission in audio time, including release tails and future notes.
  * Offline plans are chronological. Realtime recovery can arrive after a later
  * look-ahead task: retain all not-yet-ended reservations against the live clock. */
-function reserve(context: BaseAudioContext, start: number, end: number, cost: number) {
+export function reserveOrchestralSynthSources(context: BaseAudioContext, start: number, end: number, cost: number) {
   const offline = typeof (context as OfflineAudioContext).startRendering === "function"
   const discardBefore = offline ? start : context.currentTime
   const previous = (reservations.get(context) ?? []).filter(item => item.end > discardBefore)
@@ -57,6 +58,20 @@ function waveFor(context: BaseAudioContext, instrument: string, midi: number, br
  * section decorrelation and the native concert stage are identical in WAV/live. */
 export function scheduleOrchestralSynthVoice(context: BaseAudioContext, destination: AudioNode, startAt: number, event: OrchestralSynthEvent, track: LinearScoreTrackV2, level = 1, controls: readonly LinearScoreControlV2[] = []) {
   const articulation = event.articulation ?? "normal"
+  if (isBowedOrchestralString(track.instrument) && !["pizzicato", "harmonic"].includes(articulation)) {
+    let accepted = 0
+    for (const midi of event.notes) accepted += scheduleOrchestralStringPhrase(
+      context,
+      destination,
+      startAt,
+      [{ ...event, notes: [midi] }],
+      track,
+      level,
+      controls,
+      (start, end, cost) => reserveOrchestralSynthSources(context, start, end, cost),
+    )
+    return accepted
+  }
   const duration = Math.max(0.025, event.durationSeconds * (event.durationIsPerformed ? 1 : articulationDurationFactor(articulation)))
   const begins = Math.max(context.currentTime, startAt + event.timeSeconds)
   let scheduled = 0
@@ -73,7 +88,7 @@ export function scheduleOrchestralSynthVoice(context: BaseAudioContext, destinat
     const frequency = track.instrument === "percussion.orchestral-kit" ? (midi === 36 ? 58 : midi < 42 ? 180 : 520) : midiNoteToFrequency(midi) * (articulation === "harmonic" ? 2 : 1)
     const ratios = profile.modalRatios?.filter(ratio => frequency * ratio < context.sampleRate * 0.44)
     const sourceCount = ratios?.length ?? profile.ensemble
-    if (!reserve(context, begins, end + 0.025, sourceCount + (profile.noise > 0 ? 1 : 0))) continue
+    if (!reserveOrchestralSynthSources(context, begins, end + 0.025, sourceCount + (profile.noise > 0 ? 1 : 0))) continue
     const nodes: AudioNode[] = []
     const amplitude = Math.max(0, Math.min(0.3, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation) * 0.3)) * Math.max(0, Math.min(1, level)) / Math.sqrt(Math.max(1, event.notes.length / 3))
     const envelope = context.createGain()

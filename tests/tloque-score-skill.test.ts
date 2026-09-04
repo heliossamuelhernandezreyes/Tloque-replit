@@ -24,7 +24,7 @@ test("la skill canónica y la descarga son exactamente la misma fuente", async (
     readFile(downloadableSkillPath, "utf8"),
   ])
   assert.equal(download, canonical)
-  assert.match(canonical, /version: "3\.1\.0"/)
+  assert.match(canonical, /version: "3\.2\.0"/)
 })
 
 test("todos los ejemplos de la skill compilan con el contrato actual", async () => {
