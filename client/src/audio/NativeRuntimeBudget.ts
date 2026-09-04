@@ -1,5 +1,6 @@
 import { buildNativeHybridPerformancePlan } from "@shared/native-hybrid-performance"
 import type { LinearScoreRecipeV2 } from "@shared/tloque-score-v2"
+import { buildPerformedRecipeV2 } from "./PerformanceEngine"
 
 export interface NativeRuntimeBudget {
   eventCount: number
@@ -35,7 +36,8 @@ export function measureNativeRuntimeBudget(recipe: LinearScoreRecipeV2): NativeR
   let noteVoiceCount = 0
   let hybridVoiceCount = 0
 
-  for (const event of recipe.plan.events) {
+  const { recipe: performedRecipe } = buildPerformedRecipeV2(recipe)
+  for (const event of performedRecipe.plan.events) {
     const voices = event.notes.length
     if (!voices) continue
     const start = event.timeSeconds
@@ -45,7 +47,7 @@ export function measureNativeRuntimeBudget(recipe: LinearScoreRecipeV2): NativeR
 
   }
 
-  const hybridPerformance = buildNativeHybridPerformancePlan(recipe)
+  const hybridPerformance = buildNativeHybridPerformancePlan(performedRecipe)
   for (const decision of hybridPerformance.decisions) {
     const voices = decision.midis.length
     const start = decision.event.timeSeconds

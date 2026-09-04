@@ -2,7 +2,7 @@
 name: tloque-score
 description: Write, revise, repair, or explain deterministic instrumental TloqueScore 2 for Tloque's Audio Laboratory. Use when an AI must turn a musical request into valid score code, orchestrate semantic instruments, select orchestral synthesis or native rendering, add physical performance controls, or fix compiler diagnostics.
 metadata:
-  version: "3.0.0"
+  version: "3.1.0"
   compiler: "tloque-score-compiler-v2.2"
 ---
 
@@ -26,11 +26,13 @@ Si el usuario sólo pide una explicación, puedes responder con prosa y no neces
 
 ## Compatibilidad actual
 
-- Skill: `3.0.0`
+- Skill: `3.1.0`
 - Lenguaje fuente: `TLOQUE_SCORE 2`
 - Compilador: `tloque-score-compiler-v2.2`
-- Síntesis orquestal: `orchestra-synth` / `tloque-orchestral-synth-v2`
+- Síntesis orquestal: `orchestra-synth` / `tloque-orchestral-synth-v2.1`
 - Dinámica tímbrica continua: `tloque-orchestral-dynamics-v2`
+- Director interpretativo: `tloque-universal-performance-director-v2`
+- Perfil común live/WAV: `tloque-score-audio-v7-universal-performance`
 - Sala estéreo diseñada: `tloque-concert-stage-v3`
 - Enrutador de bancos grabados: `native-auto`
 - Síntesis clásica heredada: `builtin`
@@ -108,11 +110,13 @@ No declares un `track` después de abrir la primera sección.
 ### Paso 5 · Interpreta, no sólo coloques notas
 
 - Da a cada track una función clara: melodía, armonía, bajo, pulso, textura o acento.
+- Elige el compás real y el `role=` correcto: el Director usa ambos para decidir jerarquía métrica y cuánto debe sobresalir cada voz.
 - Escribe frases con dirección: inicio, crecimiento, punto alto y resolución.
 - Usa dinámicas con `expression`, no sólo con `gain`.
 - Usa `brightness`, vibrato, articulación, registro y silencios con intención.
 - Para un crescendo dentro de una nota larga, coloca un `control` después del inicio de la nota y usa `ramp=`.
 - Deja respirar a vientos y metales. Una pista solista de viento debe ser monofónica.
+- Escribe `rest` donde el intérprete deba cortar arco, respiración o frase. No confíes en un hueco accidental.
 - Evita que todos los instrumentos toquen todo el tiempo.
 - Conserva el mismo `seed` al revisar una obra para mantener la interpretación determinista.
 
@@ -147,7 +151,7 @@ quality core | studio | master
 module builtin | orchestra-synth | native-auto | id-instalado-confirmado
 ```
 
-Usa `humanize` con moderación. `0.04..0.14` suele conservar precisión y dar variación determinista. No promete interpretación humana ni cambia las notas escritas.
+Usa `humanize` con moderación. `0.04..0.14` activa variación determinista y el Director Universal V2: segmentación por pista, arco de frase, clímax, pulso fuerte/débil, contorno melódico y respiración/arco según familia. `humanize 0` desactiva esos cambios y conserva tiempo, duración y velocity neutrales. El Director nunca cambia notas, articulaciones o timbres escritos y no convierte síntesis en una grabación real.
 
 ### Track
 

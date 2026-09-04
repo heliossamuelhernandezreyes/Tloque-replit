@@ -3,7 +3,7 @@ import { linearScoreRecipeFor, type LinearScoreTrack } from "@shared/audio"
 import { manifestsForModule } from "@shared/instrument-manifest"
 import { fetchAudioResource } from "./AudioResourceCache"
 import type { MusicCue, MusicState } from "./MusicEngine"
-import { buildPerformancePlan } from "./PerformanceEngine"
+import { buildPerformancePlan, performedEventValues } from "./PerformanceEngine"
 import { buildSamplerEventPlan, spessaSynthActions } from "./SamplerAdapter"
 import { createSampledMixMaster } from "./ScoreMixMaster"
 import {
@@ -85,6 +85,7 @@ export class LinearScoreEngine {
       transport.bpm.value = recipe.plan.bpm
       transport.timeSignature = [recipe.plan.meter.numerator, recipe.plan.meter.denominator]
       const beatSeconds = 60 / recipe.plan.bpm
+      const performance = buildPerformancePlan(recipe, [])
 
       if (recipe.version === 2) {
         for (const control of recipe.plan.controls) {
@@ -100,16 +101,18 @@ export class LinearScoreEngine {
         }
       }
 
-      for (const event of recipe.plan.events) {
+      for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
+        const event = recipe.plan.events[eventIndex]
+        const decision = performance.decisionForEvent(eventIndex)
+        if (!decision) continue
+        const performed = performedEventValues(recipe, event, decision)
         transport.schedule(time => {
-          const articulation = "articulation" in event ? event.articulation : "normal"
-          const eventStart = "timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds
-          const baseDuration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds)
-            * articulationDurationFactor(articulation)
-          const duration = Math.max(baseDuration, scorePedalReleaseTime(recipe, event.trackId, eventStart + baseDuration) - eventStart)
+          const articulation = decision.articulation
+          const baseDuration = performed.durationSeconds * articulationDurationFactor(articulation)
+          const duration = Math.max(baseDuration, scorePedalReleaseTime(recipe, event.trackId, performed.startSeconds + baseDuration) - performed.startSeconds)
           const synth = this.synths.get(event.trackId)
           const frequencies = midiNotesToFrequencies(event.notes)
-          const velocity = Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation))
+          const velocity = Math.min(1, scoreVelocityGain(performed.velocity) * articulationVelocityFactor(articulation))
           if (articulation === "tremolo") {
             const pulseSeconds = 0.12
             const pulses = Math.max(1, Math.ceil(baseDuration / pulseSeconds))
@@ -119,7 +122,7 @@ export class LinearScoreEngine {
           } else {
             synth?.triggerAttackRelease(frequencies, duration, time, velocity)
           }
-        }, "timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds)
+        }, performed.startSeconds)
       }
 
       const totalSeconds = "totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * beatSeconds
@@ -328,10 +331,11 @@ export class LinearScoreEngine {
         if (!track || !decision) continue
         const channel = performance.channelForEventIndex(eventIndex)
         if (channel === undefined) continue
-        const noteAt = cycleStart + ("timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds)
+        const performed = performedEventValues(recipe, event, decision)
+        const noteAt = cycleStart + performed.startSeconds
         const factor = articulationDurationFactor(decision.articulation)
-        const baseDuration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds) * factor
-        const velocity = Math.round(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(decision.articulation)) * 127)
+        const baseDuration = performed.durationSeconds * factor
+        const velocity = Math.round(Math.min(1, scoreVelocityGain(performed.velocity) * articulationVelocityFactor(decision.articulation)) * 127)
         const samplerPlan = buildSamplerEventPlan(decision, decision.route)
         const setupAt = Math.max(cycleStart, noteAt - 0.01)
         for (const action of spessaSynthActions(samplerPlan)) {

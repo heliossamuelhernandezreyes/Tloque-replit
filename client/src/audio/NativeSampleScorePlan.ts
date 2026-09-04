@@ -5,7 +5,7 @@ import { physicalRecordedTimbre, recordedTimbreProfileFor, resolveRecordedTimbre
 import type { LinearScoreRecipeV2, ScoreTimbre } from "@shared/tloque-score-v2"
 import { selectNativeSampleZone } from "./NativeSamplePackEngine"
 import { selectNativeSampleVelocityBlend } from "./NativeSampleVelocityBlend"
-import { buildPerformancePlan } from "./PerformanceEngine"
+import { buildPerformancePlan, performedEventValues } from "./PerformanceEngine"
 import { orchestralNoteExpression, type OrchestralNoteExpression } from "./OrchestralExpression"
 import { orchestralContinuousDynamics, type OrchestralContinuousDynamics } from "./OrchestralDynamics"
 import { buildNativeRecipeIndex, nativeControlValueAt } from "./NativeRecipeIndex"
@@ -141,8 +141,11 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     const previousEvent = previousEventByTrack.get(event.trackId)
     const connectedPerformancePhrase = Boolean(
       previousEvent
+      && !decision.phraseStart
       && previousEvent.notes.length === 1
       && event.notes.length === 1
+      && previousEvent.notes[0] !== event.notes[0]
+      && Math.abs(previousEvent.notes[0] - event.notes[0]) <= 12
       && event.timeSeconds - (previousEvent.timeSeconds + previousEvent.durationSeconds) <= 0.09
       && event.timeSeconds - (previousEvent.timeSeconds + previousEvent.durationSeconds) >= -0.12,
     )
@@ -150,10 +153,11 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     const requestedTimbre = event.timbre ?? track.timbre ?? "natural"
     const performedVibrato = requestedTimbre === "non-vibrato" ? 0 : nativeControlValueAt(index.controlsByTrack.get(track.id) ?? [], "vibrato", event.timeSeconds, track.vibrato ?? 0)
     const candidates = timbreCandidates(pack.instrumentManifestId, requestedTimbre, performedVibrato)
-    const performedVelocity = Math.max(0.01, Math.min(1, event.velocity * decision.velocityScale))
+    const performed = performedEventValues(recipe, event, decision)
+    const performedVelocity = performed.velocity
     const velocity = Math.round(Math.min(1, scoreVelocityGain(performedVelocity) * articulationVelocityFactor(decision.articulation)) * 127)
-    const durationSeconds = Math.max(0.01, event.durationSeconds * articulationDurationFactor(decision.articulation) * decision.durationScale)
-    const startSeconds = Math.max(0, event.timeSeconds + decision.startOffsetSeconds)
+    const durationSeconds = Math.max(0.01, performed.durationSeconds * articulationDurationFactor(decision.articulation))
+    const startSeconds = performed.startSeconds
     const dynamics = orchestralContinuousDynamics(track, index.controlsByTrack.get(track.id) ?? [], startSeconds, durationSeconds, performedVelocity, decision.articulation)
     const micPosition = micForTrack(track.id)
     for (const note of event.notes) {

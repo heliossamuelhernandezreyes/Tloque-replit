@@ -171,5 +171,5 @@ test("realtime y WAV consumen las mismas voces, interpretación y envolventes", 
     assert.match(code, /fallbackTrackIds.has\(event.trackId\)/)
   }
   assert.match(readFileSync("client/src/audio/NativeSampleScoreEngine.ts", "utf8"), /scoreMonitorVolume\(this.master/)
-  assert.equal(ORCHESTRAL_SYNTH_VERSION, "tloque-orchestral-synth-v2")
+  assert.equal(ORCHESTRAL_SYNTH_VERSION, "tloque-orchestral-synth-v2.1")
 })

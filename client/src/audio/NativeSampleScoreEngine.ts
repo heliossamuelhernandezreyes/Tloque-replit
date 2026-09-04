@@ -21,6 +21,7 @@ import {
 import { scheduleFallbackSynthVoice } from "./FallbackScoreSynth"
 import { scheduleOrchestralSynthVoice } from "./OrchestralSynthVoice"
 import { buildOrchestralSynthPlan } from "./OrchestralSynthPlan"
+import { buildPerformedRecipeV2 } from "./PerformanceEngine"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 
@@ -106,7 +107,10 @@ export class NativeSampleScoreEngine {
       if (playToken !== this.playToken) { void context.close(); return 0 }
 
       const index = buildNativeRecipeIndex(recipe)
-      const hybridPerformance = buildNativeHybridPerformancePlan(recipe)
+      const { performance: universalPerformance, recipe: performedRecipe } = buildPerformedRecipeV2(recipe)
+      const performedByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, performedRecipe.plan.events[eventIndex]] as const))
+      const decisionByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, universalPerformance.decisionForEvent(eventIndex)] as const))
+      const hybridPerformance = buildNativeHybridPerformancePlan(performedRecipe)
       const graph = createNativeRenderGraph(context, index.trackById)
       const output = context.createGain(); output.gain.value = 0; graph.output.connect(output); output.connect(context.destination)
 
@@ -267,15 +271,28 @@ export class NativeSampleScoreEngine {
           })
         }
 
-        const previousEndByTrack = new Map<string, number>()
+        const previousByTrack = new Map<string, (typeof recipe.plan.events)[number]>()
         for (const trackId of group.trackIds) {
           const track = index.trackById.get(trackId), destination = graph.trackGain.get(trackId)
           if (!track || !destination) continue
           const controls = index.controlsByTrack.get(trackId) ?? []
-          for (const event of index.eventsByTrack.get(trackId) ?? []) {
+          for (const authoredEvent of index.eventsByTrack.get(trackId) ?? []) {
+            const event = performedByOriginal.get(authoredEvent) ?? authoredEvent
+            const directorDecision = decisionByOriginal.get(authoredEvent)
             const effectiveTrack = nativeTrackAtTime(track, controls, event.timeSeconds)
-            const previousEnd = previousEndByTrack.get(trackId)
-            const legatoFromPrevious = event.articulation === "legato" && previousEnd !== undefined && event.timeSeconds - previousEnd <= 0.08
+            const previous = previousByTrack.get(trackId)
+            const authoredGap = previous ? authoredEvent.timeSeconds - (previous.timeSeconds + previous.durationSeconds) : Number.POSITIVE_INFINITY
+            const legatoFromPrevious = Boolean(
+              event.articulation === "legato"
+              && directorDecision
+              && !directorDecision.phraseStart
+              && previous?.notes.length === 1
+              && authoredEvent.notes.length === 1
+              && previous.notes[0] !== authoredEvent.notes[0]
+              && Math.abs(previous.notes[0] - authoredEvent.notes[0]) <= 12
+              && authoredGap >= -0.12
+              && authoredGap <= 0.08,
+            )
             realtimeTasks.push({
               timeSeconds: event.timeSeconds,
               run: (cycleOffset = 0) => {
@@ -285,7 +302,7 @@ export class NativeSampleScoreEngine {
               },
             })
             naturalEnd = Math.max(naturalEnd, event.timeSeconds + event.durationSeconds + 2)
-            previousEndByTrack.set(trackId, event.timeSeconds + event.durationSeconds)
+            previousByTrack.set(trackId, authoredEvent)
           }
         }
       }

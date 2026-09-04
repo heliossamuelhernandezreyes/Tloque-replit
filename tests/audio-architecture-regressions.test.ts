@@ -105,6 +105,23 @@ test("cada exportación pasa por el medidor de master antes de descargar", () =>
   assert.match(admin, /Master rechazado por control de calidad/)
 })
 
+test("todos los renderers consumen el mismo evento del Director Universal V2", () => {
+  for (const path of [
+    "client/src/audio/LinearScoreEngine.ts",
+    "client/src/audio/ScoreExporter.ts",
+    "client/src/audio/ScoreSampledExporter.ts",
+    "client/src/audio/NativeSampleScorePlan.ts",
+    "client/src/audio/NativeSampleScoreEngine.ts",
+    "client/src/audio/NativeSampleScoreExporter.ts",
+    "client/src/audio/OrchestralSynthPlan.ts",
+    "client/src/audio/NativeRuntimeBudget.ts",
+  ]) {
+    assert.match(read(path), /performedEventValues|buildPerformedRecipeV2/)
+  }
+  assert.match(read("client/src/audio/PerformanceDirector.ts"), /tloque-universal-performance-director-v2/)
+  assert.match(read("client/src/audio/ScoreAudioMath.ts"), /tloque-score-audio-v7-universal-performance/)
+})
+
 test("el Laboratorio enseña la fuente V2 y el flujo completo para una IA", () => {
   const admin = read("client/src/pages/AudioCatalogAdmin.tsx")
   assert.match(admin, /module \$\{ORCHESTRAL_SYNTH_MODULE_ID\}/)

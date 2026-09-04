@@ -4,12 +4,12 @@ Date: 2026-09-02. Base: `bbe235afcdf03d84dd2a986cf77949545891065d`.
 
 ## Result and compatibility
 
-`module orchestra-synth` remains the explicit, bank-free orchestral renderer. The score grammar, authored notes, rhythm, tracks, seed and module ID do not change. The renderer profile advances from `tloque-orchestral-synth-v1` to `tloque-orchestral-synth-v2`; old saved scores select the same module and receive the compatible renderer improvement on their next playback/export.
+`module orchestra-synth` remains the explicit, bank-free orchestral renderer. The score grammar, authored notes, rhythm, tracks, seed and module ID do not change. The renderer profile is `tloque-orchestral-synth-v2.1`; old saved scores select the same module and receive the compatible renderer and Universal Performance Director V2 improvements on their next playback/export.
 
 | Contract | V2 value | Compatibility |
 |---|---|---|
 | Score/module | `TLOQUE_SCORE 2` / `orchestra-synth` | Unchanged |
-| Renderer | `tloque-orchestral-synth-v2` | Version bump, no score rewrite |
+| Renderer | `tloque-orchestral-synth-v2.1` | Universal interpretation parity, no score rewrite |
 | Continuous dynamics | `tloque-orchestral-dynamics-v2` | New shared live/WAV layer |
 | Concert stage | `tloque-concert-stage-v3` | New deterministic impulse design |
 | Reading policy | existing mute/duck/silence and dwell contracts | Unchanged |

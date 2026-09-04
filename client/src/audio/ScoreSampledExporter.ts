@@ -4,7 +4,7 @@ import { linearScoreRecipeFor, type LinearScoreRecipe } from "@shared/audio"
 import { manifestsForModule, type InstrumentManifest } from "@shared/instrument-manifest"
 import { fetchAudioResource } from "./AudioResourceCache"
 import { encodeAudioBufferToWav, type ScoreExportOptions, type ScoreExportQuality } from "./ScoreExporter"
-import { buildPerformancePlan } from "./PerformanceEngine"
+import { buildPerformancePlan, performedEventValues } from "./PerformanceEngine"
 import { buildSamplerEventPlan, spessaSynthActions } from "./SamplerAdapter"
 import { createSampledMixMaster } from "./ScoreMixMaster"
 import { analyzeAudioBuffer } from "./AudioRenderAnalysis"
@@ -105,7 +105,6 @@ export function buildTloqueScoreMidi(
     }
   }
 
-  const beatSeconds = 60 / recipe.plan.bpm
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
     const track = tracksById.get(event.trackId)
@@ -115,10 +114,10 @@ export function buildTloqueScoreMidi(
     const channel = performance.channelForEventIndex(eventIndex)
     if (channel === undefined) continue
     const articulation = decision.articulation
-    const start = "timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds
-    const duration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds)
-      * articulationDurationFactor(articulation)
-    const velocity = midi7(Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation)))
+    const performed = performedEventValues(recipe, event, decision)
+    const start = performed.startSeconds
+    const duration = performed.durationSeconds * articulationDurationFactor(articulation)
+    const velocity = midi7(Math.min(1, scoreVelocityGain(performed.velocity) * articulationVelocityFactor(articulation)))
 
     const samplerPlan = buildSamplerEventPlan(decision, decision.route)
     const setupAt = Math.max(0, start - 0.01)

@@ -7,8 +7,11 @@ import {
 import { PcmAnalysisAccumulator, type AudioRenderAnalysis } from "./AudioRenderAnalysis"
 import { NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
 import { ORCHESTRAL_SYNTH_MODULE_ID, ORCHESTRAL_SYNTH_VERSION } from "@shared/orchestral-synthesis"
+import { buildPerformancePlan, performedEventValues } from "./PerformanceEngine"
 
 export type ScoreExportQuality = "preview" | "studio" | "master"
+
+export const TLOQUE_NATIVE_CONCERT_PROFILE = "tloque-native-concert-v3-universal-performance" as const
 
 export interface ScoreExportEstimate {
   audioProfile: string
@@ -50,7 +53,7 @@ export function estimateScoreExport(value: unknown, requested?: ScoreExportQuali
   const tail = (native || orchestral) && quality === "studio" ? 7 : TAIL_SECONDS[quality]
   const durationSeconds = ("totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * 60 / recipe.plan.bpm) + tail
   const bytes = 44 + Math.ceil(durationSeconds * profile.sampleRate) * 2 * (profile.bitDepth / 8)
-  return { audioProfile: orchestral ? ORCHESTRAL_SYNTH_VERSION : native ? "tloque-native-concert-v2" : TLOQUE_SCORE_AUDIO_PROFILE, quality, sampleRate: profile.sampleRate, bitDepth: profile.bitDepth, durationSeconds, bytes }
+  return { audioProfile: orchestral ? ORCHESTRAL_SYNTH_VERSION : native ? TLOQUE_NATIVE_CONCERT_PROFILE : TLOQUE_SCORE_AUDIO_PROFILE, quality, sampleRate: profile.sampleRate, bitDepth: profile.bitDepth, durationSeconds, bytes }
 }
 
 function partial(phase: number, multiple: number, frequency: number, sampleRate: number) {
@@ -216,23 +219,25 @@ export async function renderTloqueScoreToWav(value: unknown, options: ScoreExpor
   const totalFrames = Math.ceil(estimate.durationSeconds * sampleRate)
   const dataBytes = totalFrames * 2 * (bitDepth / 8)
   const parts: BlobPart[] = [writeHeader(dataBytes, sampleRate, bitDepth)]
-  const beatSeconds = 60 / recipe.plan.bpm
   const tracks = new Map(recipe.plan.tracks.map(track => [track.id, track]))
-  const voices = recipe.plan.events.flatMap(event => {
+  const performance = buildPerformancePlan(recipe, [])
+  const voices = recipe.plan.events.flatMap((event, eventIndex) => {
     const track = tracks.get(event.trackId)
-    if (!track) return []
+    const decision = performance.decisionForEvent(eventIndex)
+    if (!track || !decision) return []
     const envelope = scoreTrackEnvelope(track)
     const timbre = scoreTrackTimbre(track)
-    const articulation = "articulation" in event ? event.articulation : "normal"
+    const articulation = decision.articulation
     const durationFactor = articulationDurationFactor(articulation)
-    const start = "timeSeconds" in event ? event.timeSeconds : event.timeBeats * beatSeconds
-    const duration = ("durationSeconds" in event ? event.durationSeconds : event.durationBeats * beatSeconds) * durationFactor
+    const performed = performedEventValues(recipe, event, decision)
+    const start = performed.startSeconds
+    const duration = performed.durationSeconds * durationFactor
     const originalEnd = start + duration
     const end = scorePedalReleaseTime(recipe, event.trackId, originalEnd)
     const expressionStart = scoreExpressionStateAt(recipe, track, start)
     const expressionEnd = scoreExpressionStateAt(recipe, track, end)
     const chordGain = track.gain * timbre.level
-      * Math.min(1, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation))
+      * Math.min(1, scoreVelocityGain(performed.velocity) * articulationVelocityFactor(articulation))
       / Math.sqrt(event.notes.length)
     const angle = (track.pan + 1) * Math.PI / 4
     return event.notes.map(note => ({

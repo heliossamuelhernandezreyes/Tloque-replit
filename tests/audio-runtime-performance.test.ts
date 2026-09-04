@@ -51,7 +51,8 @@ test("realtime y WAV comparten índice temporal y contrato híbrido compilado", 
   const exporter = read("client/src/audio/NativeSampleScoreExporter.ts")
   for (const source of [engine, exporter]) {
     assert.match(source, /buildNativeRecipeIndex\(recipe\)/)
-    assert.match(source, /buildNativeHybridPerformancePlan\(recipe\)/)
+    assert.match(source, /buildPerformedRecipeV2\(recipe\)/)
+    assert.match(source, /buildNativeHybridPerformancePlan\(performedRecipe\)/)
     assert.match(source, /hybridPerformance\.decisions/)
     assert.match(source, /nativeTrackAtTime/)
   }
