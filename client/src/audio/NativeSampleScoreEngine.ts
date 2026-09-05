@@ -184,6 +184,13 @@ export class NativeSampleScoreEngine {
             timeSeconds: preload.releaseAtSeconds + NATIVE_REALTIME_LOOKAHEAD_SECONDS,
             run: () => { player.releaseSample(preload.zone.sampleUrl) },
           })
+          // Lookahead tasks execute up to six seconds before their timestamp. Shift
+          // lifecycle eviction by exactly that horizon so deletion happens around
+          // lastUse + grace rather than prematurely while a future voice still needs it.
+          realtimeTasks.push({
+            timeSeconds: preload.releaseAtSeconds + NATIVE_REALTIME_LOOKAHEAD_SECONDS,
+            run: () => { player.evictSampleUrl(preload.zone.sampleUrl) },
+          })
         }
 
         for (const voice of plan.voices) {
