@@ -2,6 +2,8 @@
 
 Date: 2026-09-04. Parent release: `tloque-orchestral-synth-v2.1`.
 
+The later sample-dominant hybrid path is documented in `ORCHESTRAL_HYBRID_V4.md`; this file remains the contract for the bank-free synthesizer.
+
 ## Result and compatibility
 
 `module orchestra-synth` keeps the existing `TLOQUE_SCORE 2` contract and remains bank-free. The renderer advances to `tloque-orchestral-synth-v3-physical-strings`; saved scores do not need a rewrite. Authored notes, rests, articulations, timbres and controls remain the source of truth.

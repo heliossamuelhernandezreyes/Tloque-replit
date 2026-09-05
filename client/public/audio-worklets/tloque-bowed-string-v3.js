@@ -22,6 +22,7 @@ class TloqueBowedStringV3 extends AudioWorkletProcessor {
     this.internalRate = sampleRate * this.oversample
     this.feedback = Math.max(0.9, Math.min(0.992, config.feedback || 0.978))
     this.stiffness = Math.max(0, Math.min(0.5, config.stiffness || 0.14))
+    this.textureScale = Math.max(0.78, Math.min(1.22, config.textureScale || 1))
     this.rng = Math.max(1, config.seed | 0)
     this.delay = new Float32Array(Math.ceil(this.internalRate / 20) + 16)
     this.writeIndex = 0
@@ -66,7 +67,7 @@ class TloqueBowedStringV3 extends AudioWorkletProcessor {
         const bowVelocity = (0.18 + pressure * 0.54) * gate
         const relative = bowVelocity - stringVelocity
         const friction = Math.tanh(relative * (2.2 + pressure * 5.4))
-        const texture = this.noise() * (0.00025 + brightness * 0.00065 + bowPosition * 0.0007) * gate
+        const texture = this.noise() * (0.00025 + brightness * 0.00065 + bowPosition * 0.0007) * this.textureScale * gate
         const excitation = friction * pressure * 0.0105 * gate + texture
         const damping = 0.963 + brightness * 0.019 + bowPosition * 0.004
         const dispersed = stringVelocity * (1 - this.stiffness * 0.07) + this.previousString * this.stiffness * 0.07

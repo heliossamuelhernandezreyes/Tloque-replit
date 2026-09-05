@@ -3,8 +3,9 @@ import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import { OfflineAudioContext as NodeOfflineAudioContext } from "node-web-audio-api"
 import { compileTloqueScore } from "../../shared/audio"
-import { buildNativeHybridPerformancePlan } from "../../shared/native-hybrid-performance"
+import { buildNativeHybridPerformancePlan, buildNativeHybridRenderUnits } from "../../shared/native-hybrid-performance"
 import { scheduleHybridPhysicalOverlay } from "../../client/src/audio/HybridPhysicalOverlay"
+import { scheduleHybridBowedStringPhrase } from "../../client/src/audio/PhysicalBowedStringOverlay"
 import { analyzeAudioBuffer } from "../../client/src/audio/AudioRenderAnalysis"
 
 Object.defineProperty(globalThis, "OfflineAudioContext", { value: NodeOfflineAudioContext, configurable: true })
@@ -100,4 +101,50 @@ end`)
   const detachedOnset = windowRms(detached.getChannelData(0), 0.5, 0.56)
   assert.ok(connectedOnset < detachedOnset * 0.8, `${connectedOnset} !< ${detachedOnset}`)
   assert.equal(analyzeAudioBuffer(connected).clippedSampleCount, 0)
+})
+
+test("V4 conserva una sola cuerda física durante toda la frase sampleada", async () => {
+  const recipe = compile(`track violin synth=pad instrument=strings.violin program=40 role=melody gain=0.3 pan=0 attack=0.08 release=1 expression=0.8 brightness=0.55 vibrato=0.06
+section line form=development bars=2 repeat=1 fade=0 tempo=120 rubato=0
+use violin
+1:1 A4 1 velocity=0.52 articulation=normal
+1:2 B4 1 velocity=0.56 articulation=legato
+1:3 C5 1 velocity=0.60 articulation=legato
+rest 1:4 1
+2:1 E5 1 velocity=0.54 articulation=normal
+end`)
+  const plan = buildNativeHybridPerformancePlan(recipe)
+  const units = buildNativeHybridRenderUnits(plan)
+  const phrase = units.find(unit => unit.kind === "bowed-string-phrase" && unit.decisions.length === 3)
+  assert.ok(phrase && phrase.kind === "bowed-string-phrase")
+
+  const render = async (bodyScale = 1) => {
+    const context = new OfflineAudioContext(2, 48_000 * 2.5, 48_000)
+    let reservations = 0
+    const result = scheduleHybridBowedStringPhrase(context, phrase.decisions[0].source, {
+      startAt: 0,
+      decisions: phrase.decisions,
+      track: recipe.plan.tracks[0],
+      destination: context.destination,
+      controls: recipe.plan.controls,
+      reserve: () => { reservations += 1; return true },
+      calibrationTuning: { wetScale: 1, feedbackScale: 1, dampingScale: 1, textureScale: 1, bodyScale, decayScale: 1 },
+    })
+    assert.equal(result?.scheduledEvents, 3)
+    assert.equal(reservations, 1)
+    return context.startRendering()
+  }
+
+  const first = await render(), second = await render(), reducedBody = await render(0.88)
+  assert.equal(pcmHash(first), pcmHash(second))
+  assert.notEqual(pcmHash(first), pcmHash(reducedBody))
+  const analysis = analyzeAudioBuffer(first)
+  assert.equal(analysis.clippedSampleCount, 0)
+  assert.ok(first.getChannelData(0).every(Number.isFinite))
+  assert.ok(analysis.rmsLinear > 0.0001)
+  assert.ok(analyzeAudioBuffer(reducedBody).rmsLinear < analysis.rmsLinear * 0.95)
+  const pcm = first.getChannelData(0), boundary = phrase.decisions[1].event.timeSeconds
+  const before = windowRms(pcm, boundary - 0.05, boundary - 0.005)
+  const after = windowRms(pcm, boundary + 0.005, boundary + 0.05)
+  assert.ok(before > 0.00001 && after > before * 0.12, `${before} -> ${after}`)
 })

@@ -4,6 +4,7 @@ import { compileTloqueScore } from "../shared/audio"
 import {
   boundedHybridOverlayGain,
   buildNativeHybridPerformancePlan,
+  buildNativeHybridRenderUnits,
   NATIVE_HYBRID_PERFORMANCE_VERSION,
 } from "../shared/native-hybrid-performance"
 import { nativeHybridForInstrument } from "../shared/native-hybrid-source"
@@ -25,7 +26,7 @@ quality studio
 module native-auto
 ${tracks}`
 
-describe("Native Hybrid Performance v2", () => {
+describe("Native Hybrid Performance v3", () => {
   it("keeps complete sampled piano chords while thinning and normalizing only the subordinate resonator", () => {
     const recipe = compile(`${header("track piano synth=warm instrument=piano.grand program=0 role=harmony gain=0.3 pan=0 attack=0.02 release=2")}
 section chord form=development bars=2 repeat=1 fade=0 tempo=120 rubato=0
@@ -74,6 +75,14 @@ end`)
     expect(decisions[1].phraseId).toBe(decisions[0].phraseId)
     expect(decisions[3].phraseId).not.toBe(decisions[2].phraseId)
     expect(decisions[5].transitionFromMidi).toBeNull()
+
+    const units = buildNativeHybridRenderUnits(buildNativeHybridPerformancePlan(recipe))
+    expect(units).toHaveLength(5)
+    expect(units[0].kind).toBe("bowed-string-phrase")
+    if (units[0].kind === "bowed-string-phrase") {
+      expect(units[0].decisions).toHaveLength(2)
+      expect(units[0].decisions.map(item => item.event.notes[0])).toEqual([60, 62])
+    }
   })
 
   it("never invents connected legato for chords, repeated pitches or sympathetic instruments", () => {
@@ -91,6 +100,8 @@ use piano
 end`)
     const decisions = buildNativeHybridPerformancePlan(recipe).decisions
     expect(decisions.every(decision => decision.transition === "fresh-attack")).toBe(true)
+    const units = buildNativeHybridRenderUnits(buildNativeHybridPerformancePlan(recipe))
+    expect(units.some(unit => unit.kind === "event" && unit.decision.midis.length > 1)).toBe(true)
   })
 
   it("caps calibrated DSP gain below the per-event sample-dominance ceiling", () => {
@@ -112,7 +123,7 @@ end`)
       const source = readFileSync(file, "utf8")
       expect(source).toMatch(/buildPerformedRecipeV2\(recipe\)/)
       expect(source).toMatch(/buildNativeHybridPerformancePlan\(performedRecipe\)/)
-      expect(source).toMatch(/hybridPerformance\.decisions/)
+      expect(source).toMatch(/buildNativeHybridRenderUnits\(hybridPerformance\)/)
       expect(source).toMatch(/performance: decision/)
       expect(source).toMatch(/decision\.midis/)
     }

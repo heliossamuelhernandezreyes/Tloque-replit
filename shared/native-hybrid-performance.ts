@@ -4,7 +4,7 @@ import type { LinearScoreRecipeV2 } from "./tloque-score-v2"
 type ScoreEvent = LinearScoreRecipeV2["plan"]["events"][number]
 type ScoreRest = LinearScoreRecipeV2["plan"]["rests"][number]
 
-export const NATIVE_HYBRID_PERFORMANCE_VERSION = "tloque-native-hybrid-performance-v2.1" as const
+export const NATIVE_HYBRID_PERFORMANCE_VERSION = "tloque-native-hybrid-performance-v3-continuous-phrases" as const
 
 export type NativeHybridTransition = "fresh-attack" | "connected-legato"
 
@@ -35,6 +35,10 @@ export interface NativeHybridPerformancePlan {
   scheduledVoiceCount: number
   suppressedVoiceCount: number
 }
+
+export type NativeHybridRenderUnit =
+  | { kind: "event"; timeSeconds: number; decision: NativeHybridPerformanceDecision }
+  | { kind: "bowed-string-phrase"; timeSeconds: number; decisions: NativeHybridPerformanceDecision[] }
 
 const TIME_EPSILON = 1e-6
 const MAX_LEGATO_GAP_SECONDS = 0.08
@@ -194,6 +198,48 @@ export function buildNativeHybridPerformancePlan(recipe: LinearScoreRecipeV2): N
     scheduledVoiceCount,
     suppressedVoiceCount: Math.max(0, eligibleVoiceCount - scheduledVoiceCount),
   }
+}
+
+/**
+ * Keep the sample plan untouched while collapsing the subordinate bowed-string
+ * resonator into one continuous physical lifetime. Only a monophonic chain that
+ * the performance contract already marked as connected legato may be grouped.
+ */
+export function buildNativeHybridRenderUnits(plan: NativeHybridPerformancePlan): NativeHybridRenderUnit[] {
+  const units: NativeHybridRenderUnit[] = []
+  const activeByTrack = new Map<string, Extract<NativeHybridRenderUnit, { kind: "bowed-string-phrase" }>>()
+
+  for (const decision of plan.decisions) {
+    const trackId = decision.event.trackId
+    const continuousCandidate = decision.source.physicalLayer === "bowed-string-resonator" && decision.midis.length === 1
+    if (!continuousCandidate) {
+      activeByTrack.delete(trackId)
+      units.push({ kind: "event", timeSeconds: decision.event.timeSeconds, decision })
+      continue
+    }
+
+    const active = activeByTrack.get(trackId)
+    const continues = Boolean(
+      active
+      && decision.transition === "connected-legato"
+      && active.decisions.at(-1)?.phraseId === decision.phraseId
+      && active.decisions.at(-1)?.source.instrumentId === decision.source.instrumentId,
+    )
+    if (continues) active!.decisions.push(decision)
+    else {
+      const phrase: Extract<NativeHybridRenderUnit, { kind: "bowed-string-phrase" }> = {
+        kind: "bowed-string-phrase",
+        timeSeconds: decision.event.timeSeconds,
+        decisions: [decision],
+      }
+      units.push(phrase)
+      activeByTrack.set(trackId, phrase)
+    }
+  }
+
+  return units.sort((left, right) => left.timeSeconds - right.timeSeconds
+    || (left.kind === "event" ? left.decision.event.trackId : left.decisions[0].event.trackId)
+      .localeCompare(right.kind === "event" ? right.decision.event.trackId : right.decisions[0].event.trackId))
 }
 
 /** Apply the sample-dominance ceiling after calibration and expression response. */

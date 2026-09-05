@@ -14,6 +14,6 @@ The final tail is determined from the known physical state at note release, so a
 
 ## Evidence policy
 
-Both changed families received new engine versions. Any A/B evidence from prior versions is intentionally invalid. Bowed strings remain `bowed-string-overlay-v1` because this revision does not alter their scheduler.
+This historical revision changed the air-column and sympathetic families. Bowed strings remained `bowed-string-overlay-v1` at that point; Orchestral Hybrid V4 later supersedes it with `bowed-string-overlay-v2-continuous-waveguide` and intentionally invalidates the earlier A/B evidence.
 
 All revised overlays remain Studio-only until the exact new engine version passes objective sampled-vs-hybrid screening and human A/B review.

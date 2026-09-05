@@ -1,12 +1,13 @@
 import { linearScoreRecipeFor } from "@shared/audio"
 import { ORCHESTRAL_SYNTH_MODULE_ID } from "@shared/orchestral-synthesis"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
-import { buildNativeHybridPerformancePlan } from "@shared/native-hybrid-performance"
+import { buildNativeHybridPerformancePlan, buildNativeHybridRenderUnits } from "@shared/native-hybrid-performance"
 import { nativeHybridForInstrument, type NativeHybridSource } from "@shared/native-hybrid-source"
 import type { CalibratedHybridSource } from "@shared/native-hybrid-calibration"
 import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
 import { analyzeAudioBuffer } from "./AudioRenderAnalysis"
 import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
+import { scheduleHybridBowedStringPhrase } from "./PhysicalBowedStringOverlay"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
@@ -301,13 +302,27 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
     if (count < expected) throw new Error("El render supera el presupuesto de voces sintéticas; reduce la polifonía o exporta por secciones")
   }
 
-  for (const decision of hybridPerformance.decisions) {
+  for (const unit of buildNativeHybridRenderUnits(hybridPerformance)) {
+    const decision = unit.kind === "event" ? unit.decision : unit.decisions[0]
     const { event } = decision
     const source = calibratedHybridSource(decision.source, options.hybridCalibrationSource)
     const track = index.trackById.get(event.trackId), destination = graph.trackGain.get(event.trackId)
     if (!track || !destination || fallbackTrackIds.has(event.trackId) || !hybridEnabledForExport(source, profile.quality, hybridMode)) continue
     const controls = index.controlsByTrack.get(event.trackId) ?? [], effectiveTrack = nativeTrackAtTime(track, controls, event.timeSeconds)
-    for (const midi of decision.midis) scheduleHybridPhysicalOverlay(context, source, { startAt: 0, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious: decision.legatoFromPrevious, performance: decision })
+    if (unit.kind === "bowed-string-phrase") {
+      scheduleHybridBowedStringPhrase(context, source, {
+        startAt: 0,
+        decisions: unit.decisions,
+        track: effectiveTrack,
+        destination,
+        controls,
+        calibrationTuning: options.hybridCalibrationSource?.instrumentId === source.instrumentId
+          ? options.hybridCalibrationSource.calibrationTuning
+          : undefined,
+      })
+    } else {
+      for (const midi of decision.midis) scheduleHybridPhysicalOverlay(context, source, { startAt: 0, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious: decision.legatoFromPrevious, performance: decision })
+    }
   }
 
   await Promise.all(scheduled); assertNotAborted(options.signal); options.onProgress?.(0.28)

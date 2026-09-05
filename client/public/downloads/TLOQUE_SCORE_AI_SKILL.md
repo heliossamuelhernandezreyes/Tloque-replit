@@ -2,7 +2,7 @@
 name: tloque-score
 description: Write, revise, repair, or explain deterministic instrumental TloqueScore 2 for Tloque's Audio Laboratory. Use when an AI must turn a musical request into valid score code, orchestrate semantic instruments, select orchestral synthesis or native rendering, add physical performance controls, or fix compiler diagnostics.
 metadata:
-  version: "3.2.0"
+  version: "3.3.0"
   compiler: "tloque-score-compiler-v2.2"
 ---
 
@@ -26,11 +26,13 @@ Si el usuario sólo pide una explicación, puedes responder con prosa y no neces
 
 ## Compatibilidad actual
 
-- Skill: `3.2.0`
+- Skill: `3.3.0`
 - Lenguaje fuente: `TLOQUE_SCORE 2`
 - Compilador: `tloque-score-compiler-v2.2`
 - Síntesis orquestal: `orchestra-synth` / `tloque-orchestral-synth-v3-physical-strings`
 - Cuerdas físicas: `tloque-bowed-string-dsp-v3`
+- Interpretación híbrida: `tloque-native-hybrid-performance-v3-continuous-phrases`
+- Overlay híbrido de cuerdas: `bowed-string-overlay-v2-continuous-waveguide`
 - Dinámica tímbrica continua: `tloque-orchestral-dynamics-v2`
 - Director interpretativo: `tloque-universal-performance-director-v2`
 - Perfil común live/WAV: `tloque-score-audio-v7-universal-performance`
@@ -61,7 +63,7 @@ Si falta un dato, elige un valor musical razonable. No detengas la composición 
 | Si el usuario necesita… | Escribe… | Significa… |
 |---|---|---|
 | Una obra orquestal que funcione sin descargar bancos | `module orchestra-synth` | Síntesis orquestal V3. Es la opción recomendada por defecto. |
-| Instrumentos grabados y los bancos ya están instalados | `module native-auto` | Cada `instrument=` busca su banco físico verificado. |
+| Instrumentos grabados y los bancos ya están instalados | `module native-auto` | Cada `instrument=` busca su banco verificado; en Studio las cuerdas frotadas combinan sample dominante y continuidad física V4. |
 | El sonido sintético clásico | `module builtin` | Motor heredado, menos orquestal. |
 | Un módulo concreto que el usuario confirmó como instalado | `module id-confirmado` | Usa únicamente el ID exacto dado por el usuario o por Tloque. |
 
@@ -273,6 +275,21 @@ Con `module orchestra-synth`:
 - el grafo admite como máximo 192 fuentes simultáneas, incluidas las colas; una frase física consume una reserva continua en vez de reiniciar una voz por nota.
 
 Para reducir sobrecarga, evita acordes enormes con colas largas en muchos tracks. Adelgaza la orquestación o separa la obra en secciones; no borres notas al azar.
+
+## Cómo aprovechar el híbrido orquestal V4
+
+Con `module native-auto` y los bancos instalados:
+
+- el sample sigue siendo la fuente dominante del ataque, el color grabado, el release y cualquier transición true-legato que exista realmente;
+- en `quality studio`, violín, sección de violines, viola, chelo y contrabajo mantienen debajo del sample una sola cuerda waveguide durante una frase monofónica enlazada;
+- una nota marcada `legato` sólo continúa esa cuerda cuando pertenece a la misma frase, cambia de altura dentro de una octava y no cruza un `rest`;
+- acordes, notas repetidas, silencios y articulaciones no frotadas nunca se agrupan como una frase física;
+- una sección usa intérpretes físicos decorrelacionados y un presupuesto acotado; no copies manualmente el mismo track para fingir más músicos;
+- live y WAV consumen exactamente las mismas unidades de frase, controles y límites de mezcla;
+- el híbrido no inventa una transición grabada. Si el banco no contiene true legato, el sample conserva su ataque normal y sólo el cuerpo modelado aporta continuidad;
+- `quality master` no activa automáticamente un overlay híbrido nuevo: primero necesita la matriz A/B ciega, evidencia versionada y aprobación humana del Laboratorio.
+
+Si no sabes si los bancos están instalados, usa `module orchestra-synth`. No presentes `native-auto` como una opción sin descargas.
 
 ## Instrumentos semánticos verificados
 

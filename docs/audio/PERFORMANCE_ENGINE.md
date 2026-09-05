@@ -85,6 +85,8 @@ Los módulos nativos se renderizan con `OfflineAudioContext` usando exactamente 
 
 El perfil general `tloque-score-audio-v7-universal-performance` garantiza que live y exportación consuman la misma interpretación. `humanize=0` conserva neutralidad exacta; un valor positivo activa variación determinista y el Director V2 dentro de límites acotados.
 
+Native Hybrid Performance V3 conserva esa misma interpretación y compila los legatos monofónicos de cuerdas frotadas en unidades físicas de frase. La capa sampleada mantiene todos sus eventos; sólo el resonador subordinado comparte una vida waveguide hasta un `rest`, una ruptura de frase, un acorde o una articulación no frotada.
+
 ## Estado
 
 Cuerdas, maderas, metales, percusión afinada y percusión orquestal semántica quedan integrados sobre la misma ruta nativa sampled live/WAV. El siguiente crecimiento del motor debe modelar dimensiones tímbricas explícitas —por ejemplo mute/vibrato— únicamente donde existan grabaciones upstream verificadas, sin convertir colores distintos en articulaciones ficticias.

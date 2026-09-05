@@ -2,8 +2,9 @@ import { linearScoreRecipeFor } from "@shared/audio"
 import { ORCHESTRAL_SYNTH_MODULE_ID } from "@shared/orchestral-synthesis"
 import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
 import { hybridSourceMasterApproved } from "@shared/native-hybrid-approval-registry"
-import { buildNativeHybridPerformancePlan } from "@shared/native-hybrid-performance"
+import { buildNativeHybridPerformancePlan, buildNativeHybridRenderUnits } from "@shared/native-hybrid-performance"
 import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
+import { scheduleHybridBowedStringPhrase } from "./PhysicalBowedStringOverlay"
 import type { MusicCue, MusicState } from "./MusicEngine"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, type NativeModuleGroup } from "./NativeAutoModule"
 import { buildNativeProgressivePreloadPlan } from "./NativeProgressivePreload"
@@ -239,7 +240,11 @@ export class NativeSampleScoreEngine {
         }
       }
 
-      for (const decision of hybridPerformance.decisions) {
+      const hybridUnits = cue.adaptiveDwell
+        ? hybridPerformance.decisions.map(decision => ({ kind: "event" as const, timeSeconds: decision.event.timeSeconds, decision }))
+        : buildNativeHybridRenderUnits(hybridPerformance)
+      for (const unit of hybridUnits) {
+        const decision = unit.kind === "event" ? unit.decision : unit.decisions[0]
         const { event, source: hybrid } = decision
         const track = index.trackById.get(event.trackId), destination = graph.trackGain.get(event.trackId)
         if (!track || !destination || fallbackTrackIds.has(event.trackId) || (recipe.plan.quality === "master" && !hybridSourceMasterApproved(hybrid))) continue
@@ -250,10 +255,21 @@ export class NativeSampleScoreEngine {
           run: (cycleOffset = 0) => {
             const scale = dwellGain(cue, track.role, cycleOffset, recipe.plan.totalSeconds, `${event.trackId}:${event.timeSeconds}`)
             if (scale <= 0) return
-            for (const midi of decision.midis) scheduleHybridPhysicalOverlay(context, hybrid, { startAt: startAt + cycleOffset, event, track: { ...effectiveTrack, expression: effectiveTrack.expression * scale }, midi, destination, controls, legatoFromPrevious: decision.legatoFromPrevious, performance: decision })
+            if (unit.kind === "bowed-string-phrase") {
+              scheduleHybridBowedStringPhrase(context, hybrid, {
+                startAt: startAt + cycleOffset,
+                decisions: unit.decisions,
+                track: { ...effectiveTrack, expression: effectiveTrack.expression * scale },
+                destination,
+                controls,
+              })
+            } else {
+              for (const midi of decision.midis) scheduleHybridPhysicalOverlay(context, hybrid, { startAt: startAt + cycleOffset, event, track: { ...effectiveTrack, expression: effectiveTrack.expression * scale }, midi, destination, controls, legatoFromPrevious: decision.legatoFromPrevious, performance: decision })
+            }
           },
         })
-        naturalEnd = Math.max(naturalEnd, event.timeSeconds + event.durationSeconds + 7)
+        const lastEvent = unit.kind === "bowed-string-phrase" ? unit.decisions.at(-1)!.event : event
+        naturalEnd = Math.max(naturalEnd, lastEvent.timeSeconds + lastEvent.durationSeconds + 7)
       }
 
       for (const group of physicalGroups) {

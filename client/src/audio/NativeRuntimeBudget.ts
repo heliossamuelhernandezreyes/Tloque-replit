@@ -1,4 +1,4 @@
-import { buildNativeHybridPerformancePlan } from "@shared/native-hybrid-performance"
+import { buildNativeHybridPerformancePlan, buildNativeHybridRenderUnits } from "@shared/native-hybrid-performance"
 import type { LinearScoreRecipeV2 } from "@shared/tloque-score-v2"
 import { buildPerformedRecipeV2 } from "./PerformanceEngine"
 
@@ -7,6 +7,7 @@ export interface NativeRuntimeBudget {
   controlCount: number
   noteVoiceCount: number
   hybridVoiceCount: number
+  hybridRenderUnitCount: number
   peakNoteVoices: number
   peakHybridVoices: number
 }
@@ -61,6 +62,7 @@ export function measureNativeRuntimeBudget(recipe: LinearScoreRecipeV2): NativeR
     controlCount: recipe.plan.controls.length,
     noteVoiceCount,
     hybridVoiceCount,
+    hybridRenderUnitCount: buildNativeHybridRenderUnits(hybridPerformance).length,
     peakNoteVoices: peakConcurrent(notePoints),
     peakHybridVoices: peakConcurrent(hybridPoints),
   }
