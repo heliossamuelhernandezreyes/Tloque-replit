@@ -22,9 +22,11 @@ test("offset de ruido físico es determinista y queda dentro del buffer", () => 
 test("arco y columna de aire reutilizan noise beds por contexto", () => {
   const helper = read("client/src/audio/DeterministicAudioNoise.ts")
   const bow = read("client/src/audio/PhysicalBowedStringOverlay.ts")
+  const stringCore = read("client/src/audio/OrchestralStringVoice.ts")
   const air = read("client/src/audio/PhysicalAirColumnOverlay.ts")
   assert.match(helper, /WeakMap<BaseAudioContext, Map<string, AudioBuffer>>/)
-  for (const source of [bow, air]) {
+  assert.match(bow, /scheduleOrchestralStringPhrase/)
+  for (const source of [stringCore, air]) {
     assert.match(source, /sharedDeterministicNoiseBuffer/)
     assert.match(source, /deterministicNoiseOffset/)
     assert.doesNotMatch(source, /createDeterministicNoiseBuffer\(/)
@@ -53,7 +55,7 @@ test("realtime y WAV comparten índice temporal y contrato híbrido compilado", 
     assert.match(source, /buildNativeRecipeIndex\(recipe\)/)
     assert.match(source, /buildPerformedRecipeV2\(recipe\)/)
     assert.match(source, /buildNativeHybridPerformancePlan\(performedRecipe\)/)
-    assert.match(source, /hybridPerformance\.decisions/)
+    assert.match(source, /buildNativeHybridRenderUnits\(hybridPerformance\)/)
     assert.match(source, /nativeTrackAtTime/)
   }
   assert.match(exporter, /index\.controlsByTrack\.get\(event\.trackId\)/)
@@ -143,6 +145,7 @@ test("Winter expone una presión de voces determinista para benchmarks", () => {
   assert.ok(a.noteVoiceCount > 0)
   assert.ok(a.hybridVoiceCount > 0)
   assert.equal(a.hybridVoiceCount, buildNativeHybridPerformancePlan(compiled.recipe).scheduledVoiceCount)
+  assert.ok(a.hybridRenderUnitCount <= a.hybridVoiceCount)
   assert.ok(a.peakNoteVoices >= a.peakHybridVoices)
   assert.ok(a.peakHybridVoices > 0)
 })

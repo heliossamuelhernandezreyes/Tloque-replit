@@ -20,6 +20,9 @@ export interface OrchestralPhysicalStringEvent {
   timbre?: string
   legatoFromPrevious?: boolean
   transitionFromMidi?: number
+  /** Per-event renderer gain. The bank-free synth leaves this at one; the
+   * sample-dominant hybrid uses its versioned wet ceiling. */
+  physicalLevel?: number
 }
 
 export interface OrchestralStringProfile {
@@ -40,11 +43,32 @@ export interface OrchestralStringQuality {
   controlRateHz: number
 }
 
+export interface OrchestralStringRenderTuning {
+  feedbackScale?: number
+  dampingScale?: number
+  textureScale?: number
+  bodyScale?: number
+  releaseScale?: number
+}
+
+type NormalizedStringTuning = Required<OrchestralStringRenderTuning>
+
 type WorkletContext = BaseAudioContext & { audioWorklet?: { addModule(url: string): Promise<void> } }
 type WorkletConstructor = new (context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions) => AudioWorkletNode
 
 const prepared = new WeakMap<BaseAudioContext, Promise<boolean>>()
 const ready = new WeakSet<BaseAudioContext>()
+
+function normalizedStringTuning(tuning: OrchestralStringRenderTuning | undefined): NormalizedStringTuning {
+  const bounded = (value: number | undefined, min: number, max: number) => Math.max(min, Math.min(max, value ?? 1))
+  return {
+    feedbackScale: bounded(tuning?.feedbackScale, 0.9, 1.06),
+    dampingScale: bounded(tuning?.dampingScale, 0.82, 1.18),
+    textureScale: bounded(tuning?.textureScale, 0.78, 1.22),
+    bodyScale: bounded(tuning?.bodyScale, 0.82, 1.18),
+    releaseScale: bounded(tuning?.releaseScale, 0.8, 1.2),
+  }
+}
 
 function workletConstructor(): WorkletConstructor | null {
   return (globalThis as typeof globalThis & { AudioWorkletNode?: WorkletConstructor }).AudioWorkletNode ?? null
@@ -112,8 +136,8 @@ function bandlimitedBowWave(context: BaseAudioContext, highestFrequency: number,
   return context.createPeriodicWave(real, imaginary, { disableNormalization: true })
 }
 
-function connectBody(context: BaseAudioContext, source: AudioNode, destination: AudioNode, profile: OrchestralStringProfile) {
-  const body = context.createGain(); body.gain.value = 0.78
+function connectBody(context: BaseAudioContext, source: AudioNode, destination: AudioNode, profile: OrchestralStringProfile, tuning: NormalizedStringTuning) {
+  const body = context.createGain(); body.gain.value = 0.78 * tuning.bodyScale
   const highpass = context.createBiquadFilter(); highpass.type = "highpass"; highpass.frequency.value = 24; highpass.Q.value = 0.62
   source.connect(highpass)
   const nodes: AudioNode[] = [body, highpass]
@@ -152,7 +176,8 @@ function scheduleMemberEnvelope(param: AudioParam, events: readonly OrchestralPh
   const last = events.at(-1)!
   const end = startAt + last.timeSeconds + last.durationSeconds
   const amplitudeFor = (event: OrchestralPhysicalStringEvent) => Math.max(0.0001, Math.min(0.65,
-    scoreVelocityGain(event.velocity) * articulationVelocityFactor(event.articulation ?? "normal") * 1.35 * level))
+    scoreVelocityGain(event.velocity) * articulationVelocityFactor(event.articulation ?? "normal")
+    * 1.35 * level * Math.max(0, Math.min(1, event.physicalLevel ?? 1))))
   param.setValueAtTime(0.0001, begins)
   const first = events[0]
   const firstAttack = Math.min(first.durationSeconds * 0.25, Math.max(0.012, first.legatoFromPrevious ? 0.018 : Math.min(0.085, track.attack)))
@@ -203,15 +228,16 @@ function scheduleBodyPerformance(
   startAt: number,
   profile: OrchestralStringProfile,
   sampleRate: number,
+  tuning: NormalizedStringTuning,
 ) {
   for (let eventIndex = 0; eventIndex < events.length; eventIndex += 1) {
     const event = events[eventIndex], span = eventControlSpan(events, eventIndex), at = startAt + event.timeSeconds
     const curve = physicalCurve(event, span, Math.max(2, Math.ceil(span * 24)), track, controls, "sympatheticCoupling")
-    body.gain.setValueCurveAtTime(Float32Array.from(curve, value => 0.55 + value * 0.45), at, span)
+    body.gain.setValueCurveAtTime(Float32Array.from(curve, value => (0.55 + value * 0.45) * tuning.bodyScale), at, span)
     const dynamics = orchestralContinuousDynamics(track, controls, event.timeSeconds, span, event.velocity, event.articulation)
     bridge.frequency.setValueCurveAtTime(Float32Array.from(dynamics.brightness, value => Math.min(
       sampleRate * 0.42,
-      profile.bridgeHz * (0.48 + value * 1.34),
+      profile.bridgeHz * (0.48 + value * 1.34) * tuning.dampingScale,
     )), at, span)
     presence.gain.setValueCurveAtTime(Float32Array.from(dynamics.brightness, value => -4 + value * 14), at, span)
   }
@@ -241,12 +267,13 @@ function scheduleWorkletMember(
   quality: OrchestralStringQuality,
   member: number,
   members: number,
+  tuning: NormalizedStringTuning,
 ) {
   const WorkletNode = workletConstructor()
   if (!WorkletNode || !ready.has(context)) return false
   const begins = startAt + events[0].timeSeconds
   const last = events.at(-1)!, noteEnd = startAt + last.timeSeconds + last.durationSeconds
-  const release = profile.releaseSeconds
+  const release = profile.releaseSeconds * tuning.releaseScale
   const identity = `${track.id}:${profile.instrument}:${events[0].timeSeconds}:${events.map(event => event.notes[0]).join(",")}:${member}`
   const node = new WorkletNode(context, ORCHESTRAL_STRING_WORKLET_PROCESSOR, {
     numberOfInputs: 0,
@@ -259,8 +286,9 @@ function scheduleWorkletMember(
       releaseFrames: Math.round(release * context.sampleRate),
       oversample: quality.oversample,
       seed: stableSeed(identity),
-      feedback: profile.feedback,
+      feedback: profile.feedback * tuning.feedbackScale,
       stiffness: profile.stiffness,
+      textureScale: tuning.textureScale,
       member,
     },
   })
@@ -286,8 +314,8 @@ function scheduleWorkletMember(
     detune.setValueCurveAtTime(eventDetuneCurve(event, span, track, controls, identity), at, span)
   }
   const amplitude = context.createGain(); scheduleMemberEnvelope(amplitude.gain, events, track, startAt, release, level / Math.sqrt(members))
-  const bodyPath = connectBody(context, node, amplitude, profile)
-  scheduleBodyPerformance(bodyPath.body, bodyPath.bridge, bodyPath.presence, events, track, controls, startAt, profile, context.sampleRate)
+  const bodyPath = connectBody(context, node, amplitude, profile, tuning)
+  scheduleBodyPerformance(bodyPath.body, bodyPath.bridge, bodyPath.presence, events, track, controls, startAt, profile, context.sampleRate, tuning)
   if (members > 1 && typeof context.createStereoPanner === "function") {
     const pan = context.createStereoPanner(); pan.pan.value = (member - (members - 1) / 2) * 0.15
     amplitude.connect(pan); pan.connect(destination); bodyPath.nodes.push(pan)
@@ -312,10 +340,12 @@ function scheduleWaveguideMember(
   quality: OrchestralStringQuality,
   member: number,
   members: number,
+  tuning: NormalizedStringTuning,
 ) {
   const begins = Math.max(context.currentTime, startAt + events[0].timeSeconds)
   const last = events.at(-1)!, noteEnd = startAt + last.timeSeconds + last.durationSeconds
-  const stop = noteEnd + profile.releaseSeconds + 0.05
+  const release = profile.releaseSeconds * tuning.releaseScale
+  const stop = noteEnd + release + 0.05
   const identity = `${track.id}:${profile.instrument}:${events[0].timeSeconds}:${events.map(event => event.notes[0]).join(",")}:${member}`
   const memberCents = members > 1 ? (member - (members - 1) / 2) * 3.8 : 0
   const highest = Math.max(...events.map(event => midiNoteToFrequency(event.notes[0]) * 2 ** (memberCents / 1200)))
@@ -325,7 +355,7 @@ function scheduleWaveguideMember(
   const noise = context.createBufferSource(); const noiseBuffer = sharedDeterministicNoiseBuffer(context, "orchestral-string-v3", 8, 0.69)
   noise.buffer = noiseBuffer; noise.loop = true
   const noiseBand = context.createBiquadFilter(); noiseBand.type = "bandpass"; noiseBand.frequency.value = Math.min(context.sampleRate * 0.4, profile.bridgeHz * 0.78); noiseBand.Q.value = 0.62
-  const noiseGain = context.createGain(); noiseGain.gain.value = profile.bowNoise
+  const noiseGain = context.createGain(); noiseGain.gain.value = profile.bowNoise * tuning.textureScale
   const input = context.createGain(); input.gain.value = 0.72
   exciter.connect(bowGain); bowGain.connect(input); noise.connect(noiseBand); noiseBand.connect(noiseGain); noiseGain.connect(input)
   const friction = context.createWaveShaper(); friction.curve = orchestralBowFrictionCurve(); friction.oversample = quality.oversample === 4 ? "4x" : quality.oversample === 2 ? "2x" : "none"
@@ -335,8 +365,8 @@ function scheduleWaveguideMember(
   // implementations. Two feed-forward travelling-wave paths preserve the
   // authored oscillator pitch; the AudioWorklet backend owns sample-accurate
   // nonlinear feedback.
-  damping.type = "lowpass"; damping.Q.value = 0.3; primaryGain.gain.value = 0.72
-  returnDamping.type = "lowpass"; returnDamping.frequency.value = Math.min(context.sampleRate * 0.38, profile.bridgeHz * 0.72); returnDamping.Q.value = 0.25; returnGain.gain.value = 0.28
+  damping.type = "lowpass"; damping.Q.value = 0.3; primaryGain.gain.value = 0.72 * tuning.feedbackScale
+  returnDamping.type = "lowpass"; returnDamping.frequency.value = Math.min(context.sampleRate * 0.38, profile.bridgeHz * 0.72 * tuning.dampingScale); returnDamping.Q.value = 0.25; returnGain.gain.value = 0.28 * tuning.feedbackScale
   stringBus.gain.value = 0.9
   input.connect(friction); friction.connect(waveguide); friction.connect(returnWave)
   waveguide.connect(damping); damping.connect(primaryGain); primaryGain.connect(stringBus)
@@ -350,19 +380,19 @@ function scheduleWaveguideMember(
     const dynamics = orchestralContinuousDynamics(track, controls, event.timeSeconds, span, event.velocity, event.articulation)
     const pressure = physicalCurve(event, span, dynamics.effort.length, track, controls, "pressure")
     const position = physicalCurve(event, span, dynamics.effort.length, track, controls, "bowPosition")
-    const cutoff = orchestralDynamicCutoffCurve(dynamics, context.sampleRate, "synth")
+    const cutoff = Float32Array.from(orchestralDynamicCutoffCurve(dynamics, context.sampleRate, "synth"), value => Math.min(context.sampleRate * 0.44, value * tuning.dampingScale))
     damping.frequency.setValueCurveAtTime(cutoff, at, span)
     returnDamping.frequency.setValueCurveAtTime(Float32Array.from(cutoff, value => Math.max(400, value * 0.72)), at, span)
     noiseBand.frequency.setValueCurveAtTime(Float32Array.from(position, value => Math.min(context.sampleRate * 0.4, profile.bridgeHz * (0.5 + value * 0.72))), at, span)
     const effort = Float32Array.from(dynamics.effort, (value, index) => (0.025 + value * 0.065 + pressure[index] * 0.04)
       * bowGestureScale(event.articulation, index, dynamics.effort.length, span))
     bowGain.gain.setValueCurveAtTime(effort, at, span)
-    noiseGain.gain.setValueCurveAtTime(Float32Array.from(effort, value => value * profile.bowNoise * 5), at, span)
+    noiseGain.gain.setValueCurveAtTime(Float32Array.from(effort, value => value * profile.bowNoise * 5 * tuning.textureScale), at, span)
     exciter.detune.setValueCurveAtTime(eventDetuneCurve(event, span, track, controls, identity), at, span)
   }
-  const amplitude = context.createGain(); scheduleMemberEnvelope(amplitude.gain, events, track, startAt, profile.releaseSeconds, level / Math.sqrt(members))
-  const bodyPath = connectBody(context, stringBus, amplitude, profile)
-  scheduleBodyPerformance(bodyPath.body, bodyPath.bridge, bodyPath.presence, events, track, controls, startAt, profile, context.sampleRate)
+  const amplitude = context.createGain(); scheduleMemberEnvelope(amplitude.gain, events, track, startAt, release, level / Math.sqrt(members))
+  const bodyPath = connectBody(context, stringBus, amplitude, profile, tuning)
+  scheduleBodyPerformance(bodyPath.body, bodyPath.bridge, bodyPath.presence, events, track, controls, startAt, profile, context.sampleRate, tuning)
   const nodes: AudioNode[] = [bowGain, noiseBand, noiseGain, input, friction, waveguide, damping, primaryGain, returnWave, returnDamping, returnGain, stringBus, amplitude, ...bodyPath.nodes]
   if (members > 1 && typeof context.createStereoPanner === "function") {
     const pan = context.createStereoPanner(); pan.pan.value = (member - (members - 1) / 2) * 0.15
@@ -396,16 +426,18 @@ export function scheduleOrchestralStringPhrase(
   level: number,
   controls: readonly LinearScoreControlV2[],
   reserve: (start: number, end: number, cost: number) => boolean,
+  renderTuning?: OrchestralStringRenderTuning,
 ) {
   if (!events.length || !isBowedOrchestralString(track.instrument) || events.some(event => event.notes.length !== 1)) return 0
   const profile = orchestralStringProfileFor(track.instrument), quality = orchestralStringQuality(context.sampleRate)
+  const tuning = normalizedStringTuning(renderTuning)
   const members = track.instrument.endsWith("-section") ? quality.sectionMembers : 1
   const begins = Math.max(context.currentTime, startAt + events[0].timeSeconds)
-  const last = events.at(-1)!, end = startAt + last.timeSeconds + last.durationSeconds + profile.releaseSeconds
+  const last = events.at(-1)!, end = startAt + last.timeSeconds + last.durationSeconds + profile.releaseSeconds * tuning.releaseScale
   if (!reserve(begins, end + 0.05, members + 1)) return 0
   for (let member = 0; member < members; member += 1) {
-    if (!scheduleWorkletMember(context, destination, startAt, events, track, level, controls, profile, quality, member, members)) {
-      scheduleWaveguideMember(context, destination, startAt, events, track, level, controls, profile, quality, member, members)
+    if (!scheduleWorkletMember(context, destination, startAt, events, track, level, controls, profile, quality, member, members, tuning)) {
+      scheduleWaveguideMember(context, destination, startAt, events, track, level, controls, profile, quality, member, members, tuning)
     }
   }
   return events.length

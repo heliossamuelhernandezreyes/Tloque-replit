@@ -1,7 +1,8 @@
 import { describe, expect, it } from "./test-compat"
 import { hybridEnabledForArticulation, nativeHybridForInstrument, NATIVE_HYBRID_SOURCES } from "../shared/native-hybrid-source"
+import { BOWED_STRING_OVERLAY_VERSION } from "../client/src/audio/PhysicalBowedStringOverlay"
 
-describe("Hybrid Strings v1", () => {
+describe("Hybrid Strings v2 continuous waveguide", () => {
   it("covers the bowed orchestral string family without replacing the sample base", () => {
     const bowed = NATIVE_HYBRID_SOURCES.filter(source => source.physicalLayer === "bowed-string-resonator")
     const ids = new Set(bowed.map(source => source.instrumentId))
@@ -9,7 +10,7 @@ describe("Hybrid Strings v1", () => {
     for (const source of bowed) {
       expect(source.kind).toBe("hybrid")
       expect(source.baseSource).toBe("sample-pack")
-      expect(source.engineVersion).toBe("bowed-string-overlay-v1")
+      expect(source.engineVersion).toBe(BOWED_STRING_OVERLAY_VERSION)
       expect(source.approval).toBe("studio")
       expect(source.masterApproved).toBe(false)
       expect(source.wet).toBeGreaterThan(0)

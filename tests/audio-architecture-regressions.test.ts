@@ -25,7 +25,7 @@ test("Winter mantiene fuentes nativas estrictas durante todo el render", () => {
 
 test("los modelos físicos principales usan ruido determinista compartido y nunca Math.random", () => {
   for (const path of [
-    "client/src/audio/PhysicalBowedStringOverlay.ts",
+    "client/src/audio/OrchestralStringVoice.ts",
     "client/src/audio/PhysicalAirColumnOverlay.ts",
     "client/src/audio/PhysicalReedModel.ts",
   ]) {

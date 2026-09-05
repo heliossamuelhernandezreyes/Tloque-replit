@@ -2,7 +2,7 @@ import { describe, expect, it } from "./test-compat"
 import { NATIVE_HYBRID_SOURCES, nativeHybridForInstrument } from "../shared/native-hybrid-source"
 
 const engineForLayer = {
-  "bowed-string-resonator": "bowed-string-overlay-v1",
+  "bowed-string-resonator": "bowed-string-overlay-v2-continuous-waveguide",
   "air-column-resonator": "air-column-overlay-v1.1",
   "sympathetic-resonance": "sympathetic-resonance-v1.1",
 } as const

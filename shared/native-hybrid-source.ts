@@ -4,7 +4,7 @@ export type NativeHybridPhysicalLayer = "bowed-string-resonator" | "air-column-r
 export interface NativeHybridSource {
   kind: "hybrid"
   instrumentId: string
-  engineVersion: "bowed-string-overlay-v1" | "air-column-overlay-v1.1" | "sympathetic-resonance-v1.1"
+  engineVersion: "bowed-string-overlay-v2-continuous-waveguide" | "air-column-overlay-v1.1" | "sympathetic-resonance-v1.1"
   approval: NativeHybridApproval
   masterApproved: boolean
   baseSource: "sample-pack"
@@ -16,11 +16,11 @@ export interface NativeHybridSource {
 }
 
 export const NATIVE_HYBRID_SOURCES: readonly NativeHybridSource[] = [
-  { kind: "hybrid", instrumentId: "strings.violin", engineVersion: "bowed-string-overlay-v1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "bowed-string-resonator", midiMin: 55, midiMax: 103, wet: 0.14, notes: "Sample real dominante + resonancia/arco físico continuo. Pizzicato queda sólo sampleado." },
-  { kind: "hybrid", instrumentId: "strings.violin-section", engineVersion: "bowed-string-overlay-v1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "bowed-string-resonator", midiMin: 55, midiMax: 103, wet: 0.11, notes: "Capa física ligera para evitar fase artificial en sección." },
-  { kind: "hybrid", instrumentId: "strings.viola", engineVersion: "bowed-string-overlay-v1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "bowed-string-resonator", midiMin: 48, midiMax: 88, wet: 0.14, notes: "Sample real dominante + resonancia/arco físico continuo." },
-  { kind: "hybrid", instrumentId: "strings.cello", engineVersion: "bowed-string-overlay-v1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "bowed-string-resonator", midiMin: 36, midiMax: 76, wet: 0.16, notes: "Refuerzo físico de cuerpo, arco y continuidad bajo el sample." },
-  { kind: "hybrid", instrumentId: "strings.contrabass", engineVersion: "bowed-string-overlay-v1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "bowed-string-resonator", midiMin: 28, midiMax: 67, wet: 0.18, notes: "Refuerzo físico grave y resonancia de cuerpo; sample conserva el ataque real." },
+  { kind: "hybrid", instrumentId: "strings.violin", engineVersion: "bowed-string-overlay-v2-continuous-waveguide", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "bowed-string-resonator", midiMin: 55, midiMax: 103, wet: 0.14, notes: "El sample conserva ataque/transición/release; una sola cuerda waveguide mantiene arco, altura y cuerpo entre legatos. Pizzicato queda sólo sampleado." },
+  { kind: "hybrid", instrumentId: "strings.violin-section", engineVersion: "bowed-string-overlay-v2-continuous-waveguide", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "bowed-string-resonator", midiMin: 55, midiMax: 103, wet: 0.11, notes: "Sample de sección dominante + intérpretes físicos decorrelacionados que conservan una frase continua." },
+  { kind: "hybrid", instrumentId: "strings.viola", engineVersion: "bowed-string-overlay-v2-continuous-waveguide", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "bowed-string-resonator", midiMin: 48, midiMax: 88, wet: 0.14, notes: "Sample dominante + una sola cuerda física continua para cada línea monofónica enlazada." },
+  { kind: "hybrid", instrumentId: "strings.cello", engineVersion: "bowed-string-overlay-v2-continuous-waveguide", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "bowed-string-resonator", midiMin: 36, midiMax: 76, wet: 0.16, notes: "Ataque sampleado y cuerpo waveguide continuo sin reiniciar el arco en cada legato." },
+  { kind: "hybrid", instrumentId: "strings.contrabass", engineVersion: "bowed-string-overlay-v2-continuous-waveguide", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "bowed-string-resonator", midiMin: 28, midiMax: 67, wet: 0.18, notes: "Sample grave dominante + cuerda física continua y resonancia de cuerpo; sin duplicar el ataque." },
 
   { kind: "hybrid", instrumentId: "woodwinds.flute", engineVersion: "air-column-overlay-v1.1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "air-column-resonator", midiMin: 60, midiMax: 96, wet: 0.085, notes: "Sample dominante; aire/columna física aporta breath y continuidad dinámica." },
   { kind: "hybrid", instrumentId: "woodwinds.piccolo", engineVersion: "air-column-overlay-v1.1", approval: "studio", masterApproved: false, baseSource: "sample-pack", physicalLayer: "air-column-resonator", midiMin: 67, midiMax: 108, wet: 0.065, notes: "Sustain sampleado dominante; overlay de aire muy ligero. Staccato permanece sample-only." },
