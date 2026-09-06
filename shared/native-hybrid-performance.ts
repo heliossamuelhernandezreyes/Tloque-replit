@@ -1,10 +1,11 @@
 import { hybridEnabledForArticulation, nativeHybridForInstrument, type NativeHybridSource } from "./native-hybrid-source"
+import type { IntelligentPerformanceGesture } from "./intelligent-performance"
 import type { LinearScoreRecipeV2 } from "./tloque-score-v2"
 
 type ScoreEvent = LinearScoreRecipeV2["plan"]["events"][number]
 type ScoreRest = LinearScoreRecipeV2["plan"]["rests"][number]
 
-export const NATIVE_HYBRID_PERFORMANCE_VERSION = "tloque-native-hybrid-performance-v3-continuous-phrases" as const
+export const NATIVE_HYBRID_PERFORMANCE_VERSION = "tloque-native-hybrid-performance-v4-intelligent-performer" as const
 
 export type NativeHybridTransition = "fresh-attack" | "connected-legato"
 
@@ -15,6 +16,7 @@ export interface NativeHybridOverlayPerformance {
   mixScale: number
   wetCeiling: number
   excitationScale: number
+  gesture?: IntelligentPerformanceGesture
 }
 
 export interface NativeHybridPerformanceDecision extends NativeHybridOverlayPerformance {
@@ -101,6 +103,7 @@ type DraftDecision = {
   midis: readonly number[]
   legatoFromPrevious: boolean
   transitionFromMidi: number | null
+  gesture?: IntelligentPerformanceGesture
 }
 
 /**
@@ -108,7 +111,10 @@ type DraftDecision = {
  * The recorded sample remains complete and dominant; this plan only governs the
  * subordinate physical layer.
  */
-export function buildNativeHybridPerformancePlan(recipe: LinearScoreRecipeV2): NativeHybridPerformancePlan {
+export function buildNativeHybridPerformancePlan(
+  recipe: LinearScoreRecipeV2,
+  gestureByEventIndex: ReadonlyMap<number, IntelligentPerformanceGesture> = new Map(),
+): NativeHybridPerformancePlan {
   const eventsByTrack = new Map<string, { event: ScoreEvent; ordinal: number }[]>()
   const restsByTrack = new Map<string, ScoreRest[]>()
   recipe.plan.tracks.forEach(track => { eventsByTrack.set(track.id, []); restsByTrack.set(track.id, []) })
@@ -143,6 +149,7 @@ export function buildNativeHybridPerformancePlan(recipe: LinearScoreRecipeV2): N
         midis,
         legatoFromPrevious,
         transitionFromMidi: legatoFromPrevious ? previous?.midis[0] ?? null : null,
+        gesture: gestureByEventIndex.get(ordinal),
       })
       previous = { event, midis }
     }

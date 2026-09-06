@@ -1,4 +1,5 @@
 import type { NativePhysicalModelSource } from "@shared/native-acoustic-source"
+import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import { deterministicNoiseOffset, sharedDeterministicNoiseBuffer } from "./DeterministicAudioNoise"
 
@@ -13,6 +14,7 @@ export interface PhysicalModelVoiceOptions {
   destination: AudioNode
   controls?: readonly LinearScoreControlV2[]
   legatoFromPrevious?: boolean
+  performanceGesture?: IntelligentPerformanceGesture
 }
 
 function clamp01(value: number) { return Math.max(0, Math.min(1, value)) }
@@ -33,7 +35,7 @@ function createSaturator(context: BaseAudioContext, amount: number) {
   return node
 }
 
-function articulationEnvelope(event: LinearScoreEventV2, track: LinearScoreTrackV2, legatoFromPrevious = false) {
+function articulationEnvelope(event: LinearScoreEventV2, track: LinearScoreTrackV2, legatoFromPrevious = false, gesture?: IntelligentPerformanceGesture) {
   const duration = Math.max(0.03, event.durationSeconds)
   const articulation = event.articulation
   const attack = legatoFromPrevious
@@ -46,7 +48,12 @@ function articulationEnvelope(event: LinearScoreEventV2, track: LinearScoreTrack
     : articulation === "legato" ? Math.min(0.19, duration * 0.22) : Math.max(0.08, Math.min(0.32, track.release * 0.24))
   const sounding = articulation === "staccato" ? Math.min(duration, Math.max(0.09, duration * 0.56)) : duration
   const accent = articulation === "accent" ? 1.12 : articulation === "tenuto" ? 1.02 : 1
-  return { attack, release, sounding, accent }
+  return {
+    attack: attack * (gesture?.attackTimeScale ?? 1),
+    release: release * (gesture?.releaseTimeScale ?? 1),
+    sounding,
+    accent,
+  }
 }
 
 interface ModelProfile {
@@ -115,10 +122,11 @@ export function schedulePhysicalReedVoice(
 
   const profile = profileFor(source)
   const frequency = midiHz(midi)
-  const pressure = clamp01(event.velocity * 0.72 + track.expression * 0.28)
-  const brightness = clamp01(track.brightness)
+  const gesture = options.performanceGesture
+  const pressure = clamp01((event.velocity * 0.72 + track.expression * 0.28) * (gesture?.onsetEffort ?? 1))
+  const brightness = clamp01(track.brightness * (gesture?.brightnessScale ?? 1))
   const vibrato = clamp01(track.vibrato)
-  const envelope = articulationEnvelope(event, track, legatoFromPrevious)
+  const envelope = articulationEnvelope(event, track, legatoFromPrevious, gesture)
   const noteStart = startAt + event.timeSeconds
   const noteEnd = noteStart + envelope.sounding
   const stopAt = noteEnd + envelope.release + 0.1
@@ -170,9 +178,13 @@ export function schedulePhysicalReedVoice(
   boreBus.connect(radiation); radiation.connect(output); output.connect(destination)
 
   const lfo = context.createOscillator(); lfo.type = "sine"; lfo.frequency.value = profile.vibratoRate + vibrato * 0.5
-  const lfoDepth = context.createGain(); lfoDepth.gain.value = vibrato * (isContrabassoon(source) ? 9 : 13)
+  const vibratoScale = gesture?.vibratoDepthScale ?? 1
+  const vibratoPeak = vibrato * (isContrabassoon(source) ? 9 : 13) * vibratoScale
+  const lfoDepth = context.createGain(); lfoDepth.gain.value = 0
+  lfoDepth.gain.setValueAtTime(0, noteStart)
+  lfoDepth.gain.linearRampToValueAtTime(vibratoPeak, noteStart + Math.min(envelope.sounding * 0.5, gesture?.vibratoDelaySeconds ?? 0))
   lfo.connect(lfoDepth); lfoDepth.connect(fundamental.detune); for (const oscillator of harmonicOscillators) lfoDepth.connect(oscillator.detune)
-  const delayMod = context.createGain(); delayMod.gain.value = baseDelaySeconds * vibrato * 0.0045
+  const delayMod = context.createGain(); delayMod.gain.value = baseDelaySeconds * vibrato * 0.0045 * vibratoScale
   lfo.connect(delayMod); delayMod.connect(boreDelay.delayTime)
 
   const pressureLfo = context.createOscillator(); pressureLfo.type = "sine"; pressureLfo.frequency.value = profile.pressureWanderHz
@@ -185,20 +197,20 @@ export function schedulePhysicalReedVoice(
     if (control.trackId !== event.trackId || control.timeSeconds <= event.timeSeconds || control.timeSeconds > event.timeSeconds + envelope.sounding) continue
     const at = startAt + control.timeSeconds
     if (control.expression !== null) {
-      const p = clamp01(event.velocity * 0.72 + control.expression * 0.28)
+      const p = clamp01((event.velocity * 0.72 + control.expression * 0.28) * (gesture?.sustainEffort ?? 1))
       scheduleParam(pressureGain.gain, at, 0.72 + p * 0.28, control.rampSeconds)
       scheduleParam(boreFeedback.gain, at, profile.boreFeedback * (0.9 + p * 0.08), control.rampSeconds)
       scheduleParam(noiseGain.gain, at, profile.noiseMix * (0.28 + p * 0.72), control.rampSeconds)
     }
     if (control.brightness !== null) {
-      const b = clamp01(control.brightness)
+      const b = clamp01(control.brightness * (gesture?.brightnessScale ?? 1))
       scheduleParam(boreDamping.frequency, at, profile.boreDamping * (0.76 + b * 0.46), control.rampSeconds, true)
       scheduleParam(radiation.frequency, at, Math.min(15_000, profile.brightnessBase * (0.62 + b * 1.15) * (0.86 + pressure * 0.24)), control.rampSeconds, true)
     }
     if (control.vibrato !== null) {
       const v = clamp01(control.vibrato)
-      scheduleParam(lfoDepth.gain, at, v * (isContrabassoon(source) ? 9 : 13), control.rampSeconds)
-      scheduleParam(delayMod.gain, at, baseDelaySeconds * v * 0.0045, control.rampSeconds)
+      scheduleParam(lfoDepth.gain, at, v * (isContrabassoon(source) ? 9 : 13) * vibratoScale, control.rampSeconds)
+      scheduleParam(delayMod.gain, at, baseDelaySeconds * v * 0.0045 * vibratoScale, control.rampSeconds)
     }
     if (control.pitchBend !== null) {
       const cents = centsForSemitones(control.pitchBend)
@@ -214,7 +226,7 @@ export function schedulePhysicalReedVoice(
   output.gain.setValueAtTime(0.0001, noteStart)
   output.gain.exponentialRampToValueAtTime(Math.max(0.001, initialPeak), noteStart + envelope.attack)
   if (event.articulation === "accent") output.gain.exponentialRampToValueAtTime(Math.max(0.001, peak * 0.78), noteStart + Math.min(envelope.sounding * 0.32, envelope.attack + 0.08))
-  output.gain.setValueAtTime(Math.max(0.001, peak * 0.78), Math.max(noteStart + envelope.attack, noteEnd - 0.015))
+  output.gain.setValueAtTime(Math.max(0.001, peak * 0.78 * (gesture?.releaseEffort ?? 1)), Math.max(noteStart + envelope.attack, noteEnd - 0.015))
   output.gain.exponentialRampToValueAtTime(0.0001, stopAt)
 
   fundamental.start(noteStart); fundamental.stop(stopAt)

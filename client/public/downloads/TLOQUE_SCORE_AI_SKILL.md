@@ -2,7 +2,7 @@
 name: tloque-score
 description: Write, revise, repair, or explain deterministic instrumental TloqueScore 2 for Tloque's Audio Laboratory. Use when an AI must turn a musical request into valid score code, orchestrate semantic instruments, select orchestral synthesis or native rendering, add physical performance controls, or fix compiler diagnostics.
 metadata:
-  version: "3.3.0"
+  version: "3.4.0"
   compiler: "tloque-score-compiler-v2.2"
 ---
 
@@ -26,15 +26,18 @@ Si el usuario sólo pide una explicación, puedes responder con prosa y no neces
 
 ## Compatibilidad actual
 
-- Skill: `3.3.0`
+- Skill: `3.4.0`
 - Lenguaje fuente: `TLOQUE_SCORE 2`
 - Compilador: `tloque-score-compiler-v2.2`
 - Síntesis orquestal: `orchestra-synth` / `tloque-orchestral-synth-v3-physical-strings`
 - Cuerdas físicas: `tloque-bowed-string-dsp-v3`
-- Interpretación híbrida: `tloque-native-hybrid-performance-v3-continuous-phrases`
-- Overlay híbrido de cuerdas: `bowed-string-overlay-v2-continuous-waveguide`
+- Intérprete orquestal: `tloque-intelligent-performer-v5`
+- Reglas de gesto: `tloque-intelligent-performer-rules-v1-phrase-gesture`
+- Interpretación híbrida: `tloque-native-hybrid-performance-v4-intelligent-performer`
+- Overlay híbrido de cuerdas: `bowed-string-overlay-v3-intelligent-gesture`
+- Overlay híbrido de aire: `air-column-overlay-v1.2-intelligent-gesture`
 - Dinámica tímbrica continua: `tloque-orchestral-dynamics-v2`
-- Director interpretativo: `tloque-universal-performance-director-v2`
+- Director interpretativo: `tloque-universal-performance-director-v3-intelligent-gestures`
 - Perfil común live/WAV: `tloque-score-audio-v7-universal-performance`
 - Sala estéreo diseñada: `tloque-concert-stage-v3`
 - Enrutador de bancos grabados: `native-auto`
@@ -63,7 +66,7 @@ Si falta un dato, elige un valor musical razonable. No detengas la composición 
 | Si el usuario necesita… | Escribe… | Significa… |
 |---|---|---|
 | Una obra orquestal que funcione sin descargar bancos | `module orchestra-synth` | Síntesis orquestal V3. Es la opción recomendada por defecto. |
-| Instrumentos grabados y los bancos ya están instalados | `module native-auto` | Cada `instrument=` busca su banco verificado; en Studio las cuerdas frotadas combinan sample dominante y continuidad física V4. |
+| Instrumentos grabados y los bancos ya están instalados | `module native-auto` | Cada `instrument=` busca su banco verificado; V5 combina grabación, gesto interpretativo y cuerpo físico compatible. |
 | El sonido sintético clásico | `module builtin` | Motor heredado, menos orquestal. |
 | Un módulo concreto que el usuario confirmó como instalado | `module id-confirmado` | Usa únicamente el ID exacto dado por el usuario o por Tloque. |
 
@@ -154,7 +157,7 @@ quality core | studio | master
 module builtin | orchestra-synth | native-auto | id-instalado-confirmado
 ```
 
-Usa `humanize` con moderación. `0.04..0.14` activa variación determinista y el Director Universal V2: segmentación por pista, arco de frase, clímax, pulso fuerte/débil, contorno melódico y respiración/arco según familia. `humanize 0` desactiva esos cambios y conserva tiempo, duración y velocity neutrales. El Director nunca cambia notas, articulaciones o timbres escritos y no convierte síntesis en una grabación real.
+Usa `humanize` con moderación. `0.04..0.14` activa variación determinista de tiempo, duración y velocity. El Intérprete V5 siempre deriva un gesto acotado por familia y frase: ataque, sostén, salida, brillo, vibrato, arco o respiración. Con `humanize 0`, tiempo, duración y velocity permanecen neutrales, pero el gesto instrumental sigue funcionando. Nunca cambia notas, articulaciones o timbres escritos ni convierte síntesis en una grabación real.
 
 ### Track
 
@@ -276,16 +279,19 @@ Con `module orchestra-synth`:
 
 Para reducir sobrecarga, evita acordes enormes con colas largas en muchos tracks. Adelgaza la orquestación o separa la obra en secciones; no borres notas al azar.
 
-## Cómo aprovechar el híbrido orquestal V4
+## Cómo aprovechar el Intérprete Orquestal V5
 
 Con `module native-auto` y los bancos instalados:
 
+- cada nota recibe un gesto determinista: medio interpretativo, continuidad, ataque, sostén, salida, brillo, vibrato, transición, dirección de arco y respiración;
 - el sample sigue siendo la fuente dominante del ataque, el color grabado, el release y cualquier transición true-legato que exista realmente;
-- en `quality studio`, violín, sección de violines, viola, chelo y contrabajo mantienen debajo del sample una sola cuerda waveguide durante una frase monofónica enlazada;
-- una nota marcada `legato` sólo continúa esa cuerda cuando pertenece a la misma frase, cambia de altura dentro de una octava y no cruza un `rest`;
+- una nota `normal` conserva un ataque nuevo. Sólo `legato` o `tenuto` monofónicos y conectados pueden usar `phrase-carry`;
+- `recorded-legato` sólo existe si el manifest y el banco contienen la transición física exacta; si no, V5 usa continuidad modelada y no la llama grabación real;
+- en `quality studio`, violín, sección de violines, viola, chelo y contrabajo mantienen debajo del sample una cuerda waveguide que sigue el gesto durante la frase;
+- flautas, lengüetas y metales aplican respiración nueva en ataques separados y continuidad de esfuerzo en enlaces válidos;
 - acordes, notas repetidas, silencios y articulaciones no frotadas nunca se agrupan como una frase física;
 - una sección usa intérpretes físicos decorrelacionados y un presupuesto acotado; no copies manualmente el mismo track para fingir más músicos;
-- live y WAV consumen exactamente las mismas unidades de frase, controles y límites de mezcla;
+- live y WAV consumen exactamente los mismos gestos, unidades de frase, controles y límites de mezcla;
 - el híbrido no inventa una transición grabada. Si el banco no contiene true legato, el sample conserva su ataque normal y sólo el cuerpo modelado aporta continuidad;
 - `quality master` no activa automáticamente un overlay híbrido nuevo: primero necesita la matriz A/B ciega, evidencia versionada y aprobación humana del Laboratorio.
 

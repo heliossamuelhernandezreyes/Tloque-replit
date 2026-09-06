@@ -5,6 +5,7 @@ import { articulationDurationFactor } from "../client/src/audio/ScoreAudioMath"
 import { buildOrchestralSynthPlan } from "../client/src/audio/OrchestralSynthPlan"
 import { buildPerformancePlan, performedEventValues } from "../client/src/audio/PerformanceEngine"
 import { UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION } from "../client/src/audio/PerformanceDirector"
+import { INTELLIGENT_PERFORMER_RULE_VERSION, INTELLIGENT_PERFORMER_VERSION } from "../shared/intelligent-performance"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule } from "../client/src/audio/NativeAutoModule"
 
 const PHRASE_SCORE = `TLOQUE_SCORE 2
@@ -39,11 +40,13 @@ function phraseRecipe() {
   return result.recipe
 }
 
-test("Universal Performance Director V2 construye arcos completos y jerarquía métrica", () => {
+test("Universal Performance Director V3 construye arcos completos, jerarquía y gestos V5", () => {
   const recipe = phraseRecipe()
   const first = buildPerformancePlan(recipe, [])
   const second = buildPerformancePlan(recipe, [])
   assert.equal(first.directorVersion, UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION)
+  assert.equal(first.intelligentPerformerVersion, INTELLIGENT_PERFORMER_VERSION)
+  assert.equal(first.intelligentPerformerRuleVersion, INTELLIGENT_PERFORMER_RULE_VERSION)
   assert.deepEqual(first.events, second.events)
 
   const openingPhrase = first.events.slice(0, 9)

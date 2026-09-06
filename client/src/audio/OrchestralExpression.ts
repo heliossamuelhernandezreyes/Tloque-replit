@@ -1,4 +1,5 @@
 import { orchestralIdentityUnit, orchestralTimbreFor } from "@shared/orchestral-synthesis"
+import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
 
 export interface OrchestralNoteExpression {
   swell: number
@@ -19,6 +20,21 @@ export function orchestralNoteExpression(instrument: string, articulation: strin
     vibratoHz: profile.vibratoHz + (orchestralIdentityUnit(identity) - 0.5) * 0.5,
     vibratoDelay: Math.min(0.42, duration * 0.22),
     identity,
+  }
+}
+
+/** Map V5 gesture intent onto synthetic expression without adding vibrato to a
+ * recording that already contains it. */
+export function applyIntelligentPerformanceGestureToExpression(
+  expression: OrchestralNoteExpression,
+  gesture: IntelligentPerformanceGesture | undefined,
+): OrchestralNoteExpression {
+  if (!gesture) return expression
+  return {
+    ...expression,
+    swell: Math.max(0, Math.min(0.16, expression.swell * (0.82 + gesture.sustainEffort * 0.22))),
+    vibratoCents: Math.max(0, Math.min(32, expression.vibratoCents * gesture.vibratoDepthScale)),
+    vibratoDelay: Math.max(0, Math.min(0.42, gesture.vibratoDelaySeconds)),
   }
 }
 

@@ -1,4 +1,5 @@
 import type { LinearScoreControlV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
+import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
 import { orchestralTimbreFor } from "@shared/orchestral-synthesis"
 import { nativeControlValueAt } from "./NativeRecipeIndex"
 
@@ -13,6 +14,38 @@ export interface OrchestralContinuousDynamics {
   readonly sustained: boolean
   readonly effort: Float32Array
   readonly brightness: Float32Array
+  readonly gestureVersion?: IntelligentPerformanceGesture["contractVersion"]
+  readonly gestureRuleVersion?: IntelligentPerformanceGesture["ruleVersion"]
+}
+
+/** Apply the V5 renderer-neutral gesture to an existing dynamic curve. The base
+ * V2 curve remains unchanged for callers that do not opt into Intelligent
+ * Performer, preserving the older synthesis contract. */
+export function applyIntelligentPerformanceGestureToDynamics(
+  dynamics: OrchestralContinuousDynamics,
+  gesture: IntelligentPerformanceGesture | undefined,
+): OrchestralContinuousDynamics {
+  if (!gesture || !dynamics.sustained) return dynamics
+  const effort = new Float32Array(dynamics.effort.length)
+  const brightness = new Float32Array(dynamics.brightness.length)
+  for (let index = 0; index < effort.length; index += 1) {
+    const x = index / Math.max(1, effort.length - 1)
+    const scale = x < 0.22
+      ? gesture.onsetEffort + (gesture.sustainEffort - gesture.onsetEffort) * (x / 0.22)
+      : x > 0.74
+        ? gesture.sustainEffort + (gesture.releaseEffort - gesture.sustainEffort) * ((x - 0.74) / 0.26)
+        : gesture.sustainEffort
+    effort[index] = clamp01(dynamics.effort[index] * scale)
+    const effortDelta = effort[index] - dynamics.effort[index]
+    brightness[index] = clamp01(dynamics.brightness[index] * gesture.brightnessScale + effortDelta * 0.18)
+  }
+  return {
+    ...dynamics,
+    effort,
+    brightness,
+    gestureVersion: gesture.contractVersion,
+    gestureRuleVersion: gesture.ruleVersion,
+  }
 }
 
 function clamp01(value: number) { return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)) }

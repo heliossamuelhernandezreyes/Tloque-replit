@@ -112,7 +112,8 @@ export class NativeSampleScoreEngine {
       const { performance: universalPerformance, recipe: performedRecipe } = buildPerformedRecipeV2(recipe)
       const performedByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, performedRecipe.plan.events[eventIndex]] as const))
       const decisionByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, universalPerformance.decisionForEvent(eventIndex)] as const))
-      const hybridPerformance = buildNativeHybridPerformancePlan(performedRecipe)
+      const gestureByEventIndex = new Map(universalPerformance.events.map(decision => [decision.eventIndex, decision.gesture] as const))
+      const hybridPerformance = buildNativeHybridPerformancePlan(performedRecipe, gestureByEventIndex)
       const graph = createNativeRenderGraph(context, index.trackById)
       const output = context.createGain(); output.gain.value = 0; graph.output.connect(output); output.connect(context.destination)
 
@@ -202,7 +203,7 @@ export class NativeSampleScoreEngine {
                 destination,
                 0,
                 voice.oneShot,
-                { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression, dynamics: voice.dynamics },
+                { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression, dynamics: voice.dynamics, performanceGesture: voice.performanceGesture },
               ).catch(error => {
                 if (!semanticTrack || this.context !== context) return null
                 markFallback(voice.trackId, error)
@@ -317,7 +318,7 @@ export class NativeSampleScoreEngine {
               run: (cycleOffset = 0) => {
                 const scale = dwellGain(cue, track.role, cycleOffset, recipe.plan.totalSeconds, `${event.trackId}:${event.timeSeconds}`)
                 if (scale <= 0) return
-                for (const midi of event.notes) schedulePhysicalReedVoice(context, model, { startAt: startAt + cycleOffset, event, track: { ...effectiveTrack, expression: effectiveTrack.expression * scale }, midi, destination, controls, legatoFromPrevious })
+                for (const midi of event.notes) schedulePhysicalReedVoice(context, model, { startAt: startAt + cycleOffset, event, track: { ...effectiveTrack, expression: effectiveTrack.expression * scale }, midi, destination, controls, legatoFromPrevious, performanceGesture: directorDecision?.gesture })
               },
             })
             naturalEnd = Math.max(naturalEnd, event.timeSeconds + event.durationSeconds + 2)

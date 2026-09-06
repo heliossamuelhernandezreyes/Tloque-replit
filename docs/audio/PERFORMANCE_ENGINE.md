@@ -4,8 +4,9 @@
 
 - General MIDI sigue siendo el fallback compatible; los módulos premium se activan explícitamente.
 - `InstrumentManifest` describe únicamente capacidades verificadas de la librería.
-- `PerformancePlan` compila por evento articulación, programa/selector, velocity layer, round-robin, true legato y release samples.
-- `tloque-universal-performance-director-v2` segmenta frases por track, respeta silencios y secciones, localiza un clímax estable y aplica jerarquía métrica, contorno y respiración/arco sin reescribir la partitura.
+- `PerformancePlan` compila por evento articulación, programa/selector, velocity layer, round-robin, true legato, release samples y el gesto V5.
+- `tloque-universal-performance-director-v3-intelligent-gestures` segmenta frases por track, respeta silencios y secciones y localiza un clímax estable sin reescribir la partitura.
+- `tloque-intelligent-performer-v5` / `tloque-intelligent-performer-rules-v1-phrase-gesture` decide medio, conexión, ataque, sostén, salida, brillo, vibrato, arco y respiración dentro de límites versionados.
 - `performedEventValues` es el contrato único de tiempo, duración y velocity para reproducción SoundFont, MIDI/WAV, muestras nativas y síntesis orquestal.
 - Los keyswitches son locales al instrumento. Nunca se interpretan como números universales entre librerías.
 - Live y WAV muestreado comparten `NativeSampleScorePlan` y `createSampledMixMaster`.
@@ -83,9 +84,9 @@ Los `hit` son one-shots físicos. La duración escrita conserva el significado r
 
 Los módulos nativos se renderizan con `OfflineAudioContext` usando exactamente el mismo plan acústico del live. El master WAV no imprime ducking ni fades narrativos dependientes de la lectura. Preview usa 32 kHz/16-bit; Studio/Master 48 kHz/24-bit, con límite de 220 MB de buffers float para proteger navegadores móviles. Para one-shots, el límite de memoria se calcula después de conocer la cola física real de las muestras seleccionadas.
 
-El perfil general `tloque-score-audio-v7-universal-performance` garantiza que live y exportación consuman la misma interpretación. `humanize=0` conserva neutralidad exacta; un valor positivo activa variación determinista y el Director V2 dentro de límites acotados.
+El perfil general `tloque-score-audio-v7-universal-performance` garantiza que live y exportación consuman la misma interpretación. `humanize=0` conserva neutralidad exacta de tiempo, duración y velocity; el gesto instrumental V5 sigue activo porque interpretación y variación aleatoria son capas distintas.
 
-Native Hybrid Performance V3 conserva esa misma interpretación y compila los legatos monofónicos de cuerdas frotadas en unidades físicas de frase. La capa sampleada mantiene todos sus eventos; sólo el resonador subordinado comparte una vida waveguide hasta un `rest`, una ruptura de frase, un acorde o una articulación no frotada.
+Native Hybrid Performance V4 conserva esa misma interpretación, transporta el gesto V5 y compila los legatos monofónicos de cuerdas frotadas en unidades físicas de frase. La capa sampleada mantiene todos sus eventos; sólo el resonador subordinado comparte una vida waveguide hasta un `rest`, una ruptura de frase, un acorde o una articulación no frotada.
 
 ## Estado
 

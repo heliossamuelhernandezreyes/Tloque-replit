@@ -12,6 +12,7 @@ import { ORCHESTRAL_ROOM_VERSION } from "../client/src/audio/OrchestralRoom"
 import { BOWED_STRING_OVERLAY_VERSION } from "../client/src/audio/PhysicalBowedStringOverlay"
 import { UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION } from "../client/src/audio/PerformanceDirector"
 import { TLOQUE_SCORE_AUDIO_PROFILE } from "../client/src/audio/ScoreAudioMath"
+import { INTELLIGENT_PERFORMER_RULE_VERSION, INTELLIGENT_PERFORMER_VERSION } from "../shared/intelligent-performance"
 
 const skillPath = resolve(process.cwd(), "skills/tloque-score/SKILL.md")
 const downloadableSkillPath = resolve(process.cwd(), "client/public/downloads/TLOQUE_SCORE_AI_SKILL.md")
@@ -26,7 +27,7 @@ test("la skill canónica y la descarga son exactamente la misma fuente", async (
     readFile(downloadableSkillPath, "utf8"),
   ])
   assert.equal(download, canonical)
-  assert.match(canonical, /version: "3\.3\.0"/)
+  assert.match(canonical, /version: "3\.4\.0"/)
 })
 
 test("todos los ejemplos de la skill compilan con el contrato actual", async () => {
@@ -70,6 +71,8 @@ test("la documentación anuncia exactamente las versiones orquestales implementa
     BOWED_STRING_OVERLAY_VERSION,
     UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION,
     TLOQUE_SCORE_AUDIO_PROFILE,
+    INTELLIGENT_PERFORMER_VERSION,
+    INTELLIGENT_PERFORMER_RULE_VERSION,
   ]) {
     assert.match(content, new RegExp(version.replace(/[.]/g, "\\.")))
   }

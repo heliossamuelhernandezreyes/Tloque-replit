@@ -1,4 +1,9 @@
 import type { LinearScoreRecipe, LinearScoreTrack } from "@shared/audio"
+import {
+  INTELLIGENT_PERFORMER_RULE_VERSION,
+  INTELLIGENT_PERFORMER_VERSION,
+  type IntelligentPerformanceGesture,
+} from "@shared/intelligent-performance"
 import type { LinearScoreRecipeV2 } from "@shared/tloque-score-v2"
 import {
   BUILTIN_INSTRUMENT_MANIFESTS,
@@ -46,6 +51,7 @@ export interface PerformanceEventDecision {
   phraseClimaxPosition: number
   metricEmphasis: MetricEmphasis
   directorReasons: readonly string[]
+  gesture: IntelligentPerformanceGesture
   identity: string
 }
 
@@ -69,6 +75,8 @@ export interface PerformanceRoutingPlan {
 
 export interface PerformancePlan extends PerformanceRoutingPlan {
   directorVersion: typeof UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION
+  intelligentPerformerVersion: typeof INTELLIGENT_PERFORMER_VERSION
+  intelligentPerformerRuleVersion: typeof INTELLIGENT_PERFORMER_RULE_VERSION
   events: PerformanceEventDecision[]
   channelForEventIndex(eventIndex: number): number | undefined
   decisionForEvent(eventIndex: number): PerformanceEventDecision | undefined
@@ -493,6 +501,9 @@ export function buildPerformancePlan(
     const durationScale = Math.max(0.84, Math.min(1.10, performed.durationScale * directedDuration))
     const velocityScale = Math.max(0.86, Math.min(1.14, performed.velocityScale * directedVelocity))
     const performedVelocity = Math.max(0.01, Math.min(1, event.velocity * velocityScale))
+    const gesture: IntelligentPerformanceGesture = connected
+      ? { ...director.gesture, connection: "recorded-legato" }
+      : director.gesture
     decisions.push({
       eventIndex,
       trackId: track.id,
@@ -518,6 +529,7 @@ export function buildPerformancePlan(
       phraseClimaxPosition: phrase.climaxPosition,
       metricEmphasis: phrase.metricEmphasis,
       directorReasons: director.reason,
+      gesture,
       identity,
     })
     previousByTrack.set(track.id, { notes: event.notes, endSeconds: startSeconds + durationSeconds })
@@ -528,6 +540,8 @@ export function buildPerformancePlan(
   return {
     ...routing,
     directorVersion: UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION,
+    intelligentPerformerVersion: INTELLIGENT_PERFORMER_VERSION,
+    intelligentPerformerRuleVersion: INTELLIGENT_PERFORMER_RULE_VERSION,
     events: decisions,
     channelForEventIndex: eventIndex => {
       const decision = decisionByIndex.get(eventIndex)
