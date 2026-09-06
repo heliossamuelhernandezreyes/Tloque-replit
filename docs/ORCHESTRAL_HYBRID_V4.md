@@ -1,5 +1,7 @@
 # Orchestral Hybrid V4 — continuous physical performance
 
+V4 remains the continuous-string foundation. `ORCHESTRAL_HYBRID_V5.md` adds the later renderer-neutral Intelligent Performer and intentionally supersedes V4 performance/overlay evidence for promotion.
+
 Date: 2026-09-05. Parent releases: Orchestral Synth V3 and Native Hybrid Performance V2.1.
 
 ## Result

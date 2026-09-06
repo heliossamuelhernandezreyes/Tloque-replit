@@ -16,6 +16,7 @@ import {
   resolvePerformanceRoute,
   velocityLayerIndex,
 } from "../client/src/audio/PerformanceEngine"
+import { INTELLIGENT_PERFORMER_VERSION } from "../shared/intelligent-performance"
 
 const SCORE = `TLOQUE_SCORE 2
 tempo 72
@@ -108,6 +109,7 @@ test("el PerformancePlan compila decisiones acústicas deterministas por evento"
   assert.equal(result.ok, true)
   if (!result.ok) return
   const plan = buildPerformancePlan(result.recipe)
+  assert.equal(plan.intelligentPerformerVersion, INTELLIGENT_PERFORMER_VERSION)
   assert.equal(plan.events.length, 3)
   assert.deepEqual(plan.events.map(event => event.program), [40, 45, 44])
   assert.deepEqual(plan.events.map(event => event.manifestId), ["gm-orchestral-strings", "gm-orchestral-strings", "gm-orchestral-strings"])

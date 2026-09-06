@@ -9,6 +9,8 @@ import { scheduleSympatheticResonanceOverlay } from "./PhysicalSympatheticResona
 type LinearScoreEventV2 = LinearScoreRecipeV2["plan"]["events"][number]
 type LinearScoreControlV2 = LinearScoreRecipeV2["plan"]["controls"][number]
 
+export const AIR_COLUMN_OVERLAY_VERSION = "air-column-overlay-v1.2-intelligent-gesture" as const
+
 export interface AirColumnOverlayOptions {
   startAt: number
   event: LinearScoreEventV2
@@ -53,15 +55,17 @@ function wetGainFor(source: NativeHybridSource, pressure: number, embouchure: nu
   return Math.max(0.0001, boundedHybridOverlayGain(source, source.wet * wetScale * (0.65 + pressure * 0.3 + embouchure * 0.05), performance))
 }
 
-/** Air-column engine v1.1 under the sample-dominant performance-v2 contract. */
+/** Sample-subordinate air column governed by the V5 renderer-neutral gesture. */
 export function scheduleAirColumnOverlay(context: BaseAudioContext, source: NativeHybridSource, options: AirColumnOverlayOptions) {
   if (source.physicalLayer === "sympathetic-resonance") return scheduleSympatheticResonanceOverlay(context, source, options)
   const { startAt, event, track, midi, destination, controls = [], legatoFromPrevious = false } = options
   if (midi < source.midiMin || midi > source.midiMax) return null
-  const tuning = boundedHybridCalibrationTuning(options.calibrationTuning)
+  const tuning = boundedHybridCalibrationTuning(options.calibrationTuning), gesture = options.performance?.gesture
   const profile = profileFor(source), state0 = physicalPerformanceStateAt(track, controls, event.timeSeconds), hz = midiHz(midi), start = startAt + event.timeSeconds
-  const duration = Math.max(0.04, event.durationSeconds), releaseBase = event.articulation === "legato" ? 0.2 : 0.12, release = releaseBase * tuning.decayScale, stop = start + duration + release
-  const pressure = pressureFor(event.velocity, state0.pressure), embouchure = state0.embouchure, brightness = brightnessAt(track, controls, event.timeSeconds), vibrato = clamp01(track.vibrato)
+  const duration = Math.max(0.04, event.durationSeconds), releaseBase = event.articulation === "legato" ? 0.2 : 0.12
+  const release = releaseBase * tuning.decayScale * (gesture?.releaseTimeScale ?? 1), stop = start + duration + release
+  const pressure = clamp01(pressureFor(event.velocity, state0.pressure) * (gesture?.onsetEffort ?? 1)), embouchure = state0.embouchure
+  const brightness = clamp01(brightnessAt(track, controls, event.timeSeconds) * (gesture?.brightnessScale ?? 1)), vibrato = clamp01(track.vibrato)
 
   const excitation = context.createGain(), pressureGain = context.createGain(); excitation.gain.value = 1; pressureGain.gain.value = 0.46 + pressure * 0.54; excitation.connect(pressureGain)
   const fundamental = context.createOscillator(), fg = context.createGain(); fundamental.type = source.instrumentId.startsWith("brass.") ? "sawtooth" : "triangle"; fundamental.frequency.value = hz; fg.gain.value = 0.13 + pressure * 0.11; fundamental.connect(fg); fg.connect(excitation)
@@ -81,15 +85,16 @@ export function scheduleAirColumnOverlay(context: BaseAudioContext, source: Nati
   }
   const output = context.createGain(); output.gain.value = 0; bus.connect(output); output.connect(destination)
 
-  const lfo = context.createOscillator(), lfoDepth = context.createGain(), delayMod = context.createGain(); lfo.type = "sine"; lfo.frequency.value = source.instrumentId.startsWith("brass.") ? 5 : 5.2; const vibratoCents = source.instrumentId.includes("bass-") || source.instrumentId === "brass.tuba" ? 6 : 10; lfoDepth.gain.value = vibrato * vibratoCents; lfo.connect(lfoDepth); lfoDepth.connect(fundamental.detune); lfoDepth.connect(h2.detune); lfoDepth.connect(h3.detune); delayMod.gain.value = baseDelay * vibrato * 0.003; lfo.connect(delayMod); delayMod.connect(delay.delayTime)
+  const lfo = context.createOscillator(), lfoDepth = context.createGain(), delayMod = context.createGain(); lfo.type = "sine"; lfo.frequency.value = source.instrumentId.startsWith("brass.") ? 5 : 5.2; const vibratoCents = source.instrumentId.includes("bass-") || source.instrumentId === "brass.tuba" ? 6 : 10; const vibratoScale = gesture?.vibratoDepthScale ?? 1; const vibratoPeak = vibrato * vibratoCents * vibratoScale; lfoDepth.gain.value = 0; lfoDepth.gain.setValueAtTime(0, start); lfoDepth.gain.linearRampToValueAtTime(vibratoPeak, start + Math.min(duration * 0.5, gesture?.vibratoDelaySeconds ?? 0)); lfo.connect(lfoDepth); lfoDepth.connect(fundamental.detune); lfoDepth.connect(h2.detune); lfoDepth.connect(h3.detune); delayMod.gain.value = baseDelay * vibrato * 0.003 * vibratoScale; lfo.connect(delayMod); delayMod.connect(delay.delayTime)
 
-  const attack = legatoFromPrevious ? 0.032 : Math.max(0.016, Math.min(0.065, track.attack * 0.35))
+  const attack = (legatoFromPrevious ? 0.032 : Math.max(0.016, Math.min(0.065, track.attack * 0.35))) * (gesture?.attackTimeScale ?? 1)
   output.gain.setValueAtTime(0.0001, start); output.gain.exponentialRampToValueAtTime(wetGainFor(source, pressure, embouchure, tuning.wetScale, options.performance), start + attack)
 
   for (const control of controls) {
     if (control.trackId !== event.trackId || control.timeSeconds <= event.timeSeconds || control.timeSeconds > event.timeSeconds + duration) continue
     const at = startAt + control.timeSeconds, state = physicalPerformanceStateAt(track, controls, control.timeSeconds)
-    const p = pressureFor(event.velocity, state.pressure), e = state.embouchure, b = brightnessAt(track, controls, control.timeSeconds)
+    const p = clamp01(pressureFor(event.velocity, state.pressure) * (gesture?.sustainEffort ?? 1)), e = state.embouchure
+    const b = clamp01(brightnessAt(track, controls, control.timeSeconds) * (gesture?.brightnessScale ?? 1))
     scheduleParam(pressureGain.gain, at, 0.46 + p * 0.54, control.rampSeconds)
     scheduleParam(fg.gain, at, 0.13 + p * 0.11, control.rampSeconds)
     scheduleParam(h2g.gain, at, profile.h2 * (0.68 + p * 0.32) * embouchureTone(e) * tuning.textureScale, control.rampSeconds)
@@ -100,11 +105,11 @@ export function scheduleAirColumnOverlay(context: BaseAudioContext, source: Nati
     scheduleParam(breathBand.frequency, at, profile.damping * tuning.dampingScale * (0.48 + b * 0.35 + e * 0.28), control.rampSeconds, true)
     for (let i = 0; i < formantFilters.length; i += 1) scheduleParam(formantFilters[i].frequency, at, profile.formants[i] * (0.94 + e * 0.12), control.rampSeconds, true)
     scheduleParam(output.gain, at, wetGainFor(source, p, e, tuning.wetScale, options.performance), control.rampSeconds, true)
-    if (control.vibrato !== null) scheduleParam(lfoDepth.gain, at, clamp01(control.vibrato) * vibratoCents, control.rampSeconds)
+    if (control.vibrato !== null) scheduleParam(lfoDepth.gain, at, clamp01(control.vibrato) * vibratoCents * vibratoScale, control.rampSeconds)
     if (control.pitchBend !== null) { const cents = control.pitchBend * 100; scheduleParam(fundamental.detune, at, cents, control.rampSeconds); scheduleParam(h2.detune, at, cents, control.rampSeconds); scheduleParam(h3.detune, at, cents, control.rampSeconds); const bentHz = hz * 2 ** (control.pitchBend / 12); scheduleParam(delay.delayTime, at, Math.min(0.08, Math.max(1 / 18_000, 1 / bentHz)), control.rampSeconds) }
   }
 
-  const endState = physicalPerformanceStateAt(track, controls, event.timeSeconds + duration), endPressure = pressureFor(event.velocity, endState.pressure), finalPeak = wetGainFor(source, endPressure, endState.embouchure, tuning.wetScale, options.performance)
+  const endState = physicalPerformanceStateAt(track, controls, event.timeSeconds + duration), endPressure = clamp01(pressureFor(event.velocity, endState.pressure) * (gesture?.releaseEffort ?? 1)), finalPeak = wetGainFor(source, endPressure, endState.embouchure, tuning.wetScale, options.performance)
   output.gain.setValueAtTime(Math.max(0.0001, finalPeak * 0.9), Math.max(start + attack, start + duration - 0.012)); output.gain.exponentialRampToValueAtTime(0.0001, stop)
   fundamental.start(start); fundamental.stop(stop); h2.start(start); h2.stop(stop); h3.start(start); h3.stop(stop); breath.start(start, deterministicNoiseOffset(breathIdentity, breathBuffer.duration)); breath.stop(stop); lfo.start(start); lfo.stop(stop)
   return { endSeconds: event.timeSeconds + duration + release }

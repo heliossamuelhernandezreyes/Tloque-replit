@@ -2,7 +2,7 @@
 
 Date: 2026-09-04. Parent release: `tloque-orchestral-synth-v2.1`.
 
-The later sample-dominant hybrid path is documented in `ORCHESTRAL_HYBRID_V4.md`; this file remains the contract for the bank-free synthesizer.
+The later sample-dominant hybrid path is documented in `ORCHESTRAL_HYBRID_V4.md`; `ORCHESTRAL_HYBRID_V5.md` adds a shared intelligent gesture layer without changing this bank-free DSP version.
 
 ## Result and compatibility
 
@@ -12,7 +12,8 @@ The later sample-dominant hybrid path is documented in `ORCHESTRAL_HYBRID_V4.md`
 |---|---|---|
 | Renderer | `tloque-orchestral-synth-v3-physical-strings` | Existing module ID; physical bowed-string route |
 | String DSP | `tloque-bowed-string-dsp-v3` | Nonlinear oversampled waveguide plus body modes |
-| Interpretation | `tloque-universal-performance-director-v2` | Phrase boundaries and performed event values |
+| Interpretation | `tloque-universal-performance-director-v3-intelligent-gestures` | Phrase boundaries, performed event values and shared V5 gesture |
+| Gesture rules | `tloque-intelligent-performer-v5` / `tloque-intelligent-performer-rules-v1-phrase-gesture` | Renderer-neutral attack, sustain, release, effort, colour and continuity |
 | Dynamics | `tloque-orchestral-dynamics-v2` | Continuous effort and brightness curves |
 | Stage | `tloque-concert-stage-v3` | Existing designed stereo stage |
 

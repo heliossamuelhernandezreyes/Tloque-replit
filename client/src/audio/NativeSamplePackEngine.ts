@@ -1,4 +1,5 @@
 import type { TloqueArticulation } from "@shared/instrument-manifest"
+import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
 import {
   validateTloqueSamplePack,
   type TloqueMicPosition,
@@ -27,6 +28,7 @@ export interface NativeSamplePlaybackEnvelope {
   fadeOutSeconds?: number
   expression?: OrchestralNoteExpression
   dynamics?: OrchestralContinuousDynamics
+  performanceGesture?: IntelligentPerformanceGesture
 }
 
 const MAX_EDGE_TRANSPOSE_SEMITONES = 4
@@ -124,8 +126,10 @@ function adaptivePhraseEnvelope(durationSeconds: number, oneShot: boolean, reque
   const sustained = durationSeconds >= 0.22
   const defaultFadeIn = sustained ? Math.min(0.014, durationSeconds * 0.08) : Math.min(0.006, durationSeconds * 0.06)
   const defaultFadeOut = sustained ? Math.min(0.045, durationSeconds * 0.16) : Math.min(0.014, durationSeconds * 0.10)
-  const fadeIn = Math.max(0, requested.fadeInSeconds ?? defaultFadeIn)
-  const fadeOut = Math.max(0, requested.fadeOutSeconds ?? defaultFadeOut)
+  const fadeIn = Math.max(0, (requested.fadeInSeconds ?? defaultFadeIn)
+    * (requested.fadeInSeconds === undefined ? requested.performanceGesture?.attackTimeScale ?? 1 : 1))
+  const fadeOut = Math.max(0, (requested.fadeOutSeconds ?? defaultFadeOut)
+    * (requested.fadeOutSeconds === undefined ? requested.performanceGesture?.releaseTimeScale ?? 1 : 1))
   const overlapTail = requested.fadeOutSeconds === undefined ? fadeOut : Math.max(0, requested.fadeOutSeconds)
   return { fadeIn, fadeOut, overlapTail }
 }

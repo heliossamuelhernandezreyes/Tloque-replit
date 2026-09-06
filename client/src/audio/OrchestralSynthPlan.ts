@@ -1,4 +1,5 @@
 import type { LinearScoreRecipeV2 } from "@shared/tloque-score-v2"
+import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
 import { buildPerformancePlan, performedEventValues } from "./PerformanceEngine"
 import { articulationDurationFactor, scorePedalReleaseTime } from "./ScoreAudioMath"
 
@@ -9,6 +10,7 @@ export type OrchestralSynthPlannedEvent = LinearScoreRecipeV2["plan"]["events"][
   performancePhraseIndex: number
   performancePhraseStart: boolean
   performancePhraseEnd: boolean
+  performanceGesture?: IntelligentPerformanceGesture
 }
 
 export type OrchestralSynthRenderUnit =
@@ -58,6 +60,7 @@ export function buildOrchestralSynthPlan(recipe: LinearScoreRecipeV2, trackIds: 
       performancePhraseIndex: decision?.phraseIndex ?? eventIndex,
       performancePhraseStart: decision?.phraseStart ?? true,
       performancePhraseEnd: decision?.phraseEnd ?? true,
+      performanceGesture: decision?.gesture,
       ...(linked ? { legatoFromPrevious: true, transitionFromMidi } : {}),
     })
     previousByTrack.set(event.trackId, event)

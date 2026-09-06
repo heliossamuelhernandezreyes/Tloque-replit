@@ -1,7 +1,7 @@
 import { describe, expect, it } from "./test-compat"
 import { hybridEnabledForArticulation, NATIVE_HYBRID_SOURCES } from "../shared/native-hybrid-source"
 
-describe("Hybrid Winds and Brass v1.1", () => {
+describe("Hybrid Winds and Brass v1.2 Intelligent Performer", () => {
   it("covers the verified sampled wind and brass families with a quiet air-column layer", () => {
     const air = NATIVE_HYBRID_SOURCES.filter(source => source.physicalLayer === "air-column-resonator")
     const ids = new Set(air.map(source => source.instrumentId))
@@ -11,7 +11,7 @@ describe("Hybrid Winds and Brass v1.1", () => {
     ]) expect(ids.has(id)).toBe(true)
     for (const source of air) {
       expect(source.baseSource).toBe("sample-pack")
-      expect(source.engineVersion).toBe("air-column-overlay-v1.1")
+      expect(source.engineVersion).toBe("air-column-overlay-v1.2-intelligent-gesture")
       expect(source.approval).toBe("studio")
       expect(source.masterApproved).toBe(false)
       expect(source.wet).toBeGreaterThan(0)

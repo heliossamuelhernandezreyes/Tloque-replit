@@ -1,10 +1,11 @@
 import type { LinearScoreControlV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
+import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
 import { ORCHESTRAL_SYNTH_MAX_SOURCES, orchestralIdentityUnit, orchestralSpectrum, orchestralTimbreFor } from "@shared/orchestral-synthesis"
 import { articulationDurationFactor, articulationVelocityFactor, midiNoteToFrequency, scoreVelocityGain } from "./ScoreAudioMath"
 import { deterministicNoiseOffset, sharedDeterministicNoiseBuffer } from "./DeterministicAudioNoise"
-import { orchestralExpressionCurve, orchestralNoteExpression } from "./OrchestralExpression"
+import { applyIntelligentPerformanceGestureToExpression, orchestralExpressionCurve, orchestralNoteExpression } from "./OrchestralExpression"
 import { nativeControlValueAt } from "./NativeRecipeIndex"
-import { orchestralContinuousDynamics, orchestralDynamicCutoffCurve } from "./OrchestralDynamics"
+import { applyIntelligentPerformanceGestureToDynamics, orchestralContinuousDynamics, orchestralDynamicCutoffCurve } from "./OrchestralDynamics"
 import { isBowedOrchestralString, scheduleOrchestralStringPhrase } from "./OrchestralStringVoice"
 
 export interface OrchestralSynthEvent {
@@ -17,6 +18,7 @@ export interface OrchestralSynthEvent {
   durationIsPerformed?: boolean
   legatoFromPrevious?: boolean
   transitionFromMidi?: number
+  performanceGesture?: IntelligentPerformanceGesture
 }
 
 const waves = new WeakMap<BaseAudioContext, Map<string, PeriodicWave>>()
@@ -79,12 +81,22 @@ export function scheduleOrchestralSynthVoice(context: BaseAudioContext, destinat
     const profile = orchestralTimbreFor(track.instrument, midi)
     const plucked = profile.decay > 0 || articulation === "pizzicato"
     const connectedLegato = !plucked && event.legatoFromPrevious === true && event.transitionFromMidi !== undefined
-    const attack = Math.min(duration * 0.25, Math.max(0.004, connectedLegato ? Math.min(0.014, profile.attack * 0.18) : articulation === "legato" ? profile.attack * 0.45 : Math.min(track.attack, profile.attack)))
-    const release = Math.min(2.5, Math.max(profile.release, Math.min(track.release, plucked ? 1.8 : 0.65)))
+    const gesture = event.performanceGesture
+    const attack = Math.min(duration * 0.25, Math.max(0.004,
+      (connectedLegato ? Math.min(0.014, profile.attack * 0.18) : articulation === "legato" ? profile.attack * 0.45 : Math.min(track.attack, profile.attack))
+      * (gesture?.attackTimeScale ?? 1)))
+    const release = Math.min(2.5, Math.max(0.025,
+      Math.max(profile.release, Math.min(track.release, plucked ? 1.8 : 0.65)) * (gesture?.releaseTimeScale ?? 1)))
     const end = begins + duration + release
     const identity = `${track.id}:${track.instrument}:${event.timeSeconds}:${midi}`
-    const expression = orchestralNoteExpression(track.instrument, articulation, duration, 1, false, identity)
-    const dynamics = orchestralContinuousDynamics(track, controls, event.timeSeconds, duration, event.velocity, articulation)
+    const expression = applyIntelligentPerformanceGestureToExpression(
+      orchestralNoteExpression(track.instrument, articulation, duration, 1, false, identity),
+      gesture,
+    )
+    const dynamics = applyIntelligentPerformanceGestureToDynamics(
+      orchestralContinuousDynamics(track, controls, event.timeSeconds, duration, event.velocity, articulation),
+      gesture,
+    )
     const frequency = track.instrument === "percussion.orchestral-kit" ? (midi === 36 ? 58 : midi < 42 ? 180 : 520) : midiNoteToFrequency(midi) * (articulation === "harmonic" ? 2 : 1)
     const ratios = profile.modalRatios?.filter(ratio => frequency * ratio < context.sampleRate * 0.44)
     const sourceCount = ratios?.length ?? profile.ensemble
@@ -95,7 +107,9 @@ export function scheduleOrchestralSynthVoice(context: BaseAudioContext, destinat
     envelope.gain.setValueAtTime(0, begins)
     envelope.gain.linearRampToValueAtTime(amplitude, begins + attack)
     const decay = plucked ? (profile.decay || 3.5) : 0
-    const sustain = decay ? Math.max(0.001, amplitude * Math.exp(-duration * decay)) : amplitude * 0.88
+    const sustain = decay
+      ? Math.max(0.001, amplitude * Math.exp(-duration * decay))
+      : amplitude * Math.max(0.62, Math.min(0.98, 0.88 * (gesture?.releaseEffort ?? 1)))
     envelope.gain.exponentialRampToValueAtTime(Math.max(0.00001, sustain), begins + duration)
     envelope.gain.exponentialRampToValueAtTime(0.00001, end)
     const phrasing = context.createGain()
@@ -135,7 +149,9 @@ export function scheduleOrchestralSynthVoice(context: BaseAudioContext, destinat
         oscillator.setPeriodicWave(waveFor(context, track.instrument, midi, waveBrightness))
         if (connectedLegato) {
           const from = midiNoteToFrequency(event.transitionFromMidi!) * (articulation === "harmonic" ? 2 : 1)
-          const transitionSeconds = Math.min(duration * 0.18, Math.max(0.018, 0.026 + Math.abs(midi - event.transitionFromMidi!) * 0.0018))
+          const transitionSeconds = Math.min(duration * 0.18, gesture?.transitionSeconds
+            ? Math.max(0.012, gesture.transitionSeconds)
+            : Math.max(0.018, 0.026 + Math.abs(midi - event.transitionFromMidi!) * 0.0018))
           oscillator.frequency.setValueAtTime(from, begins)
           oscillator.frequency.exponentialRampToValueAtTime(frequency, begins + transitionSeconds)
         } else oscillator.frequency.value = frequency
@@ -165,7 +181,7 @@ export function scheduleOrchestralSynthVoice(context: BaseAudioContext, destinat
       noise.buffer = buffer; noise.loop = true
       const filter = context.createBiquadFilter(); filter.type = "bandpass"; filter.frequency.value = Math.min(context.sampleRate * 0.4, profile.formantHz * 1.4); filter.Q.value = 0.65
       const noiseGain = context.createGain()
-      const excitation = connectedLegato ? 0.28 : 1
+      const excitation = (connectedLegato ? 0.28 : 1) * (gesture?.onsetEffort ?? 1)
       noiseGain.gain.setValueAtTime(profile.noise * excitation * (0.8 + 0.2 * orchestralIdentityUnit(identity)), begins)
       noiseGain.gain.exponentialRampToValueAtTime(Math.max(0.00001, profile.noise * (plucked ? 0.005 : 0.18)), begins + Math.min(duration, 0.22))
       noise.connect(filter); filter.connect(noiseGain); noiseGain.connect(envelope)

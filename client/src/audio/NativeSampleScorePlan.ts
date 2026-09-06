@@ -1,13 +1,14 @@
 import type { LinearScoreRecipe } from "@shared/audio"
+import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
 import { manifestsForModule, type InstrumentManifest, type TloqueArticulation } from "@shared/instrument-manifest"
 import type { TloqueMicPosition, TloqueMute, TloqueSamplePack, TloqueSampleZone, TloqueVibratoColour } from "@shared/native-sample-pack"
 import { physicalRecordedTimbre, recordedTimbreProfileFor, resolveRecordedTimbre, type ExplicitRecordedTimbre } from "@shared/recorded-timbre"
-import type { LinearScoreRecipeV2, ScoreTimbre } from "@shared/tloque-score-v2"
+import type { ScoreTimbre } from "@shared/tloque-score-v2"
 import { selectNativeSampleZone } from "./NativeSamplePackEngine"
 import { selectNativeSampleVelocityBlend } from "./NativeSampleVelocityBlend"
 import { buildPerformancePlan, performedEventValues } from "./PerformanceEngine"
-import { orchestralNoteExpression, type OrchestralNoteExpression } from "./OrchestralExpression"
-import { orchestralContinuousDynamics, type OrchestralContinuousDynamics } from "./OrchestralDynamics"
+import { applyIntelligentPerformanceGestureToExpression, orchestralNoteExpression, type OrchestralNoteExpression } from "./OrchestralExpression"
+import { applyIntelligentPerformanceGestureToDynamics, orchestralContinuousDynamics, type OrchestralContinuousDynamics } from "./OrchestralDynamics"
 import { buildNativeRecipeIndex, nativeControlValueAt } from "./NativeRecipeIndex"
 import { articulationDurationFactor, articulationVelocityFactor, scoreTrackExpression, scoreTrackTimbre, scoreVelocityGain } from "./ScoreAudioMath"
 
@@ -33,6 +34,7 @@ export interface NativeSampleVoicePlan {
   sampleGain: number
   oneShot: boolean
   fadeInSeconds: number
+  performanceGesture?: IntelligentPerformanceGesture
   expression?: OrchestralNoteExpression
   dynamics?: OrchestralContinuousDynamics
 }
@@ -132,23 +134,12 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
   const voices: NativeSampleVoicePlan[] = []
   const auxiliaryVoices: NativeSampleAuxiliaryVoicePlan[] = []
   const zones = new Map<string, TloqueSampleZone>()
-  const previousEventByTrack = new Map<string, LinearScoreRecipeV2["plan"]["events"][number]>()
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
     const decision = performance.decisionForEvent(eventIndex)
     const track = trackById.get(event.trackId)
     if (!decision || !track) continue
-    const previousEvent = previousEventByTrack.get(event.trackId)
-    const connectedPerformancePhrase = Boolean(
-      previousEvent
-      && !decision.phraseStart
-      && previousEvent.notes.length === 1
-      && event.notes.length === 1
-      && previousEvent.notes[0] !== event.notes[0]
-      && Math.abs(previousEvent.notes[0] - event.notes[0]) <= 12
-      && event.timeSeconds - (previousEvent.timeSeconds + previousEvent.durationSeconds) <= 0.09
-      && event.timeSeconds - (previousEvent.timeSeconds + previousEvent.durationSeconds) >= -0.12,
-    )
+    const connectedPerformancePhrase = decision.gesture.connection === "phrase-carry"
     const oneShot = track.instrument === "percussion.orchestral-kit"
     const requestedTimbre = event.timbre ?? track.timbre ?? "natural"
     const performedVibrato = requestedTimbre === "non-vibrato" ? 0 : nativeControlValueAt(index.controlsByTrack.get(track.id) ?? [], "vibrato", event.timeSeconds, track.vibrato ?? 0)
@@ -158,7 +149,10 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     const velocity = Math.round(Math.min(1, scoreVelocityGain(performedVelocity) * articulationVelocityFactor(decision.articulation)) * 127)
     const durationSeconds = Math.max(0.01, performed.durationSeconds * articulationDurationFactor(decision.articulation))
     const startSeconds = performed.startSeconds
-    const dynamics = orchestralContinuousDynamics(track, index.controlsByTrack.get(track.id) ?? [], startSeconds, durationSeconds, performedVelocity, decision.articulation)
+    const dynamics = applyIntelligentPerformanceGestureToDynamics(
+      orchestralContinuousDynamics(track, index.controlsByTrack.get(track.id) ?? [], startSeconds, durationSeconds, performedVelocity, decision.articulation),
+      decision.gesture,
+    )
     const micPosition = micForTrack(track.id)
     for (const note of event.notes) {
       let selections: ReturnType<typeof selectNativeSampleVelocityBlend> = []
@@ -210,7 +204,11 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           sampleGain: selected.gain,
           oneShot,
           fadeInSeconds: 0,
-          expression: orchestralNoteExpression(track.instrument, decision.articulation, durationSeconds, performedVibrato, physical.vibratoColour !== "none", `${recipe.plan.seed}:${event.trackId}:${event.timeSeconds}:${note}`),
+          performanceGesture: decision.gesture,
+          expression: applyIntelligentPerformanceGestureToExpression(
+            orchestralNoteExpression(track.instrument, decision.articulation, durationSeconds, performedVibrato, physical.vibratoColour !== "none", `${recipe.plan.seed}:${event.trackId}:${event.timeSeconds}:${note}`),
+            decision.gesture,
+          ),
           ...(!oneShot && dynamics.sustained ? { dynamics } : {}),
         }
         voices.push(voice)
@@ -247,7 +245,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           fadeOutSeconds: crossfadeSeconds,
         })
       } else if (connectedPerformancePhrase && (decision.articulation === "legato" || decision.articulation === "tenuto" || decision.articulation === "normal")) {
-        const performanceCrossfade = Math.max(0.018, Math.min(0.065, durationSeconds * 0.12))
+        const performanceCrossfade = decision.gesture.transitionSeconds
         for (const voice of noteVoices) voice.fadeInSeconds = Math.max(voice.fadeInSeconds, performanceCrossfade)
       }
 
@@ -272,7 +270,6 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
         })
       }
     }
-    previousEventByTrack.set(event.trackId, event)
   }
 
   return { tracks, controls, voices, auxiliaryVoices, zones: [...zones.values()], totalSeconds: recipe.plan.totalSeconds }

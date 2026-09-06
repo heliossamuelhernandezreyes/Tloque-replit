@@ -2,8 +2,8 @@ import { describe, expect, it } from "./test-compat"
 import { NATIVE_HYBRID_SOURCES, nativeHybridForInstrument } from "../shared/native-hybrid-source"
 
 const engineForLayer = {
-  "bowed-string-resonator": "bowed-string-overlay-v2-continuous-waveguide",
-  "air-column-resonator": "air-column-overlay-v1.1",
+  "bowed-string-resonator": "bowed-string-overlay-v3-intelligent-gesture",
+  "air-column-resonator": "air-column-overlay-v1.2-intelligent-gesture",
   "sympathetic-resonance": "sympathetic-resonance-v1.1",
 } as const
 
@@ -28,7 +28,7 @@ describe("hybrid render parity contract", () => {
   it("keeps representative bowed and wind instruments on their own families", () => {
     expect(nativeHybridForInstrument("strings.violin")?.physicalLayer).toBe("bowed-string-resonator")
     expect(nativeHybridForInstrument("woodwinds.flute")?.physicalLayer).toBe("air-column-resonator")
-    expect(nativeHybridForInstrument("woodwinds.flute")?.engineVersion).toBe("air-column-overlay-v1.1")
+    expect(nativeHybridForInstrument("woodwinds.flute")?.engineVersion).toBe("air-column-overlay-v1.2-intelligent-gesture")
     expect(nativeHybridForInstrument("brass.trumpet")?.physicalLayer).toBe("air-column-resonator")
   })
 })

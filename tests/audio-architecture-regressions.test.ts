@@ -105,7 +105,7 @@ test("cada exportación pasa por el medidor de master antes de descargar", () =>
   assert.match(admin, /Master rechazado por control de calidad/)
 })
 
-test("todos los renderers consumen el mismo evento del Director Universal V2", () => {
+test("todos los renderers consumen el mismo evento del Director Universal V3", () => {
   for (const path of [
     "client/src/audio/LinearScoreEngine.ts",
     "client/src/audio/ScoreExporter.ts",
@@ -118,7 +118,7 @@ test("todos los renderers consumen el mismo evento del Director Universal V2", (
   ]) {
     assert.match(read(path), /performedEventValues|buildPerformedRecipeV2/)
   }
-  assert.match(read("client/src/audio/PerformanceDirector.ts"), /tloque-universal-performance-director-v2/)
+  assert.match(read("client/src/audio/PerformanceDirector.ts"), /tloque-universal-performance-director-v3-intelligent-gestures/)
   assert.match(read("client/src/audio/ScoreAudioMath.ts"), /tloque-score-audio-v7-universal-performance/)
 })
 
