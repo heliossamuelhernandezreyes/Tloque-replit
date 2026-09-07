@@ -1,6 +1,6 @@
 # Orchestral Hybrid V5 — Intelligent Performer
 
-> Superseded for current rendering by [Orchestra Conductor V6](./ORCHESTRA_CONDUCTOR_V6.md). The V5 individual-musician gesture remains active underneath V6.
+> Superseded for current rendering by [Orchestra Conductor V7](./ORCHESTRA_CONDUCTOR_V7.md). The V5 individual-musician gesture remains active underneath V7.
 
 Date: 2026-09-05. Parent releases: Orchestral Synth V3 and Orchestral Hybrid V4.
 

@@ -9,7 +9,7 @@ import { scheduleSympatheticResonanceOverlay } from "./PhysicalSympatheticResona
 type LinearScoreEventV2 = LinearScoreRecipeV2["plan"]["events"][number]
 type LinearScoreControlV2 = LinearScoreRecipeV2["plan"]["controls"][number]
 
-export const AIR_COLUMN_OVERLAY_VERSION = "air-column-overlay-v1.3-orchestra-conductor" as const
+export const AIR_COLUMN_OVERLAY_VERSION = "air-column-overlay-v1.4-acoustic-continuity" as const
 
 export interface AirColumnOverlayOptions {
   startAt: number

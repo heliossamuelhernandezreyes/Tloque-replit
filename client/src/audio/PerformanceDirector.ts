@@ -7,7 +7,7 @@ import {
   type PerformanceMedium,
 } from "@shared/intelligent-performance"
 
-export const UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION = "tloque-universal-performance-director-v4-orchestra-conductor" as const
+export const UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION = "tloque-universal-performance-director-v5-acoustic-continuity" as const
 
 export type MetricEmphasis = "primary" | "secondary" | "light"
 

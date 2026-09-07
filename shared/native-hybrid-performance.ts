@@ -6,7 +6,7 @@ import type { LinearScoreRecipeV2 } from "./tloque-score-v2"
 type ScoreEvent = LinearScoreRecipeV2["plan"]["events"][number]
 type ScoreRest = LinearScoreRecipeV2["plan"]["rests"][number]
 
-export const NATIVE_HYBRID_PERFORMANCE_VERSION = "tloque-native-hybrid-performance-v5-orchestra-conductor" as const
+export const NATIVE_HYBRID_PERFORMANCE_VERSION = "tloque-native-hybrid-performance-v6-acoustic-continuity" as const
 
 export type NativeHybridTransition = "fresh-attack" | "connected-legato"
 

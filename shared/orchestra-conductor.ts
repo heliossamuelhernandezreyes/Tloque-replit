@@ -1,5 +1,5 @@
-export const ORCHESTRA_CONDUCTOR_VERSION = "tloque-orchestra-conductor-v6" as const
-export const ORCHESTRA_CONDUCTOR_RULE_VERSION = "tloque-orchestra-conductor-rules-v1-ensemble-memory" as const
+export const ORCHESTRA_CONDUCTOR_VERSION = "tloque-orchestra-conductor-v7-acoustic-continuity" as const
+export const ORCHESTRA_CONDUCTOR_RULE_VERSION = "tloque-orchestra-conductor-rules-v2-musical-onset-audible-gap" as const
 
 export type OrchestraEnsemblePhase = "entry" | "build" | "crest" | "release"
 
@@ -12,6 +12,7 @@ export interface OrchestraConductorGesture {
   ensembleEnergy: number
   memoryEnergy: number
   density: number
+  audibleGapSeconds: number
   balanceScale: number
   colourScale: number
   attackCohesionScale: number
@@ -27,6 +28,7 @@ export const NEUTRAL_ORCHESTRA_CONDUCTOR_GESTURE: OrchestraConductorGesture = Ob
   ensembleEnergy: 0.5,
   memoryEnergy: 0.5,
   density: 0,
+  audibleGapSeconds: 0,
   balanceScale: 1,
   colourScale: 1,
   attackCohesionScale: 1,

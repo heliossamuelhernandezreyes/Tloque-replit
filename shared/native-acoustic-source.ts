@@ -7,7 +7,7 @@ export interface NativePhysicalModelSource {
   instrumentId: string
   modelId: "double-reed-english-horn-v1" | "double-reed-contrabassoon-v1"
   modelFamily: "double-reed-resonator"
-  engineVersion: "reed-resonator-v2"
+  engineVersion: "reed-resonator-v3-acoustic-continuity"
   validationProfileId: "tloque-double-reed-reference-v1"
   midiMin: number
   midiMax: number
@@ -24,14 +24,14 @@ export const NATIVE_PHYSICAL_MODEL_SOURCES: readonly NativePhysicalModelSource[]
     instrumentId: "woodwinds.english-horn",
     modelId: "double-reed-english-horn-v1",
     modelFamily: "double-reed-resonator",
-    engineVersion: "reed-resonator-v2",
+    engineVersion: "reed-resonator-v3-acoustic-continuity",
     validationProfileId: "tloque-double-reed-reference-v1",
     midiMin: 52,
     midiMax: 80,
     approval: "studio",
     masterApproved: false,
     provenance: "tloque-original-model",
-    notes: "Modelo original de doble lengüeta v2: excitación, bore resonante y automatización continua. Studio aprobado; Master sólo se habilita con reporte acústico completo y revisión A/B.",
+    notes: "Modelo original de doble lengüeta v3: excitación, bore resonante y automatización continua sin perder el color del Conductor durante ramps. Studio aprobado; Master sólo se habilita con reporte acústico completo y revisión A/B.",
   },
   {
     kind: "physical-model",
@@ -39,14 +39,14 @@ export const NATIVE_PHYSICAL_MODEL_SOURCES: readonly NativePhysicalModelSource[]
     instrumentId: "woodwinds.contrabassoon",
     modelId: "double-reed-contrabassoon-v1",
     modelFamily: "double-reed-resonator",
-    engineVersion: "reed-resonator-v2",
+    engineVersion: "reed-resonator-v3-acoustic-continuity",
     validationProfileId: "tloque-double-reed-reference-v1",
     midiMin: 34,
     midiMax: 53,
     approval: "studio",
     masterApproved: false,
     provenance: "tloque-original-model",
-    notes: "Modelo original de doble lengüeta grave v2: excitación, bore largo resonante y automatización continua. Studio aprobado; Master sólo se habilita con reporte acústico completo y revisión A/B.",
+    notes: "Modelo original de doble lengüeta grave v3: excitación, bore largo resonante y automatización continua sin perder el color del Conductor durante ramps. Studio aprobado; Master sólo se habilita con reporte acústico completo y revisión A/B.",
   },
 ]
 

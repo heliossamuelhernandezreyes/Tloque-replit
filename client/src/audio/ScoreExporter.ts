@@ -11,7 +11,7 @@ import { buildPerformancePlan, performedEventValues } from "./PerformanceEngine"
 
 export type ScoreExportQuality = "preview" | "studio" | "master"
 
-export const TLOQUE_NATIVE_CONCERT_PROFILE = "tloque-native-concert-v3-universal-performance" as const
+export const TLOQUE_NATIVE_CONCERT_PROFILE = "tloque-native-concert-v4-acoustic-continuity" as const
 
 export interface ScoreExportEstimate {
   audioProfile: string

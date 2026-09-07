@@ -1,7 +1,7 @@
 /** Original, declarative timbre design. These are synthesis heuristics, not sampled
  * instruments or claims of physical/acoustic certification. No external assets. */
 export const ORCHESTRAL_SYNTH_MODULE_ID = "orchestra-synth" as const
-export const ORCHESTRAL_SYNTH_VERSION = "tloque-orchestral-synth-v4-orchestra-conductor" as const
+export const ORCHESTRAL_SYNTH_VERSION = "tloque-orchestral-synth-v5-acoustic-continuity" as const
 export const ORCHESTRAL_SYNTH_MAX_SOURCES = 192
 
 export interface OrchestralTimbre {

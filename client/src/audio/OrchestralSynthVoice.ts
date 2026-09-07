@@ -166,7 +166,7 @@ export function scheduleOrchestralSynthVoice(context: BaseAudioContext, destinat
         } else oscillator.frequency.value = frequency
         const authoredSpread = sourceCount > 1 ? 4.5 : 0
         const conductedSpread = conductor?.sectionSpreadCents ?? 0
-        const detune = orchestraSectionMemberOffset(member, sourceCount, authoredSpread + conductedSpread)
+        const detune = orchestraSectionMemberOffset(member, sourceCount, authoredSpread + conductedSpread, frequency)
         const curve = orchestralExpressionCurve({ ...expression, identity: `${identity}:${member}`, vibratoHz: expression.vibratoHz + member * 0.13 }, duration, "detune")
         for (let i = 0; i < curve.length; i++) {
           const time = event.timeSeconds + duration * i / (curve.length - 1)

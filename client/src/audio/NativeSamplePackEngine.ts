@@ -33,6 +33,8 @@ export interface NativeSamplePlaybackEnvelope {
   conductorGesture?: OrchestraConductorGesture
 }
 
+export const NATIVE_SAMPLE_PLAYER_VERSION = "tloque-native-sample-player-v3-acoustic-continuity" as const
+
 const MAX_EDGE_TRANSPOSE_SEMITONES = 4
 const NEIGHBOUR_ROOT_WINDOW_SEMITONES = 2
 
@@ -123,20 +125,32 @@ export function selectNativeSampleZone(
   return { zone, playbackRate: 2 ** (semitones / 12), gain: dbToGain(zone.gainDb) * velocityAmplitude(zone, midiVelocity) }
 }
 
-function adaptivePhraseEnvelope(durationSeconds: number, oneShot: boolean, requested: NativeSamplePlaybackEnvelope) {
-  if (oneShot) return { fadeIn: Math.max(0, requested.fadeInSeconds ?? 0), fadeOut: Math.max(0, requested.fadeOutSeconds ?? 0), overlapTail: 0 }
+export function nativeSampleAdaptiveEnvelope(
+  durationSeconds: number,
+  oneShot: boolean,
+  requested: NativeSamplePlaybackEnvelope,
+  sourceAttackSeconds?: number,
+  sourceReleaseSeconds?: number,
+) {
+  const explicitAttack = requested.fadeInSeconds !== undefined
+  const explicitRelease = requested.fadeOutSeconds !== undefined
+  if (oneShot) return {
+    fadeIn: Math.max(0, requested.fadeInSeconds ?? sourceAttackSeconds ?? 0),
+    fadeOut: Math.max(0, requested.fadeOutSeconds ?? sourceReleaseSeconds ?? 0),
+    overlapTail: 0,
+  }
   const sustained = durationSeconds >= 0.22
   const defaultFadeIn = sustained ? Math.min(0.014, durationSeconds * 0.08) : Math.min(0.006, durationSeconds * 0.06)
   const defaultFadeOut = sustained ? Math.min(0.045, durationSeconds * 0.16) : Math.min(0.014, durationSeconds * 0.10)
-  const fadeIn = Math.max(0, (requested.fadeInSeconds ?? defaultFadeIn)
-    * (requested.fadeInSeconds === undefined
+  const fadeIn = Math.max(0, (requested.fadeInSeconds ?? sourceAttackSeconds ?? defaultFadeIn)
+    * (!explicitAttack
       ? (requested.performanceGesture?.attackTimeScale ?? 1) * (requested.conductorGesture?.attackCohesionScale ?? 1)
       : 1))
-  const fadeOut = Math.max(0, (requested.fadeOutSeconds ?? defaultFadeOut)
-    * (requested.fadeOutSeconds === undefined
+  const fadeOut = Math.max(0, (requested.fadeOutSeconds ?? sourceReleaseSeconds ?? defaultFadeOut)
+    * (!explicitRelease
       ? (requested.performanceGesture?.releaseTimeScale ?? 1) * (requested.conductorGesture?.releaseCohesionScale ?? 1)
       : 1))
-  const overlapTail = requested.fadeOutSeconds === undefined ? fadeOut : Math.max(0, requested.fadeOutSeconds)
+  const overlapTail = explicitRelease ? Math.max(0, requested.fadeOutSeconds ?? 0) : fadeOut
   return { fadeIn, fadeOut, overlapTail }
 }
 
@@ -211,11 +225,13 @@ export class NativeSamplePackPlayer {
       if (envelope.expression.swell > 0) phrasing.gain.setValueCurveAtTime(orchestralExpressionCurve(envelope.expression, duration, "gain"), startAt, duration)
       if (envelope.expression.vibratoCents > 0) source.detune.setValueCurveAtTime(orchestralExpressionCurve(envelope.expression, duration, "detune"), startAt, duration)
     }
-    const sourceEnvelope = {
-      fadeInSeconds: envelope.fadeInSeconds ?? selection.zone.amplitudeAttackSeconds,
-      fadeOutSeconds: envelope.fadeOutSeconds ?? selection.zone.amplitudeReleaseSeconds,
-    }
-    const shaped = adaptivePhraseEnvelope(durationSeconds, oneShot, sourceEnvelope)
+    const shaped = nativeSampleAdaptiveEnvelope(
+      durationSeconds,
+      oneShot,
+      envelope,
+      selection.zone.amplitudeAttackSeconds,
+      selection.zone.amplitudeReleaseSeconds,
+    )
     const stopAt = startAt + Math.max(0.01, durationSeconds + shaped.overlapTail)
     const fadeIn = Math.max(0, Math.min(durationSeconds * 0.75, shaped.fadeIn))
     const fadeOut = Math.max(0, Math.min((durationSeconds + shaped.overlapTail) * 0.95, shaped.fadeOut))
