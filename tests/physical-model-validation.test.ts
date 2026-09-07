@@ -12,7 +12,7 @@ import { masterApprovalEvidenceValid, masterApprovalForModule } from "../shared/
 test("physical models are versioned against explicit acoustic validation profiles", () => {
   assert.equal(NATIVE_PHYSICAL_MODEL_SOURCES.length, 2)
   for (const source of NATIVE_PHYSICAL_MODEL_SOURCES) {
-    assert.equal(source.engineVersion, "reed-resonator-v2")
+    assert.equal(source.engineVersion, "reed-resonator-v3-acoustic-continuity")
     assert.equal(source.validationProfileId, "tloque-double-reed-reference-v1")
     assert.ok(validationProfileForInstrument(source.instrumentId))
   }
@@ -45,7 +45,7 @@ test("objective pass alone cannot self-approve Master", () => {
   assert.equal(masterApprovalEvidenceValid({
     version: 1,
     moduleId: "tloque-model-english-horn-v1",
-    engineVersion: "reed-resonator-v2",
+    engineVersion: "reed-resonator-v3-acoustic-continuity",
     report,
     humanABApproved: true,
     reviewer: "reviewer",

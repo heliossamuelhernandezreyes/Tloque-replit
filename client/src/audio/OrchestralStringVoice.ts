@@ -317,7 +317,12 @@ function scheduleWorkletMember(
   const pressure = node.parameters.get("bowPressure"), bowPosition = node.parameters.get("bowPosition"), brightness = node.parameters.get("brightness")
   const gate = node.parameters.get("gate")
   if (!frequency || !detune || !pressure || !bowPosition || !brightness || !gate) { node.disconnect(); return false }
-  const memberCents = orchestraSectionMemberOffset(member, members, members > 1 ? 3.8 + (events[0].conductorGesture?.sectionSpreadCents ?? 0) : 0)
+  const memberCents = orchestraSectionMemberOffset(
+    member,
+    members,
+    members > 1 ? 3.8 + (events[0].conductorGesture?.sectionSpreadCents ?? 0) : 0,
+    midiNoteToFrequency(events[0].notes[0]),
+  )
   schedulePitch(frequency, events, startAt, memberCents)
   gate.setValueAtTime(0, Math.max(0, begins - 0.001)); gate.setValueAtTime(1, begins); gate.setValueAtTime(0, noteEnd)
   for (let eventIndex = 0; eventIndex < events.length; eventIndex += 1) {
@@ -375,7 +380,12 @@ function scheduleWaveguideMember(
     * (last.conductorGesture?.releaseCohesionScale ?? 1)
   const stop = noteEnd + release + 0.05
   const identity = `${track.id}:${profile.instrument}:${events[0].timeSeconds}:${events.map(event => event.notes[0]).join(",")}:${member}`
-  const memberCents = orchestraSectionMemberOffset(member, members, members > 1 ? 3.8 + (events[0].conductorGesture?.sectionSpreadCents ?? 0) : 0)
+  const memberCents = orchestraSectionMemberOffset(
+    member,
+    members,
+    members > 1 ? 3.8 + (events[0].conductorGesture?.sectionSpreadCents ?? 0) : 0,
+    midiNoteToFrequency(events[0].notes[0]),
+  )
   const highest = Math.max(...events.map(event => midiNoteToFrequency(event.notes[0]) * 2 ** (memberCents / 1200)))
   const exciter = context.createOscillator(); exciter.setPeriodicWave(bandlimitedBowWave(context, highest, track.brightness))
   schedulePitch(exciter.frequency, events, startAt, memberCents)

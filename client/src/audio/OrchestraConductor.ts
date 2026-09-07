@@ -18,6 +18,7 @@ export interface OrchestraConductorPlan {
 const EPSILON = 1e-6
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, Number.isFinite(value) ? value : low))
 const eventStart = (recipe: LinearScoreRecipe, event: ScoreEvent) => "timeSeconds" in event ? event.timeSeconds : event.timeBeats * 60 / recipe.plan.bpm
+const eventMusicalStart = (event: ScoreEvent) => event.timeBeats
 const eventDuration = (recipe: LinearScoreRecipe, event: ScoreEvent) => "durationSeconds" in event ? event.durationSeconds : event.durationBeats * 60 / recipe.plan.bpm
 const sectionId = (event: ScoreEvent) => "sectionId" in event ? event.sectionId : "score"
 const roleFor = (track: LinearScoreTrack): TrackRole => "role" in track ? track.role : "harmony"
@@ -46,37 +47,46 @@ function roleBalance(role: TrackRole, density: number, phase: OrchestraEnsembleP
 export function buildOrchestraConductorPlan(recipe: LinearScoreRecipe, playableTrackIds?: ReadonlySet<string>): OrchestraConductorPlan {
   const tracks = new Map(recipe.plan.tracks.map(track => [track.id, track]))
   const ordered = recipe.plan.events
-    .map((event, index) => ({ event, index, start: eventStart(recipe, event), duration: eventDuration(recipe, event) }))
+    .map((event, index) => ({
+      event,
+      index,
+      start: eventStart(recipe, event),
+      musicalStart: eventMusicalStart(event),
+      duration: eventDuration(recipe, event),
+    }))
     .filter(item => !playableTrackIds || playableTrackIds.has(item.event.trackId))
-    .sort((left, right) => left.start - right.start || left.index - right.index)
-  const sectionGroups = new Map<string, number[]>()
+    .sort((left, right) => left.musicalStart - right.musicalStart || left.index - right.index)
   const groups: typeof ordered[] = []
   for (const item of ordered) {
     const previous = groups.at(-1)
-    if (!previous || Math.abs(previous[0].start - item.start) > EPSILON) groups.push([item])
+    // V2 humanization deliberately moves rendered seconds. Musical simultaneity
+    // remains the authored beat position and must receive one shared gesture.
+    if (!previous || Math.abs(previous[0].musicalStart - item.musicalStart) > EPSILON) groups.push([item])
     else previous.push(item)
   }
-  groups.forEach((group, index) => {
+  const sectionGroupCounts = new Map<string, number>()
+  for (const group of groups) {
     const key = sectionId(group[0].event)
-    const indices = sectionGroups.get(key) ?? []
-    indices.push(index)
-    sectionGroups.set(key, indices)
-  })
+    sectionGroupCounts.set(key, (sectionGroupCounts.get(key) ?? 0) + 1)
+  }
+  const sectionGroupPositions = new Map<string, number>()
 
   const decisions = new Map<number, OrchestraConductorGesture>()
   let memoryEnergy = 0.5
   let previousTarget = 0.5
-  let previousStart = groups[0]?.[0].start ?? 0
+  let previousStart = groups[0] ? Math.min(...groups[0].map(item => item.start)) : 0
+  let latestAudibleEnd = previousStart
   let previousSection = groups[0] ? sectionId(groups[0][0].event) : "score"
   const activeEnds: { end: number; trackId: string; notes: number }[] = []
 
-  groups.forEach((group, groupIndex) => {
-    const start = group[0].start
+  groups.forEach(group => {
+    const start = Math.min(...group.map(item => item.start))
     for (let index = activeEnds.length - 1; index >= 0; index -= 1) if (activeEnds[index].end <= start + EPSILON) activeEnds.splice(index, 1)
     const currentSection = sectionId(group[0].event)
-    const sectionPositions = sectionGroups.get(currentSection) ?? [groupIndex]
-    const position = Math.max(0, sectionPositions.indexOf(groupIndex))
-    const progress = sectionPositions.length <= 1 ? 0.5 : position / (sectionPositions.length - 1)
+    const position = sectionGroupPositions.get(currentSection) ?? 0
+    sectionGroupPositions.set(currentSection, position + 1)
+    const sectionLength = sectionGroupCounts.get(currentSection) ?? 1
+    const progress = sectionLength <= 1 ? 0.5 : position / (sectionLength - 1)
     const soundingTracks = new Set([...activeEnds.map(item => item.trackId), ...group.map(item => item.event.trackId)])
     const soundingNotes = activeEnds.reduce((sum, item) => sum + item.notes, 0) + group.reduce((sum, item) => sum + item.event.notes.length, 0)
     const density = clamp(soundingTracks.size / 8 * 0.55 + soundingNotes / 24 * 0.45, 0, 1)
@@ -85,7 +95,8 @@ export function buildOrchestraConductorPlan(recipe: LinearScoreRecipe, playableT
     const target = clamp(velocity * 0.73 + density * 0.27, 0.08, 1)
     const gap = Math.max(0, start - previousStart)
     const sectionChanged = currentSection !== previousSection
-    const audibleSilence = activeEnds.length === 0 && gap >= Math.max(0.22, 60 / recipe.plan.bpm * 0.42)
+    const audibleGapSeconds = activeEnds.length === 0 ? Math.max(0, start - latestAudibleEnd) : 0
+    const audibleSilence = audibleGapSeconds >= Math.max(0.22, 60 / recipe.plan.bpm * 0.42)
     if (sectionChanged) memoryEnergy = target * 0.68 + 0.16
     else if (audibleSilence) memoryEnergy = memoryEnergy * 0.32 + target * 0.68
     else {
@@ -106,6 +117,7 @@ export function buildOrchestraConductorPlan(recipe: LinearScoreRecipe, playableT
         ensembleEnergy,
         memoryEnergy,
         density,
+        audibleGapSeconds: clamp(audibleGapSeconds, 0, 30),
         balanceScale: roleBalance(roleFor(track), density, phase),
         colourScale: clamp(0.96 + ensembleEnergy * 0.08 - density * 0.025, 0.94, 1.06),
         attackCohesionScale: clamp(1.035 - ensembleEnergy * 0.085 + (phase === "release" ? 0.035 : 0), 0.9, 1.08),
@@ -114,7 +126,11 @@ export function buildOrchestraConductorPlan(recipe: LinearScoreRecipe, playableT
         sectionSpreadCents: isSection ? clamp(1.2 + density * 1.8, 0, 3) : 0,
       })
     }
-    for (const item of group) activeEnds.push({ end: start + Math.max(0, item.duration), trackId: item.event.trackId, notes: item.event.notes.length })
+    for (const item of group) {
+      const end = item.start + Math.max(0, item.duration)
+      activeEnds.push({ end, trackId: item.event.trackId, notes: item.event.notes.length })
+      latestAudibleEnd = Math.max(latestAudibleEnd, end)
+    }
     previousTarget = ensembleEnergy
     previousStart = start
     previousSection = currentSection
@@ -123,10 +139,19 @@ export function buildOrchestraConductorPlan(recipe: LinearScoreRecipe, playableT
   return { version: ORCHESTRA_CONDUCTOR_VERSION, ruleVersion: ORCHESTRA_CONDUCTOR_RULE_VERSION, decisions }
 }
 
-/** Symmetric member spread; member zero remains centered for a solo source. */
-export function orchestraSectionMemberOffset(member: number, members: number, spread: number) {
+/** Symmetric member spread; member zero remains centered for a solo source.
+ * A two-member low-register preview receives a tightly capped frequency-domain
+ * floor so fixed-cent detune cannot collapse into an extremely slow beat. */
+export function orchestraSectionMemberOffset(member: number, members: number, spread: number, frequencyHz?: number) {
   if (members <= 1) return 0
-  return clamp((member / (members - 1) * 2 - 1) * spread, -spread, spread)
+  const boundedSpread = Math.max(0, Number.isFinite(spread) ? spread : 0)
+  let effectiveSpread = boundedSpread
+  if (members === 2 && boundedSpread > 0 && frequencyHz !== undefined && Number.isFinite(frequencyHz) && frequencyHz > 0) {
+    const minimumPairBeatHz = 0.45
+    const requiredHalfCents = 1200 / Math.LN2 * Math.asinh(minimumPairBeatHz / (2 * frequencyHz))
+    effectiveSpread = Math.min(8, boundedSpread + 3, Math.max(boundedSpread, requiredHalfCents))
+  }
+  return clamp((member / (members - 1) * 2 - 1) * effectiveSpread, -effectiveSpread, effectiveSpread)
 }
 
 /** Causal timing spread: no member may be scheduled before an event at t=0. */

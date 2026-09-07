@@ -18,7 +18,7 @@ type LinearScoreEventV2 = LinearScoreRecipeV2["plan"]["events"][number]
 type LinearScoreControlV2 = LinearScoreRecipeV2["plan"]["controls"][number]
 type TunableHybridSource = NativeHybridSource & { calibrationTuning?: HybridCalibrationTuning }
 
-export const BOWED_STRING_OVERLAY_VERSION = "bowed-string-overlay-v4-orchestra-conductor" as const
+export const BOWED_STRING_OVERLAY_VERSION = "bowed-string-overlay-v5-acoustic-continuity" as const
 
 export interface BowedStringOverlayOptions {
   startAt: number

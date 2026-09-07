@@ -8,7 +8,7 @@ import { NATIVE_PHYSICAL_MODEL_SOURCES } from "@shared/native-acoustic-source"
 import type { NativeAcousticValidationReport } from "@shared/native-acoustic-validation"
 import { runPhysicalModelCalibration } from "@/audio/PhysicalModelCalibrationRunner"
 
-const STORAGE_KEY = "tloque_physical_model_calibration_v1"
+const STORAGE_KEY = "tloque_physical_model_calibration_v2_acoustic_continuity"
 type ReportHistory = Record<string, NativeAcousticValidationReport[]>
 
 function loadHistory(): ReportHistory {

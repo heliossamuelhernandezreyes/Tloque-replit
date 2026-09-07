@@ -629,7 +629,7 @@ export default function AudioCatalogAdmin() {
             <div>
               <h2 className="text-sm font-semibold">Compositor de obras · TloqueScore 2.2</h2>
               <p className="mt-1 text-xs text-zinc-500">El código es la obra maestra: editarlo recompila y cambia el audio. La reproducción no crea archivos; Exportar genera un WAV sólo cuando lo pides.</p>
-              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code>: síntesis clásica u orquestal a 24-bit / 96 kHz; bancos nativos y SF2/SF3 a 24-bit / 48 kHz. La frecuencia de exportación no certifica realismo acústico. Orchestra Conductor V6 coordina memoria, balance, ataques, salidas y color de conjunto sobre el intérprete V5 con la misma decisión en live/WAV. El límite sigue siendo 192 fuentes, incluidas sus colas.</p>
+              <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code>: síntesis clásica u orquestal a 24-bit / 96 kHz; bancos nativos y SF2/SF3 a 24-bit / 48 kHz. La frecuencia de exportación no certifica realismo acústico. Orchestra Conductor V7 coordina por posición musical, mide silencios desde el último final programado de nota y conserva ataques, salidas y color en live/WAV. El límite sigue siendo 192 fuentes, incluidas sus colas.</p>
             </div>
             <fieldset className="rounded-xl border border-sky-300/20 bg-sky-300/5 p-3">
               <legend className="px-1 text-xs font-semibold text-sky-100">Fuente de interpretación</legend>
@@ -646,7 +646,7 @@ export default function AudioCatalogAdmin() {
                   }} className="min-h-11 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs aria-pressed:border-sky-300/60 aria-pressed:bg-sky-300/15 disabled:opacity-40">{label}</button>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] leading-5 text-zinc-400">Síntesis orquestal V4 funciona sin descargas. Grabaciones + cuerpo físico necesita los bancos: la grabación conserva identidad y articulaciones reales; V6 añade dirección de conjunto sobre el fraseo V5 sin inventar true legato. Ninguna opción se presenta como grabación acústica certificada sin validación. Cambiar la fuente conserva las notas: vuelve a compilar para escuchar.</p>
+              <p className="mt-2 text-[11px] leading-5 text-zinc-400">Síntesis orquestal V5 funciona sin descargas. Grabaciones + cuerpo físico necesitan los bancos: la grabación conserva identidad y articulaciones reales; V7 añade continuidad de conjunto sobre el fraseo V5 sin inventar true legato. Ninguna opción se presenta como grabación acústica certificada sin validación. Cambiar la fuente conserva las notas: vuelve a compilar para escuchar.</p>
             </fieldset>
             <div className="grid sm:grid-cols-2 gap-3">
               <input className={inputClass} placeholder="Título del tema" value={scoreMeta.title} onChange={e => setScoreMeta(meta => ({ ...meta, title: e.target.value }))} />

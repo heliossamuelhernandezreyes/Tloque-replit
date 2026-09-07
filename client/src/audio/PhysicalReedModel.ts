@@ -23,6 +23,14 @@ function clamp01(value: number) { return Math.max(0, Math.min(1, value)) }
 function midiHz(midi: number) { return 440 * 2 ** ((midi - 69) / 12) }
 function centsForSemitones(semitones: number) { return semitones * 100 }
 
+export function physicalReedBrightness(
+  brightness: number,
+  gesture?: IntelligentPerformanceGesture,
+  conductor?: OrchestraConductorGesture,
+) {
+  return clamp01(brightness * (gesture?.brightnessScale ?? 1) * (conductor?.colourScale ?? 1))
+}
+
 function createSaturator(context: BaseAudioContext, amount: number) {
   const node = context.createWaveShaper()
   const size = 1024
@@ -107,7 +115,7 @@ function scheduleParam(param: AudioParam, at: number, value: number, rampSeconds
 }
 
 /**
- * Tloque reed-resonator v2.
+ * Tloque reed-resonator v3.
  * Original acoustic model: nonlinear double-reed excitation drives a
  * formant/radiation network plus a damped waveguide. Performance controls are
  * scheduled continuously inside each note: expression changes pressure,
@@ -127,7 +135,7 @@ export function schedulePhysicalReedVoice(
   const gesture = options.performanceGesture
   const conductor = options.conductorGesture
   const pressure = clamp01((event.velocity * 0.72 + track.expression * 0.28) * (gesture?.onsetEffort ?? 1))
-  const brightness = clamp01(track.brightness * (gesture?.brightnessScale ?? 1) * (conductor?.colourScale ?? 1))
+  const brightness = physicalReedBrightness(track.brightness, gesture, conductor)
   const vibrato = clamp01(track.vibrato)
   const envelope = articulationEnvelope(event, track, legatoFromPrevious, gesture, conductor)
   const noteStart = startAt + event.timeSeconds
@@ -206,7 +214,7 @@ export function schedulePhysicalReedVoice(
       scheduleParam(noiseGain.gain, at, profile.noiseMix * (0.28 + p * 0.72), control.rampSeconds)
     }
     if (control.brightness !== null) {
-      const b = clamp01(control.brightness * (gesture?.brightnessScale ?? 1))
+      const b = physicalReedBrightness(control.brightness, gesture, conductor)
       scheduleParam(boreDamping.frequency, at, profile.boreDamping * (0.76 + b * 0.46), control.rampSeconds, true)
       scheduleParam(radiation.frequency, at, Math.min(15_000, profile.brightnessBase * (0.62 + b * 1.15) * (0.86 + pressure * 0.24)), control.rampSeconds, true)
     }

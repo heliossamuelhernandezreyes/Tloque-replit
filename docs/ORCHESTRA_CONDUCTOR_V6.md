@@ -1,5 +1,7 @@
 # Orchestra Conductor V6
 
+> Historical ensemble contract. Current rendering uses [Orchestra Conductor V7](./ORCHESTRA_CONDUCTOR_V7.md), which preserves musical-onset grouping, measures gaps after sounding-note ends and keeps conductor gestures inside recorded envelopes and physical-control ramps.
+
 Orchestra Conductor V6 adds one deterministic ensemble decision above Intelligent Performer V5. V5 remains responsible for the gesture of each musician; V6 remembers what the ensemble was doing and coordinates balance, colour, attacks, releases and section spread. It does not parse manuscripts, generate notes or mutate a compiled score.
 
 ## Versioned contracts
