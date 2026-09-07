@@ -1,11 +1,12 @@
 import { hybridEnabledForArticulation, nativeHybridForInstrument, type NativeHybridSource } from "./native-hybrid-source"
 import type { IntelligentPerformanceGesture } from "./intelligent-performance"
+import type { OrchestraConductorGesture } from "./orchestra-conductor"
 import type { LinearScoreRecipeV2 } from "./tloque-score-v2"
 
 type ScoreEvent = LinearScoreRecipeV2["plan"]["events"][number]
 type ScoreRest = LinearScoreRecipeV2["plan"]["rests"][number]
 
-export const NATIVE_HYBRID_PERFORMANCE_VERSION = "tloque-native-hybrid-performance-v4-intelligent-performer" as const
+export const NATIVE_HYBRID_PERFORMANCE_VERSION = "tloque-native-hybrid-performance-v5-orchestra-conductor" as const
 
 export type NativeHybridTransition = "fresh-attack" | "connected-legato"
 
@@ -17,6 +18,7 @@ export interface NativeHybridOverlayPerformance {
   wetCeiling: number
   excitationScale: number
   gesture?: IntelligentPerformanceGesture
+  conductor?: OrchestraConductorGesture
 }
 
 export interface NativeHybridPerformanceDecision extends NativeHybridOverlayPerformance {
@@ -104,6 +106,7 @@ type DraftDecision = {
   legatoFromPrevious: boolean
   transitionFromMidi: number | null
   gesture?: IntelligentPerformanceGesture
+  conductor?: OrchestraConductorGesture
 }
 
 /**
@@ -114,6 +117,7 @@ type DraftDecision = {
 export function buildNativeHybridPerformancePlan(
   recipe: LinearScoreRecipeV2,
   gestureByEventIndex: ReadonlyMap<number, IntelligentPerformanceGesture> = new Map(),
+  conductorByEventIndex: ReadonlyMap<number, OrchestraConductorGesture> = new Map(),
 ): NativeHybridPerformancePlan {
   const eventsByTrack = new Map<string, { event: ScoreEvent; ordinal: number }[]>()
   const restsByTrack = new Map<string, ScoreRest[]>()
@@ -150,6 +154,7 @@ export function buildNativeHybridPerformancePlan(
         legatoFromPrevious,
         transitionFromMidi: legatoFromPrevious ? previous?.midis[0] ?? null : null,
         gesture: gestureByEventIndex.get(ordinal),
+        conductor: conductorByEventIndex.get(ordinal),
       })
       previous = { event, midis }
     }
@@ -183,7 +188,7 @@ export function buildNativeHybridPerformancePlan(
           transition,
           mixScale,
           wetCeiling: draft.source.wet * mixScale,
-          excitationScale: transition === "connected-legato" ? 0.7 : 1,
+          excitationScale: (transition === "connected-legato" ? 0.7 : 1) * Math.min(1, draft.conductor?.balanceScale ?? 1),
           soundingHybridVoices,
           voiceLimit: voiceLimitFor(draft.source),
         })

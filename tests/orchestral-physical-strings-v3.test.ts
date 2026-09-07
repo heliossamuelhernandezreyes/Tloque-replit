@@ -59,8 +59,8 @@ function pcmHash(buffer: AudioBuffer) {
   return createHash("sha256").update(new Uint8Array(buffer.getChannelData(0).buffer)).digest("hex")
 }
 
-test("V3 versiona el renderer y reconoce sólo cuerdas frotadas", () => {
-  assert.equal(ORCHESTRAL_SYNTH_VERSION, "tloque-orchestral-synth-v3-physical-strings")
+test("V4 versiona el renderer dirigido y reconoce sólo cuerdas frotadas", () => {
+  assert.equal(ORCHESTRAL_SYNTH_VERSION, "tloque-orchestral-synth-v4-orchestra-conductor")
   assert.equal(ORCHESTRAL_STRING_DSP_VERSION, "tloque-bowed-string-dsp-v3")
   assert.equal(ORCHESTRAL_STRING_WORKLET_PROCESSOR, "tloque-bowed-string-v3")
   assert.equal(isBowedOrchestralString("strings.violin"), true)

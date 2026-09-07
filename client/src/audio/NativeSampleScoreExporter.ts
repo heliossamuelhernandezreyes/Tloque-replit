@@ -162,6 +162,10 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   }
 
   options.onProgress?.(0.03)
+  const { performance: universalPerformance, recipe: performedRecipe } = buildPerformedRecipeV2(recipe)
+  const performedByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, performedRecipe.plan.events[eventIndex]] as const))
+  const decisionByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, universalPerformance.decisionForEvent(eventIndex)] as const))
+  const conductorByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, universalPerformance.decisionForEvent(eventIndex)?.conductor] as const))
   const decodeContext = new OfflineAudioContext(2, 1, profile.sampleRate)
   const decodedByUrl = new Map<string, AudioBuffer>(), loaded: LoadedOfflinePlan[] = []
   const groups = orchestralSynthesis ? [] : nativeModuleGroupsForRecipe(recipe)
@@ -183,7 +187,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
     }
     try {
       if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde al módulo solicitado`)
-      const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack), decoded = await decodePlayer.preload(plan.zones)
+      const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack, { conductorByEvent: conductorByOriginal }), decoded = await decodePlayer.preload(plan.zones)
       plan.zones.forEach((zone, i) => { const buffer = decoded[i]; if (buffer) decodedByUrl.set(zone.sampleUrl, buffer) })
       loaded.push({ moduleId: group.moduleId, plan })
     } catch (error) {
@@ -208,11 +212,9 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   const context = new OfflineAudioContext(2, totalFrames, profile.sampleRate)
   await prepareOrchestralStringDsp(context)
   const index = buildNativeRecipeIndex(recipe)
-  const { performance: universalPerformance, recipe: performedRecipe } = buildPerformedRecipeV2(recipe)
-  const performedByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, performedRecipe.plan.events[eventIndex]] as const))
-  const decisionByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, universalPerformance.decisionForEvent(eventIndex)] as const))
   const gestureByEventIndex = new Map(universalPerformance.events.map(decision => [decision.eventIndex, decision.gesture] as const))
-  const hybridPerformance = buildNativeHybridPerformancePlan(performedRecipe, gestureByEventIndex)
+  const conductorByEventIndex = new Map(universalPerformance.events.map(decision => [decision.eventIndex, decision.conductor] as const))
+  const hybridPerformance = buildNativeHybridPerformancePlan(performedRecipe, gestureByEventIndex, conductorByEventIndex)
   const graph = createNativeRenderGraph(context, index.trackById, context.destination)
   for (const track of recipe.plan.tracks) {
     const timbre = scoreTrackTimbre(track)
@@ -237,7 +239,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
     for (const voice of plan.voices) {
       const destination = graph.trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
       if (!destination || !zone) continue
-      scheduled.push(player.playSelection({ zone, playbackRate: voice.playbackRate, gain: voice.sampleGain }, voice.startSeconds, voice.durationSeconds, destination, 0, voice.oneShot, { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression, dynamics: voice.dynamics, performanceGesture: voice.performanceGesture }))
+      scheduled.push(player.playSelection({ zone, playbackRate: voice.playbackRate, gain: voice.sampleGain }, voice.startSeconds, voice.durationSeconds, destination, 0, voice.oneShot, { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression, dynamics: voice.dynamics, performanceGesture: voice.performanceGesture, conductorGesture: voice.conductorGesture }))
     }
     for (const auxiliary of plan.auxiliaryVoices) {
       const destination = graph.trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)
@@ -272,7 +274,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
         )
         const effectiveTrack = nativeTrackAtTime(track, controls, event.timeSeconds)
         try {
-          for (const midi of event.notes) schedulePhysicalReedVoice(context, model, { startAt: 0, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious, performanceGesture: directorDecision?.gesture })
+          for (const midi of event.notes) schedulePhysicalReedVoice(context, model, { startAt: 0, event, track: effectiveTrack, midi, destination, controls, legatoFromPrevious, performanceGesture: directorDecision?.gesture, conductorGesture: directorDecision?.conductor })
         } catch (error) {
           if (options.strictNativeSources) throw error
           scheduleFallbackSynthVoice(context, destination, 0, event, track)

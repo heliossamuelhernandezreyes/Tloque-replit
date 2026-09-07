@@ -9,7 +9,7 @@ import { scheduleSympatheticResonanceOverlay } from "./PhysicalSympatheticResona
 type LinearScoreEventV2 = LinearScoreRecipeV2["plan"]["events"][number]
 type LinearScoreControlV2 = LinearScoreRecipeV2["plan"]["controls"][number]
 
-export const AIR_COLUMN_OVERLAY_VERSION = "air-column-overlay-v1.2-intelligent-gesture" as const
+export const AIR_COLUMN_OVERLAY_VERSION = "air-column-overlay-v1.3-orchestra-conductor" as const
 
 export interface AirColumnOverlayOptions {
   startAt: number
@@ -61,11 +61,13 @@ export function scheduleAirColumnOverlay(context: BaseAudioContext, source: Nati
   const { startAt, event, track, midi, destination, controls = [], legatoFromPrevious = false } = options
   if (midi < source.midiMin || midi > source.midiMax) return null
   const tuning = boundedHybridCalibrationTuning(options.calibrationTuning), gesture = options.performance?.gesture
+  const conductor = options.performance?.conductor
   const profile = profileFor(source), state0 = physicalPerformanceStateAt(track, controls, event.timeSeconds), hz = midiHz(midi), start = startAt + event.timeSeconds
   const duration = Math.max(0.04, event.durationSeconds), releaseBase = event.articulation === "legato" ? 0.2 : 0.12
-  const release = releaseBase * tuning.decayScale * (gesture?.releaseTimeScale ?? 1), stop = start + duration + release
+  const release = releaseBase * tuning.decayScale * (gesture?.releaseTimeScale ?? 1)
+    * (conductor?.releaseCohesionScale ?? 1), stop = start + duration + release
   const pressure = clamp01(pressureFor(event.velocity, state0.pressure) * (gesture?.onsetEffort ?? 1)), embouchure = state0.embouchure
-  const brightness = clamp01(brightnessAt(track, controls, event.timeSeconds) * (gesture?.brightnessScale ?? 1)), vibrato = clamp01(track.vibrato)
+  const brightness = clamp01(brightnessAt(track, controls, event.timeSeconds) * (gesture?.brightnessScale ?? 1) * (conductor?.colourScale ?? 1)), vibrato = clamp01(track.vibrato)
 
   const excitation = context.createGain(), pressureGain = context.createGain(); excitation.gain.value = 1; pressureGain.gain.value = 0.46 + pressure * 0.54; excitation.connect(pressureGain)
   const fundamental = context.createOscillator(), fg = context.createGain(); fundamental.type = source.instrumentId.startsWith("brass.") ? "sawtooth" : "triangle"; fundamental.frequency.value = hz; fg.gain.value = 0.13 + pressure * 0.11; fundamental.connect(fg); fg.connect(excitation)
@@ -87,14 +89,15 @@ export function scheduleAirColumnOverlay(context: BaseAudioContext, source: Nati
 
   const lfo = context.createOscillator(), lfoDepth = context.createGain(), delayMod = context.createGain(); lfo.type = "sine"; lfo.frequency.value = source.instrumentId.startsWith("brass.") ? 5 : 5.2; const vibratoCents = source.instrumentId.includes("bass-") || source.instrumentId === "brass.tuba" ? 6 : 10; const vibratoScale = gesture?.vibratoDepthScale ?? 1; const vibratoPeak = vibrato * vibratoCents * vibratoScale; lfoDepth.gain.value = 0; lfoDepth.gain.setValueAtTime(0, start); lfoDepth.gain.linearRampToValueAtTime(vibratoPeak, start + Math.min(duration * 0.5, gesture?.vibratoDelaySeconds ?? 0)); lfo.connect(lfoDepth); lfoDepth.connect(fundamental.detune); lfoDepth.connect(h2.detune); lfoDepth.connect(h3.detune); delayMod.gain.value = baseDelay * vibrato * 0.003 * vibratoScale; lfo.connect(delayMod); delayMod.connect(delay.delayTime)
 
-  const attack = (legatoFromPrevious ? 0.032 : Math.max(0.016, Math.min(0.065, track.attack * 0.35))) * (gesture?.attackTimeScale ?? 1)
+  const attack = (legatoFromPrevious ? 0.032 : Math.max(0.016, Math.min(0.065, track.attack * 0.35)))
+    * (gesture?.attackTimeScale ?? 1) * (conductor?.attackCohesionScale ?? 1)
   output.gain.setValueAtTime(0.0001, start); output.gain.exponentialRampToValueAtTime(wetGainFor(source, pressure, embouchure, tuning.wetScale, options.performance), start + attack)
 
   for (const control of controls) {
     if (control.trackId !== event.trackId || control.timeSeconds <= event.timeSeconds || control.timeSeconds > event.timeSeconds + duration) continue
     const at = startAt + control.timeSeconds, state = physicalPerformanceStateAt(track, controls, control.timeSeconds)
     const p = clamp01(pressureFor(event.velocity, state.pressure) * (gesture?.sustainEffort ?? 1)), e = state.embouchure
-    const b = clamp01(brightnessAt(track, controls, control.timeSeconds) * (gesture?.brightnessScale ?? 1))
+    const b = clamp01(brightnessAt(track, controls, control.timeSeconds) * (gesture?.brightnessScale ?? 1) * (conductor?.colourScale ?? 1))
     scheduleParam(pressureGain.gain, at, 0.46 + p * 0.54, control.rampSeconds)
     scheduleParam(fg.gain, at, 0.13 + p * 0.11, control.rampSeconds)
     scheduleParam(h2g.gain, at, profile.h2 * (0.68 + p * 0.32) * embouchureTone(e) * tuning.textureScale, control.rampSeconds)

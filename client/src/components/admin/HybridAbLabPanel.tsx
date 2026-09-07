@@ -11,7 +11,7 @@ import { runHybridAbCalibration, type HybridAbCalibrationResult } from "@/audio/
 import { runHybridCalibrationCandidate } from "@/audio/HybridCalibrationCandidateRunner"
 import { runHybridLocalSearch, type HybridLocalSearchResult } from "@/audio/HybridLocalSearchRunner"
 
-const STORAGE_KEY = "tloque_hybrid_ab_reports_v4_intelligent_performer"
+const STORAGE_KEY = "tloque_hybrid_ab_reports_v5_orchestra_conductor"
 type SavedReports = Record<string, HybridAbValidationReport>
 type BlindVotes = Record<string, HybridAbBlindVote>
 type BlindAssignments = Record<string, HybridAbBlindAssignment>

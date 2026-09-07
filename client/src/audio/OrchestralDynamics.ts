@@ -1,5 +1,6 @@
 import type { LinearScoreControlV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
+import type { OrchestraConductorGesture } from "@shared/orchestra-conductor"
 import { orchestralTimbreFor } from "@shared/orchestral-synthesis"
 import { nativeControlValueAt } from "./NativeRecipeIndex"
 
@@ -16,6 +17,38 @@ export interface OrchestralContinuousDynamics {
   readonly brightness: Float32Array
   readonly gestureVersion?: IntelligentPerformanceGesture["contractVersion"]
   readonly gestureRuleVersion?: IntelligentPerformanceGesture["ruleVersion"]
+  readonly conductorVersion?: OrchestraConductorGesture["contractVersion"]
+  readonly conductorRuleVersion?: OrchestraConductorGesture["ruleVersion"]
+}
+
+/** Add the shared ensemble arc after the individual gesture. This modest colour
+ * movement is safe for recordings and synthesis and never changes score events. */
+export function applyOrchestraConductorToDynamics(
+  dynamics: OrchestralContinuousDynamics,
+  conductor: OrchestraConductorGesture | undefined,
+): OrchestralContinuousDynamics {
+  if (!conductor || !dynamics.sustained) return dynamics
+  const effort = new Float32Array(dynamics.effort.length)
+  const brightness = new Float32Array(dynamics.brightness.length)
+  for (let index = 0; index < effort.length; index += 1) {
+    const progress = index / Math.max(1, effort.length - 1)
+    const phaseArc = conductor.ensemblePhase === "build"
+      ? 0.98 + progress * 0.04
+      : conductor.ensemblePhase === "release"
+        ? 1.02 - progress * 0.05
+        : conductor.ensemblePhase === "crest"
+          ? 1.015
+          : 0.99 + progress * 0.015
+    effort[index] = clamp01(dynamics.effort[index] * phaseArc)
+    brightness[index] = clamp01(dynamics.brightness[index] * conductor.colourScale)
+  }
+  return {
+    ...dynamics,
+    effort,
+    brightness,
+    conductorVersion: conductor.contractVersion,
+    conductorRuleVersion: conductor.ruleVersion,
+  }
 }
 
 /** Apply the V5 renderer-neutral gesture to an existing dynamic curve. The base

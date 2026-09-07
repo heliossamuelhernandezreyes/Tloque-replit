@@ -49,7 +49,8 @@ export function measureNativeRuntimeBudget(recipe: LinearScoreRecipeV2): NativeR
   }
 
   const gestures = new Map(performance.events.map(decision => [decision.eventIndex, decision.gesture] as const))
-  const hybridPerformance = buildNativeHybridPerformancePlan(performedRecipe, gestures)
+  const conductors = new Map(performance.events.map(decision => [decision.eventIndex, decision.conductor] as const))
+  const hybridPerformance = buildNativeHybridPerformancePlan(performedRecipe, gestures, conductors)
   for (const decision of hybridPerformance.decisions) {
     const voices = decision.midis.length
     const start = decision.event.timeSeconds

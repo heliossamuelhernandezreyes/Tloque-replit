@@ -1,14 +1,15 @@
 import type { LinearScoreRecipe } from "@shared/audio"
 import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
+import type { OrchestraConductorGesture } from "@shared/orchestra-conductor"
 import { manifestsForModule, type InstrumentManifest, type TloqueArticulation } from "@shared/instrument-manifest"
 import type { TloqueMicPosition, TloqueMute, TloqueSamplePack, TloqueSampleZone, TloqueVibratoColour } from "@shared/native-sample-pack"
 import { physicalRecordedTimbre, recordedTimbreProfileFor, resolveRecordedTimbre, type ExplicitRecordedTimbre } from "@shared/recorded-timbre"
-import type { ScoreTimbre } from "@shared/tloque-score-v2"
+import type { LinearScoreRecipeV2, ScoreTimbre } from "@shared/tloque-score-v2"
 import { selectNativeSampleZone } from "./NativeSamplePackEngine"
 import { selectNativeSampleVelocityBlend } from "./NativeSampleVelocityBlend"
 import { buildPerformancePlan, performedEventValues } from "./PerformanceEngine"
 import { applyIntelligentPerformanceGestureToExpression, orchestralNoteExpression, type OrchestralNoteExpression } from "./OrchestralExpression"
-import { applyIntelligentPerformanceGestureToDynamics, orchestralContinuousDynamics, type OrchestralContinuousDynamics } from "./OrchestralDynamics"
+import { applyIntelligentPerformanceGestureToDynamics, applyOrchestraConductorToDynamics, orchestralContinuousDynamics, type OrchestralContinuousDynamics } from "./OrchestralDynamics"
 import { buildNativeRecipeIndex, nativeControlValueAt } from "./NativeRecipeIndex"
 import { articulationDurationFactor, articulationVelocityFactor, scoreTrackExpression, scoreTrackTimbre, scoreVelocityGain } from "./ScoreAudioMath"
 
@@ -35,6 +36,7 @@ export interface NativeSampleVoicePlan {
   oneShot: boolean
   fadeInSeconds: number
   performanceGesture?: IntelligentPerformanceGesture
+  conductorGesture?: OrchestraConductorGesture
   expression?: OrchestralNoteExpression
   dynamics?: OrchestralContinuousDynamics
 }
@@ -65,6 +67,10 @@ export interface NativeSampleScorePlan {
 export interface NativeSampleScorePlanOptions {
   manifests?: readonly InstrumentManifest[]
   micPositionByTrack?: Readonly<Record<string, TloqueMicPosition>>
+  /** Full-score conductor state keeps ensemble balance identical when native-auto
+   * partitions tracks across separate installed banks. Event objects are stable
+   * references in recipeForNativeModule. */
+  conductorByEvent?: ReadonlyMap<LinearScoreRecipeV2["plan"]["events"][number], OrchestraConductorGesture | undefined>
 }
 
 export function trueLegatoCrossfadeSeconds(noteDurationSeconds: number) {
@@ -136,7 +142,9 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
   const zones = new Map<string, TloqueSampleZone>()
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
-    const decision = performance.decisionForEvent(eventIndex)
+    const localDecision = performance.decisionForEvent(eventIndex)
+    const fullScoreConductor = recipe.version === 2 ? options.conductorByEvent?.get(event) : undefined
+    const decision = localDecision && fullScoreConductor ? { ...localDecision, conductor: fullScoreConductor } : localDecision
     const track = trackById.get(event.trackId)
     if (!decision || !track) continue
     const connectedPerformancePhrase = decision.gesture.connection === "phrase-carry"
@@ -149,9 +157,12 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
     const velocity = Math.round(Math.min(1, scoreVelocityGain(performedVelocity) * articulationVelocityFactor(decision.articulation)) * 127)
     const durationSeconds = Math.max(0.01, performed.durationSeconds * articulationDurationFactor(decision.articulation))
     const startSeconds = performed.startSeconds
-    const dynamics = applyIntelligentPerformanceGestureToDynamics(
-      orchestralContinuousDynamics(track, index.controlsByTrack.get(track.id) ?? [], startSeconds, durationSeconds, performedVelocity, decision.articulation),
-      decision.gesture,
+    const dynamics = applyOrchestraConductorToDynamics(
+      applyIntelligentPerformanceGestureToDynamics(
+        orchestralContinuousDynamics(track, index.controlsByTrack.get(track.id) ?? [], startSeconds, durationSeconds, performedVelocity, decision.articulation),
+        decision.gesture,
+      ),
+      decision.conductor,
     )
     const micPosition = micForTrack(track.id)
     for (const note of event.notes) {
@@ -201,10 +212,11 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           zoneId: selected.zone.id,
           sampleUrl: selected.zone.sampleUrl,
           playbackRate: selected.playbackRate,
-          sampleGain: selected.gain,
+          sampleGain: selected.gain * decision.conductor.balanceScale,
           oneShot,
           fadeInSeconds: 0,
           performanceGesture: decision.gesture,
+          conductorGesture: decision.conductor,
           expression: applyIntelligentPerformanceGestureToExpression(
             orchestralNoteExpression(track.instrument, decision.articulation, durationSeconds, performedVibrato, physical.vibratoColour !== "none", `${recipe.plan.seed}:${event.trackId}:${event.timeSeconds}:${note}`),
             decision.gesture,
@@ -240,7 +252,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           zoneId: transition.zone.id,
           sampleUrl: transition.zone.sampleUrl,
           playbackRate: transition.playbackRate,
-          sampleGain: transition.gain,
+          sampleGain: transition.gain * decision.conductor.balanceScale,
           transitionFromMidi: from,
           fadeOutSeconds: crossfadeSeconds,
         })
@@ -265,7 +277,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           zoneId: release.zone.id,
           sampleUrl: release.zone.sampleUrl,
           playbackRate: release.playbackRate,
-          sampleGain: release.gain,
+          sampleGain: release.gain * decision.conductor.balanceScale,
           fadeOutSeconds: 0,
         })
       }

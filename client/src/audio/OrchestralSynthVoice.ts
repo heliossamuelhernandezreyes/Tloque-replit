@@ -1,12 +1,14 @@
 import type { LinearScoreControlV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
+import type { OrchestraConductorGesture } from "@shared/orchestra-conductor"
 import { ORCHESTRAL_SYNTH_MAX_SOURCES, orchestralIdentityUnit, orchestralSpectrum, orchestralTimbreFor } from "@shared/orchestral-synthesis"
 import { articulationDurationFactor, articulationVelocityFactor, midiNoteToFrequency, scoreVelocityGain } from "./ScoreAudioMath"
 import { deterministicNoiseOffset, sharedDeterministicNoiseBuffer } from "./DeterministicAudioNoise"
 import { applyIntelligentPerformanceGestureToExpression, orchestralExpressionCurve, orchestralNoteExpression } from "./OrchestralExpression"
 import { nativeControlValueAt } from "./NativeRecipeIndex"
-import { applyIntelligentPerformanceGestureToDynamics, orchestralContinuousDynamics, orchestralDynamicCutoffCurve } from "./OrchestralDynamics"
+import { applyIntelligentPerformanceGestureToDynamics, applyOrchestraConductorToDynamics, orchestralContinuousDynamics, orchestralDynamicCutoffCurve } from "./OrchestralDynamics"
 import { isBowedOrchestralString, scheduleOrchestralStringPhrase } from "./OrchestralStringVoice"
+import { orchestraSectionMemberDelay, orchestraSectionMemberOffset } from "./OrchestraConductor"
 
 export interface OrchestralSynthEvent {
   timeSeconds: number
@@ -19,6 +21,7 @@ export interface OrchestralSynthEvent {
   legatoFromPrevious?: boolean
   transitionFromMidi?: number
   performanceGesture?: IntelligentPerformanceGesture
+  conductorGesture?: OrchestraConductorGesture
 }
 
 const waves = new WeakMap<BaseAudioContext, Map<string, PeriodicWave>>()
@@ -82,27 +85,33 @@ export function scheduleOrchestralSynthVoice(context: BaseAudioContext, destinat
     const plucked = profile.decay > 0 || articulation === "pizzicato"
     const connectedLegato = !plucked && event.legatoFromPrevious === true && event.transitionFromMidi !== undefined
     const gesture = event.performanceGesture
+    const conductor = event.conductorGesture
     const attack = Math.min(duration * 0.25, Math.max(0.004,
       (connectedLegato ? Math.min(0.014, profile.attack * 0.18) : articulation === "legato" ? profile.attack * 0.45 : Math.min(track.attack, profile.attack))
-      * (gesture?.attackTimeScale ?? 1)))
+      * (gesture?.attackTimeScale ?? 1) * (conductor?.attackCohesionScale ?? 1)))
     const release = Math.min(2.5, Math.max(0.025,
-      Math.max(profile.release, Math.min(track.release, plucked ? 1.8 : 0.65)) * (gesture?.releaseTimeScale ?? 1)))
+      Math.max(profile.release, Math.min(track.release, plucked ? 1.8 : 0.65))
+      * (gesture?.releaseTimeScale ?? 1) * (conductor?.releaseCohesionScale ?? 1)))
     const end = begins + duration + release
     const identity = `${track.id}:${track.instrument}:${event.timeSeconds}:${midi}`
     const expression = applyIntelligentPerformanceGestureToExpression(
       orchestralNoteExpression(track.instrument, articulation, duration, 1, false, identity),
       gesture,
     )
-    const dynamics = applyIntelligentPerformanceGestureToDynamics(
-      orchestralContinuousDynamics(track, controls, event.timeSeconds, duration, event.velocity, articulation),
-      gesture,
+    const dynamics = applyOrchestraConductorToDynamics(
+      applyIntelligentPerformanceGestureToDynamics(
+        orchestralContinuousDynamics(track, controls, event.timeSeconds, duration, event.velocity, articulation),
+        gesture,
+      ),
+      conductor,
     )
     const frequency = track.instrument === "percussion.orchestral-kit" ? (midi === 36 ? 58 : midi < 42 ? 180 : 520) : midiNoteToFrequency(midi) * (articulation === "harmonic" ? 2 : 1)
     const ratios = profile.modalRatios?.filter(ratio => frequency * ratio < context.sampleRate * 0.44)
     const sourceCount = ratios?.length ?? profile.ensemble
     if (!reserveOrchestralSynthSources(context, begins, end + 0.025, sourceCount + (profile.noise > 0 ? 1 : 0))) continue
     const nodes: AudioNode[] = []
-    const amplitude = Math.max(0, Math.min(0.3, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation) * 0.3)) * Math.max(0, Math.min(1, level)) / Math.sqrt(Math.max(1, event.notes.length / 3))
+    const amplitude = Math.max(0, Math.min(0.3, scoreVelocityGain(event.velocity) * articulationVelocityFactor(articulation) * 0.3))
+      * Math.max(0, Math.min(1, level)) * (conductor?.balanceScale ?? 1) / Math.sqrt(Math.max(1, event.notes.length / 3))
     const envelope = context.createGain()
     envelope.gain.setValueAtTime(0, begins)
     envelope.gain.linearRampToValueAtTime(amplitude, begins + attack)
@@ -155,7 +164,9 @@ export function scheduleOrchestralSynthVoice(context: BaseAudioContext, destinat
           oscillator.frequency.setValueAtTime(from, begins)
           oscillator.frequency.exponentialRampToValueAtTime(frequency, begins + transitionSeconds)
         } else oscillator.frequency.value = frequency
-        const detune = sourceCount > 1 ? (member - (sourceCount - 1) / 2) * 4.5 : 0
+        const authoredSpread = sourceCount > 1 ? 4.5 : 0
+        const conductedSpread = conductor?.sectionSpreadCents ?? 0
+        const detune = orchestraSectionMemberOffset(member, sourceCount, authoredSpread + conductedSpread)
         const curve = orchestralExpressionCurve({ ...expression, identity: `${identity}:${member}`, vibratoHz: expression.vibratoHz + member * 0.13 }, duration, "detune")
         for (let i = 0; i < curve.length; i++) {
           const time = event.timeSeconds + duration * i / (curve.length - 1)
@@ -173,7 +184,8 @@ export function scheduleOrchestralSynthVoice(context: BaseAudioContext, destinat
         memberGain.connect(pan); pan.connect(envelope); nodes.push(pan)
       } else memberGain.connect(envelope)
       nodes.push(memberGain); cleanup(oscillator)
-      oscillator.start(begins + (ratios ? 0 : member * 0.003)); oscillator.stop(end)
+      const memberDelay = ratios ? 0 : orchestraSectionMemberDelay(member, sourceCount, conductor?.sectionSpreadSeconds ?? 0)
+      oscillator.start(Math.max(context.currentTime, begins + memberDelay)); oscillator.stop(end)
     }
     if (profile.noise > 0) {
       const noise = context.createBufferSource()

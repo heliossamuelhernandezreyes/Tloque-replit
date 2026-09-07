@@ -18,7 +18,7 @@ type LinearScoreEventV2 = LinearScoreRecipeV2["plan"]["events"][number]
 type LinearScoreControlV2 = LinearScoreRecipeV2["plan"]["controls"][number]
 type TunableHybridSource = NativeHybridSource & { calibrationTuning?: HybridCalibrationTuning }
 
-export const BOWED_STRING_OVERLAY_VERSION = "bowed-string-overlay-v3-intelligent-gesture" as const
+export const BOWED_STRING_OVERLAY_VERSION = "bowed-string-overlay-v4-orchestra-conductor" as const
 
 export interface BowedStringOverlayOptions {
   startAt: number
@@ -94,6 +94,7 @@ function scheduleEntries(
     ...(entry.transitionFromMidi === null ? {} : { transitionFromMidi: entry.transitionFromMidi }),
     physicalLevel: physicalLevel(source, tuning, entry.performance),
     performanceGesture: entry.performance?.gesture,
+    conductorGesture: entry.performance?.conductor,
   }))
   const accepted = scheduleOrchestralStringPhrase(
     context,
@@ -110,6 +111,7 @@ function scheduleEntries(
   const last = events.at(-1)!
   const release = orchestralStringProfileFor(options.track.instrument).releaseSeconds * tuning.decayScale
     * (last.performanceGesture?.releaseTimeScale ?? 1)
+    * (last.conductorGesture?.releaseCohesionScale ?? 1)
   return { endSeconds: last.timeSeconds + last.durationSeconds + release, scheduledEvents: accepted }
 }
 

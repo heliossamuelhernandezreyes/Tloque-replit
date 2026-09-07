@@ -14,6 +14,6 @@ The final tail is determined from the known physical state at note release, so a
 
 ## Evidence policy
 
-This historical revision changed the air-column and sympathetic families. Bowed strings remained `bowed-string-overlay-v1` at that point; Orchestral Hybrid V4 later superseded it with a continuous waveguide. Intelligent Performer V5 now uses `bowed-string-overlay-v3-intelligent-gesture` and `air-column-overlay-v1.2-intelligent-gesture`, intentionally invalidating all earlier A/B evidence for promotion.
+This historical revision changed the air-column and sympathetic families. Bowed strings remained `bowed-string-overlay-v1` at that point; Orchestral Hybrid V4 later superseded it with a continuous waveguide. Intelligent Performer V5 used `bowed-string-overlay-v3-intelligent-gesture` and `air-column-overlay-v1.2-intelligent-gesture`. Orchestra Conductor V6 now uses `bowed-string-overlay-v4-orchestra-conductor` and `air-column-overlay-v1.3-orchestra-conductor`, intentionally invalidating all earlier A/B evidence for promotion.
 
 All revised overlays remain Studio-only until the exact new engine version passes objective sampled-vs-hybrid screening and human A/B review.

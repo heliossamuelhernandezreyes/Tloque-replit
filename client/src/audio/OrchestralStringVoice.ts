@@ -1,12 +1,14 @@
 import type { LinearScoreControlV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
+import type { OrchestraConductorGesture } from "@shared/orchestra-conductor"
 import { orchestralIdentityUnit } from "@shared/orchestral-synthesis"
 import { physicalPerformanceStateAt } from "@shared/physical-performance-control"
 import { sharedDeterministicNoiseBuffer, deterministicNoiseOffset } from "./DeterministicAudioNoise"
-import { applyIntelligentPerformanceGestureToDynamics, orchestralContinuousDynamics, orchestralDynamicCutoffCurve } from "./OrchestralDynamics"
+import { applyIntelligentPerformanceGestureToDynamics, applyOrchestraConductorToDynamics, orchestralContinuousDynamics, orchestralDynamicCutoffCurve } from "./OrchestralDynamics"
 import { applyIntelligentPerformanceGestureToExpression, orchestralExpressionCurve, orchestralNoteExpression } from "./OrchestralExpression"
 import { nativeControlValueAt } from "./NativeRecipeIndex"
 import { articulationVelocityFactor, midiNoteToFrequency, scoreVelocityGain } from "./ScoreAudioMath"
+import { orchestraSectionMemberDelay, orchestraSectionMemberOffset } from "./OrchestraConductor"
 
 export const ORCHESTRAL_STRING_DSP_VERSION = "tloque-bowed-string-dsp-v3" as const
 export const ORCHESTRAL_STRING_WORKLET_PROCESSOR = "tloque-bowed-string-v3" as const
@@ -25,6 +27,7 @@ export interface OrchestralPhysicalStringEvent {
    * sample-dominant hybrid uses its versioned wet ceiling. */
   physicalLevel?: number
   performanceGesture?: IntelligentPerformanceGesture
+  conductorGesture?: OrchestraConductorGesture
 }
 
 export interface OrchestralStringProfile {
@@ -182,11 +185,13 @@ function scheduleMemberEnvelope(param: AudioParam, events: readonly OrchestralPh
   const amplitudeFor = (event: OrchestralPhysicalStringEvent) => Math.max(0.0001, Math.min(0.65,
     scoreVelocityGain(event.velocity) * articulationVelocityFactor(event.articulation ?? "normal")
     * 1.35 * level * Math.max(0, Math.min(1, event.physicalLevel ?? 1))
+    * (event.conductorGesture?.balanceScale ?? 1)
     * Math.max(0.7, Math.min(1.1, event.performanceGesture?.sustainEffort ?? 1))))
   param.setValueAtTime(0.0001, begins)
   const first = events[0]
   const firstAttack = Math.min(first.durationSeconds * 0.25, Math.max(0.008,
-    (first.legatoFromPrevious ? 0.018 : Math.min(0.085, track.attack)) * (first.performanceGesture?.attackTimeScale ?? 1)))
+    (first.legatoFromPrevious ? 0.018 : Math.min(0.085, track.attack))
+    * (first.performanceGesture?.attackTimeScale ?? 1) * (first.conductorGesture?.attackCohesionScale ?? 1)))
   param.exponentialRampToValueAtTime(amplitudeFor(first), begins + firstAttack)
   for (let index = 1; index < events.length; index += 1) {
     const event = events[index], at = startAt + event.timeSeconds
@@ -240,9 +245,12 @@ function scheduleBodyPerformance(
     const event = events[eventIndex], span = eventControlSpan(events, eventIndex), at = startAt + event.timeSeconds
     const curve = physicalCurve(event, span, Math.max(2, Math.ceil(span * 24)), track, controls, "sympatheticCoupling")
     body.gain.setValueCurveAtTime(Float32Array.from(curve, value => (0.55 + value * 0.45) * tuning.bodyScale), at, span)
-    const dynamics = applyIntelligentPerformanceGestureToDynamics(
-      orchestralContinuousDynamics(track, controls, event.timeSeconds, span, event.velocity, event.articulation),
-      event.performanceGesture,
+    const dynamics = applyOrchestraConductorToDynamics(
+      applyIntelligentPerformanceGestureToDynamics(
+        orchestralContinuousDynamics(track, controls, event.timeSeconds, span, event.velocity, event.articulation),
+        event.performanceGesture,
+      ),
+      event.conductorGesture,
     )
     bridge.frequency.setValueCurveAtTime(Float32Array.from(dynamics.brightness, value => Math.min(
       sampleRate * 0.42,
@@ -286,6 +294,7 @@ function scheduleWorkletMember(
   const begins = startAt + events[0].timeSeconds
   const last = events.at(-1)!, noteEnd = startAt + last.timeSeconds + last.durationSeconds
   const release = profile.releaseSeconds * tuning.releaseScale * (last.performanceGesture?.releaseTimeScale ?? 1)
+    * (last.conductorGesture?.releaseCohesionScale ?? 1)
   const identity = `${track.id}:${profile.instrument}:${events[0].timeSeconds}:${events.map(event => event.notes[0]).join(",")}:${member}`
   const node = new WorkletNode(context, ORCHESTRAL_STRING_WORKLET_PROCESSOR, {
     numberOfInputs: 0,
@@ -308,15 +317,18 @@ function scheduleWorkletMember(
   const pressure = node.parameters.get("bowPressure"), bowPosition = node.parameters.get("bowPosition"), brightness = node.parameters.get("brightness")
   const gate = node.parameters.get("gate")
   if (!frequency || !detune || !pressure || !bowPosition || !brightness || !gate) { node.disconnect(); return false }
-  const memberCents = members > 1 ? (member - (members - 1) / 2) * 3.8 : 0
+  const memberCents = orchestraSectionMemberOffset(member, members, members > 1 ? 3.8 + (events[0].conductorGesture?.sectionSpreadCents ?? 0) : 0)
   schedulePitch(frequency, events, startAt, memberCents)
   gate.setValueAtTime(0, Math.max(0, begins - 0.001)); gate.setValueAtTime(1, begins); gate.setValueAtTime(0, noteEnd)
   for (let eventIndex = 0; eventIndex < events.length; eventIndex += 1) {
     const event = events[eventIndex], span = eventControlSpan(events, eventIndex)
     const at = startAt + event.timeSeconds
-    const dynamics = applyIntelligentPerformanceGestureToDynamics(
-      orchestralContinuousDynamics(track, controls, event.timeSeconds, span, event.velocity, event.articulation),
-      event.performanceGesture,
+    const dynamics = applyOrchestraConductorToDynamics(
+      applyIntelligentPerformanceGestureToDynamics(
+        orchestralContinuousDynamics(track, controls, event.timeSeconds, span, event.velocity, event.articulation),
+        event.performanceGesture,
+      ),
+      event.conductorGesture,
     )
     const physicalPressure = physicalCurve(event, span, dynamics.effort.length, track, controls, "pressure")
     const position = physicalCurve(event, span, dynamics.effort.length, track, controls, "bowPosition")
@@ -360,9 +372,10 @@ function scheduleWaveguideMember(
   const begins = Math.max(context.currentTime, startAt + events[0].timeSeconds)
   const last = events.at(-1)!, noteEnd = startAt + last.timeSeconds + last.durationSeconds
   const release = profile.releaseSeconds * tuning.releaseScale * (last.performanceGesture?.releaseTimeScale ?? 1)
+    * (last.conductorGesture?.releaseCohesionScale ?? 1)
   const stop = noteEnd + release + 0.05
   const identity = `${track.id}:${profile.instrument}:${events[0].timeSeconds}:${events.map(event => event.notes[0]).join(",")}:${member}`
-  const memberCents = members > 1 ? (member - (members - 1) / 2) * 3.8 : 0
+  const memberCents = orchestraSectionMemberOffset(member, members, members > 1 ? 3.8 + (events[0].conductorGesture?.sectionSpreadCents ?? 0) : 0)
   const highest = Math.max(...events.map(event => midiNoteToFrequency(event.notes[0]) * 2 ** (memberCents / 1200)))
   const exciter = context.createOscillator(); exciter.setPeriodicWave(bandlimitedBowWave(context, highest, track.brightness))
   schedulePitch(exciter.frequency, events, startAt, memberCents)
@@ -392,9 +405,12 @@ function scheduleWaveguideMember(
   for (let eventIndex = 0; eventIndex < events.length; eventIndex += 1) {
     const event = events[eventIndex], span = eventControlSpan(events, eventIndex)
     const at = startAt + event.timeSeconds
-    const dynamics = applyIntelligentPerformanceGestureToDynamics(
-      orchestralContinuousDynamics(track, controls, event.timeSeconds, span, event.velocity, event.articulation),
-      event.performanceGesture,
+    const dynamics = applyOrchestraConductorToDynamics(
+      applyIntelligentPerformanceGestureToDynamics(
+        orchestralContinuousDynamics(track, controls, event.timeSeconds, span, event.velocity, event.articulation),
+        event.performanceGesture,
+      ),
+      event.conductorGesture,
     )
     const pressure = physicalCurve(event, span, dynamics.effort.length, track, controls, "pressure")
     const position = physicalCurve(event, span, dynamics.effort.length, track, controls, "bowPosition")
@@ -453,10 +469,12 @@ export function scheduleOrchestralStringPhrase(
   const begins = Math.max(context.currentTime, startAt + events[0].timeSeconds)
   const last = events.at(-1)!, end = startAt + last.timeSeconds + last.durationSeconds
     + profile.releaseSeconds * tuning.releaseScale * (last.performanceGesture?.releaseTimeScale ?? 1)
+      * (last.conductorGesture?.releaseCohesionScale ?? 1)
   if (!reserve(begins, end + 0.05, members + 1)) return 0
   for (let member = 0; member < members; member += 1) {
-    if (!scheduleWorkletMember(context, destination, startAt, events, track, level, controls, profile, quality, member, members, tuning)) {
-      scheduleWaveguideMember(context, destination, startAt, events, track, level, controls, profile, quality, member, members, tuning)
+    const memberStartAt = startAt + orchestraSectionMemberDelay(member, members, events[0].conductorGesture?.sectionSpreadSeconds ?? 0)
+    if (!scheduleWorkletMember(context, destination, memberStartAt, events, track, level, controls, profile, quality, member, members, tuning)) {
+      scheduleWaveguideMember(context, destination, memberStartAt, events, track, level, controls, profile, quality, member, members, tuning)
     }
   }
   return events.length
