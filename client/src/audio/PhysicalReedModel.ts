@@ -1,5 +1,6 @@
 import type { NativePhysicalModelSource } from "@shared/native-acoustic-source"
 import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
+import type { OrchestraConductorGesture } from "@shared/orchestra-conductor"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import { deterministicNoiseOffset, sharedDeterministicNoiseBuffer } from "./DeterministicAudioNoise"
 
@@ -15,6 +16,7 @@ export interface PhysicalModelVoiceOptions {
   controls?: readonly LinearScoreControlV2[]
   legatoFromPrevious?: boolean
   performanceGesture?: IntelligentPerformanceGesture
+  conductorGesture?: OrchestraConductorGesture
 }
 
 function clamp01(value: number) { return Math.max(0, Math.min(1, value)) }
@@ -35,7 +37,7 @@ function createSaturator(context: BaseAudioContext, amount: number) {
   return node
 }
 
-function articulationEnvelope(event: LinearScoreEventV2, track: LinearScoreTrackV2, legatoFromPrevious = false, gesture?: IntelligentPerformanceGesture) {
+function articulationEnvelope(event: LinearScoreEventV2, track: LinearScoreTrackV2, legatoFromPrevious = false, gesture?: IntelligentPerformanceGesture, conductor?: OrchestraConductorGesture) {
   const duration = Math.max(0.03, event.durationSeconds)
   const articulation = event.articulation
   const attack = legatoFromPrevious
@@ -49,8 +51,8 @@ function articulationEnvelope(event: LinearScoreEventV2, track: LinearScoreTrack
   const sounding = articulation === "staccato" ? Math.min(duration, Math.max(0.09, duration * 0.56)) : duration
   const accent = articulation === "accent" ? 1.12 : articulation === "tenuto" ? 1.02 : 1
   return {
-    attack: attack * (gesture?.attackTimeScale ?? 1),
-    release: release * (gesture?.releaseTimeScale ?? 1),
+    attack: attack * (gesture?.attackTimeScale ?? 1) * (conductor?.attackCohesionScale ?? 1),
+    release: release * (gesture?.releaseTimeScale ?? 1) * (conductor?.releaseCohesionScale ?? 1),
     sounding,
     accent,
   }
@@ -123,10 +125,11 @@ export function schedulePhysicalReedVoice(
   const profile = profileFor(source)
   const frequency = midiHz(midi)
   const gesture = options.performanceGesture
+  const conductor = options.conductorGesture
   const pressure = clamp01((event.velocity * 0.72 + track.expression * 0.28) * (gesture?.onsetEffort ?? 1))
-  const brightness = clamp01(track.brightness * (gesture?.brightnessScale ?? 1))
+  const brightness = clamp01(track.brightness * (gesture?.brightnessScale ?? 1) * (conductor?.colourScale ?? 1))
   const vibrato = clamp01(track.vibrato)
-  const envelope = articulationEnvelope(event, track, legatoFromPrevious, gesture)
+  const envelope = articulationEnvelope(event, track, legatoFromPrevious, gesture, conductor)
   const noteStart = startAt + event.timeSeconds
   const noteEnd = noteStart + envelope.sounding
   const stopAt = noteEnd + envelope.release + 0.1
@@ -221,7 +224,7 @@ export function schedulePhysicalReedVoice(
     }
   }
 
-  const peak = Math.min(0.86, (0.19 + pressure * 0.55) * envelope.accent)
+  const peak = Math.min(0.86, (0.19 + pressure * 0.55) * envelope.accent * (conductor?.balanceScale ?? 1))
   const initialPeak = legatoFromPrevious ? peak * 0.78 : peak
   output.gain.setValueAtTime(0.0001, noteStart)
   output.gain.exponentialRampToValueAtTime(Math.max(0.001, initialPeak), noteStart + envelope.attack)

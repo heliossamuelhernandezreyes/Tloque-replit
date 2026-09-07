@@ -88,6 +88,10 @@ export class NativeSampleScoreEngine {
       const groups = orchestralSynthesis ? [] : nativeModuleGroupsForRecipe(recipe)
       const sampleGroups: NativeModuleGroup[] = [], physicalGroups: NativeModuleGroup[] = []
       for (const group of groups) (nativePhysicalModelByModuleId(group.moduleId) ? physicalGroups : sampleGroups).push(group)
+      const { performance: universalPerformance, recipe: performedRecipe } = buildPerformedRecipeV2(recipe)
+      const performedByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, performedRecipe.plan.events[eventIndex]] as const))
+      const decisionByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, universalPerformance.decisionForEvent(eventIndex)] as const))
+      const conductorByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, universalPerformance.decisionForEvent(eventIndex)?.conductor] as const))
 
       const loaded: LoadedNativePlan[] = []
       const fallbackTrackIds = new Set<string>(orchestralSynthesis ? recipe.plan.tracks.map(track => track.id) : [])
@@ -98,7 +102,7 @@ export class NativeSampleScoreEngine {
           const pack = await player.loadPack(packUrl)
           if (playToken !== this.playToken) { void context.close(); return 0 }
           if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde a su manifest`)
-          const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack)
+          const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack, { conductorByEvent: conductorByOriginal })
           loaded.push({ moduleId: group.moduleId, plan, player })
         } catch (error) {
           group.trackIds.forEach(trackId => fallbackTrackIds.add(trackId))
@@ -109,11 +113,9 @@ export class NativeSampleScoreEngine {
       if (playToken !== this.playToken) { void context.close(); return 0 }
 
       const index = buildNativeRecipeIndex(recipe)
-      const { performance: universalPerformance, recipe: performedRecipe } = buildPerformedRecipeV2(recipe)
-      const performedByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, performedRecipe.plan.events[eventIndex]] as const))
-      const decisionByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, universalPerformance.decisionForEvent(eventIndex)] as const))
       const gestureByEventIndex = new Map(universalPerformance.events.map(decision => [decision.eventIndex, decision.gesture] as const))
-      const hybridPerformance = buildNativeHybridPerformancePlan(performedRecipe, gestureByEventIndex)
+      const conductorByEventIndex = new Map(universalPerformance.events.map(decision => [decision.eventIndex, decision.conductor] as const))
+      const hybridPerformance = buildNativeHybridPerformancePlan(performedRecipe, gestureByEventIndex, conductorByEventIndex)
       const graph = createNativeRenderGraph(context, index.trackById)
       const output = context.createGain(); output.gain.value = 0; graph.output.connect(output); output.connect(context.destination)
 
@@ -203,7 +205,7 @@ export class NativeSampleScoreEngine {
                 destination,
                 0,
                 voice.oneShot,
-                { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression, dynamics: voice.dynamics, performanceGesture: voice.performanceGesture },
+                { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression, dynamics: voice.dynamics, performanceGesture: voice.performanceGesture, conductorGesture: voice.conductorGesture },
               ).catch(error => {
                 if (!semanticTrack || this.context !== context) return null
                 markFallback(voice.trackId, error)
@@ -318,7 +320,7 @@ export class NativeSampleScoreEngine {
               run: (cycleOffset = 0) => {
                 const scale = dwellGain(cue, track.role, cycleOffset, recipe.plan.totalSeconds, `${event.trackId}:${event.timeSeconds}`)
                 if (scale <= 0) return
-                for (const midi of event.notes) schedulePhysicalReedVoice(context, model, { startAt: startAt + cycleOffset, event, track: { ...effectiveTrack, expression: effectiveTrack.expression * scale }, midi, destination, controls, legatoFromPrevious, performanceGesture: directorDecision?.gesture })
+                for (const midi of event.notes) schedulePhysicalReedVoice(context, model, { startAt: startAt + cycleOffset, event, track: { ...effectiveTrack, expression: effectiveTrack.expression * scale }, midi, destination, controls, legatoFromPrevious, performanceGesture: directorDecision?.gesture, conductorGesture: directorDecision?.conductor })
               },
             })
             naturalEnd = Math.max(naturalEnd, event.timeSeconds + event.durationSeconds + 2)

@@ -1,5 +1,7 @@
 # Orchestral synthesis V3 — physical strings
 
+> Historical renderer contract. Current scores still use `module orchestra-synth`, now rendered by `tloque-orchestral-synth-v4-orchestra-conductor`; see [Orchestra Conductor V6](./ORCHESTRA_CONDUCTOR_V6.md).
+
 Date: 2026-09-04. Parent release: `tloque-orchestral-synth-v2.1`.
 
 The later sample-dominant hybrid path is documented in `ORCHESTRAL_HYBRID_V4.md`; `ORCHESTRAL_HYBRID_V5.md` adds a shared intelligent gesture layer without changing this bank-free DSP version.

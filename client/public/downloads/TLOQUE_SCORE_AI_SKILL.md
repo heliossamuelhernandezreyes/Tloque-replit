@@ -2,7 +2,7 @@
 name: tloque-score
 description: Write, revise, repair, or explain deterministic instrumental TloqueScore 2 for Tloque's Audio Laboratory. Use when an AI must turn a musical request into valid score code, orchestrate semantic instruments, select orchestral synthesis or native rendering, add physical performance controls, or fix compiler diagnostics.
 metadata:
-  version: "3.4.0"
+  version: "3.5.0"
   compiler: "tloque-score-compiler-v2.2"
 ---
 
@@ -26,19 +26,21 @@ Si el usuario sólo pide una explicación, puedes responder con prosa y no neces
 
 ## Compatibilidad actual
 
-- Skill: `3.4.0`
+- Skill: `3.5.0`
 - Lenguaje fuente: `TLOQUE_SCORE 2`
 - Compilador: `tloque-score-compiler-v2.2`
-- Síntesis orquestal: `orchestra-synth` / `tloque-orchestral-synth-v3-physical-strings`
+- Síntesis orquestal: `orchestra-synth` / `tloque-orchestral-synth-v4-orchestra-conductor`
 - Cuerdas físicas: `tloque-bowed-string-dsp-v3`
 - Intérprete orquestal: `tloque-intelligent-performer-v5`
 - Reglas de gesto: `tloque-intelligent-performer-rules-v1-phrase-gesture`
-- Interpretación híbrida: `tloque-native-hybrid-performance-v4-intelligent-performer`
-- Overlay híbrido de cuerdas: `bowed-string-overlay-v3-intelligent-gesture`
-- Overlay híbrido de aire: `air-column-overlay-v1.2-intelligent-gesture`
+- Director de orquesta: `tloque-orchestra-conductor-v6`
+- Reglas de conjunto: `tloque-orchestra-conductor-rules-v1-ensemble-memory`
+- Interpretación híbrida: `tloque-native-hybrid-performance-v5-orchestra-conductor`
+- Overlay híbrido de cuerdas: `bowed-string-overlay-v4-orchestra-conductor`
+- Overlay híbrido de aire: `air-column-overlay-v1.3-orchestra-conductor`
 - Dinámica tímbrica continua: `tloque-orchestral-dynamics-v2`
-- Director interpretativo: `tloque-universal-performance-director-v3-intelligent-gestures`
-- Perfil común live/WAV: `tloque-score-audio-v7-universal-performance`
+- Director interpretativo: `tloque-universal-performance-director-v4-orchestra-conductor`
+- Perfil común live/WAV: `tloque-score-audio-v8-orchestra-conductor`
 - Sala estéreo diseñada: `tloque-concert-stage-v3`
 - Enrutador de bancos grabados: `native-auto`
 - Síntesis clásica heredada: `builtin`
@@ -65,8 +67,8 @@ Si falta un dato, elige un valor musical razonable. No detengas la composición 
 
 | Si el usuario necesita… | Escribe… | Significa… |
 |---|---|---|
-| Una obra orquestal que funcione sin descargar bancos | `module orchestra-synth` | Síntesis orquestal V3. Es la opción recomendada por defecto. |
-| Instrumentos grabados y los bancos ya están instalados | `module native-auto` | Cada `instrument=` busca su banco verificado; V5 combina grabación, gesto interpretativo y cuerpo físico compatible. |
+| Una obra orquestal que funcione sin descargar bancos | `module orchestra-synth` | Síntesis orquestal V4 con Conductor V6. Es la opción recomendada por defecto. |
+| Instrumentos grabados y los bancos ya están instalados | `module native-auto` | Cada `instrument=` busca su banco verificado; V6 coordina grabación, gesto interpretativo y cuerpo físico compatible. |
 | El sonido sintético clásico | `module builtin` | Motor heredado, menos orquestal. |
 | Un módulo concreto que el usuario confirmó como instalado | `module id-confirmado` | Usa únicamente el ID exacto dado por el usuario o por Tloque. |
 
@@ -115,6 +117,17 @@ No declares un `track` después de abrir la primera sección.
 
 ### Paso 5 · Interpreta, no sólo coloques notas
 
+Piensa como si acomodaras una orquesta con bloques de juguete. Sigue siempre esta receta:
+
+1. **Elige quién cuenta la historia.** Pon `role=melody` sólo a la voz principal de ese momento.
+2. **Dale un suelo.** Usa `role=bass` para la base; no la hagas competir en el mismo registro con la melodía.
+3. **Añade compañía.** Usa `role=harmony` para acordes y `role=texture` para color. Si todo suena a la vez, quita notas o escribe `rest`.
+4. **Haz una montaña.** Cada frase debe tener entrada, crecimiento, punto alto y salida. Sube y baja `expression`, velocidad, densidad y brillo gradualmente.
+5. **Deja huecos para respirar.** Escribe `rest` de forma explícita al terminar una idea, cambiar de sección o pedir una nueva respiración/arco.
+6. **Revisa la conversación.** La melodía debe oírse sobre el acompañamiento; el bajo debe sostener; texturas y pulsos no deben taparlos.
+
+No existe un comando `conductor`. No lo inventes. Orchestra Conductor V6 lee `role=`, las notas simultáneas, los silencios, las secciones y la energía escrita; después coordina el conjunto de forma automática y determinista en reproducción y WAV.
+
 - Da a cada track una función clara: melodía, armonía, bajo, pulso, textura o acento.
 - Elige el compás real y el `role=` correcto: el Director usa ambos para decidir jerarquía métrica y cuánto debe sobresalir cada voz.
 - Escribe frases con dirección: inicio, crecimiento, punto alto y resolución.
@@ -157,7 +170,7 @@ quality core | studio | master
 module builtin | orchestra-synth | native-auto | id-instalado-confirmado
 ```
 
-Usa `humanize` con moderación. `0.04..0.14` activa variación determinista de tiempo, duración y velocity. El Intérprete V5 siempre deriva un gesto acotado por familia y frase: ataque, sostén, salida, brillo, vibrato, arco o respiración. Con `humanize 0`, tiempo, duración y velocity permanecen neutrales, pero el gesto instrumental sigue funcionando. Nunca cambia notas, articulaciones o timbres escritos ni convierte síntesis en una grabación real.
+Usa `humanize` con moderación. `0.04..0.14` activa variación determinista de tiempo, duración y velocity. El Intérprete V5 deriva el gesto individual; Orchestra Conductor V6 coordina memoria, densidad, jerarquía de roles, ataque, salida y color de conjunto. Con `humanize 0`, tiempo, duración y velocity permanecen neutrales, pero ambas capas interpretativas siguen funcionando. Nunca cambian notas, articulaciones o timbres escritos ni convierten síntesis en una grabación real.
 
 ### Track
 
@@ -262,7 +275,7 @@ sleigh-bells
 
 No conviertas esos nombres en notas falsas. Un golpe de una sola toma conserva su ataque definido por `velocity`; los controles continuos no inventan una interpretación dentro de ese golpe.
 
-## Cómo aprovechar la síntesis orquestal V3
+## Cómo aprovechar la síntesis orquestal V4
 
 Con `module orchestra-synth`:
 
@@ -296,6 +309,19 @@ Con `module native-auto` y los bancos instalados:
 - `quality master` no activa automáticamente un overlay híbrido nuevo: primero necesita la matriz A/B ciega, evidencia versionada y aprobación humana del Laboratorio.
 
 Si no sabes si los bancos están instalados, usa `module orchestra-synth`. No presentes `native-auto` como una opción sin descargas.
+
+## Cómo aprovechar Orchestra Conductor V6
+
+El Conductor funciona automáticamente tanto con `orchestra-synth` como con `native-auto`. Para darle información musical útil:
+
+- marca una sola jerarquía clara con `role=melody`, `role=bass`, `role=harmony`, `role=pulse`, `role=texture` y `role=accent`;
+- deja coincidir los ataques que deban sentirse como un solo gesto de conjunto;
+- usa menos densidad debajo de una melodía delicada y más densidad sólo al construir un tutti;
+- conecta secciones mediante energía y color, pero escribe un `rest` cuando quieras vaciar la memoria y comenzar otra idea;
+- usa `form=`, `expression`, `brightness`, articulaciones y registros para que entrada, crecimiento, clímax y salida estén escritos en la partitura;
+- no dupliques tracks para crear “humanización”: V6 ya separa de forma determinista a los miembros de una sección compatible.
+
+V6 no compone ni corrige armonía por su cuenta. Tampoco cambia pitches, duraciones, articulaciones o timbres escritos. Su tarea es coordinar balance, memoria de energía, cohesión de ataques, salidas, color y separación interna de sección dentro de límites seguros.
 
 ## Instrumentos semánticos verificados
 

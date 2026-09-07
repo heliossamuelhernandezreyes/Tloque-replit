@@ -6,6 +6,11 @@ import {
 } from "@shared/intelligent-performance"
 import type { LinearScoreRecipeV2 } from "@shared/tloque-score-v2"
 import {
+  ORCHESTRA_CONDUCTOR_RULE_VERSION,
+  ORCHESTRA_CONDUCTOR_VERSION,
+  type OrchestraConductorGesture,
+} from "@shared/orchestra-conductor"
+import {
   BUILTIN_INSTRUMENT_MANIFESTS,
   type InstrumentArticulationRoute,
   type InstrumentManifest,
@@ -17,6 +22,7 @@ import {
   type MetricEmphasis,
   type PerformancePhraseContext,
 } from "./PerformanceDirector"
+import { buildOrchestraConductorPlan } from "./OrchestraConductor"
 
 export interface PerformanceRoute {
   manifestId: string | null
@@ -52,6 +58,7 @@ export interface PerformanceEventDecision {
   metricEmphasis: MetricEmphasis
   directorReasons: readonly string[]
   gesture: IntelligentPerformanceGesture
+  conductor: OrchestraConductorGesture
   identity: string
 }
 
@@ -77,6 +84,8 @@ export interface PerformancePlan extends PerformanceRoutingPlan {
   directorVersion: typeof UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION
   intelligentPerformerVersion: typeof INTELLIGENT_PERFORMER_VERSION
   intelligentPerformerRuleVersion: typeof INTELLIGENT_PERFORMER_RULE_VERSION
+  orchestraConductorVersion: typeof ORCHESTRA_CONDUCTOR_VERSION
+  orchestraConductorRuleVersion: typeof ORCHESTRA_CONDUCTOR_RULE_VERSION
   events: PerformanceEventDecision[]
   channelForEventIndex(eventIndex: number): number | undefined
   decisionForEvent(eventIndex: number): PerformanceEventDecision | undefined
@@ -448,6 +457,7 @@ export function buildPerformancePlan(
     }
   }
   const phraseContexts = buildPhraseContexts(recipe, tracksById, indicesByTrack)
+  const conductorPlan = buildOrchestraConductorPlan(recipe, new Set(playableTracks.map(track => track.id)))
 
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
@@ -497,6 +507,10 @@ export function buildPerformancePlan(
     const directedStart = director.startOffsetSeconds * directorStrength
     const directedDuration = 1 + (director.durationScale - 1) * directorStrength
     const directedVelocity = 1 + (director.velocityScale - 1) * directorStrength
+    const conductor = conductorPlan.decisions.get(eventIndex)!
+    // The ensemble conductor never moves authored/performed event onsets. This
+    // preserves performance identity when native-auto splits tracks into banks;
+    // cohesion is rendered through attack shape and bounded intra-section spread.
     const startOffsetSeconds = Math.max(-0.04, Math.min(0.04, performed.startOffsetSeconds + directedStart))
     const durationScale = Math.max(0.84, Math.min(1.10, performed.durationScale * directedDuration))
     const velocityScale = Math.max(0.86, Math.min(1.14, performed.velocityScale * directedVelocity))
@@ -530,6 +544,7 @@ export function buildPerformancePlan(
       metricEmphasis: phrase.metricEmphasis,
       directorReasons: director.reason,
       gesture,
+      conductor,
       identity,
     })
     previousByTrack.set(track.id, { notes: event.notes, endSeconds: startSeconds + durationSeconds })
@@ -542,6 +557,8 @@ export function buildPerformancePlan(
     directorVersion: UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION,
     intelligentPerformerVersion: INTELLIGENT_PERFORMER_VERSION,
     intelligentPerformerRuleVersion: INTELLIGENT_PERFORMER_RULE_VERSION,
+    orchestraConductorVersion: ORCHESTRA_CONDUCTOR_VERSION,
+    orchestraConductorRuleVersion: ORCHESTRA_CONDUCTOR_RULE_VERSION,
     events: decisions,
     channelForEventIndex: eventIndex => {
       const decision = decisionByIndex.get(eventIndex)

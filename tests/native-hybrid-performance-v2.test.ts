@@ -26,7 +26,7 @@ quality studio
 module native-auto
 ${tracks}`
 
-describe("Native Hybrid Performance v4 Intelligent Performer", () => {
+describe("Native Hybrid Performance v5 Orchestra Conductor", () => {
   it("keeps complete sampled piano chords while thinning and normalizing only the subordinate resonator", () => {
     const recipe = compile(`${header("track piano synth=warm instrument=piano.grand program=0 role=harmony gain=0.3 pan=0 attack=0.02 release=2")}
 section chord form=development bars=2 repeat=1 fade=0 tempo=120 rubato=0
@@ -122,7 +122,7 @@ end`)
     for (const file of ["client/src/audio/NativeSampleScoreEngine.ts", "client/src/audio/NativeSampleScoreExporter.ts"]) {
       const source = readFileSync(file, "utf8")
       expect(source).toMatch(/buildPerformedRecipeV2\(recipe\)/)
-      expect(source).toMatch(/buildNativeHybridPerformancePlan\(performedRecipe, gestureByEventIndex\)/)
+      expect(source).toMatch(/buildNativeHybridPerformancePlan\(performedRecipe, gestureByEventIndex, conductorByEventIndex\)/)
       expect(source).toMatch(/buildNativeHybridRenderUnits\(hybridPerformance\)/)
       expect(source).toMatch(/performance: decision/)
       expect(source).toMatch(/decision\.midis/)
