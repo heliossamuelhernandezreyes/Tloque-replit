@@ -4,7 +4,7 @@ import {
   linearScoreRecipeV2Schema, type LinearScoreControlV2, type LinearScoreRecipeV2, type LinearScoreTrackV2,
 } from "./tloque-score-v2"
 export {
-  DEFAULT_TLOQUE_SCORE_V2, TLOQUE_SCORE_COMPILER_V2, TLOQUE_SCORE_COMPILER_V2_LEGACY, compileTloqueScoreV2,
+  DEFAULT_TLOQUE_SCORE_V2, TLOQUE_SCORE_COMPILER_V2, TLOQUE_SCORE_COMPILER_V2_1, TLOQUE_SCORE_COMPILER_V2_2, TLOQUE_SCORE_COMPILER_V2_LEGACY, TLOQUE_SCORE_V2_LIMITS, compileTloqueScoreV2,
   linearScoreControlV2Schema, linearScorePlanV2Schema, linearScoreRecipeV2Schema,
   type LinearScoreControlV2, type LinearScorePlanV2, type LinearScoreRecipeV2, type LinearScoreTrackV2,
 } from "./tloque-score-v2"

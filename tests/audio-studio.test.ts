@@ -99,7 +99,10 @@ test("los planes V2 guardados antes de V2.1 y de timbre explícito conservan com
     delete track.timbre
   }
   for (const event of legacy.plan.events) delete event.timbre
-  for (const section of legacy.plan.sections) delete section.rubato
+  for (const section of legacy.plan.sections) {
+    delete section.rubato
+    delete section.meter
+  }
   const parsed = anyLinearScoreRecipeSchema.parse(legacy)
   assert.equal(parsed.version, 2)
   if (parsed.version !== 2) return
@@ -109,6 +112,7 @@ test("los planes V2 guardados antes de V2.1 y de timbre explícito conservan com
   assert.equal(parsed.plan.tracks[0].timbre, "natural")
   assert.equal(parsed.plan.events[0].timbre, "natural")
   assert.equal(parsed.plan.sections[0].rubato, 0)
+  assert.equal(parsed.plan.sections[0].meter, null)
 })
 
 test("TloqueScore conserva sostenidos y calcula un compás 6/8", () => {

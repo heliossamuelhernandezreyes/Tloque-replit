@@ -1,6 +1,32 @@
+import type { LinearScoreRecipe } from "@shared/audio"
+
 const SCORE_TEXTAREA_LABEL = "Código TloqueScore"
-const MAX_SCORE_FILE_BYTES = 4 * 1024 * 1024
-const ALLOWED_EXTENSIONS = [".tloque", ".tloquescore", ".txt"]
+const MAX_SCORE_FILE_BYTES = 4_000_000
+const MAX_MUSIC_XML_BYTES = 12 * 1024 * 1024
+const MAX_MXL_BYTES = 16 * 1024 * 1024
+const SCORE_EXTENSIONS = [".tloque", ".tloquescore", ".txt"] as const
+const MUSIC_XML_EXTENSIONS = [".musicxml", ".xml", ".mxl"] as const
+const ALLOWED_EXTENSIONS = [...SCORE_EXTENSIONS, ...MUSIC_XML_EXTENSIONS]
+
+export const TLOQUE_SCORE_IMPORTED_EVENT = "tloque-score-imported"
+
+export interface TloqueScoreImportedDetail {
+  fileName: string
+  title: string
+  composer: string
+  recipe: LinearScoreRecipe
+  report: {
+    format: "musicxml" | "mxl"
+    sourceParts: number
+    outputTracks: number
+    measures: number
+    notes: number
+    controls: number
+    sections: number
+    mergedParts: number
+    warnings: { code: string; message: string; count: number }[]
+  }
+}
 
 function extensionOf(name: string) {
   const lower = name.toLowerCase()
@@ -43,8 +69,10 @@ function notify(container: HTMLElement, message: string, tone: "ok" | "error" | 
     node = document.createElement("p")
     node.dataset.tloqueScoreFileStatus = "true"
     node.className = "mt-2 rounded-lg px-3 py-2 text-[11px] leading-5"
+    node.setAttribute("aria-live", "polite")
     container.append(node)
   }
+  node.setAttribute("role", tone === "error" ? "alert" : "status")
   node.className = `mt-2 rounded-lg px-3 py-2 text-[11px] leading-5 ${
     tone === "ok"
       ? "bg-emerald-400/5 text-emerald-200"
@@ -53,6 +81,31 @@ function notify(container: HTMLElement, message: string, tone: "ok" | "error" | 
         : "bg-sky-400/5 text-sky-200"
   }`
   node.textContent = message
+}
+
+function clearImportReport(container: HTMLElement) {
+  container.querySelector("[data-tloque-score-import-report]")?.remove()
+}
+
+function showImportReport(container: HTMLElement, detail: TloqueScoreImportedDetail) {
+  clearImportReport(container)
+  if (!detail.report.warnings.length) return
+  const details = document.createElement("details")
+  details.dataset.tloqueScoreImportReport = "true"
+  details.className = "mt-2 rounded-lg border border-amber-300/15 bg-amber-300/[0.035] px-3 py-2 text-[11px] leading-5 text-amber-100"
+  const summary = document.createElement("summary")
+  const warningCount = detail.report.warnings.reduce((sum, warning) => sum + warning.count, 0)
+  summary.className = "cursor-pointer font-medium"
+  summary.textContent = `${warningCount} aviso${warningCount === 1 ? "" : "s"} de fidelidad · revisar antes de publicar`
+  const list = document.createElement("ul")
+  list.className = "mt-2 list-disc space-y-1 pl-4 text-amber-100/80"
+  for (const warning of detail.report.warnings) {
+    const item = document.createElement("li")
+    item.textContent = `${warning.message}${warning.count > 1 ? ` (${warning.count}×)` : ""}`
+    list.append(item)
+  }
+  details.append(summary, list)
+  container.append(details)
 }
 
 function installForTextarea(textarea: HTMLTextAreaElement) {
@@ -72,8 +125,8 @@ function installForTextarea(textarea: HTMLTextAreaElement) {
   const copy = document.createElement("div")
   copy.className = "min-w-0 flex-1"
   copy.innerHTML = `
-    <p class="text-xs font-medium text-sky-100">Partituras como archivo</p>
-    <p class="mt-1 text-[10px] leading-4 text-zinc-500">Abre directamente .tloque, .tloquescore o .txt. El archivo se carga completo en el compositor sin depender del portapapeles.</p>
+    <p class="text-xs font-medium text-sky-100">Abrir o importar partitura</p>
+    <p class="mt-1 text-[10px] leading-4 text-zinc-500">Abre TloqueScore o convierte MusicXML (.musicxml, .xml y .mxl) localmente. Nada del archivo sale del navegador hasta que guardas la obra.</p>
   `
 
   const actions = document.createElement("div")
@@ -81,13 +134,13 @@ function installForTextarea(textarea: HTMLTextAreaElement) {
 
   const input = document.createElement("input")
   input.type = "file"
-  input.accept = ".tloque,.tloquescore,.txt,text/plain"
+  input.accept = ".tloque,.tloquescore,.txt,.musicxml,.xml,.mxl,text/plain,application/xml,text/xml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,application/zip"
   input.className = "sr-only"
 
   const openButton = document.createElement("button")
   openButton.type = "button"
-  openButton.className = "min-h-11 rounded-lg bg-sky-300 px-4 py-2 text-xs font-semibold text-sky-950"
-  openButton.textContent = "Abrir partitura"
+  openButton.className = "min-h-11 rounded-lg bg-sky-300 px-4 py-2 text-xs font-semibold text-sky-950 disabled:opacity-50"
+  openButton.textContent = "Abrir / importar"
   openButton.addEventListener("click", () => input.click())
 
   const saveButton = document.createElement("button")
@@ -117,25 +170,52 @@ function installForTextarea(textarea: HTMLTextAreaElement) {
     input.value = ""
     if (!file) return
 
-    if (!extensionOf(file.name)) {
-      notify(panel, "Formato no admitido. Usa .tloque, .tloquescore o .txt.", "error")
+    const extension = extensionOf(file.name)
+    if (!extension) {
+      notify(panel, "Formato no admitido. Usa TloqueScore, .musicxml, .xml o .mxl.", "error")
       return
     }
-    if (file.size > MAX_SCORE_FILE_BYTES) {
-      notify(panel, "La partitura supera 4 MB. Ese tamaño no es razonable para TloqueScore de texto.", "error")
+    const isMusicXml = MUSIC_XML_EXTENSIONS.includes(extension as typeof MUSIC_XML_EXTENSIONS[number])
+    const maximumBytes = extension === ".mxl" ? MAX_MXL_BYTES : isMusicXml ? MAX_MUSIC_XML_BYTES : MAX_SCORE_FILE_BYTES
+    if (file.size > maximumBytes) {
+      notify(panel, `El archivo supera el límite de ${(maximumBytes / 1024 / 1024).toFixed(0)} MB para ${extension}.`, "error")
       return
+    }
+    if (textarea.value.trim()) {
+      const replace = window.confirm("Ya hay una obra en el compositor. ¿Reemplazarla con la partitura seleccionada?")
+      if (!replace) return
     }
 
+    openButton.disabled = true
+    openButton.setAttribute("aria-busy", "true")
     try {
+      clearImportReport(panel)
+      if (isMusicXml) {
+        notify(panel, `Importando ${file.name}…`, "info")
+        const { importMusicXmlFile } = await import("./musicXmlImporter")
+        const imported = await importMusicXmlFile(file)
+        const detail: TloqueScoreImportedDetail = {
+          fileName: file.name,
+          title: imported.title,
+          composer: imported.composer,
+          recipe: imported.recipe,
+          report: imported.report,
+        }
+        assignTextareaValue(textarea, imported.source)
+        textarea.dispatchEvent(new CustomEvent<TloqueScoreImportedDetail>(TLOQUE_SCORE_IMPORTED_EVENT, { bubbles: true, detail }))
+        textarea.focus()
+        textarea.setSelectionRange(0, 0)
+        const report = imported.report
+        notify(panel, `Importada · ${report.measures} compases · ${report.sourceParts} partes → ${report.outputTracks} pistas · ${report.notes} eventos`, "ok")
+        showImportReport(panel, detail)
+        textarea.scrollIntoView({ behavior: "smooth", block: "center" })
+        return
+      }
       let source = await file.text()
       source = source.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim()
       if (!source.startsWith("TLOQUE_SCORE 2")) {
         notify(panel, "El archivo no comienza con TLOQUE_SCORE 2 y no se cargó.", "error")
         return
-      }
-      if (textarea.value.trim() && textarea.value.trim() !== source) {
-        const replace = window.confirm("Ya hay una obra en el compositor. ¿Reemplazarla con la partitura seleccionada?")
-        if (!replace) return
       }
 
       assignTextareaValue(textarea, source)
@@ -144,8 +224,12 @@ function installForTextarea(textarea: HTMLTextAreaElement) {
       notify(panel, `Cargada completa · ${summarize(source)} · ${(file.size / 1024).toFixed(1)} KB`, "ok")
       textarea.scrollIntoView({ behavior: "smooth", block: "center" })
     } catch (error) {
-      console.error("No se pudo abrir la partitura TloqueScore", error)
-      notify(panel, "No se pudo leer el archivo seleccionado.", "error")
+      console.error("No se pudo abrir o importar la partitura", error)
+      const detail = error instanceof Error ? error.message : "No se pudo leer el archivo seleccionado."
+      notify(panel, detail.slice(0, 800), "error")
+    } finally {
+      openButton.disabled = false
+      openButton.removeAttribute("aria-busy")
     }
   })
 
