@@ -3,7 +3,7 @@
 ## Contratos
 
 - Audio: `tloque-audio-2026-08-v2`.
-- Compilador nuevo: `tloque-score-compiler-v2`.
+- Compilador actual: `tloque-score-compiler-v2.3-classical-import`.
 - Registro de fuentes: `tloque-audio-sources-2026-08-v2`.
 - Perfil de render: `tloque-score-audio-v5-sampled`.
 - Compatibilidad: las recetas V1 continúan compilando y reproduciéndose con `tloque-score-compiler-v1`.
@@ -13,7 +13,7 @@ El código TloqueScore es la fuente maestra. Al editarlo se invalida el plan ant
 
 ## TloqueScore V2
 
-V2 permite escribir una obra extensa o una sonata con exposición, desarrollo, recapitulación y coda. Cada sección puede tener tempo propio; los silencios y las transiciones se declaran explícitamente.
+V2 permite escribir una obra extensa o una sonata con exposición, desarrollo, recapitulación y coda. Cada sección puede tener tempo y compás propios; los silencios y las transiciones se declaran explícitamente.
 
 ```text
 TLOQUE_SCORE 2
@@ -23,11 +23,11 @@ meter 4/4
 loop false
 seed 20260822
 quality master
-module orchestra-core
+module orchestra-synth
 
 track violin synth=pad instrument=strings.violin program=40 role=melody gain=0.24 pan=0.1 attack=0.18 release=1.6
 
-section theme-a form=exposition bars=8 repeat=2 fade=1 tempo=72
+section theme-a form=exposition bars=8 repeat=2 fade=1 tempo=72 meter=4/4
 use violin
 1:1 E4 1 velocity=0.46 articulation=legato
 rest 1:2 1
@@ -35,7 +35,11 @@ rest 1:2 1
 end
 ```
 
-Límites operativos: 256 compases, 16 pistas, 8,192 eventos, 32 secciones y 30 minutos por código. Para obras mayores se guarda cada movimiento como tema separado; esto mantiene la edición y exportación viables en móviles.
+Límites operativos: 4096 compases, 16 pistas, 131 072 eventos, 2048 secciones, 131 072 negras y 4 horas por código. Cada sección admite hasta 1024 compases; para obras que excedan esos presupuestos se guarda cada movimiento como tema separado.
+
+## Importación MusicXML/MXL
+
+El compositor abre `.musicxml`, `.xml` y `.mxl` directamente desde el dispositivo y los convierte a TloqueScore antes de validar. Conserva partes, voces, acordes, silencios, transposición, ligaduras, tempo, compás, dinámica, reguladores, pedal y articulaciones compatibles. Las aproximaciones quedan visibles y la licencia permanece pendiente de verificación; ninguna importación se publica automáticamente. Consulta el [contrato y matriz de fidelidad](./MUSICXML_CLASSICAL_BRIDGE_V1.md).
 
 ## Calidad y módulos descargables
 

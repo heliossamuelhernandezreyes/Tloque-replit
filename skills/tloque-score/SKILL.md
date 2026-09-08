@@ -2,8 +2,8 @@
 name: tloque-score
 description: Write, revise, repair, or explain deterministic instrumental TloqueScore 2 for Tloque's Audio Laboratory. Use when an AI must turn a musical request into valid score code, orchestrate semantic instruments, select orchestral synthesis or native rendering, add physical performance controls, or fix compiler diagnostics.
 metadata:
-  version: "3.6.0"
-  compiler: "tloque-score-compiler-v2.2"
+  version: "3.7.0"
+  compiler: "tloque-score-compiler-v2.3-classical-import"
 ---
 
 # TloqueScore 2 · instrucciones para IA
@@ -26,9 +26,9 @@ Si el usuario sólo pide una explicación, puedes responder con prosa y no neces
 
 ## Compatibilidad actual
 
-- Skill: `3.6.0`
+- Skill: `3.7.0`
 - Lenguaje fuente: `TLOQUE_SCORE 2`
-- Compilador: `tloque-score-compiler-v2.2`
+- Compilador: `tloque-score-compiler-v2.3-classical-import`
 - Síntesis orquestal: `orchestra-synth` / `tloque-orchestral-synth-v5-acoustic-continuity`
 - Cuerdas físicas: `tloque-bowed-string-dsp-v3`
 - Intérprete orquestal: `tloque-intelligent-performer-v5`
@@ -153,7 +153,7 @@ Comprueba cada punto:
 - [ ] Cada `use` nombra un track existente.
 - [ ] Cada compás local está entre `1` y `bars=` de su sección.
 - [ ] Cada tiempo cabe en el compás. En 4/4, `4:4.75` es válido y `4:5` no lo es.
-- [ ] Cada nota está entre C1 y C8, es decir MIDI 24..108.
+- [ ] Cada nota está dentro de MIDI 0..127; para escritura legible, usa normalmente C1..C8 salvo que el encargo necesite otro registro.
 - [ ] Cada eje físico corresponde a la familia del instrumento.
 - [ ] No hay comandos, instrumentos, timbres o módulos inventados.
 - [ ] La respuesta contiene la obra completa en un solo bloque y nada más.
@@ -164,8 +164,8 @@ Comprueba cada punto:
 
 ```text
 title "Texto de hasta 160 caracteres"
-tempo 32..180
-meter 2..12/4 | 2..12/8
+tempo 20..300
+meter numerador-1..32/1|2|4|8|16|32
 loop true | false
 seed 0..2147483647
 humanize 0..1
@@ -188,13 +188,14 @@ El `id` empieza con una letra minúscula y sólo usa minúsculas, números, `_` 
 ### Sección
 
 ```text
-section id form=exposition|development|recapitulation|coda|interlude|custom bars=1..128 repeat=1..4 fade=0..16 tempo=32..180 rubato=0..0.35
+section id form=exposition|development|recapitulation|coda|interlude|custom bars=1..1024 repeat=1..4 fade=0..64 tempo=20..300 meter=numerador-1..32/1|2|4|8|16|32 rubato=0..0.35
 ```
 
 - `bars=` es la longitud local antes de repetir.
 - `repeat=` repite la sección al compilar.
-- El total compilado no puede superar 256 compases.
-- Puede haber como máximo 32 secciones.
+- `meter=` es opcional; si falta, la sección hereda el compás global. Úsalo cuando la obra cambie de compás.
+- El total compilado no puede superar 4096 compases, 131072 negras ni 4 horas.
+- Puede haber como máximo 2048 secciones.
 - Cierra cada sección únicamente con `end`.
 
 ### Elegir track
@@ -214,7 +215,7 @@ bar:beat C3,Eb3,G3 duration velocity=0.01..1 articulation=normal|legato|staccato
 - Una nota: `2:1 G4 2 velocity=0.58 articulation=tenuto`
 - Un acorde: `2:1 C3,E3,G3 4 velocity=0.48`
 - Usa sostenidos o bemoles como `F#4` o `Bb3`.
-- `duration` admite `0.03125..64` tiempos.
+- `duration` admite `0.03125..256` tiempos de negra.
 - `timbre=` en una nota sustituye el timbre del track sólo para esa nota.
 - Un evento admite de 1 a 12 notas.
 
@@ -229,10 +230,12 @@ Ejemplo: `rest 3:3 2`. El silencio es explícito y ayuda a separar frases. No es
 ### Control expresivo o físico
 
 ```text
-control bar:beat expression=0..1 brightness=0..1 vibrato=0..1 pedal=down|up bend=-2..2 pressure=0..1 embouchure=0..1 bow=0..1 pluck=0..1 damper=0..1 coupling=0..1 ramp=0..16
+control bar:beat expression=0..1 brightness=0..1 vibrato=0..1 pedal=down|up bend=-2..2 pressure=0..1 embouchure=0..1 bow=0..1 pluck=0..1 damper=0..1 coupling=0..1 ramp=0..64
 ```
 
 Una línea necesita al menos un valor. Sólo escribe los valores que cambian. El nuevo valor persiste hasta que otro control del mismo eje lo cambie. `ramp=` expresa la transición en tiempos.
+
+El compositor también puede importar `.musicxml`, `.xml` y `.mxl`; el puente los convierte a este mismo lenguaje y muestra cualquier aproximación. Si una IA recibe el archivo original para componer o reparar, su salida sigue siendo un único bloque `tloque-score`, no XML.
 
 Usa los ejes por familia:
 

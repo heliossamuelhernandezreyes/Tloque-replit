@@ -108,6 +108,7 @@ function semanticInstrumentId(track: LinearScoreTrack): string | null {
 
 type ScoreEvent = LinearScoreRecipe["plan"]["events"][number]
 type ScoreRestV2 = LinearScoreRecipeV2["plan"]["rests"][number]
+type ScoreSectionV2 = LinearScoreRecipeV2["plan"]["sections"][number]
 
 function eventStartSeconds(recipe: LinearScoreRecipe, event: ScoreEvent) {
   return "timeSeconds" in event ? event.timeSeconds : event.timeBeats * 60 / recipe.plan.bpm
@@ -117,9 +118,14 @@ function eventDurationSeconds(recipe: LinearScoreRecipe, event: ScoreEvent) {
   return "durationSeconds" in event ? event.durationSeconds : event.durationBeats * 60 / recipe.plan.bpm
 }
 
-function metricEmphasisFor(recipe: LinearScoreRecipe, event: ScoreEvent): MetricEmphasis {
+function sectionForEvent(event: ScoreEvent, sectionsById: ReadonlyMap<string, ScoreSectionV2>): ScoreSectionV2 | null {
+  return "sectionId" in event ? sectionsById.get(event.sectionId) ?? null : null
+}
+
+function metricEmphasisFor(recipe: LinearScoreRecipe, event: ScoreEvent, sectionsById: ReadonlyMap<string, ScoreSectionV2>): MetricEmphasis {
   const beat = event.beat
-  const { numerator, denominator } = recipe.plan.meter
+  const section = recipe.version === 2 ? sectionForEvent(event, sectionsById) : null
+  const { numerator, denominator } = section?.meter ?? recipe.plan.meter
   if (Math.abs(beat - 1) < 1e-6) return "primary"
   if (denominator === 8 && numerator >= 6 && numerator % 3 === 0) {
     const groupOffset = beat - 1
@@ -129,9 +135,9 @@ function metricEmphasisFor(recipe: LinearScoreRecipe, event: ScoreEvent): Metric
   return "light"
 }
 
-function sectionBeatSeconds(recipe: LinearScoreRecipe, event: ScoreEvent) {
+function sectionBeatSeconds(recipe: LinearScoreRecipe, event: ScoreEvent, sectionsById: ReadonlyMap<string, ScoreSectionV2>) {
   if (recipe.version !== 2 || !("sectionId" in event)) return 60 / recipe.plan.bpm
-  const section = recipe.plan.sections.find(item => item.id === event.sectionId)
+  const section = sectionForEvent(event, sectionsById)
   return 60 / (section?.bpm ?? recipe.plan.bpm)
 }
 
@@ -153,7 +159,7 @@ function explicitRestBreaksPhrase(recipe: LinearScoreRecipe, previous: ScoreEven
   return false
 }
 
-function phraseClimaxPosition(recipe: LinearScoreRecipe, indices: readonly number[], track: LinearScoreTrack) {
+function phraseClimaxPosition(recipe: LinearScoreRecipe, indices: readonly number[], track: LinearScoreTrack, sectionsById: ReadonlyMap<string, ScoreSectionV2>) {
   if (indices.length <= 2) return Math.max(0, indices.length - 1)
   const events = indices.map(index => recipe.plan.events[index])
   const pitches = events.map(event => event.notes.reduce((sum, note) => sum + note, 0) / event.notes.length)
@@ -167,7 +173,8 @@ function phraseClimaxPosition(recipe: LinearScoreRecipe, indices: readonly numbe
     const event = events[position]
     const progress = position / (events.length - 1)
     const preferredLatePeak = 1 - Math.min(1, Math.abs(progress - 0.62) / 0.62)
-    const metric = metricEmphasisFor(recipe, event) === "primary" ? 1 : metricEmphasisFor(recipe, event) === "secondary" ? 0.5 : 0
+    const emphasis = metricEmphasisFor(recipe, event, sectionsById)
+    const metric = emphasis === "primary" ? 1 : emphasis === "secondary" ? 0.5 : 0
     const articulationEnergy = "articulation" in event && event.articulation === "accent" ? 1 : 0
     const score = ((pitches[position] - minPitch) / pitchSpan) * pitchWeight
       + event.velocity * 0.34
@@ -186,6 +193,7 @@ function buildPhraseContexts(
   recipe: LinearScoreRecipe,
   tracksById: ReadonlyMap<string, LinearScoreTrack>,
   indicesByTrack: ReadonlyMap<string, number[]>,
+  sectionsById: ReadonlyMap<string, ScoreSectionV2>,
 ) {
   const result = new Map<number, PerformancePhraseContext>()
   const restsByTrack = new Map<string, ScoreRestV2[]>()
@@ -208,14 +216,16 @@ function buildPhraseContexts(
       const previousIndex = phrase.at(-1)
       const previous = previousIndex === undefined ? null : recipe.plan.events[previousIndex]
       const currentStart = eventStartSeconds(recipe, event)
-      const beatSeconds = sectionBeatSeconds(recipe, event)
-      const barSeconds = beatSeconds * recipe.plan.meter.numerator * (4 / recipe.plan.meter.denominator)
+      const beatSeconds = sectionBeatSeconds(recipe, event, sectionsById)
+      const section = recipe.version === 2 ? sectionForEvent(event, sectionsById) : null
+      const meter = section?.meter ?? recipe.plan.meter
+      const barSeconds = beatSeconds * meter.numerator * (4 / meter.denominator)
       const maximumPhraseSeconds = Math.max(4, Math.min(14, barSeconds * 4))
       const previousEnd = previous ? eventStartSeconds(recipe, previous) + eventDurationSeconds(recipe, previous) : Number.NEGATIVE_INFINITY
       const gap = currentStart - previousEnd
       const sectionChanged = Boolean(previous && "sectionId" in previous && "sectionId" in event && previous.sectionId !== event.sectionId)
       const gapBreak = Boolean(previous && gap >= Math.max(0.09, Math.min(0.24, beatSeconds * 0.24)))
-      const boundedPhraseBreak = Boolean(previous && phrase.length >= 2 && currentStart - phraseStartSeconds >= maximumPhraseSeconds && metricEmphasisFor(recipe, event) === "primary")
+      const boundedPhraseBreak = Boolean(previous && phrase.length >= 2 && currentStart - phraseStartSeconds >= maximumPhraseSeconds && metricEmphasisFor(recipe, event, sectionsById) === "primary")
       const shouldBreak = !previous || sectionChanged || gapBreak || explicitRestBreaksPhrase(recipe, previous, event, rests) || boundedPhraseBreak
       if (shouldBreak && phrase.length) {
         phrases.push(phrase)
@@ -227,14 +237,14 @@ function buildPhraseContexts(
     if (phrase.length) phrases.push(phrase)
 
     phrases.forEach((phraseIndices, phraseIndex) => {
-      const climaxPosition = phraseClimaxPosition(recipe, phraseIndices, track)
+      const climaxPosition = phraseClimaxPosition(recipe, phraseIndices, track, sectionsById)
       phraseIndices.forEach((eventIndex, position) => {
         result.set(eventIndex, {
           phraseIndex,
           position,
           length: phraseIndices.length,
           climaxPosition,
-          metricEmphasis: metricEmphasisFor(recipe, recipe.plan.events[eventIndex]),
+          metricEmphasis: metricEmphasisFor(recipe, recipe.plan.events[eventIndex], sectionsById),
         })
       })
     })
@@ -439,6 +449,9 @@ export function buildPerformancePlan(
   const ordinalByTrack = new Map<string, number>()
   const decisions: PerformanceEventDecision[] = []
   const humanize = recipe.version === 2 ? recipe.plan.humanize : 0
+  const sectionsById = recipe.version === 2
+    ? new Map(recipe.plan.sections.map(section => [section.id, section]))
+    : new Map<string, ScoreSectionV2>()
 
   const indicesByTrack = new Map<string, number[]>()
   for (let index = 0; index < recipe.plan.events.length; index += 1) {
@@ -456,7 +469,7 @@ export function buildPerformancePlan(
       })
     }
   }
-  const phraseContexts = buildPhraseContexts(recipe, tracksById, indicesByTrack)
+  const phraseContexts = buildPhraseContexts(recipe, tracksById, indicesByTrack, sectionsById)
   const conductorPlan = buildOrchestraConductorPlan(recipe, new Set(playableTracks.map(track => track.id)))
 
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
@@ -476,7 +489,7 @@ export function buildPerformancePlan(
       position: 0,
       length: 1,
       climaxPosition: 0,
-      metricEmphasis: metricEmphasisFor(recipe, event),
+      metricEmphasis: metricEmphasisFor(recipe, event, sectionsById),
     }
     const authoredGap = previous ? startSeconds - previous.endSeconds : Number.POSITIVE_INFINITY
     const connected = Boolean(

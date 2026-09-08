@@ -1,5 +1,5 @@
 import { describe, expect, it } from "./test-compat"
-import { compileTloqueScore } from "../shared/audio"
+import { compileTloqueScore, TLOQUE_SCORE_COMPILER_V2 } from "../shared/audio"
 import { NATIVE_HYBRID_SOURCES } from "../shared/native-hybrid-source"
 
 const REGISTERS = ["low", "mid", "high"] as const
@@ -52,13 +52,13 @@ ${matrix}`
 
 describe("hybrid A/B probes", () => {
   for (const source of NATIVE_HYBRID_SOURCES) {
-    it(`compiles 3x3 v2.2 physical matrix for ${source.instrumentId}`, () => {
+    it(`compiles the 3x3 physical matrix for ${source.instrumentId}`, () => {
       const result = compileTloqueScore(scoreFor(source))
       expect(result.ok, result.ok ? undefined : JSON.stringify(result.diagnostics)).toBe(true)
       if (!result.ok || result.recipe.version !== 2) return
       expect(result.recipe.plan.events).toHaveLength(36)
       expect(result.recipe.plan.controls).toHaveLength(18)
-      expect(result.recipe.plan.compilerVersion).toBe("tloque-score-compiler-v2.2")
+      expect(result.recipe.plan.compilerVersion).toBe(TLOQUE_SCORE_COMPILER_V2)
       const controls = result.recipe.plan.controls
       if (source.physicalLayer === "bowed-string-resonator") {
         expect(controls.some(control => control.bowPosition === 0.8)).toBe(true)

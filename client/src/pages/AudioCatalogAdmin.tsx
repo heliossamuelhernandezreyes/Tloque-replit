@@ -28,6 +28,7 @@ import {
   type AudioRenderAnalysis,
 } from "@/audio/AudioRenderAnalysis"
 import { compileTloqueScoreOnServer } from "@/lib/tloqueScoreApi"
+import { TLOQUE_SCORE_IMPORTED_EVENT, type TloqueScoreImportedDetail } from "@/lib/tloqueScoreFileBridge"
 import { ORCHESTRAL_SYNTH_MODULE_ID, withOrchestralModule } from "@shared/orchestral-synthesis"
 
 type AudioAssetForm = Omit<AudioAsset, "id" | "favorite">
@@ -257,8 +258,33 @@ export default function AudioCatalogAdmin() {
     mutationFn: async (source: string) => {
       return compileTloqueScoreOnServer(source)
     },
-    onSuccess: setCompiled,
+    onSuccess: (recipe, source) => {
+      if (scoreEditorRef.current?.value === source) setCompiled(recipe)
+    },
   })
+
+  useEffect(() => {
+    const handleMusicXmlImport = (event: Event) => {
+      const imported = event as CustomEvent<TloqueScoreImportedDetail>
+      const editor = event.target instanceof HTMLTextAreaElement ? event.target : scoreEditorRef.current
+      if (!editor || !imported.detail) return
+      music.stop()
+      setScoreEditingId(null)
+      setCompiled(imported.detail.recipe)
+      compile.reset()
+      setMasteringResult(null)
+      setScoreMeta({
+        title: imported.detail.title || "Partitura importada",
+        artist: imported.detail.composer,
+        license: "Pendiente de verificar · MusicXML",
+        sourceName: `MusicXML · ${imported.detail.fileName}`.slice(0, 200),
+        sourceUrl: "",
+        status: "draft",
+      })
+    }
+    document.addEventListener(TLOQUE_SCORE_IMPORTED_EVENT, handleMusicXmlImport)
+    return () => document.removeEventListener(TLOQUE_SCORE_IMPORTED_EVENT, handleMusicXmlImport)
+  }, [compile.reset, music.stop])
 
   const saveScore = useMutation({
     mutationFn: async () => {
@@ -267,13 +293,16 @@ export default function AudioCatalogAdmin() {
       if (recipe.version === 2 && !["builtin", "native-auto", ORCHESTRAL_SYNTH_MODULE_ID].includes(recipe.plan.moduleId) && !moduleAsset) {
         throw new Error(`Publica un banco instrumental con la etiqueta module:${recipe.plan.moduleId}`)
       }
-      const payload: AudioAssetForm = {
+      // El servidor recompila la fuente antes de persistir. No enviamos el plan
+      // completo junto al código: una obra orquestal larga sólo cruza la red una vez.
+      const payload = {
         ...EMPTY,
         title: scoreMeta.title,
         artist: scoreMeta.artist,
         kind: "music",
         sourceType: "score",
-        recipe,
+        recipe: null,
+        scoreSource,
         musicalMode: `${recipe.plan.meter.numerator}/${recipe.plan.meter.denominator}`,
         tags: ["theme", "instrumental", "tloque-score", ...(recipe.version === 2 ? [`module:${recipe.plan.moduleId}`, `quality:${recipe.plan.quality}`] : [])],
         texture: "partitura lineal TloqueScore",
@@ -627,7 +656,7 @@ export default function AudioCatalogAdmin() {
         {tab === "composer" && (
           <section className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.035] p-4 space-y-4">
             <div>
-              <h2 className="text-sm font-semibold">Compositor de obras · TloqueScore 2.2</h2>
+              <h2 className="text-sm font-semibold">Compositor de obras · TloqueScore 2.3</h2>
               <p className="mt-1 text-xs text-zinc-500">El código es la obra maestra: editarlo recompila y cambia el audio. La reproducción no crea archivos; Exportar genera un WAV sólo cuando lo pides.</p>
               <p className="mt-1 text-[10px] text-zinc-600"><code>quality master</code>: síntesis clásica u orquestal a 24-bit / 96 kHz; bancos nativos y SF2/SF3 a 24-bit / 48 kHz. La frecuencia de exportación no certifica realismo acústico. Orchestra Conductor V7 coordina por posición musical, mide silencios desde el último final programado de nota y conserva ataques, salidas y color en live/WAV. El límite sigue siendo 192 fuentes, incluidas sus colas.</p>
             </div>
@@ -698,8 +727,8 @@ export default function AudioCatalogAdmin() {
               <div className="mt-2 space-y-2 font-mono text-[11px] leading-5">
                 <p><strong className="font-sans text-zinc-300">1 · Fuente</strong><br />quality core|studio|master · module orchestra-synth|native-auto|builtin|id-instalado</p>
                 <p><strong className="font-sans text-zinc-300">2 · Instrumentos</strong><br />track id synth=warm|pad|bell|pluck|bass instrument=… program=0..127 role=melody|harmony|bass|pulse|texture|accent gain=0..1 pan=-1..1 attack=0.001..8 release=0.01..12 expression=0..1 brightness=0..1 vibrato=0..1 timbre=…</p>
-                <p><strong className="font-sans text-zinc-300">3 · Forma</strong><br />section id form=exposition|development|recapitulation|coda|interlude|custom bars=1..128 repeat=1..4 fade=0..16 tempo=32..180 rubato=0..0.35</p>
-                <p><strong className="font-sans text-zinc-300">4 · Música</strong><br />use track · control posición expression=0..1 brightness=0..1 vibrato=0..1 pressure=0..1 embouchure=0..1 bow=0..1 pluck=0..1 damper=0..1 coupling=0..1 pedal=down|up bend=-2..2 ramp=0..16 · posición C3,Eb3,G3 duración velocity=0.01..1 articulation=… · rest posición duración · end</p>
+                <p><strong className="font-sans text-zinc-300">3 · Forma</strong><br />section id form=exposition|development|recapitulation|coda|interlude|custom bars=1..1024 repeat=1..4 fade=0..64 tempo=20..300 meter=N/1|2|4|8|16|32 rubato=0..0.35</p>
+                <p><strong className="font-sans text-zinc-300">4 · Música</strong><br />use track · control posición expression=0..1 brightness=0..1 vibrato=0..1 pressure=0..1 embouchure=0..1 bow=0..1 pluck=0..1 damper=0..1 coupling=0..1 pedal=down|up bend=-2..2 ramp=0..64 · posición C3,Eb3,G3 duración velocity=0.01..1 articulation=… · rest posición duración · end</p>
               </div>
             </details>
             <div className="rounded-xl border border-sky-400/20 bg-sky-400/5 p-3">

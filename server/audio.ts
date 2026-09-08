@@ -7,7 +7,7 @@ import {
 import { isSafeAudioSource, isSafeHttpsUrl, isSafeSoundBankSource } from "@shared/media"
 import {
   AUDIO_CONTRACT_VERSION, UI_SOUND_EVENTS, audioRecipeSchema, audioSourceTypeSchema,
-  anyLinearScoreRecipeSchema, compileTloqueScore, proceduralRecipeSchema,
+  anyLinearScoreRecipeSchema, compileTloqueScore, proceduralRecipeSchema, TLOQUE_SCORE_V2_LIMITS,
   uiSoundEventKeySchema, uiSoundRecipeSchema,
 } from "@shared/audio"
 import { db } from "./db"
@@ -23,6 +23,7 @@ export const audioAssetInputSchema = z.object({
   sourceType: audioSourceTypeSchema.default("stream"),
   url: z.string().trim().max(2_000).default(""),
   recipe: audioRecipeSchema.nullable().default(null),
+  scoreSource: z.string().min(1).max(TLOQUE_SCORE_V2_LIMITS.sourceCharacters).optional(),
   musicalKey: z.string().trim().max(16).default(""),
   musicalMode: z.string().trim().max(32).default(""),
   brightness: z.number().min(0).max(1).default(0.5),
@@ -50,7 +51,7 @@ export const audioAssetInputSchema = z.object({
   if (value.sourceType !== "stream" && value.url && !isSafeAudioSource(value.url)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["url"], message: "La pista de respaldo debe ser audio HTTPS permitido" })
   }
-  if (value.sourceType !== "stream" && !value.recipe) {
+  if (value.sourceType !== "stream" && !value.recipe && !(value.sourceType === "score" && value.scoreSource)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La síntesis necesita una receta válida" })
   }
   if (value.sourceType === "soundfont" && !isSafeSoundBankSource(value.packUrl)) {
@@ -63,20 +64,21 @@ export const audioAssetInputSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La receta musical procedural no es válida" })
   }
   if (value.sourceType === "score") {
-    const recipe = anyLinearScoreRecipeSchema.safeParse(value.recipe)
-    if (!recipe.success) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "Compila el código TloqueScore antes de guardar" })
+    const suppliedRecipe = anyLinearScoreRecipeSchema.safeParse(value.recipe)
+    const source = value.scoreSource ?? (suppliedRecipe.success ? suppliedRecipe.data.source : null)
+    const verified = source ? compileTloqueScore(source) : null
+    if (!verified?.ok) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["scoreSource"], message: "Compila un código TloqueScore válido antes de guardar" })
     } else {
-      const verified = compileTloqueScore(recipe.data.source)
-      if (!verified.ok || verified.recipe.plan.sourceHash !== recipe.data.plan.sourceHash) {
+      if (suppliedRecipe.success && verified.recipe.plan.sourceHash !== suppliedRecipe.data.plan.sourceHash) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["recipe"], message: "La partitura compilada no corresponde al código fuente" })
       }
-      if (recipe.data.version === 2
-        && recipe.data.plan.moduleId !== "builtin"
-        && recipe.data.plan.moduleId !== "native-auto"
-        && recipe.data.plan.moduleId !== ORCHESTRAL_SYNTH_MODULE_ID
+      if (verified.recipe.version === 2
+        && verified.recipe.plan.moduleId !== "builtin"
+        && verified.recipe.plan.moduleId !== "native-auto"
+        && verified.recipe.plan.moduleId !== ORCHESTRAL_SYNTH_MODULE_ID
         && !isSafeSoundBankSource(value.packUrl)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["packUrl"], message: `El módulo ${recipe.data.plan.moduleId} necesita un banco SF2/SF3 publicado` })
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["packUrl"], message: `El módulo ${verified.recipe.plan.moduleId} necesita un banco SF2/SF3 publicado` })
       }
     }
   }
@@ -102,7 +104,7 @@ const assignmentInputSchema = z.object({
 })
 
 const scoreCompileInputSchema = z.object({
-  source: z.string().min(1).max(200_000),
+  source: z.string().min(1).max(TLOQUE_SCORE_V2_LIMITS.sourceCharacters),
 }).strict()
 
 const eventBindingInputSchema = z.object({
@@ -115,25 +117,31 @@ const eventBindingInputSchema = z.object({
 const MIDI_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const
 
 function normalizedAudioAsset(data: z.infer<typeof audioAssetInputSchema>) {
-  if (data.sourceType === "stream" || !data.recipe) return data
+  const { scoreSource, ...assetData } = data
   if (data.sourceType === "score") {
-    const recipe = anyLinearScoreRecipeSchema.parse(data.recipe)
+    const suppliedRecipe = anyLinearScoreRecipeSchema.safeParse(data.recipe)
+    const source = scoreSource ?? (suppliedRecipe.success ? suppliedRecipe.data.source : "")
+    const compiled = compileTloqueScore(source)
+    if (!compiled.ok) throw new Error("La partitura TloqueScore dejó de ser válida antes de persistirla")
+    const recipe = compiled.recipe
+    const compilerTag = `compiler:${recipe.plan.compilerVersion.replace(/^tloque-score-compiler-/, "")}`
     return {
-      ...data,
+      ...assetData,
       recipe,
       bpm: recipe.plan.bpm,
       musicalMode: `${recipe.plan.meter.numerator}/${recipe.plan.meter.denominator}`,
       texture: data.texture || "partitura lineal TloqueScore",
-      tags: [...new Set([...data.tags, "tloque-score", "instrumental", recipe.plan.compilerVersion])].slice(0, 24),
+      tags: [...new Set([...data.tags, "tloque-score", "instrumental", compilerTag])].slice(0, 24),
       durationSeconds: Math.max(1, Math.ceil("totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * 60 / recipe.plan.bpm)),
       loop: recipe.plan.loop,
     }
   }
+  if (data.sourceType === "stream" || !data.recipe) return assetData
   if (data.sourceType === "sfx") {
     const recipe = uiSoundRecipeSchema.parse(data.recipe)
     const duration = Math.max(...recipe.voices.map(voice => voice.offset + voice.duration))
     return {
-      ...data,
+      ...assetData,
       recipe,
       bpm: null,
       musicalKey: "",
@@ -153,7 +161,7 @@ function normalizedAudioAsset(data: z.infer<typeof audioAssetInputSchema>) {
   }[recipe.preset]
   const automaticTags = [recipe.preset, recipe.scale, data.sourceType]
   return {
-    ...data,
+    ...assetData,
     recipe,
     bpm: recipe.bpm,
     musicalKey: `${MIDI_NAMES[recipe.rootMidi % 12]}${Math.floor(recipe.rootMidi / 12) - 1}`,
