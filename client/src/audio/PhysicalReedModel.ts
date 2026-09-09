@@ -1,6 +1,7 @@
 import type { NativePhysicalModelSource } from "@shared/native-acoustic-source"
 import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
 import type { OrchestraConductorGesture } from "@shared/orchestra-conductor"
+import { orchestralInterpretationEnvelopeAt } from "@shared/orchestral-interpreter"
 import type { LinearScoreRecipeV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import { deterministicNoiseOffset, sharedDeterministicNoiseBuffer } from "./DeterministicAudioNoise"
 
@@ -28,7 +29,8 @@ export function physicalReedBrightness(
   gesture?: IntelligentPerformanceGesture,
   conductor?: OrchestraConductorGesture,
 ) {
-  return clamp01(brightness * (gesture?.brightnessScale ?? 1) * (conductor?.colourScale ?? 1))
+  const tensionColour = gesture ? 0.985 + gesture.interpretation.harmonicTension * 0.03 : 1
+  return clamp01(brightness * (gesture?.brightnessScale ?? 1) * tensionColour * (conductor?.colourScale ?? 1))
 }
 
 function createSaturator(context: BaseAudioContext, amount: number) {
@@ -192,10 +194,18 @@ export function schedulePhysicalReedVoice(
   const vibratoScale = gesture?.vibratoDepthScale ?? 1
   const vibratoPeak = vibrato * (isContrabassoon(source) ? 9 : 13) * vibratoScale
   const lfoDepth = context.createGain(); lfoDepth.gain.value = 0
+  const vibratoShape = gesture?.interpretation.vibrato
+  const vibratoStart = vibratoPeak * (vibratoShape ? orchestralInterpretationEnvelopeAt(vibratoShape, 0) : 1)
+  const vibratoCrest = vibratoPeak * (vibratoShape ? orchestralInterpretationEnvelopeAt(vibratoShape, vibratoShape.peakPosition) : 1)
+  const vibratoEnd = vibratoPeak * (vibratoShape ? orchestralInterpretationEnvelopeAt(vibratoShape, 1) : 1)
+  const vibratoDelay = Math.min(envelope.sounding * 0.5, gesture?.vibratoDelaySeconds ?? 0)
+  const vibratoCrestAt = noteStart + Math.max(vibratoDelay + 0.002, envelope.sounding * (vibratoShape?.peakPosition ?? 0.62))
   lfoDepth.gain.setValueAtTime(0, noteStart)
-  lfoDepth.gain.linearRampToValueAtTime(vibratoPeak, noteStart + Math.min(envelope.sounding * 0.5, gesture?.vibratoDelaySeconds ?? 0))
+  lfoDepth.gain.linearRampToValueAtTime(vibratoStart, noteStart + vibratoDelay)
+  lfoDepth.gain.linearRampToValueAtTime(vibratoCrest, Math.min(noteEnd, vibratoCrestAt))
+  lfoDepth.gain.linearRampToValueAtTime(vibratoEnd, noteEnd)
   lfo.connect(lfoDepth); lfoDepth.connect(fundamental.detune); for (const oscillator of harmonicOscillators) lfoDepth.connect(oscillator.detune)
-  const delayMod = context.createGain(); delayMod.gain.value = baseDelaySeconds * vibrato * 0.0045 * vibratoScale
+  const delayMod = context.createGain(); delayMod.gain.value = baseDelaySeconds * vibrato * 0.0045 * vibratoScale * (vibratoShape?.peakScale ?? 1)
   lfo.connect(delayMod); delayMod.connect(boreDelay.delayTime)
 
   const pressureLfo = context.createOscillator(); pressureLfo.type = "sine"; pressureLfo.frequency.value = profile.pressureWanderHz
@@ -233,11 +243,19 @@ export function schedulePhysicalReedVoice(
   }
 
   const peak = Math.min(0.86, (0.19 + pressure * 0.55) * envelope.accent * (conductor?.balanceScale ?? 1))
-  const initialPeak = legatoFromPrevious ? peak * 0.78 : peak
+  const dynamicShape = gesture?.interpretation.dynamic
+  const dynamicStart = dynamicShape ? orchestralInterpretationEnvelopeAt(dynamicShape, 0) : 1
+  const dynamicCrest = dynamicShape ? orchestralInterpretationEnvelopeAt(dynamicShape, dynamicShape.peakPosition) : 1
+  const dynamicEnd = dynamicShape ? orchestralInterpretationEnvelopeAt(dynamicShape, 1) : 1
+  const initialPeak = (legatoFromPrevious ? peak * 0.78 : peak) * dynamicStart
   output.gain.setValueAtTime(0.0001, noteStart)
   output.gain.exponentialRampToValueAtTime(Math.max(0.001, initialPeak), noteStart + envelope.attack)
-  if (event.articulation === "accent") output.gain.exponentialRampToValueAtTime(Math.max(0.001, peak * 0.78), noteStart + Math.min(envelope.sounding * 0.32, envelope.attack + 0.08))
-  output.gain.setValueAtTime(Math.max(0.001, peak * 0.78 * (gesture?.releaseEffort ?? 1)), Math.max(noteStart + envelope.attack, noteEnd - 0.015))
+  if (event.articulation === "accent") output.gain.exponentialRampToValueAtTime(Math.max(0.001, peak * 0.78 * dynamicCrest), noteStart + Math.min(envelope.sounding * 0.32, envelope.attack + 0.08))
+  else if (envelope.sounding > envelope.attack + 0.04) {
+    const crestAt = noteStart + Math.max(envelope.attack + 0.01, envelope.sounding * (dynamicShape?.peakPosition ?? 0.58))
+    output.gain.exponentialRampToValueAtTime(Math.max(0.001, peak * 0.78 * dynamicCrest), Math.min(noteEnd - 0.015, crestAt))
+  }
+  output.gain.setValueAtTime(Math.max(0.001, peak * 0.78 * dynamicEnd * (gesture?.releaseEffort ?? 1)), Math.max(noteStart + envelope.attack, noteEnd - 0.015))
   output.gain.exponentialRampToValueAtTime(0.0001, stopAt)
 
   fundamental.start(noteStart); fundamental.stop(stopAt)

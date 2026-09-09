@@ -1,6 +1,7 @@
 import type { LinearScoreControlV2, LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
 import type { OrchestraConductorGesture } from "@shared/orchestra-conductor"
+import { orchestralInterpretationEnvelopeAt } from "@shared/orchestral-interpreter"
 import { orchestralTimbreFor } from "@shared/orchestral-synthesis"
 import { nativeControlValueAt } from "./NativeRecipeIndex"
 
@@ -17,6 +18,8 @@ export interface OrchestralContinuousDynamics {
   readonly brightness: Float32Array
   readonly gestureVersion?: IntelligentPerformanceGesture["contractVersion"]
   readonly gestureRuleVersion?: IntelligentPerformanceGesture["ruleVersion"]
+  readonly interpreterVersion?: IntelligentPerformanceGesture["interpretation"]["contractVersion"]
+  readonly interpreterRuleVersion?: IntelligentPerformanceGesture["interpretation"]["ruleVersion"]
   readonly conductorVersion?: OrchestraConductorGesture["contractVersion"]
   readonly conductorRuleVersion?: OrchestraConductorGesture["ruleVersion"]
 }
@@ -68,9 +71,11 @@ export function applyIntelligentPerformanceGestureToDynamics(
       : x > 0.74
         ? gesture.sustainEffort + (gesture.releaseEffort - gesture.sustainEffort) * ((x - 0.74) / 0.26)
         : gesture.sustainEffort
-    effort[index] = clamp01(dynamics.effort[index] * scale)
+    const interpretedScale = orchestralInterpretationEnvelopeAt(gesture.interpretation.dynamic, x)
+    effort[index] = clamp01(dynamics.effort[index] * scale * interpretedScale)
     const effortDelta = effort[index] - dynamics.effort[index]
-    brightness[index] = clamp01(dynamics.brightness[index] * gesture.brightnessScale + effortDelta * 0.18)
+    const tensionColour = 0.985 + gesture.interpretation.harmonicTension * 0.03
+    brightness[index] = clamp01(dynamics.brightness[index] * gesture.brightnessScale * tensionColour + effortDelta * 0.18)
   }
   return {
     ...dynamics,
@@ -78,6 +83,8 @@ export function applyIntelligentPerformanceGestureToDynamics(
     brightness,
     gestureVersion: gesture.contractVersion,
     gestureRuleVersion: gesture.ruleVersion,
+    interpreterVersion: gesture.interpretation.contractVersion,
+    interpreterRuleVersion: gesture.interpretation.ruleVersion,
   }
 }
 

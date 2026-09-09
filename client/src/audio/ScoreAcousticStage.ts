@@ -1,3 +1,4 @@
+import type { OrchestralStageIntent } from "@shared/orchestral-interpreter"
 import { createCachedDeterministicStereoImpulse } from "./DeterministicImpulseCache"
 import { orchestralEarlyReflections } from "./OrchestralRoom"
 
@@ -43,7 +44,7 @@ function createEarlyReflectionImpulse(context: BaseAudioContext, seconds = 0.62)
 }
 
 export interface AcousticStage {
-  createTrackInput(instrument: string, scorePan: number): GainNode
+  createTrackInput(instrument: string, scorePan: number, intent?: OrchestralStageIntent): GainNode
   disconnect(): void
 }
 
@@ -59,23 +60,27 @@ export function createAcousticStage(context: BaseAudioContext, destination: Audi
   earlyRoom.connect(earlyFilter); earlyFilter.connect(earlyReturn); earlyReturn.connect(destination)
   const nodes: AudioNode[] = [earlyRoom, earlyFilter, earlyReturn]
 
-  function createTrackInput(instrument: string, scorePan: number) {
+  function createTrackInput(instrument: string, scorePan: number, intent?: OrchestralStageIntent) {
     const placement = acousticPlacementForInstrument(instrument)
+    const depth = Math.max(0, Math.min(1, placement.depth * (intent?.depthScale ?? 1)))
+    const roomSend = Math.max(0, Math.min(0.72, placement.roomSend * (intent?.roomSendScale ?? 1)))
+    const presence = placement.presence * (intent?.presenceScale ?? 1)
+    const stagePan = Math.max(-1, Math.min(1, scorePan + placement.panOffset + (intent?.panOffset ?? 0)))
     const input = context.createGain()
-    const distance = context.createGain(); distance.gain.value = placement.presence * (1 - placement.depth * 0.11)
-    const air = context.createBiquadFilter(); air.type = "lowpass"; air.frequency.value = Math.min(context.sampleRate * 0.45, 19_500 - placement.depth * 6_800); air.Q.value = 0.16
-    const delay = context.createDelay(0.06); delay.delayTime.value = 0.0025 + placement.depth * 0.014
-    const dry = context.createGain(); dry.gain.value = 0.97 - placement.depth * 0.08
-    const send = context.createGain(); send.gain.value = placement.roomSend
+    const distance = context.createGain(); distance.gain.value = presence * (1 - depth * 0.11)
+    const air = context.createBiquadFilter(); air.type = "lowpass"; air.frequency.value = Math.min(context.sampleRate * 0.45, 19_500 - depth * 6_800); air.Q.value = 0.16
+    const delay = context.createDelay(0.06); delay.delayTime.value = 0.0025 + depth * 0.014
+    const dry = context.createGain(); dry.gain.value = 0.97 - depth * 0.08
+    const send = context.createGain(); send.gain.value = roomSend
     input.connect(distance); distance.connect(air); air.connect(delay)
     if (typeof context.createStereoPanner === "function") {
-      const panner = context.createStereoPanner(); panner.pan.value = Math.max(-1, Math.min(1, scorePan + placement.panOffset))
+      const panner = context.createStereoPanner(); panner.pan.value = stagePan
       delay.connect(panner); panner.connect(dry); panner.connect(send); nodes.push(panner)
     } else { delay.connect(dry); delay.connect(send) }
     dry.connect(destination); send.connect(earlyRoom)
     // Four direction-dependent early arrivals carry stage width/depth. A shared
     // diffuse field and master tail follow them; no per-note reverb allocation.
-    for (const reflection of orchestralEarlyReflections(scorePan + placement.panOffset, placement.depth)) {
+    for (const reflection of orchestralEarlyReflections(stagePan, depth)) {
       const tap = context.createDelay(0.15); tap.delayTime.value = delay.delayTime.value + reflection.delaySeconds
       const level = context.createGain(); level.gain.value = reflection.gain
       air.connect(tap); tap.connect(level)

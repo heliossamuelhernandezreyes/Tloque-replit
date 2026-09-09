@@ -36,6 +36,16 @@ test("en extremos dinámicos usa una sola capa sin duplicar voces", () => {
   assert.deepEqual(selectNativeSampleVelocityBlend(pack, "normal", 60, 120, 0).map(item => item.zone.id), ["f"])
 })
 
+test("la capa y la amplitud pueden variar por separado sin contar expresión dos veces", () => {
+  const pack = validateTloqueSamplePack(PACK)
+  const quietColour = selectNativeSampleVelocityBlend(pack, "normal", 60, 20, 0, { amplitudeVelocity: 80 })
+  const loudColour = selectNativeSampleVelocityBlend(pack, "normal", 60, 110, 0, { amplitudeVelocity: 80 })
+  assert.deepEqual(quietColour.map(item => item.zone.id), ["p"])
+  assert.deepEqual(loudColour.map(item => item.zone.id), ["f"])
+  assert.equal(quietColour[0].gain, loudColour[0].gain)
+  assert.equal(quietColour[0].gain, 80 / 127)
+})
+
 test("instrumentos genéricos pueden interpolar raíces grabadas vecinas", () => {
   const pack = validateTloqueSamplePack({
     ...GENERIC_PACK,

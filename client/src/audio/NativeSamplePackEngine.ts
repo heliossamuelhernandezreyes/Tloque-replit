@@ -23,6 +23,10 @@ export interface NativeSampleTimbreRequest {
   micPosition?: TloqueMicPosition
   transitionFromMidi?: number
   transitionToMidi?: number
+  /** Select one recorded colour with midiVelocity while retaining the authored
+   * amplitude response. This prevents expression-aware layer choice from being
+   * counted twice in the gain stage. */
+  amplitudeVelocity?: number
 }
 export interface NativeSamplePlaybackEnvelope {
   fadeInSeconds?: number
@@ -122,7 +126,7 @@ export function selectNativeSampleZone(
     return best
   })
   const semitones = note - zone.rootMidi + zone.tuneCents / 100
-  return { zone, playbackRate: 2 ** (semitones / 12), gain: dbToGain(zone.gainDb) * velocityAmplitude(zone, midiVelocity) }
+  return { zone, playbackRate: 2 ** (semitones / 12), gain: dbToGain(zone.gainDb) * velocityAmplitude(zone, timbre.amplitudeVelocity ?? midiVelocity) }
 }
 
 export function nativeSampleAdaptiveEnvelope(
@@ -222,7 +226,7 @@ export class NativeSamplePackPlayer {
     const startAt = Math.max(this.context.currentTime, startTime)
     if (!oneShot && envelope.expression) {
       const duration = Math.max(0.01, durationSeconds)
-      if (envelope.expression.swell > 0) phrasing.gain.setValueCurveAtTime(orchestralExpressionCurve(envelope.expression, duration, "gain"), startAt, duration)
+      if (envelope.expression.swell > 0 || envelope.expression.interpretation) phrasing.gain.setValueCurveAtTime(orchestralExpressionCurve(envelope.expression, duration, "gain"), startAt, duration)
       if (envelope.expression.vibratoCents > 0) source.detune.setValueCurveAtTime(orchestralExpressionCurve(envelope.expression, duration, "detune"), startAt, duration)
     }
     const shaped = nativeSampleAdaptiveEnvelope(

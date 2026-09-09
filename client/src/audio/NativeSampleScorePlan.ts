@@ -7,7 +7,8 @@ import { physicalRecordedTimbre, recordedTimbreProfileFor, resolveRecordedTimbre
 import type { LinearScoreRecipeV2, ScoreTimbre } from "@shared/tloque-score-v2"
 import { selectNativeSampleZone } from "./NativeSamplePackEngine"
 import { selectNativeSampleVelocityBlend } from "./NativeSampleVelocityBlend"
-import { buildPerformancePlan, performedEventValues } from "./PerformanceEngine"
+import { buildPerformancePlan, performedEventValues, type PerformanceEventDecision } from "./PerformanceEngine"
+import { orchestralSampleLayerIntensity } from "./OrchestralInterpreter"
 import { applyIntelligentPerformanceGestureToExpression, orchestralNoteExpression, type OrchestralNoteExpression } from "./OrchestralExpression"
 import { applyIntelligentPerformanceGestureToDynamics, applyOrchestraConductorToDynamics, orchestralContinuousDynamics, type OrchestralContinuousDynamics } from "./OrchestralDynamics"
 import { buildNativeRecipeIndex, nativeControlValueAt } from "./NativeRecipeIndex"
@@ -22,6 +23,7 @@ export interface NativeSampleVoicePlan {
   resolvedTimbre: Exclude<ScoreTimbre, "natural">
   note: number
   velocity: number
+  layerVelocity: number
   roundRobin: number
   vibrato: boolean
   vibratoColour: TloqueVibratoColour
@@ -71,6 +73,10 @@ export interface NativeSampleScorePlanOptions {
    * partitions tracks across separate installed banks. Event objects are stable
    * references in recipeForNativeModule. */
   conductorByEvent?: ReadonlyMap<LinearScoreRecipeV2["plan"]["events"][number], OrchestraConductorGesture | undefined>
+  /** Preserve full-score phrase/harmony interpretation when native-auto renders
+   * one bank at a time. Local route capabilities (true legato, RR, releases)
+   * still come from that bank's manifest. */
+  fullScoreDecisionByEvent?: ReadonlyMap<LinearScoreRecipeV2["plan"]["events"][number], PerformanceEventDecision | undefined>
 }
 
 export function trueLegatoCrossfadeSeconds(noteDurationSeconds: number) {
@@ -97,6 +103,29 @@ function timbreCandidates(moduleId: string, requested: ScoreTimbre, vibratoAmoun
 
 function blendHasExactNoteCoverage(blend: ReturnType<typeof selectNativeSampleVelocityBlend>, note: number) {
   return blend.some(selection => note >= selection.zone.loMidi && note <= selection.zone.hiMidi)
+}
+
+function mergeFullScoreInterpretation(local: PerformanceEventDecision, full: PerformanceEventDecision | undefined) {
+  if (!full) return local
+  return {
+    ...local,
+    startOffsetSeconds: full.startOffsetSeconds,
+    durationScale: full.durationScale,
+    velocityScale: full.velocityScale,
+    phraseStart: full.phraseStart,
+    phraseEnd: full.phraseEnd,
+    phraseIndex: full.phraseIndex,
+    phrasePosition: full.phrasePosition,
+    phraseLength: full.phraseLength,
+    phraseProgress: full.phraseProgress,
+    phraseClimaxPosition: full.phraseClimaxPosition,
+    metricEmphasis: full.metricEmphasis,
+    directorReasons: full.directorReasons,
+    interpretation: full.interpretation,
+    gesture: { ...full.gesture, connection: local.gesture.connection },
+    conductor: full.conductor,
+    identity: full.identity,
+  } satisfies PerformanceEventDecision
 }
 
 export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: TloqueSamplePack, options: NativeSampleScorePlanOptions = {}): NativeSampleScorePlan {
@@ -143,23 +172,30 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
     const event = recipe.plan.events[eventIndex]
     const localDecision = performance.decisionForEvent(eventIndex)
+    const interpretedDecision = localDecision
+      ? mergeFullScoreInterpretation(localDecision, options.fullScoreDecisionByEvent?.get(event))
+      : undefined
     const fullScoreConductor = recipe.version === 2 ? options.conductorByEvent?.get(event) : undefined
-    const decision = localDecision && fullScoreConductor ? { ...localDecision, conductor: fullScoreConductor } : localDecision
+    const decision = interpretedDecision && fullScoreConductor ? { ...interpretedDecision, conductor: fullScoreConductor } : interpretedDecision
     const track = trackById.get(event.trackId)
     if (!decision || !track) continue
     const connectedPerformancePhrase = decision.gesture.connection === "phrase-carry"
     const oneShot = track.instrument === "percussion.orchestral-kit"
     const requestedTimbre = event.timbre ?? track.timbre ?? "natural"
-    const performedVibrato = requestedTimbre === "non-vibrato" ? 0 : nativeControlValueAt(index.controlsByTrack.get(track.id) ?? [], "vibrato", event.timeSeconds, track.vibrato ?? 0)
+    const trackControls = index.controlsByTrack.get(track.id) ?? []
+    const performedVibrato = requestedTimbre === "non-vibrato" ? 0 : nativeControlValueAt(trackControls, "vibrato", event.timeSeconds, track.vibrato ?? 0)
     const candidates = timbreCandidates(pack.instrumentManifestId, requestedTimbre, performedVibrato)
     const performed = performedEventValues(recipe, event, decision)
     const performedVelocity = performed.velocity
-    const velocity = Math.round(Math.min(1, scoreVelocityGain(performedVelocity) * articulationVelocityFactor(decision.articulation)) * 127)
+    const performedExpression = nativeControlValueAt(trackControls, "expression", event.timeSeconds, track.expression)
+    const layerIntensity = orchestralSampleLayerIntensity(performedVelocity, performedExpression, decision.interpretation)
+    const amplitudeVelocity = Math.round(Math.min(1, scoreVelocityGain(performedVelocity) * articulationVelocityFactor(decision.articulation)) * 127)
+    const velocity = Math.round(Math.min(1, scoreVelocityGain(layerIntensity) * articulationVelocityFactor(decision.articulation)) * 127)
     const durationSeconds = Math.max(0.01, performed.durationSeconds * articulationDurationFactor(decision.articulation))
     const startSeconds = performed.startSeconds
     const dynamics = applyOrchestraConductorToDynamics(
       applyIntelligentPerformanceGestureToDynamics(
-        orchestralContinuousDynamics(track, index.controlsByTrack.get(track.id) ?? [], startSeconds, durationSeconds, performedVelocity, decision.articulation),
+        orchestralContinuousDynamics(track, trackControls, startSeconds, durationSeconds, performedVelocity, decision.articulation),
         decision.gesture,
       ),
       decision.conductor,
@@ -172,7 +208,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
       let fallbackTimbre: ExplicitRecordedTimbre | null = null
       for (const candidate of candidates) {
         const physical = physicalRecordedTimbre(candidate)
-        const blend = selectNativeSampleVelocityBlend(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "attack", micPosition })
+        const blend = selectNativeSampleVelocityBlend(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "attack", micPosition, amplitudeVelocity })
         if (!blend.length) continue
         if (!fallbackSelections.length) {
           fallbackSelections = blend
@@ -201,7 +237,8 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           timbre: requestedTimbre,
           resolvedTimbre,
           note,
-          velocity,
+          velocity: amplitudeVelocity,
+          layerVelocity: velocity,
           roundRobin: decision.roundRobin,
           vibrato: physical.vibratoColour !== "none",
           vibratoColour: physical.vibratoColour,
@@ -235,6 +272,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           micPosition,
           transitionFromMidi: from,
           transitionToMidi: note,
+          amplitudeVelocity,
         })
         if (!transition) throw new Error(`El módulo ${pack.instrumentManifestId} declara true-legato pero no contiene transición ${from}->${note} en mic=${micPosition}`)
         const crossfadeSeconds = trueLegatoCrossfadeSeconds(durationSeconds)
@@ -245,7 +283,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           trackId: event.trackId,
           articulation: "legato",
           note,
-          velocity,
+          velocity: amplitudeVelocity,
           micPosition,
           startSeconds,
           durationSeconds: Math.min(1.5, durationSeconds),
@@ -262,7 +300,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
       }
 
       if (decision.releaseSamples) {
-        const release = selectNativeSampleZone(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "release", micPosition })
+        const release = selectNativeSampleZone(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "release", micPosition, amplitudeVelocity })
         if (!release) throw new Error(`El módulo ${pack.instrumentManifestId} declara release-samples pero no contiene release para MIDI ${note} en mic=${micPosition}`)
         zones.set(release.zone.id, release.zone)
         auxiliaryVoices.push({
@@ -270,7 +308,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           trackId: event.trackId,
           articulation: decision.articulation,
           note,
-          velocity,
+          velocity: amplitudeVelocity,
           micPosition,
           startSeconds: startSeconds + durationSeconds,
           durationSeconds: 8,

@@ -102,7 +102,10 @@ export class NativeSampleScoreEngine {
           const pack = await player.loadPack(packUrl)
           if (playToken !== this.playToken) { void context.close(); return 0 }
           if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde a su manifest`)
-          const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack, { conductorByEvent: conductorByOriginal })
+          const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack, {
+            conductorByEvent: conductorByOriginal,
+            fullScoreDecisionByEvent: decisionByOriginal,
+          })
           loaded.push({ moduleId: group.moduleId, plan, player })
         } catch (error) {
           group.trackIds.forEach(trackId => fallbackTrackIds.add(trackId))

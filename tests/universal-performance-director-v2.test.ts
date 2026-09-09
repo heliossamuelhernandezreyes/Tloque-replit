@@ -40,7 +40,7 @@ function phraseRecipe() {
   return result.recipe
 }
 
-test("Universal Performance Director V5 construye arcos, jerarquía, gestos V5 y dirección V7", () => {
+test("Universal Performance Director V6 construye arcos, jerarquía, gestos V6 y dirección V7", () => {
   const recipe = phraseRecipe()
   const first = buildPerformancePlan(recipe, [])
   const second = buildPerformancePlan(recipe, [])

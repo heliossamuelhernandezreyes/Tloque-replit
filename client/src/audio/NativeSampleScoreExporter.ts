@@ -187,7 +187,10 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
     }
     try {
       if (pack.instrumentManifestId !== group.moduleId) throw new Error(`El paquete nativo ${group.moduleId} no corresponde al módulo solicitado`)
-      const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack, { conductorByEvent: conductorByOriginal }), decoded = await decodePlayer.preload(plan.zones)
+      const plan = buildNativeSampleScorePlan(recipeForNativeModule(recipe, group), pack, {
+        conductorByEvent: conductorByOriginal,
+        fullScoreDecisionByEvent: decisionByOriginal,
+      }), decoded = await decodePlayer.preload(plan.zones)
       plan.zones.forEach((zone, i) => { const buffer = decoded[i]; if (buffer) decodedByUrl.set(zone.sampleUrl, buffer) })
       loaded.push({ moduleId: group.moduleId, plan })
     } catch (error) {

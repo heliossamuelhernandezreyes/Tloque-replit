@@ -1,5 +1,7 @@
-export const INTELLIGENT_PERFORMER_VERSION = "tloque-intelligent-performer-v5" as const
-export const INTELLIGENT_PERFORMER_RULE_VERSION = "tloque-intelligent-performer-rules-v1-phrase-gesture" as const
+import type { OrchestralInterpretationGesture } from "./orchestral-interpreter"
+
+export const INTELLIGENT_PERFORMER_VERSION = "tloque-intelligent-performer-v6-orchestral-interpreter" as const
+export const INTELLIGENT_PERFORMER_RULE_VERSION = "tloque-intelligent-performer-rules-v2-score-aware-expression" as const
 
 export type PerformanceMedium = "bow" | "breath" | "key" | "pluck" | "strike" | "sustain"
 export type PerformanceConnection = "fresh-attack" | "phrase-carry" | "recorded-legato"
@@ -26,4 +28,5 @@ export interface IntelligentPerformanceGesture {
   transitionSeconds: number
   bowDirection: BowDirection | null
   breathReset: boolean
+  interpretation: OrchestralInterpretationGesture
 }

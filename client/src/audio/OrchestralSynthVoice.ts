@@ -122,7 +122,7 @@ export function scheduleOrchestralSynthVoice(context: BaseAudioContext, destinat
     envelope.gain.exponentialRampToValueAtTime(Math.max(0.00001, sustain), begins + duration)
     envelope.gain.exponentialRampToValueAtTime(0.00001, end)
     const phrasing = context.createGain()
-    if (expression.swell || articulation === "tremolo") {
+    if (expression.swell || expression.interpretation || articulation === "tremolo") {
       const curve = orchestralExpressionCurve(expression, duration, "gain")
       if (articulation === "tremolo") for (let i = 0; i < curve.length; i++) curve[i] *= 0.65 + 0.35 * Math.cos(2 * Math.PI * 7 * duration * i / (curve.length - 1))
       phrasing.gain.setValueCurveAtTime(curve, begins, duration)

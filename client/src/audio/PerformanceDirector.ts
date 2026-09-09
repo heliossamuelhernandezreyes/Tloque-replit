@@ -1,5 +1,6 @@
 import type { LinearScoreRecipe, LinearScoreTrack } from "@shared/audio"
 import type { TloqueArticulation } from "@shared/instrument-manifest"
+import type { OrchestralInterpretationGesture } from "@shared/orchestral-interpreter"
 import {
   INTELLIGENT_PERFORMER_RULE_VERSION,
   INTELLIGENT_PERFORMER_VERSION,
@@ -7,7 +8,7 @@ import {
   type PerformanceMedium,
 } from "@shared/intelligent-performance"
 
-export const UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION = "tloque-universal-performance-director-v5-acoustic-continuity" as const
+export const UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION = "tloque-universal-performance-director-v6-orchestral-interpreter" as const
 
 export type MetricEmphasis = "primary" | "secondary" | "light"
 
@@ -26,6 +27,7 @@ export interface PerformanceDirectorContext {
   next: LinearScoreRecipe["plan"]["events"][number] | null
   articulation: TloqueArticulation
   phrase: PerformancePhraseContext
+  interpretation: OrchestralInterpretationGesture
 }
 
 export interface PerformanceDirectorDecision {
@@ -99,7 +101,7 @@ function gestureFor(
   phraseStart: boolean,
   phraseEnd: boolean,
 ): IntelligentPerformanceGesture {
-  const { track, event, previous, articulation, phrase } = context
+  const { track, event, previous, articulation, phrase, interpretation } = context
   const instrument = "instrument" in track ? track.instrument : ""
   const medium = performanceMedium(instrument, articulation)
   const previousEnd = previous ? eventStartSeconds(recipe, previous) + eventDurationSeconds(recipe, previous) : Number.NEGATIVE_INFINITY
@@ -172,8 +174,8 @@ function gestureFor(
     ruleVersion: INTELLIGENT_PERFORMER_RULE_VERSION,
     medium,
     connection: connected ? "phrase-carry" : "fresh-attack",
-    attackTimeScale: clamp(attackTimeScale, 0.55, 1.18),
-    releaseTimeScale: clamp(releaseTimeScale, 0.58, 1.2),
+    attackTimeScale: clamp(attackTimeScale * interpretation.attackTimeScale, 0.55, 1.18),
+    releaseTimeScale: clamp(releaseTimeScale * interpretation.releaseTimeScale, 0.58, 1.2),
     onsetEffort: clamp(onsetEffort, 0.42, 1.2),
     sustainEffort: clamp(sustainEffort, 0.7, 1.1),
     releaseEffort: clamp(releaseEffort, 0.58, 1.08),
@@ -181,8 +183,9 @@ function gestureFor(
     vibratoDepthScale: clamp(vibratoDepthScale, 0, 1.18),
     vibratoDelaySeconds: clamp(vibratoDelaySeconds, 0, 0.32),
     transitionSeconds: connected ? clamp(0.018 + interval * 0.0022, 0.018, 0.052) : 0,
-    bowDirection,
-    breathReset: medium === "breath" && !connected,
+    bowDirection: interpretation.bowDirection ?? bowDirection,
+    breathReset: interpretation.breathReset || (medium === "breath" && !connected),
+    interpretation,
   }
 }
 
