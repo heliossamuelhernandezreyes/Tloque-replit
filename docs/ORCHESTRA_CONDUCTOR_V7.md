@@ -2,7 +2,7 @@
 
 Date: 2026-09-07. Parent release: Orchestra Conductor V6.
 
-V7 closes continuity defects found after the V6 ensemble release. It still sits above Intelligent Performer V5 and never parses manuscripts, composes notes or mutates the compiled score. The change is renderer-neutral and deterministic: authored musical positions define ensemble gestures while rendered seconds retain their bounded humanization.
+V7 closes continuity defects found after the V6 ensemble release. It remains the ensemble layer above Orchestral Interpreter V1 and Intelligent Performer V6; none of them parses manuscripts, composes notes or mutates the compiled score. The change is renderer-neutral and deterministic: authored musical positions define ensemble gestures while rendered seconds retain their bounded humanization.
 
 ## Versioned contracts
 
@@ -10,8 +10,9 @@ V7 closes continuity defects found after the V6 ensemble release. It still sits 
 |---|---|---|
 | Ensemble contract | `tloque-orchestra-conductor-v7-acoustic-continuity` | Bounded shared gesture plus measured audible gap |
 | Ensemble rules | `tloque-orchestra-conductor-rules-v2-musical-onset-audible-gap` | Musical-onset grouping, sounding-note memory and linear section lookup |
-| Universal director | `tloque-universal-performance-director-v5-acoustic-continuity` | V5 musician gesture plus V7 ensemble decision |
-| Native sample player | `tloque-native-sample-player-v3-acoustic-continuity` | Preserve authored sample envelopes while applying eligible V5/V7 shaping |
+| Orchestral interpreter | `tloque-orchestral-interpreter-v1` | Phrase, harmony, expression and stage intent |
+| Universal director | `tloque-universal-performance-director-v6-orchestral-interpreter` | V1 interpretation plus V6 musician gesture and V7 ensemble decision |
+| Native sample player | `tloque-native-sample-player-v3-acoustic-continuity` | Preserve authored sample envelopes while applying eligible V6/V7 shaping |
 | Bank-free synth | `tloque-orchestral-synth-v5-acoustic-continuity` | Consume the V7 decision in spectral and physical voices |
 | Hybrid performance | `tloque-native-hybrid-performance-v6-acoustic-continuity` | Transport the exact V7 decision to subordinate overlays |
 | Bowed overlay | `bowed-string-overlay-v5-acoustic-continuity` | Conducted continuous string body |

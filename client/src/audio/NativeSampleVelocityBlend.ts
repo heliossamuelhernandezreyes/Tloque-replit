@@ -72,7 +72,7 @@ function pitchBlendForLayer(
   zones: readonly TloqueSampleZone[],
   layer: { layer: number; lo: number; hi: number; center: number },
   note: number,
-  velocity: number,
+  amplitudeVelocity: number,
   roundRobin: number,
   allowPitchBlend: boolean,
 ): readonly WeightedNativeSampleSelection[] {
@@ -96,9 +96,9 @@ function pitchBlendForLayer(
     if (!current || noteDistance(zone, note) < noteDistance(current, note)) uniqueByRoot.set(key, zone)
   }
   const roots = [...uniqueByRoot.values()].sort((a, b) => effectiveRoot(a) - effectiveRoot(b))
-  const actualVelocity = Math.max(0, Math.min(127, velocity))
+  const performedAmplitudeVelocity = Math.max(0, Math.min(127, amplitudeVelocity))
   const weighted = (zone: TloqueSampleZone, weight: number): WeightedNativeSampleSelection => {
-    const selection = selectionFor(zone, note, actualVelocity)
+    const selection = selectionFor(zone, note, performedAmplitudeVelocity)
     return { ...selection, gain: selection.gain * weight, weight }
   }
   if (roots.length === 1) return [weighted(roots[0], 1)]
@@ -153,6 +153,7 @@ export function selectNativeSampleVelocityBlend(
   const layers = semanticLayers(zones)
   if (!layers.length) return []
   const velocity = Math.max(0, Math.min(127, midiVelocity))
+  const amplitudeVelocity = Math.max(0, Math.min(127, timbre.amplitudeVelocity ?? midiVelocity))
   const allowPitchBlend = pack.instrumentManifestId !== "vsco2-ce-solo-violin"
 
   let lower = layers[0]
@@ -167,10 +168,10 @@ export function selectNativeSampleVelocityBlend(
   if (velocity <= layers[0].center) lower = upper = layers[0]
   if (velocity >= layers[layers.length - 1].center) lower = upper = layers[layers.length - 1]
 
-  const lowPitchBlend = pitchBlendForLayer(zones, lower, note, velocity, roundRobin, allowPitchBlend)
+  const lowPitchBlend = pitchBlendForLayer(zones, lower, note, amplitudeVelocity, roundRobin, allowPitchBlend)
   if (!lowPitchBlend.length) return []
   if (lower.layer === upper.layer) return lowPitchBlend
-  const highPitchBlend = pitchBlendForLayer(zones, upper, note, velocity, roundRobin, allowPitchBlend)
+  const highPitchBlend = pitchBlendForLayer(zones, upper, note, amplitudeVelocity, roundRobin, allowPitchBlend)
   if (!highPitchBlend.length) return lowPitchBlend
 
   const span = Math.max(1, upper.center - lower.center)

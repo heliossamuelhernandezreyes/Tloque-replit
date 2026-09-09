@@ -1,6 +1,7 @@
 import type { LinearScoreTrackV2 } from "@shared/tloque-score-v2"
 import { createAcousticStage, type AcousticStage } from "./ScoreAcousticStage"
 import { createSampledMixMaster, type SampledMixMasterChain } from "./ScoreMixMaster"
+import { orchestralStageIntentForTrack } from "./OrchestralInterpreter"
 
 export interface NativeRenderTrackControl {
   trackId: string
@@ -53,7 +54,11 @@ export function createNativeRenderGraph(
     const semanticTrack = trackById.get(trackId)
     const gain = context.createGain(); gain.gain.value = gainValue
     const tone = context.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = Math.min(context.sampleRate * 0.45, nativeBrightnessCutoff(brightness)); tone.Q.value = 0.12
-    const stageInput = stage.createTrackInput(semanticTrack?.instrument ?? "unknown", pan)
+    const stageInput = stage.createTrackInput(
+      semanticTrack?.instrument ?? "unknown",
+      pan,
+      semanticTrack ? orchestralStageIntentForTrack(semanticTrack) : undefined,
+    )
     gain.connect(tone); tone.connect(stageInput)
     trackNodes.push(gain, tone)
     trackGain.set(trackId, gain); trackTone.set(trackId, tone)

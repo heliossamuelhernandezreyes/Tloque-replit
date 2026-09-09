@@ -2,7 +2,7 @@
 name: tloque-score
 description: Write, revise, repair, or explain deterministic instrumental TloqueScore 2 for Tloque's Audio Laboratory. Use when an AI must turn a musical request into valid score code, orchestrate semantic instruments, select orchestral synthesis or native rendering, add physical performance controls, or fix compiler diagnostics.
 metadata:
-  version: "3.7.0"
+  version: "3.8.0"
   compiler: "tloque-score-compiler-v2.3-classical-import"
 ---
 
@@ -26,13 +26,15 @@ Si el usuario sólo pide una explicación, puedes responder con prosa y no neces
 
 ## Compatibilidad actual
 
-- Skill: `3.7.0`
+- Skill: `3.8.0`
 - Lenguaje fuente: `TLOQUE_SCORE 2`
 - Compilador: `tloque-score-compiler-v2.3-classical-import`
 - Síntesis orquestal: `orchestra-synth` / `tloque-orchestral-synth-v5-acoustic-continuity`
 - Cuerdas físicas: `tloque-bowed-string-dsp-v3`
-- Intérprete orquestal: `tloque-intelligent-performer-v5`
-- Reglas de gesto: `tloque-intelligent-performer-rules-v1-phrase-gesture`
+- Análisis orquestal: `tloque-orchestral-interpreter-v1`
+- Reglas de análisis: `tloque-orchestral-interpreter-rules-v1-phrase-harmony-expression`
+- Intérprete de ejecución: `tloque-intelligent-performer-v6-orchestral-interpreter`
+- Reglas de gesto: `tloque-intelligent-performer-rules-v2-score-aware-expression`
 - Director de orquesta: `tloque-orchestra-conductor-v7-acoustic-continuity`
 - Reglas de conjunto: `tloque-orchestra-conductor-rules-v2-musical-onset-audible-gap`
 - Reproductor de samples: `tloque-native-sample-player-v3-acoustic-continuity`
@@ -41,7 +43,7 @@ Si el usuario sólo pide una explicación, puedes responder con prosa y no neces
 - Overlay híbrido de aire: `air-column-overlay-v1.4-acoustic-continuity`
 - Lengüetas físicas: `reed-resonator-v3-acoustic-continuity`
 - Dinámica tímbrica continua: `tloque-orchestral-dynamics-v2`
-- Director interpretativo: `tloque-universal-performance-director-v5-acoustic-continuity`
+- Director interpretativo: `tloque-universal-performance-director-v6-orchestral-interpreter`
 - Perfil común live/WAV: `tloque-score-audio-v9-acoustic-continuity`
 - Perfil de concierto nativo: `tloque-native-concert-v4-acoustic-continuity`
 - Sala estéreo diseñada: `tloque-concert-stage-v3`
@@ -70,8 +72,8 @@ Si falta un dato, elige un valor musical razonable. No detengas la composición 
 
 | Si el usuario necesita… | Escribe… | Significa… |
 |---|---|---|
-| Una obra orquestal que funcione sin descargar bancos | `module orchestra-synth` | Síntesis orquestal V5 con Conductor V7. Es la opción recomendada por defecto. |
-| Instrumentos grabados y los bancos ya están instalados | `module native-auto` | Cada `instrument=` busca su banco verificado; V7 coordina grabación, gesto interpretativo y cuerpo físico compatible. |
+| Una obra orquestal que funcione sin descargar bancos | `module orchestra-synth` | Síntesis orquestal V5, Intérprete V1/V6 y Conductor V7. Es la opción recomendada por defecto. |
+| Instrumentos grabados y los bancos ya están instalados | `module native-auto` | Cada `instrument=` busca su banco verificado; V1/V6 analiza frase, dinámica y capa, mientras V7 coordina el conjunto. |
 | El sonido sintético clásico | `module builtin` | Motor heredado, menos orquestal. |
 | Un módulo concreto que el usuario confirmó como instalado | `module id-confirmado` | Usa únicamente el ID exacto dado por el usuario o por Tloque. |
 
@@ -129,7 +131,7 @@ Piensa como si acomodaras una orquesta con bloques de juguete. Sigue siempre est
 5. **Deja huecos para respirar.** Escribe `rest` de forma explícita al terminar una idea, cambiar de sección o pedir una nueva respiración/arco.
 6. **Revisa la conversación.** La melodía debe oírse sobre el acompañamiento; el bajo debe sostener; texturas y pulsos no deben taparlos.
 
-No existe un comando `conductor`. No lo inventes. Orchestra Conductor V7 lee `role=`, la posición musical de los ataques, el final programado de las notas, los silencios, las secciones y la energía escrita; después coordina el conjunto de forma automática y determinista en reproducción y WAV.
+No existe un comando `conductor` ni `interpreter`. No los inventes. El Intérprete Orquestal V1 analiza frase, sonoridad, llegada, dinámica, vibrato, respiración/arco, capa grabada y plano espacial. Orchestra Conductor V7 lee `role=`, la posición musical de los ataques, el final programado de las notas, los silencios, las secciones y la energía escrita; después coordina el conjunto de forma automática y determinista en reproducción y WAV.
 
 - Da a cada track una función clara: melodía, armonía, bajo, pulso, textura o acento.
 - Elige el compás real y el `role=` correcto: el Director usa ambos para decidir jerarquía métrica y cuánto debe sobresalir cada voz.
@@ -173,7 +175,7 @@ quality core | studio | master
 module builtin | orchestra-synth | native-auto | id-instalado-confirmado
 ```
 
-Usa `humanize` con moderación. `0.04..0.14` activa variación determinista de tiempo, duración y velocity. El Intérprete V5 deriva el gesto individual; Orchestra Conductor V7 coordina memoria, densidad, jerarquía de roles, ataque, salida y color de conjunto. Los ataques escritos en la misma posición siguen formando un gesto común aunque sus microtiempos renderizados sean distintos. Con `humanize 0`, tiempo, duración y velocity permanecen neutrales, pero ambas capas interpretativas siguen funcionando. Nunca cambian notas, articulaciones o timbres escritos ni convierten síntesis en una grabación real.
+Usa `humanize` con moderación. `0.04..0.14` activa variación determinista de tiempo, duración y velocity. El Intérprete Orquestal V1 y el ejecutante V6 derivan frase, armonía, curvas y gesto individual; Orchestra Conductor V7 coordina memoria, densidad, jerarquía de roles, ataque, salida y color de conjunto. Los ataques escritos en la misma posición siguen formando un gesto común aunque sus microtiempos renderizados sean distintos. Con `humanize 0`, tiempo, duración y velocity permanecen neutrales, pero las capas interpretativas siguen funcionando dentro de las notas. Nunca cambian notas, articulaciones o timbres escritos ni convierten síntesis en una grabación real.
 
 ### Track
 
@@ -298,19 +300,22 @@ Con `module orchestra-synth`:
 
 Para reducir sobrecarga, evita acordes enormes con colas largas en muchos tracks. Adelgaza la orquestación o separa la obra en secciones; no borres notas al azar.
 
-## Cómo aprovechar el Intérprete Orquestal V5
+## Cómo aprovechar el Intérprete Orquestal V1 y el ejecutante V6
 
 Con `module native-auto` y los bancos instalados:
 
-- cada nota recibe un gesto determinista: medio interpretativo, continuidad, ataque, sostén, salida, brillo, vibrato, transición, dirección de arco y respiración;
+- cada nota recibe análisis y gesto deterministas: fase de frase, tensión interválica, llegada, medio interpretativo, continuidad, curva dinámica, vibrato, transición, dirección de arco y respiración;
+- `expression` en el instante de cada nota participa en la mezcla continua de capas `p..f`, pero el renderer conserva aparte la amplitud escrita para no contar la dinámica dos veces;
+- `role=` también ajusta de forma mínima profundidad, presencia, sala y microseparación sobre la colocación física de cada familia;
 - el sample sigue siendo la fuente dominante del ataque, el color grabado, el release y cualquier transición true-legato que exista realmente;
 - una nota `normal` conserva un ataque nuevo. Sólo `legato` o `tenuto` monofónicos y conectados pueden usar `phrase-carry`;
-- `recorded-legato` sólo existe si el manifest y el banco contienen la transición física exacta; si no, V5 usa continuidad modelada y no la llama grabación real;
+- `recorded-legato` sólo existe si el manifest y el banco contienen la transición física exacta; si no, V6 usa continuidad modelada y no la llama grabación real;
 - en `quality studio`, violín, sección de violines, viola, chelo y contrabajo mantienen debajo del sample una cuerda waveguide que sigue el gesto durante la frase;
 - flautas, lengüetas y metales aplican respiración nueva en ataques separados y continuidad de esfuerzo en enlaces válidos;
 - acordes, notas repetidas, silencios y articulaciones no frotadas nunca se agrupan como una frase física;
 - una sección usa intérpretes físicos decorrelacionados y un presupuesto acotado; no copies manualmente el mismo track para fingir más músicos;
 - live y WAV consumen exactamente los mismos gestos, unidades de frase, controles y límites de mezcla;
+- `native-auto` conserva el análisis de la orquesta completa aunque cada banco se renderice por separado;
 - el híbrido no inventa una transición grabada. Si el banco no contiene true legato, el sample conserva su ataque normal y sólo el cuerpo modelado aporta continuidad;
 - `quality master` no activa automáticamente un overlay híbrido nuevo: primero necesita la matriz A/B ciega, evidencia versionada y aprobación humana del Laboratorio.
 

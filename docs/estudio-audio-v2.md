@@ -4,6 +4,8 @@
 
 - Audio: `tloque-audio-2026-08-v2`.
 - Compilador actual: `tloque-score-compiler-v2.3-classical-import`.
+- Intérprete orquestal: `tloque-orchestral-interpreter-v1` con reglas `tloque-orchestral-interpreter-rules-v1-phrase-harmony-expression`.
+- Director universal: `tloque-universal-performance-director-v6-orchestral-interpreter`.
 - Registro de fuentes: `tloque-audio-sources-2026-08-v2`.
 - Perfil de render: `tloque-score-audio-v5-sampled`.
 - Compatibilidad: las recetas V1 continúan compilando y reproduciéndose con `tloque-score-compiler-v1`.
@@ -40,6 +42,8 @@ Límites operativos: 4096 compases, 16 pistas, 131 072 eventos, 2048 secciones, 
 ## Importación MusicXML/MXL
 
 El compositor abre `.musicxml`, `.xml` y `.mxl` directamente desde el dispositivo y los convierte a TloqueScore antes de validar. Conserva partes, voces, acordes, silencios, transposición, ligaduras, tempo, compás, dinámica, reguladores, pedal y articulaciones compatibles. Las aproximaciones quedan visibles y la licencia permanece pendiente de verificación; ninguna importación se publica automáticamente. Consulta el [contrato y matriz de fidelidad](./MUSICXML_CLASSICAL_BRIDGE_V1.md).
+
+Después de compilar, el [Intérprete Orquestal V1](./audio/ORCHESTRAL_INTERPRETER_V1.md) analiza frase, sonoridad simultánea, llegada, dinámica, vibrato, respiración/arco, capa grabada y plano espacial. Es determinista y no modifica notas, ritmo, articulación ni timbre escritos. Con `humanize 0`, los tiempos y velocities siguen siendo exactos aunque la forma interna de una nota sostenida sí reciba interpretación.
 
 ## Calidad y módulos descargables
 

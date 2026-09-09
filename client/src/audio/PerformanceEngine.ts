@@ -6,6 +6,12 @@ import {
 } from "@shared/intelligent-performance"
 import type { LinearScoreRecipeV2 } from "@shared/tloque-score-v2"
 import {
+  ORCHESTRAL_INTERPRETER_RULE_VERSION,
+  ORCHESTRAL_INTERPRETER_VERSION,
+  type OrchestralInterpretationGesture,
+  type OrchestralStageIntent,
+} from "@shared/orchestral-interpreter"
+import {
   ORCHESTRA_CONDUCTOR_RULE_VERSION,
   ORCHESTRA_CONDUCTOR_VERSION,
   type OrchestraConductorGesture,
@@ -23,6 +29,7 @@ import {
   type PerformancePhraseContext,
 } from "./PerformanceDirector"
 import { buildOrchestraConductorPlan } from "./OrchestraConductor"
+import { buildOrchestralInterpreterPlan } from "./OrchestralInterpreter"
 
 export interface PerformanceRoute {
   manifestId: string | null
@@ -57,6 +64,7 @@ export interface PerformanceEventDecision {
   phraseClimaxPosition: number
   metricEmphasis: MetricEmphasis
   directorReasons: readonly string[]
+  interpretation: OrchestralInterpretationGesture
   gesture: IntelligentPerformanceGesture
   conductor: OrchestraConductorGesture
   identity: string
@@ -84,8 +92,11 @@ export interface PerformancePlan extends PerformanceRoutingPlan {
   directorVersion: typeof UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION
   intelligentPerformerVersion: typeof INTELLIGENT_PERFORMER_VERSION
   intelligentPerformerRuleVersion: typeof INTELLIGENT_PERFORMER_RULE_VERSION
+  orchestralInterpreterVersion: typeof ORCHESTRAL_INTERPRETER_VERSION
+  orchestralInterpreterRuleVersion: typeof ORCHESTRAL_INTERPRETER_RULE_VERSION
   orchestraConductorVersion: typeof ORCHESTRA_CONDUCTOR_VERSION
   orchestraConductorRuleVersion: typeof ORCHESTRA_CONDUCTOR_RULE_VERSION
+  orchestralStageByTrack: ReadonlyMap<string, OrchestralStageIntent>
   events: PerformanceEventDecision[]
   channelForEventIndex(eventIndex: number): number | undefined
   decisionForEvent(eventIndex: number): PerformanceEventDecision | undefined
@@ -470,6 +481,7 @@ export function buildPerformancePlan(
     }
   }
   const phraseContexts = buildPhraseContexts(recipe, tracksById, indicesByTrack, sectionsById)
+  const interpreterPlan = buildOrchestralInterpreterPlan(recipe, phraseContexts, new Set(playableTracks.map(track => track.id)))
   const conductorPlan = buildOrchestraConductorPlan(recipe, new Set(playableTracks.map(track => track.id)))
 
   for (let eventIndex = 0; eventIndex < recipe.plan.events.length; eventIndex += 1) {
@@ -506,6 +518,8 @@ export function buildPerformancePlan(
     )
     const performed = familyPerformanceHumanization(semanticInstrumentId(track), humanize, identity, articulation, ordinal)
     const neighbour = neighbours.get(eventIndex)
+    const interpretation = interpreterPlan.decisions.get(eventIndex)
+    if (!interpretation) continue
     const director = directPerformanceEvent(recipe, {
       track,
       event,
@@ -513,6 +527,7 @@ export function buildPerformancePlan(
       next: neighbour?.next === null || neighbour?.next === undefined ? null : recipe.plan.events[neighbour.next],
       articulation,
       phrase,
+      interpretation,
     })
     // Compatibility contract: humanize=0 remains exactly neutral. Once enabled, the
     // Director gets a useful but bounded strength even at restrained musical values.
@@ -556,6 +571,7 @@ export function buildPerformancePlan(
       phraseClimaxPosition: phrase.climaxPosition,
       metricEmphasis: phrase.metricEmphasis,
       directorReasons: director.reason,
+      interpretation,
       gesture,
       conductor,
       identity,
@@ -570,8 +586,11 @@ export function buildPerformancePlan(
     directorVersion: UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION,
     intelligentPerformerVersion: INTELLIGENT_PERFORMER_VERSION,
     intelligentPerformerRuleVersion: INTELLIGENT_PERFORMER_RULE_VERSION,
+    orchestralInterpreterVersion: ORCHESTRAL_INTERPRETER_VERSION,
+    orchestralInterpreterRuleVersion: ORCHESTRAL_INTERPRETER_RULE_VERSION,
     orchestraConductorVersion: ORCHESTRA_CONDUCTOR_VERSION,
     orchestraConductorRuleVersion: ORCHESTRA_CONDUCTOR_RULE_VERSION,
+    orchestralStageByTrack: interpreterPlan.stageByTrack,
     events: decisions,
     channelForEventIndex: eventIndex => {
       const decision = decisionByIndex.get(eventIndex)

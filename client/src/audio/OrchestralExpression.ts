@@ -1,5 +1,6 @@
 import { orchestralIdentityUnit, orchestralTimbreFor } from "@shared/orchestral-synthesis"
 import type { IntelligentPerformanceGesture } from "@shared/intelligent-performance"
+import { orchestralInterpretationEnvelopeAt, type OrchestralInterpretationGesture } from "@shared/orchestral-interpreter"
 
 export interface OrchestralNoteExpression {
   swell: number
@@ -7,6 +8,7 @@ export interface OrchestralNoteExpression {
   vibratoHz: number
   vibratoDelay: number
   identity: string
+  interpretation?: OrchestralInterpretationGesture
 }
 
 /** Recording vibrato is never doubled. Plucked/percussive attacks stay untouched.
@@ -35,6 +37,7 @@ export function applyIntelligentPerformanceGestureToExpression(
     swell: Math.max(0, Math.min(0.16, expression.swell * (0.82 + gesture.sustainEffort * 0.22))),
     vibratoCents: Math.max(0, Math.min(32, expression.vibratoCents * gesture.vibratoDepthScale)),
     vibratoDelay: Math.max(0, Math.min(0.42, gesture.vibratoDelaySeconds)),
+    interpretation: gesture.interpretation,
   }
 }
 
@@ -45,10 +48,19 @@ export function orchestralExpressionCurve(expression: OrchestralNoteExpression, 
   const phase = orchestralIdentityUnit(expression.identity) * Math.PI * 2
   for (let i = 0; i < count; i++) {
     const x = i / (count - 1), time = x * duration
-    if (kind === "gain") curve[i] = 1 - expression.swell + expression.swell * Math.sin(Math.PI * x)
+    if (kind === "gain") {
+      const base = 1 - expression.swell + expression.swell * Math.sin(Math.PI * x)
+      const interpreted = expression.interpretation
+        ? orchestralInterpretationEnvelopeAt(expression.interpretation.dynamic, x)
+        : 1
+      curve[i] = expression.interpretation ? Math.max(0.72, Math.min(1.16, base * interpreted)) : base
+    }
     else {
       const bloom = Math.max(0, Math.min(1, (time - expression.vibratoDelay) / 0.25))
-      curve[i] = bloom > 0 ? expression.vibratoCents * bloom * (0.86 * Math.sin(2 * Math.PI * expression.vibratoHz * time + phase) + 0.14 * Math.sin(2 * Math.PI * expression.vibratoHz * 0.73 * time)) : 0
+      const interpreted = expression.interpretation
+        ? orchestralInterpretationEnvelopeAt(expression.interpretation.vibrato, x)
+        : 1
+      curve[i] = bloom > 0 ? expression.vibratoCents * interpreted * bloom * (0.86 * Math.sin(2 * Math.PI * expression.vibratoHz * time + phase) + 0.14 * Math.sin(2 * Math.PI * expression.vibratoHz * 0.73 * time)) : 0
     }
   }
   return curve

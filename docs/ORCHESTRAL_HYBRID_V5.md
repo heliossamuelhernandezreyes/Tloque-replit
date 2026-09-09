@@ -1,6 +1,6 @@
 # Orchestral Hybrid V5 — Intelligent Performer
 
-> Superseded for current rendering by [Orchestra Conductor V7](./ORCHESTRA_CONDUCTOR_V7.md). The V5 individual-musician gesture remains active underneath V7.
+> Historical V5 release contract. Current rendering uses [Orchestral Interpreter V1](./audio/ORCHESTRAL_INTERPRETER_V1.md), Intelligent Performer V6 and [Orchestra Conductor V7](./ORCHESTRA_CONDUCTOR_V7.md); the table below preserves the identifiers of this release.
 
 Date: 2026-09-05. Parent releases: Orchestral Synth V3 and Orchestral Hybrid V4.
 

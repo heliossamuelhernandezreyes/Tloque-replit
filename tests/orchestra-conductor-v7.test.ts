@@ -239,7 +239,7 @@ end`)
   assert.notEqual(connected.memoryEnergy, separated.memoryEnergy)
 })
 
-test("samples sostenidos conservan los gestos V5/V7 y los overrides físicos siguen exactos", () => {
+test("samples sostenidos conservan los gestos V6/V7 y los overrides físicos siguen exactos", () => {
   const decision = buildPerformancePlan(recipe(), []).events[0]
   const sourceAttack = 0.08, sourceRelease = 0.24
   const shaped = nativeSampleAdaptiveEnvelope(1.2, false, {
@@ -265,7 +265,7 @@ test("samples sostenidos conservan los gestos V5/V7 y los overrides físicos sig
   assert.deepEqual(oneShot, { fadeIn: sourceAttack, fadeOut: sourceRelease, overlapTail: 0 })
 })
 
-test("el reproductor sampleado aplica realmente la envolvente V5/V7 y deja intacto el one-shot", async () => {
+test("el reproductor sampleado aplica realmente la envolvente V6/V7 y deja intacto el one-shot", async () => {
   const decision = buildPerformancePlan(recipe(), []).events[0]
   const render = async (conducted: boolean, oneShot: boolean) => {
     const context = new OfflineAudioContext(1, 48_000 * 1.6, 48_000)
@@ -307,7 +307,8 @@ test("el reproductor sampleado aplica realmente la envolvente V5/V7 y deja intac
 test("la automatización de lengüetas conserva el color V7 durante toda la nota", () => {
   const decision = buildPerformancePlan(recipe(), []).events[0]
   const authored = 0.64
-  const expected = Math.max(0, Math.min(1, authored * decision.gesture.brightnessScale * decision.conductor.colourScale))
+  const interpretationColour = 0.985 + decision.interpretation.harmonicTension * 0.03
+  const expected = Math.max(0, Math.min(1, authored * decision.gesture.brightnessScale * interpretationColour * decision.conductor.colourScale))
   assert.equal(physicalReedBrightness(authored, decision.gesture, decision.conductor), expected)
   assert.notEqual(physicalReedBrightness(authored, decision.gesture, decision.conductor), physicalReedBrightness(authored, decision.gesture))
 })

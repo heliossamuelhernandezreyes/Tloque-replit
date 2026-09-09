@@ -1,6 +1,6 @@
 # Orchestral synthesis V3 — physical strings
 
-> Historical renderer contract. Current scores still use `module orchestra-synth`, now rendered by `tloque-orchestral-synth-v5-acoustic-continuity`; see [Orchestra Conductor V7](./ORCHESTRA_CONDUCTOR_V7.md).
+> Historical renderer contract. Current scores still use `module orchestra-synth`, now rendered by `tloque-orchestral-synth-v5-acoustic-continuity` with [Orchestral Interpreter V1](./audio/ORCHESTRAL_INTERPRETER_V1.md) and [Orchestra Conductor V7](./ORCHESTRA_CONDUCTOR_V7.md). The table below preserves this release's identifiers.
 
 Date: 2026-09-04. Parent release: `tloque-orchestral-synth-v2.1`.
 

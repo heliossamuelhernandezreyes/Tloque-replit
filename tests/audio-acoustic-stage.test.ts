@@ -33,5 +33,8 @@ test("preview y WAV comparten el mismo grafo acústico nativo", () => {
 
   assert.match(graph, /createSampledMixMaster\(context, 1\)/)
   assert.match(graph, /createAcousticStage\(context, mix\.input\)/)
-  assert.match(graph, /stage\.createTrackInput\(semanticTrack\?\.instrument \?\? "unknown", pan\)/)
+  assert.match(
+    graph,
+    /stage\.createTrackInput\(\s*semanticTrack\?\.instrument \?\? "unknown",\s*pan,\s*semanticTrack \? orchestralStageIntentForTrack\(semanticTrack\) : undefined,\s*\)/,
+  )
 })
