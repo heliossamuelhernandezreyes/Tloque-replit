@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo , useRef, useCallback } from "react"
+import { useState, useEffect, useMemo , useRef, useCallback, type CSSProperties } from "react"
 import { useBooks } from "../hooks/use-books"
 import { useLocation } from "wouter"
 import { Layout } from "../components/layout"
 import { BookCard } from "../components/book-card"
 import useEmblaCarousel from "embla-carousel-react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Edit3, Trash2, BookOpen } from "lucide-react"
+import { Edit3, Trash2, BookOpen, ChevronLeft, ChevronRight } from "lucide-react"
+import { carouselPose } from "@shared/visual-experience"
 import { coverFor } from "@/lib/covers"
 import { useGenre, GENRE_CONFIG, type Genre } from "@/context/GenreContext"
 import { useSettings, LITERARY_QUOTES_I18N } from "@/context/SettingsContext"
@@ -658,6 +659,10 @@ function Carousel({
   ownedIds?: Set<string>
 }) {
   const isClassicCarousel = accent === "classic"
+  const { t, settings } = useSettings()
+  const [canPrevious, setCanPrevious] = useState(false)
+  const [canNext, setCanNext] = useState(false)
+  const presentations = useRef<Array<{ body: HTMLElement | null; light: HTMLElement | null }>>([])
 
   // Carrusel verdaderamente infinito: si hay pocos libros, duplicamos el
   // catálogo para que Embla siempre tenga tarjetas de sobra y el giro sea
@@ -668,17 +673,14 @@ function Carousel({
     return Array.from({ length: reps }).flatMap(() => books)
   }, [books])
 
-  const startIdx = useMemo(
-    () => displayBooks.length > 3 ? Math.floor(Math.random() * Math.min(3, displayBooks.length)) : 0,
-    [displayBooks.length]
-  )
+  const startIdx = 0
   const [emblaRef, emblaApi] = useEmblaCarousel({
     align:         "center",
     dragFree:      false,
     containScroll: false,
     loop:          displayBooks.length > 3,
     startIndex:    startIdx,
-    duration:      26,
+    duration:      settings.reduceMotion ? 0 : 30,
   })
 
   // (El abanico ya no usa estado de React: applyOffsets escribe directo al DOM)
@@ -705,35 +707,41 @@ function Carousel({
       return diff * factor
     })
 
-    // Escribir DIRECTO al DOM (sin setState): el scroll no re-renderiza React.
-    const nodes = emblaApi.slideNodes()
-    for (let i = 0; i < nodes.length; i++) {
+    // Embla owns the OUTER transform for loop corrections. Only style a child.
+    const reduced = settings.reduceMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    for (let i = 0; i < presentations.current.length; i++) {
       const offset   = diffs[i] ?? 0
-      const distance = Math.abs(offset)
-      const scale    = 1 - Math.min(distance * 0.15, 0.4)
-      const opacity  = 1 - Math.min(distance * 0.5,  0.6)
-      const rotateY  = Math.max(-30, Math.min(30, offset * 18))
-      const node = nodes[i] as HTMLElement
+      const pose = carouselPose(offset, reduced)
+      const { body: node, light } = presentations.current[i]
+      if (!node) continue
       node.style.transform =
-        `perspective(1000px) translateZ(${scale * 20}px) rotateY(${rotateY}deg) scale(${scale})`
-      node.style.opacity = String(opacity)
-      const glowEl = node.querySelector<HTMLElement>(".fan-glow")
-      if (glowEl) glowEl.style.opacity = String(1 - Math.min(distance * 0.4, 0.8))
+        `perspective(1000px) translateY(${-pose.lift}px) rotateY(${pose.rotate}deg) scale(${pose.scale})`
+      node.style.opacity = String(pose.opacity)
+      if (light) light.style.opacity = String(pose.light)
     }
-  }, [emblaApi])
+  }, [emblaApi, settings.reduceMotion])
 
   useEffect(() => {
     if (!emblaApi) return
-    applyOffsets()
+    const initialize = () => {
+      presentations.current = emblaApi.slideNodes().map(node => ({ body: node.querySelector<HTMLElement>(".fan-presentation"), light: node.querySelector<HTMLElement>(".fan-glow") }))
+      applyOffsets()
+      updateButtons()
+    }
+    const updateButtons = () => { setCanPrevious(emblaApi.canScrollPrev()); setCanNext(emblaApi.canScrollNext()) }
+    initialize()
     emblaApi.on("scroll", applyOffsets)
-    emblaApi.on("reInit", applyOffsets)
+    emblaApi.on("reInit", initialize)
+    emblaApi.on("select", updateButtons)
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)")
+    media.addEventListener("change", applyOffsets)
     return () => {
       emblaApi.off("scroll", applyOffsets)
-      emblaApi.off("reInit", applyOffsets)
+      emblaApi.off("reInit", initialize)
+      emblaApi.off("select", updateButtons)
+      media.removeEventListener("change", applyOffsets)
     }
   }, [emblaApi, applyOffsets])
-
-  useEffect(() => { emblaApi?.reInit() }, [books, emblaApi])
 
   if (!books.length) return null
 
@@ -749,16 +757,16 @@ function Carousel({
   // Color del título según tipo de carrusel
   const titleColor = isClassicCarousel
     ? "rgba(255,210,100,0.7)"
-    : "rgba(255,255,255,0.3)"
+    : "rgba(255,255,255,0.65)"
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }}>
+    <motion.section aria-label={title} aria-roledescription="carousel" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: settings.reduceMotion ? 0 : 0.4 }}>
       <div className="flex items-center gap-2 px-4 sm:px-6 mb-3 sm:mb-4">
         {isClassicCarousel && (
           <span className="text-[10px]" style={{ color: "rgba(255,210,100,0.6)" }}>✦</span>
         )}
         <h2
-          className="text-[10px] sm:text-[11px] tracking-[0.2em] font-sans uppercase"
+          className="text-xs sm:text-sm tracking-[0.16em] font-sans uppercase"
           style={{ color: titleColor }}
         >
           {title}
@@ -767,50 +775,47 @@ function Carousel({
           <div className="flex-1 h-px ml-2"
             style={{ background: "linear-gradient(to right, rgba(255,210,100,0.2), transparent)" }} />
         )}
+        <div className="ml-auto flex gap-2 shrink-0">
+          <button className="tq-carousel-control" aria-label={t("carouselPrevious")} disabled={!canPrevious} onClick={() => emblaApi?.scrollPrev(settings.reduceMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches)}><ChevronLeft size={17} /></button>
+          <button className="tq-carousel-control" aria-label={t("carouselNext")} disabled={!canNext} onClick={() => emblaApi?.scrollNext(settings.reduceMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches)}><ChevronRight size={17} /></button>
+        </div>
       </div>
 
-      <div className="overflow-hidden" ref={emblaRef}>
-        <div className="flex gap-3 sm:gap-5 pl-4 sm:pl-6 pr-12 sm:pr-20 py-3 sm:py-5">
+      <div className="overflow-hidden" ref={emblaRef} style={{ touchAction: "pan-y pinch-zoom" }}>
+        <div className="flex gap-3 sm:gap-5 pl-4 sm:pl-6 pr-12 sm:pr-20 py-7 sm:py-9">
           {displayBooks.map((book, index) => {
             const isOwn = ownedIds.has(String(book.id))
             // Posición inicial (primer pintado); después applyOffsets
             // escribe directo al DOM en cada scroll, sin re-render.
             const offset   = index - startIdx
-            const distance = Math.abs(offset)
-            const scale    = 1 - Math.min(distance * 0.15, 0.4)
-            const opacity  = 1 - Math.min(distance * 0.5,  0.6)
-            const rotateY  = Math.max(-30, Math.min(30, offset * 18))
+            const pose = carouselPose(offset, settings.reduceMotion)
             const glow = isClassicCarousel
               ? "rgba(255,210,100,0.3)"
-              : genreGlow[book.genre || "default"]
+              : genreGlow[book.genre || "default"] || genreGlow.default
 
             return (
               <div
                 key={`${book.id}-${index}`}
                 className="fan-slide relative flex-[0_0_44%] sm:flex-[0_0_30%] md:flex-[0_0_17%]"
-                style={{
-                  transform: `perspective(1000px) translateZ(${scale * 20}px) rotateY(${rotateY}deg) scale(${scale})`,
-                  opacity,
-                  willChange: "transform, opacity",
-                }}
               >
+                <div className="fan-presentation" style={{ transform: `perspective(1000px) translateY(${-pose.lift}px) rotateY(${pose.rotate}deg) scale(${pose.scale})`, opacity: pose.opacity, "--book-light": glow } as CSSProperties}>
                 {/* Vaho de género — gradiente amplio sin blur (mismo humo, sin costo) */}
                 <div
-                  className="fan-glow absolute -inset-3 -z-10 rounded-xl pointer-events-none"
+                  className="fan-glow absolute -inset-x-10 -top-8 bottom-3 -z-10 rounded-xl pointer-events-none"
                   style={{
-                    background: `radial-gradient(ellipse at center, ${glow} 0%, transparent 62%)`,
-                    opacity:    1 - Math.min(distance * 0.4, 0.8),
+                    opacity: pose.light,
                   }}
                 />
                 {isOwn
                   ? <OwnBookCard book={{ ...book, coverUrl: book.premiumCoverUrl || book.coverUrl }} />
                   : <BookCard {...(book as any)} coverUrl={coverFor(book)} />
                 }
+                </div>
               </div>
             )
           })}
         </div>
       </div>
-    </motion.div>
+    </motion.section>
   )
 }

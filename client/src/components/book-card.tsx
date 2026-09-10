@@ -1,4 +1,4 @@
-import { Link, useLocation } from "wouter"
+import { Link } from "wouter"
 import { motion } from "framer-motion"
 import { BookOpen } from "lucide-react"
 import { useState, useEffect } from "react"
@@ -23,10 +23,9 @@ const NEUTRAL_CFG = GENRE_CONFIG["todos"]
 export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }: BookCardProps) {
   const [imgFailed,     setImgFailed]     = useState(false)
   const [readProgress,  setReadProgress]  = useState(0)
-  const [, setLocation] = useLocation()
 
   const gc     = genre ? (GENRE_CONFIG[genre as Genre] || NEUTRAL_CFG) : NEUTRAL_CFG
-  const { t }  = useSettings()
+  const { t, settings }  = useSettings()
   const hasImg = !!coverUrl && !imgFailed
 
   // Leer progreso guardado en localStorage
@@ -39,17 +38,17 @@ export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }
   }, [id])
 
   return (
-    <Link href={`/book/${id}`} className="block group">
       <motion.div
-        whileHover={{ y: -4 }}
-        whileTap={{ scale: 0.97 }}
-        className="flex flex-col gap-2"
+        whileHover={settings.reduceMotion ? undefined : { y: -3 }}
+        whileTap={settings.reduceMotion ? undefined : { scale: 0.98 }}
+        className="group flex flex-col gap-3"
       >
+        <Link href={`/book/${id}`} aria-label={title} className="block rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-200">
         {/* PORTADA */}
         <div
           className="relative aspect-[2/3] w-full rounded-lg overflow-hidden"
           style={{
-            boxShadow: `0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05)`,
+            boxShadow: `0 16px 38px -12px ${gc.glow}55, 0 8px 24px #0009, 0 0 0 1px #ffffff18`,
           }}
         >
           {/* imagen */}
@@ -57,8 +56,10 @@ export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }
             <img
               src={coverUrl}
               alt={title}
-              className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 motion-safe:group-hover:scale-[1.025]"
               loading="lazy"
+              decoding="async"
+              draggable={false}
               onError={() => setImgFailed(true)}
             />
           )}
@@ -163,25 +164,21 @@ export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }
             style={{ background: `radial-gradient(ellipse at bottom, ${gc.glow}20, transparent 70%)` }}
           />
         </div>
+        </Link>
 
         {/* TEXTO */}
         <div className="px-0.5 space-y-0.5">
-          <h3 className="font-display font-bold text-white/90 text-[11px] sm:text-xs line-clamp-1 group-hover:text-white transition-colors duration-300">
+          <Link href={`/book/${id}`} tabIndex={-1}>
+          <h3 className="font-display font-bold text-white/90 text-sm leading-snug line-clamp-2 group-hover:text-white transition-colors duration-200">
             {title}
           </h3>
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              setLocation(`/author/${encodeURIComponent(author)}`)
-            }}
-            className="text-[10px] sm:text-[11px] text-zinc-600 hover:text-zinc-400 line-clamp-1 font-sans text-left transition-colors duration-200 w-full"
+          </Link>
+          <Link href={`/author/${encodeURIComponent(author)}`}
+            className="block text-xs leading-6 text-zinc-400 hover:text-zinc-200 line-clamp-1 font-sans text-left transition-colors duration-200 w-full focus-visible:outline focus-visible:outline-1 focus-visible:outline-amber-200"
           >
             {author}
-          </motion.button>
+          </Link>
         </div>
       </motion.div>
-    </Link>
   )
 }

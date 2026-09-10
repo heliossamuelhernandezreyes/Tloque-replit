@@ -41,6 +41,7 @@ const PayoutAdmin = lazy(() => import("@/pages/PayoutAdmin"))
 const LegalPage = lazy(() => import("@/pages/legal"))
 import { CardViewerProvider } from "@/components/CardViewer"
 import { MusicProvider } from "@/audio/MusicProvider"
+import { VisualEngineProvider } from "@/visual/VisualEngine"
 import {
   BOOT_EXIT_MS,
   SLOW_BOOT_MS,
@@ -237,10 +238,10 @@ export default function App() {
              <GenreProvider>
               {/* El visor de tarjetas vive arriba de todo: cualquier carta,
                   en cualquier pantalla, se toca y se abre aquí. */}
-              <CardViewerProvider>
+              <VisualEngineProvider><CardViewerProvider>
                 <Toaster />
                 <AppContent />
-              </CardViewerProvider>
+              </CardViewerProvider></VisualEngineProvider>
              </GenreProvider>
             </MusicProvider>
           </MotionPreferences>

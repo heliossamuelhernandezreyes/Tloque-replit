@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useSettings } from "@/context/SettingsContext"
+import { useReducedMotion } from "framer-motion"
+import { boundedVisual } from "@shared/visual-experience"
 
 export type ParticleEffect = "none" | "snow" | "rain" | "rainGlass" | "embers" | "fire" | "smoke" | "sparkle"
 
@@ -12,19 +14,23 @@ interface Props {
 
 // Motor de partículas en <canvas> transparente. Cada efecto está afinado
 // para sentirse natural y pesar poco. Se detiene si effect==="none".
-export default function CardParticles({ effect, intensity, className, tint = "#ffffff" }: Props) {
+export default function CardParticles({ effect, intensity: rawIntensity, className, tint = "#ffffff" }: Props) {
   const { settings } = useSettings()
+  const systemReduced = useReducedMotion()
+  const intensity = boundedVisual(rawIntensity, 0, 0, 1)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef    = useRef<number>(0)
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || effect === "none" || intensity <= 0 || settings.reduceMotion) return
+    if (!canvas || effect === "none" || intensity <= 0 || settings.reduceMotion || systemReduced) return
     const ctx = canvas.getContext("2d")
     if (!ctx) return
     const canvasEl = canvas
     const context = ctx
     let visible = true
+    let pageVisible = document.visibilityState !== "hidden"
+    let previousFrame = 0
 
     let W = 0, H = 0
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
@@ -87,32 +93,36 @@ export default function CardParticles({ effect, intensity, className, tint = "#f
 
     parts = Array.from({ length: count }, () => spawn(effect, true))
 
-    function frame() {
+    function frame(now: number) {
       rafRef.current = 0
-      if (!visible) return
+      if (!visible || !pageVisible) return
+      if (previousFrame && now - previousFrame < 1000 / 60 - 1) { rafRef.current = requestAnimationFrame(frame); return }
+      const dt = Math.min(.05, previousFrame ? (now - previousFrame) / 1000 : 1 / 60)
+      previousFrame = now
+      const step = dt * 60
       context.clearRect(0, 0, W, H)
-      t += 0.016
+      t += dt
 
       for (let i = 0; i < parts.length; i++) {
         const p = parts[i]
 
         if (effect === "snow") {
-          p.x += p.vx + Math.sin(t + p.drift) * 0.3; p.y += p.vy
+          p.x += (p.vx + Math.sin(t + p.drift) * 0.3) * step; p.y += p.vy * step
           context.beginPath(); context.arc(p.x, p.y, p.size, 0, 6.28)
           context.fillStyle = `rgba(255,255,255,${0.5 + intensity * 0.4})`; context.fill()
           if (p.y > H + 4) parts[i] = spawn("snow")
 
         } else if (effect === "rain") {
-          p.x += p.vx; p.y += p.vy
+          p.x += p.vx * step; p.y += p.vy * step
           context.beginPath(); context.moveTo(p.x, p.y); context.lineTo(p.x + p.vx * 1.5, p.y + p.len)
           context.strokeStyle = `rgba(180,200,230,${0.25 + intensity * 0.35})`; context.lineWidth = 1; context.stroke()
           if (p.y > H + 12) parts[i] = spawn("rain")
 
         } else if (effect === "rainGlass") {
           // Gota sobre el "vidrio": crece, luego resbala dejando reguero
-          p.life += 0.016
+          p.life += dt
           const prog = p.life / p.maxLife
-          if (prog >= p.slideAt) { p.vy += 0.06; p.y += p.vy; p.trail = Math.min(p.trail + 1.5, 40) }
+          if (prog >= p.slideAt) { p.vy += 0.06 * step; p.y += p.vy * step; p.trail = Math.min(p.trail + 1.5 * step, 40) }
           const a = Math.min(1, prog < 0.15 ? prog / 0.15 : (prog > 0.9 ? (1 - prog) / 0.1 : 1)) * 0.7
           // reguero
           if (p.trail > 0) {
@@ -131,20 +141,20 @@ export default function CardParticles({ effect, intensity, className, tint = "#f
           if (p.life >= p.maxLife || p.y > H + 10) parts[i] = spawn("rainGlass")
 
         } else if (effect === "embers") {
-          p.x += p.vx + Math.sin(t * 1.5 + p.drift) * 0.4; p.y += p.vy; p.life -= 0.006
+          p.x += (p.vx + Math.sin(t * 1.5 + p.drift) * 0.4) * step; p.y += p.vy * step; p.life -= 0.006 * step
           const a = Math.max(0, p.life) * (0.5 + intensity * 0.4)
           const g = Math.round(G * (0.4 + p.life * 0.6))
-          context.beginPath(); context.arc(p.x, p.y, p.size * p.life, 0, 6.28)
+          context.beginPath(); context.arc(p.x, p.y, p.size * Math.max(0, p.life), 0, 6.28)
           context.fillStyle = `rgba(${R},${g},${Math.round(B * 0.3)},${a})`
           context.shadowColor = `rgba(${R},${g},60,${a})`; context.shadowBlur = 4; context.fill(); context.shadowBlur = 0
           if (p.life <= 0 || p.y < -4) parts[i] = spawn("embers")
 
         } else if (effect === "fire") {
           // Llama realista: parpadeo lateral, sube, encoge, gradiente cálido
-          p.life -= 0.016 / p.maxLife
-          p.x += p.vx + Math.sin(t * 4 + p.seed) * 0.7
-          p.y += p.vy * (0.6 + p.life * 0.4)
-          p.vy *= 0.99
+          p.life -= dt / p.maxLife
+          p.x += (p.vx + Math.sin(t * 4 + p.seed) * 0.7) * step
+          p.y += p.vy * (0.6 + p.life * 0.4) * step
+          p.vy *= Math.pow(.99, step)
           const prog = 1 - p.life
           const size = p.size * (0.4 + p.life * 0.8)
           // color: amarillo→naranja→rojo→humo al morir
@@ -159,9 +169,9 @@ export default function CardParticles({ effect, intensity, className, tint = "#f
           if (p.life <= 0 || p.y < H * 0.15) parts[i] = spawn("fire")
 
         } else if (effect === "smoke") {
-          p.life -= 0.016 / p.maxLife
-          p.x += p.vx + Math.sin(t + p.drift) * 0.3
-          p.y += p.vy; p.size += 0.15
+          p.life -= dt / p.maxLife
+          p.x += (p.vx + Math.sin(t + p.drift) * 0.3) * step
+          p.y += p.vy * step; p.size += 0.15 * step
           const a = Math.max(0, p.life) * (0.12 + intensity * 0.12)
           const grad = context.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size)
           grad.addColorStop(0, `rgba(120,120,130,${a})`)
@@ -171,7 +181,7 @@ export default function CardParticles({ effect, intensity, className, tint = "#f
 
         } else {
           // sparkle
-          p.life += 0.02
+          p.life += 0.02 * step
           const phase = (Math.sin(p.life * 6.28 + p.drift) + 1) / 2
           const a = phase * (0.4 + intensity * 0.5)
           context.beginPath(); context.arc(p.x, p.y, p.size, 0, 6.28)
@@ -183,7 +193,8 @@ export default function CardParticles({ effect, intensity, className, tint = "#f
     }
 
     const start = () => {
-      if (!visible || rafRef.current) return
+      if (!visible || !pageVisible || rafRef.current) return
+      previousFrame = 0
       rafRef.current = requestAnimationFrame(frame)
     }
     start()
@@ -202,6 +213,12 @@ export default function CardParticles({ effect, intensity, className, tint = "#f
       }
     }, { rootMargin: "100px 0px", threshold: 0.01 })
     visibilityObserver?.observe(canvasEl)
+    const onVisibility = () => {
+      pageVisible = document.visibilityState !== "hidden"
+      if (pageVisible) start()
+      else { cancelAnimationFrame(rafRef.current); rafRef.current = 0 }
+    }
+    document.addEventListener("visibilitychange", onVisibility)
 
     const onResize = () => resize()
     window.addEventListener("resize", onResize)
@@ -210,12 +227,13 @@ export default function CardParticles({ effect, intensity, className, tint = "#f
     return () => {
       cancelAnimationFrame(rafRef.current)
       window.removeEventListener("resize", onResize)
+      document.removeEventListener("visibilitychange", onVisibility)
       visibilityObserver?.disconnect()
       resizeObserver?.disconnect()
     }
-  }, [effect, intensity, tint, settings.reduceMotion])
+  }, [effect, intensity, tint, settings.reduceMotion, systemReduced])
 
-  if (effect === "none" || intensity <= 0 || settings.reduceMotion) return null
+  if (effect === "none" || intensity <= 0 || settings.reduceMotion || systemReduced) return null
   return (
     <canvas ref={canvasRef} className={className}
       style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }} />

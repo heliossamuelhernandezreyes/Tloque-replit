@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { useLocation } from "wouter"
-import { Search, X } from "lucide-react"
+import { Search, X, Flower2 } from "lucide-react"
 import useOrbGestures from "../hooks/useOrbGestures"
 import { useGenre } from "@/context/GenreContext"
 import { useSettings } from "@/context/SettingsContext"
+import VisualSlot, { useVisualEngine } from "@/visual/VisualEngine"
 import { useSoundFX } from "@/hooks/useSoundFX"
 import ConfigPanel from "./ConfigPanel"
 import PulsoPanel  from "./PulsoPanel"
@@ -319,6 +320,8 @@ function PrismOrb({ color, glow, active, animated }: { color: string; glow: stri
 // SISTEMA DE ORBES
 // ─────────────────────────────────────────────────────────
 export default function OrbSystem() {
+  const systemReduced = useReducedMotion()
+  const { theme: orbTheme } = useVisualEngine()
   const [location, setLocation] = useLocation()
   const { activeGenre, lobbyFilter, cfg, cycleGenre, resetGenre, toggleFilter } = useGenre()
   const { t, settings } = useSettings()
@@ -551,7 +554,7 @@ export default function OrbSystem() {
   }
 
   const filterActive = lobbyFilter === "short"
-  const animated = documentVisible && !settings.reduceMotion
+  const animated = documentVisible && !settings.reduceMotion && !systemReduced
 
   const dockTransition = animated
     ? { type: "spring" as const, stiffness: 240, damping: 25, mass: 0.75 }
@@ -690,14 +693,18 @@ export default function OrbSystem() {
           aria-label={location === "/" ? t("library") : t("lobby")}
           aria-expanded={searchMode}
         >
-          <GravitationalCore
+          <VisualSlot className={`tq-orb-visual ${orbTheme === "fluorescent-rose" ? "tq-orb-rose" : ""}`} priority={20}
+            options={{ kind: "orb", color: cfg.color, theme: orbTheme, active: searchMode, pressed: centralPressed, pulse: orbPulse }}>
+          {orbTheme === "fluorescent-rose" ? <Flower2 size={54} strokeWidth={1.25} style={{ color: "#ff5dad", filter: "drop-shadow(0 0 9px #ff2c9680)" }} aria-hidden="true" /> : <GravitationalCore
             color={cfg.color}
             glow={cfg.glow}
             pulse={orbPulse}
             pressed={centralPressed}
             searchMode={searchMode}
             animated={animated}
-          />
+          />}
+          </VisualSlot>
+          {centralPressed && <svg className="tq-orb-progress" viewBox="0 0 76 76" aria-hidden="true"><motion.circle cx="38" cy="38" r="35" fill="none" stroke={orbTheme === "fluorescent-rose" ? "#ff9fdb" : cfg.color} strokeWidth="1.25" transform="rotate(-90 38 38)" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: animated ? 1.4 : 0, ease: "linear" }} /></svg>}
         </motion.button>
 
         {/* ── BUSCADOR — portal al body, centrado con margin auto ── */}

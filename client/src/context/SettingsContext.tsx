@@ -2,6 +2,8 @@ import {
   createContext, useContext, useState,
   useCallback, useEffect, ReactNode
 } from "react"
+import { normalizeVisualQuality, type VisualQuality, type OrbTheme } from "@shared/visual-experience"
+import { VISUAL_STRINGS } from "@/visual/visual-strings"
 
 // ── TIPOS ────────────────────────────────────────────────
 export type ReadingMode  = "night" | "twilight" | "dawn"
@@ -11,6 +13,8 @@ export type AppLanguage  = "es" | "en" | "fr" | "de" | "it" | "pt" | "ja" | "zh"
 export const SUPPORTED_UI_LANGUAGES: AppLanguage[] = ["es","en","fr","de","it","pt","ja","zh","ar"]
 
 export interface Settings {
+  visualQuality: VisualQuality
+  orbTheme: OrbTheme
   readingMode:     ReadingMode
   fontSize:        FontSize
   orbSounds:       boolean
@@ -39,6 +43,7 @@ function prefersReducedMotion(): boolean {
 }
 
 export const DEFAULTS: Settings = {
+  visualQuality: "auto", orbTheme: "singularity",
   readingMode:     "night", fontSize:        "medium", orbSounds:       true,
   soundVolume:     0.8,
   musicEnabled:    true,
@@ -532,6 +537,10 @@ for (const language of Object.keys(UI_STRINGS_POLISH) as AppLanguage[]) {
   Object.assign(UI_STRINGS[language], UI_STRINGS_POLISH[language])
 }
 
+for (const language of Object.keys(VISUAL_STRINGS) as AppLanguage[]) {
+  Object.assign(UI_STRINGS[language], VISUAL_STRINGS[language])
+}
+
 const READER_ERRORS: Record<AppLanguage, string> = {
   es: "No encontramos este manuscrito.", en: "We could not find this manuscript.",
   fr: "Ce manuscrit est introuvable.", de: "Dieses Manuskript wurde nicht gefunden.",
@@ -663,6 +672,8 @@ function load(): Settings {
     const numberInUnitRange = (value: unknown, fallback: number) =>
       typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : fallback
     return {
+      visualQuality: normalizeVisualQuality(parsed.visualQuality),
+      orbTheme: parsed.orbTheme === "fluorescent-rose" ? "fluorescent-rose" : "singularity",
       readingMode: readingModes.includes(parsed.readingMode as ReadingMode) ? parsed.readingMode as ReadingMode : DEFAULTS.readingMode,
       fontSize: fontSizes.includes(parsed.fontSize as FontSize) ? parsed.fontSize as FontSize : DEFAULTS.fontSize,
       orbSounds: typeof parsed.orbSounds === "boolean" ? parsed.orbSounds : DEFAULTS.orbSounds,

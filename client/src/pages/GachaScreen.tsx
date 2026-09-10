@@ -1,9 +1,10 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { useLocation } from "wouter"
 import { ArrowLeft, Droplets, Sparkles, BookOpen, Lock, Loader2, ChevronDown, Copy } from "lucide-react"
 import CollectibleCard from "@/components/CollectibleCard"
+import VisualSlot from "@/visual/VisualEngine"
 import WalletPanel from "@/components/WalletPanel"
 import { useAuth } from "@/hooks/useAuth"
 import { useSettings } from "@/context/SettingsContext"
@@ -55,7 +56,9 @@ type Phase = "idle" | "opening" | "revealed"
 export default function GachaScreen() {
   const [, setLocation] = useLocation()
   const { isLoggedIn } = useAuth()
-  const { t } = useSettings()
+  const { t, settings } = useSettings()
+  const systemReduced = useReducedMotion()
+  const quietMotion = settings.reduceMotion || systemReduced
   const queryClient = useQueryClient()
 
   const [phase, setPhase] = useState<Phase>("idle")
@@ -105,7 +108,7 @@ export default function GachaScreen() {
     onSuccess: (d) => {
       // El suspenso: dejamos que la animación respire antes de revelar.
       setResult(d)
-      setTimeout(() => setPhase("revealed"), 1500)
+      setTimeout(() => setPhase("revealed"), quietMotion ? 0 : 1500)
       queryClient.invalidateQueries({ queryKey: ["/api/wallet"] })
       queryClient.invalidateQueries({ queryKey: ["/api/gacha/status"] })
     },
@@ -175,7 +178,7 @@ export default function GachaScreen() {
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9 }}
               className="flex flex-col items-center gap-6">
               <motion.div
-                animate={{ y: [0, -6, 0] }}
+                animate={{ y: quietMotion ? 0 : [0, -6, 0] }}
                 transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
                 className="relative">
                 <Envelope />
@@ -192,9 +195,10 @@ export default function GachaScreen() {
             <motion.div key="opening"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="flex flex-col items-center gap-6">
+              <VisualSlot priority={80} className="tq-reveal-visual" options={{ kind: "reveal", color: result ? rar.c : "#c9a84c", active: true }}>
               <div className="relative">
                 <motion.div
-                  animate={{ rotate: [-2, 2, -2], scale: [1, 1.04, 1] }}
+                  animate={quietMotion ? { rotate: 0, scale: 1 } : { rotate: [-2, 2, -2], scale: [1, 1.04, 1] }}
                   transition={{ duration: 0.35, repeat: Infinity }}>
                   <Envelope />
                 </motion.div>
@@ -202,7 +206,7 @@ export default function GachaScreen() {
                 <motion.div
                   className="absolute inset-0 rounded-3xl pointer-events-none"
                   initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{
+                  animate={quietMotion ? { opacity: 0.25, scale: 1 } : {
                     opacity: [0, 0.5, 0.85, 1],
                     scale: [0.8, 1.3, 1.8, 2.4],
                     background: result
@@ -214,6 +218,7 @@ export default function GachaScreen() {
                   transition={{ duration: 1.5, ease: "easeIn" }}
                 />
               </div>
+              </VisualSlot>
               <p className="text-[11px] text-zinc-500 font-sans tracking-wide"
                 style={{ fontVariant: "small-caps" }}>{t("gachaOpening")}</p>
             </motion.div>
