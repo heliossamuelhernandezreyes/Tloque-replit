@@ -124,10 +124,14 @@ test("todos los renderers consumen el mismo evento del Director Universal V6", (
 
 test("el Laboratorio enseña la fuente V2 y el flujo completo para una IA", () => {
   const admin = read("client/src/pages/AudioCatalogAdmin.tsx")
+  const workbench = read("client/src/components/audio/ComposerWorkbench.tsx")
+  const skill = read("skills/tloque-score/SKILL.md")
   assert.match(admin, /module \$\{ORCHESTRAL_SYNTH_MODULE_ID\}/)
-  assert.match(admin, /pressure=0\.\.1.*embouchure=0\.\.1.*bow=0\.\.1.*pluck=0\.\.1.*damper=0\.\.1.*coupling=0\.\.1/)
-  assert.match(admin, /Descarga las instrucciones/)
-  assert.match(admin, /Pulsa Validar y compilar/)
+  assert.match(admin, /<ComposerWorkbench/)
+  assert.match(skill, /pressure=0\.\.1.*embouchure=0\.\.1.*bow=0\.\.1.*pluck=0\.\.1.*damper=0\.\.1.*coupling=0\.\.1/)
+  assert.match(workbench, /href=\{SCORE_SKILL_URL\}/)
+  assert.match(workbench, /buildComposerBrief\(brief\)/)
+  assert.match(workbench, /buildScoreRepairPrompt\(source, validation\.diagnostics\)/)
 })
 
 test("la matriz de certificación exige banco nativo real", () => {

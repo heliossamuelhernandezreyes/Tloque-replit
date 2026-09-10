@@ -33,13 +33,13 @@ test("la skill canónica y la descarga son exactamente la misma fuente", async (
     readFile(downloadableSkillPath, "utf8"),
   ])
   assert.equal(download, canonical)
-  assert.match(canonical, /version: "3\.8\.0"/)
+  assert.match(canonical, /version: "3\.9\.0"/)
 })
 
 test("todos los ejemplos de la skill compilan con el contrato actual", async () => {
   const content = await readFile(skillPath, "utf8")
   const examples = scoreExamples(content)
-  assert.equal(examples.length, 2, "La skill debe tener una plantilla y un ejemplo orquestal completo")
+  assert.equal(examples.length, 4, "Plantilla, orquesta, diálogo en 6/8 y miniatura desarrollada")
 
   for (const [index, source] of examples.entries()) {
     const result = compileTloqueScore(source)
