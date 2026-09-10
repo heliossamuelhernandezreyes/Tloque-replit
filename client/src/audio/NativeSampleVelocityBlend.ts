@@ -6,6 +6,16 @@ export interface WeightedNativeSampleSelection extends NativeSampleSelection {
   weight: number
 }
 
+export interface DynamicNativeSampleSelection extends NativeSampleSelection {
+  /** Unweighted sample gain above; this separate equal-power curve is applied
+   * once by the player and holds its final value through the release tail. */
+  layerGainCurve?: Float32Array
+}
+
+export const NATIVE_SAMPLE_LAYER_DYNAMICS_VERSION = "tloque-native-layer-dynamics-v1" as const
+export const NATIVE_SAMPLE_LAYER_MAX_POINTS = 4096
+export const NATIVE_SAMPLE_LAYER_MAX_SOURCES = 8
+
 const NEAR_ROOT_WINDOW = 2
 const MAX_ROOT_WINDOW = 4
 const MAX_PITCH_BLEND_ROOT_SPAN = 6
@@ -136,6 +146,59 @@ function pitchBlendForLayer(
  * Solo violin deliberately uses a single nearest pitch root to avoid phase beating,
  * doubled attacks and ensemble-like chorusing between independent recordings.
  */
+function prepareVelocityBlend(
+  pack: TloqueSamplePack,
+  articulation: TloqueArticulation,
+  note: number,
+  amplitudeVelocity: number,
+  roundRobin: number,
+  timbre: NativeSampleTimbreRequest,
+) {
+  const zones = semanticZones(pack, articulation, note, timbre)
+  const layers = semanticLayers(zones)
+  const allowPitchBlend = pack.instrumentManifestId !== "vsco2-ce-solo-violin"
+  const pitchBlends = new Map<number, readonly WeightedNativeSampleSelection[]>()
+  const pitchBlend = (layer: typeof layers[number]) => {
+    let blend = pitchBlends.get(layer.layer)
+    if (!blend) {
+      blend = pitchBlendForLayer(zones, layer, note, amplitudeVelocity, roundRobin, allowPitchBlend)
+      pitchBlends.set(layer.layer, blend)
+    }
+    return blend
+  }
+
+  return (midiVelocity: number): readonly WeightedNativeSampleSelection[] => {
+    if (!layers.length) return []
+    const velocity = Math.max(0, Math.min(127, midiVelocity))
+    let lower = layers[0]
+    let upper = layers[layers.length - 1]
+    for (let index = 0; index < layers.length - 1; index += 1) {
+      if (velocity >= layers[index].center && velocity <= layers[index + 1].center) {
+        lower = layers[index]
+        upper = layers[index + 1]
+        break
+      }
+    }
+    if (velocity <= layers[0].center) lower = upper = layers[0]
+    if (velocity >= layers[layers.length - 1].center) lower = upper = layers[layers.length - 1]
+
+    const lowPitchBlend = pitchBlend(lower)
+    if (!lowPitchBlend.length) return []
+    if (lower.layer === upper.layer) return lowPitchBlend
+    const highPitchBlend = pitchBlend(upper)
+    if (!highPitchBlend.length) return lowPitchBlend
+
+    const span = Math.max(1, upper.center - lower.center)
+    const t = Math.max(0, Math.min(1, (velocity - lower.center) / span))
+    const lowVelocityWeight = Math.cos(t * Math.PI / 2)
+    const highVelocityWeight = Math.sin(t * Math.PI / 2)
+    return [
+      ...lowPitchBlend.map(item => ({ ...item, gain: item.gain * lowVelocityWeight, weight: item.weight * lowVelocityWeight })),
+      ...highPitchBlend.map(item => ({ ...item, gain: item.gain * highVelocityWeight, weight: item.weight * highVelocityWeight })),
+    ]
+  }
+}
+
 export function selectNativeSampleVelocityBlend(
   pack: TloqueSamplePack,
   articulation: TloqueArticulation,
@@ -148,38 +211,47 @@ export function selectNativeSampleVelocityBlend(
     const single = selectNativeSampleZone(pack, articulation, note, midiVelocity, roundRobin, timbre)
     return single ? [{ ...single, weight: 1 }] : []
   }
+  return prepareVelocityBlend(pack, articulation, note, timbre.amplitudeVelocity ?? midiVelocity, roundRobin, timbre)(midiVelocity)
+}
 
-  const zones = semanticZones(pack, articulation, note, timbre)
-  const layers = semanticLayers(zones)
-  if (!layers.length) return []
-  const velocity = Math.max(0, Math.min(127, midiVelocity))
-  const amplitudeVelocity = Math.max(0, Math.min(127, timbre.amplitudeVelocity ?? midiVelocity))
-  const allowPitchBlend = pack.instrumentManifestId !== "vsco2-ce-solo-violin"
-
-  let lower = layers[0]
-  let upper = layers[layers.length - 1]
-  for (let index = 0; index < layers.length - 1; index += 1) {
-    if (velocity >= layers[index].center && velocity <= layers[index + 1].center) {
-      lower = layers[index]
-      upper = layers[index + 1]
-      break
+/** Select the union of recorded layers visited by one held note. All recordings
+ * start together; only their gains move, so crossing a layer never retriggers an
+ * attack. Pitch roots, RR, recorded colour and microphone stay fixed per layer.
+ * No network/PCM work occurs here. The planner's zones drive bounded preload. */
+export function selectNativeSampleVelocityTrajectory(
+  pack: TloqueSamplePack,
+  articulation: TloqueArticulation,
+  note: number,
+  midiVelocities: Float32Array,
+  roundRobin: number,
+  timbre: NativeSampleTimbreRequest = {},
+): readonly DynamicNativeSampleSelection[] {
+  if (midiVelocities.length < 2 || midiVelocities.length > NATIVE_SAMPLE_LAYER_MAX_POINTS
+    || !midiVelocities.every(Number.isFinite)) throw new Error("Curva de capas nativas inválida o fuera del límite seguro")
+  if ((timbre.trigger ?? "attack") !== "attack") {
+    return selectNativeSampleVelocityBlend(pack, articulation, note, midiVelocities[0], roundRobin, timbre)
+  }
+  const amplitudeVelocity = timbre.amplitudeVelocity ?? midiVelocities[0]
+  const select = prepareVelocityBlend(pack, articulation, note, amplitudeVelocity, roundRobin, timbre)
+  const byZone = new Map<string, DynamicNativeSampleSelection & { layerGainCurve: Float32Array }>()
+  for (let index = 0; index < midiVelocities.length; index += 1) {
+    const blend = select(midiVelocities[index])
+    if (!blend.length) throw new Error(`El módulo ${pack.instrumentManifestId} no cubre el crescendo en MIDI ${note}`)
+    for (const item of blend) {
+      if (item.weight < 1e-8) continue
+      let voice = byZone.get(item.zone.id)
+      if (!voice) {
+        if (byZone.size >= NATIVE_SAMPLE_LAYER_MAX_SOURCES) throw new Error(`El módulo ${pack.instrumentManifestId} supera ${NATIVE_SAMPLE_LAYER_MAX_SOURCES} fuentes por nota sostenida; reduce el recorrido dinámico o usa un banco con menos capas`)
+        voice = { ...selectionFor(item.zone, note, amplitudeVelocity), layerGainCurve: new Float32Array(midiVelocities.length) }
+        byZone.set(item.zone.id, voice)
+      }
+      voice.layerGainCurve[index] = item.weight
     }
   }
-  if (velocity <= layers[0].center) lower = upper = layers[0]
-  if (velocity >= layers[layers.length - 1].center) lower = upper = layers[layers.length - 1]
-
-  const lowPitchBlend = pitchBlendForLayer(zones, lower, note, amplitudeVelocity, roundRobin, allowPitchBlend)
-  if (!lowPitchBlend.length) return []
-  if (lower.layer === upper.layer) return lowPitchBlend
-  const highPitchBlend = pitchBlendForLayer(zones, upper, note, amplitudeVelocity, roundRobin, allowPitchBlend)
-  if (!highPitchBlend.length) return lowPitchBlend
-
-  const span = Math.max(1, upper.center - lower.center)
-  const t = Math.max(0, Math.min(1, (velocity - lower.center) / span))
-  const lowVelocityWeight = Math.cos(t * Math.PI / 2)
-  const highVelocityWeight = Math.sin(t * Math.PI / 2)
-  return [
-    ...lowPitchBlend.map(item => ({ ...item, gain: item.gain * lowVelocityWeight, weight: item.weight * lowVelocityWeight })),
-    ...highPitchBlend.map(item => ({ ...item, gain: item.gain * highVelocityWeight, weight: item.weight * highVelocityWeight })),
-  ]
+  const voices = [...byZone.values()]
+  // One-layer banks and constant expressions retain the historical static path.
+  if (voices.every(voice => voice.layerGainCurve.every(value => Math.abs(value - voice.layerGainCurve[0]) < 1e-7))) {
+    return select(midiVelocities[0]).filter(item => item.weight >= 1e-8)
+  }
+  return voices
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "./test-compat"
 import { hybridSourceMasterApproved } from "../shared/native-hybrid-approval-registry"
 import { nativeHybridForInstrument } from "../shared/native-hybrid-source"
 import { NATIVE_HYBRID_PERFORMANCE_VERSION } from "../shared/native-hybrid-performance"
+import { NATIVE_SAMPLE_PLAYER_VERSION } from "../shared/native-sample-pack"
 import {
   buildHybridAbReport,
   hybridMasterEvidenceValid,
@@ -45,6 +46,9 @@ describe("hybrid A/B validation", () => {
     expect(hybridMasterEvidenceValid(source, report)).toBe(true)
     expect(hybridMasterEvidenceValid({ ...source, engineVersion: "air-column-overlay-v1.1" } as any, report)).toBe(false)
     expect(report.performanceVersion).toBe(NATIVE_HYBRID_PERFORMANCE_VERSION)
+    expect(report.sampleRendererVersion).toBe(NATIVE_SAMPLE_PLAYER_VERSION)
+    expect(hybridMasterEvidenceValid(source, { ...report, sampleRendererVersion: "old-sample-renderer" as any })).toBe(false)
+    expect(hybridMasterEvidenceValid(source, { ...report, sampleRendererVersion: undefined } as any)).toBe(false)
     expect(hybridMasterEvidenceValid(source, { ...report, performanceVersion: "legacy-performance-v1" as any })).toBe(false)
     expect(hybridMasterEvidenceValid(source, { ...report, cellResults: report.cellResults.slice(0, 8) })).toBe(false)
   })

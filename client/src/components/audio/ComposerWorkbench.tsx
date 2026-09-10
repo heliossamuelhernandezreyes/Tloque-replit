@@ -61,7 +61,7 @@ export function ComposerWorkbench({ source, recipe, validation, editorRef, palet
     void fetch(SCORE_SKILL_URL, { cache: "no-store", signal: abort.signal }).then(async response => {
       if (!response.ok) throw new Error(`No se pudo cargar la skill · HTTP ${response.status}`)
       const text = await response.text()
-      if (!text.startsWith("---\n") || !text.includes('version: "3.9.0"')) throw new Error("La skill descargable no coincide con esta interfaz. Recarga la aplicación.")
+      if (!text.startsWith("---\n") || !text.includes('version: "3.9.1"')) throw new Error("La skill descargable no coincide con esta interfaz. Recarga la aplicación.")
       if (!abort.signal.aborted) setSkill(text)
     }).catch(error => { if (!abort.signal.aborted) setSkillError(error instanceof Error ? error.message : "No se pudo cargar la skill") })
     return () => abort.abort()
@@ -140,7 +140,7 @@ export function ComposerWorkbench({ source, recipe, validation, editorRef, palet
         <details><summary className="min-h-11 cursor-pointer py-3 text-sm text-zinc-300">Ver encargo y opciones de copia</summary><pre className="my-3 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-black/25 p-3 text-xs leading-5">{buildComposerBrief(brief)}</pre><div className="flex flex-wrap gap-2"><button className={composerButton} disabled={!brief.instruments.length} onClick={() => copy(buildComposerBrief(brief), "Encargo")}><Copy className="h-4 w-4" /> Sólo encargo</button><button className={composerButton} disabled={!skill} onClick={() => copy(skill, "Skill")}><Copy className="h-4 w-4" /> Sólo skill</button></div></details>
       </div>
     </details>}
-    <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400"><a className={composerButton} href={SCORE_SKILL_URL} download="TLOQUE_SCORE_AI_SKILL.md"><Download className="h-4 w-4" /> Descargar skill 3.9</a><span>Autocontenida · cuatro ejemplos compilables</span></div>
+    <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400"><a className={composerButton} href={SCORE_SKILL_URL} download="TLOQUE_SCORE_AI_SKILL.md"><Download className="h-4 w-4" /> Descargar skill 3.9.1</a><span>Autocontenida · cuatro ejemplos compilables</span></div>
     {skillError && <div role="alert" className="text-sm text-amber-200">{skillError} <button className={composerButton} onClick={() => setSkillAttempt(value => value + 1)}>Reintentar</button></div>}
     {copyMessage && <p role="status" className="rounded-xl border border-sky-300/20 bg-sky-300/5 p-3 text-sm text-sky-100">{copyMessage}</p>}
     {manualCopy && <label className="block text-sm text-sky-100">Texto listo para copiar manualmente<textarea ref={manualCopyRef} aria-label="Copia manual para IA" className={`${composerInput} min-h-40 font-mono`} value={manualCopy} readOnly onFocus={e => e.target.select()} /></label>}

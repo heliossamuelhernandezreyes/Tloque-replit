@@ -5,8 +5,8 @@ import { manifestsForModule, type InstrumentManifest, type TloqueArticulation } 
 import type { TloqueMicPosition, TloqueMute, TloqueSamplePack, TloqueSampleZone, TloqueVibratoColour } from "@shared/native-sample-pack"
 import { physicalRecordedTimbre, recordedTimbreProfileFor, resolveRecordedTimbre, type ExplicitRecordedTimbre } from "@shared/recorded-timbre"
 import type { LinearScoreRecipeV2, ScoreTimbre } from "@shared/tloque-score-v2"
-import { selectNativeSampleZone } from "./NativeSamplePackEngine"
-import { selectNativeSampleVelocityBlend } from "./NativeSampleVelocityBlend"
+import { selectNativeSampleZone, type NativeSamplePlaybackEnvelope } from "./NativeSamplePackEngine"
+import { selectNativeSampleVelocityBlend, selectNativeSampleVelocityTrajectory, type DynamicNativeSampleSelection } from "./NativeSampleVelocityBlend"
 import { buildPerformancePlan, performedEventValues, type PerformanceEventDecision } from "./PerformanceEngine"
 import { orchestralSampleLayerIntensity } from "./OrchestralInterpreter"
 import { applyIntelligentPerformanceGestureToExpression, orchestralNoteExpression, type OrchestralNoteExpression } from "./OrchestralExpression"
@@ -35,6 +35,7 @@ export interface NativeSampleVoicePlan {
   sampleUrl: string
   playbackRate: number
   sampleGain: number
+  layerGainCurve?: Float32Array
   oneShot: boolean
   fadeInSeconds: number
   performanceGesture?: IntelligentPerformanceGesture
@@ -81,6 +82,19 @@ export interface NativeSampleScorePlanOptions {
 
 export function trueLegatoCrossfadeSeconds(noteDurationSeconds: number) {
   return Math.max(0.025, Math.min(0.12, noteDurationSeconds * 0.18))
+}
+
+/** Single render hand-off for realtime and offline, including source-layer
+ * automation. Keep amplitude/expression independent of recorded-layer weights. */
+export function nativeSampleVoiceEnvelope(voice: NativeSampleVoicePlan): NativeSamplePlaybackEnvelope {
+  return {
+    ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}),
+    expression: voice.expression,
+    dynamics: voice.dynamics,
+    layerGainCurve: voice.layerGainCurve,
+    performanceGesture: voice.performanceGesture,
+    conductorGesture: voice.conductorGesture,
+  }
 }
 
 const NATURAL_OPEN_TIMBRES: readonly ExplicitRecordedTimbre[] = ["non-vibrato", "vibrato", "expression-vibrato"]
@@ -201,8 +215,26 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
       decision.conductor,
     )
     const micPosition = micForTrack(track.id)
+    let layerVelocities: Float32Array | undefined
+    if (!oneShot && dynamics.sustained && trackControls.some(control => control.expression !== null)) {
+      const values = new Float32Array(dynamics.effort.length)
+      // Keep the original onset selection (including its MIDI rounding), then
+      // follow global control time even when humanization moves the attack.
+      const onsetExpression = nativeControlValueAt(trackControls, "expression", startSeconds, track.expression)
+      const onsetIntensity = orchestralSampleLayerIntensity(performedVelocity, onsetExpression, decision.interpretation)
+      const onset = Math.min(1, scoreVelocityGain(onsetIntensity) * articulationVelocityFactor(decision.articulation)) * 127
+      let changed = false
+      for (let point = 0; point < values.length; point += 1) {
+        const time = startSeconds + durationSeconds * point / (values.length - 1)
+        const expression = nativeControlValueAt(trackControls, "expression", time, track.expression)
+        const intensity = orchestralSampleLayerIntensity(performedVelocity, expression, decision.interpretation)
+        values[point] = Math.max(0, Math.min(127, velocity - onset + Math.min(1, scoreVelocityGain(intensity) * articulationVelocityFactor(decision.articulation)) * 127))
+        if (Math.abs(values[point] - velocity) > 1e-4) changed = true
+      }
+      if (changed) layerVelocities = values
+    }
     for (const note of event.notes) {
-      let selections: ReturnType<typeof selectNativeSampleVelocityBlend> = []
+      let selections: readonly DynamicNativeSampleSelection[] = []
       let resolvedTimbre: ExplicitRecordedTimbre | null = null
       let fallbackSelections: ReturnType<typeof selectNativeSampleVelocityBlend> = []
       let fallbackTimbre: ExplicitRecordedTimbre | null = null
@@ -229,6 +261,11 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
         throw new Error(`El módulo ${pack.instrumentManifestId} no contiene timbre=${attempted}, mic=${micPosition} para ${track.instrument} en MIDI ${note}`)
       }
       const physical = physicalRecordedTimbre(resolvedTimbre)
+      if (layerVelocities) {
+        selections = selectNativeSampleVelocityTrajectory(pack, decision.articulation, note, layerVelocities, decision.roundRobin, {
+          ...physical, trigger: "attack", micPosition, amplitudeVelocity,
+        })
+      }
       const noteVoices: NativeSampleVoicePlan[] = selections.map(selected => {
         zones.set(selected.zone.id, selected.zone)
         const voice: NativeSampleVoicePlan = {
@@ -250,6 +287,7 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
           sampleUrl: selected.zone.sampleUrl,
           playbackRate: selected.playbackRate,
           sampleGain: selected.gain * decision.conductor.balanceScale,
+          ...(selected.layerGainCurve ? { layerGainCurve: selected.layerGainCurve } : {}),
           oneShot,
           fadeInSeconds: 0,
           performanceGesture: decision.gesture,
@@ -300,7 +338,8 @@ export function buildNativeSampleScorePlan(recipe: LinearScoreRecipe, pack: Tloq
       }
 
       if (decision.releaseSamples) {
-        const release = selectNativeSampleZone(pack, decision.articulation, note, velocity, decision.roundRobin, { ...physical, trigger: "release", micPosition, amplitudeVelocity })
+        const releaseVelocity = layerVelocities ? Math.round(layerVelocities[layerVelocities.length - 1]) : velocity
+        const release = selectNativeSampleZone(pack, decision.articulation, note, releaseVelocity, decision.roundRobin, { ...physical, trigger: "release", micPosition, amplitudeVelocity })
         if (!release) throw new Error(`El módulo ${pack.instrumentManifestId} declara release-samples pero no contiene release para MIDI ${note} en mic=${micPosition}`)
         zones.set(release.zone.id, release.zone)
         auxiliaryVoices.push({

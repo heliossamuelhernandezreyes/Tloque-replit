@@ -1,5 +1,6 @@
 import type { NativeHybridPhysicalLayer, NativeHybridSource } from "./native-hybrid-source"
 import { NATIVE_HYBRID_PERFORMANCE_VERSION } from "./native-hybrid-performance"
+import { NATIVE_SAMPLE_PLAYER_VERSION } from "./native-sample-pack"
 
 export type HybridAbMetricId =
   | "transient-preservation"
@@ -38,6 +39,7 @@ export interface HybridAbValidationReport {
   instrumentId: string
   engineVersion: NativeHybridSource["engineVersion"]
   performanceVersion: typeof NATIVE_HYBRID_PERFORMANCE_VERSION
+  sampleRendererVersion: typeof NATIVE_SAMPLE_PLAYER_VERSION
   physicalLayer: NativeHybridPhysicalLayer
   generatedAt: string
   sampleReferenceId: string
@@ -133,6 +135,7 @@ export function buildHybridAbReport(
     instrumentId: source.instrumentId,
     engineVersion: source.engineVersion,
     performanceVersion: NATIVE_HYBRID_PERFORMANCE_VERSION,
+    sampleRendererVersion: NATIVE_SAMPLE_PLAYER_VERSION,
     physicalLayer: source.physicalLayer,
     generatedAt: new Date().toISOString(),
     sampleReferenceId,
@@ -155,6 +158,7 @@ export function hybridMasterEvidenceValid(source: NativeHybridSource, report: Hy
     report.instrumentId === source.instrumentId &&
     report.engineVersion === source.engineVersion &&
     report.performanceVersion === NATIVE_HYBRID_PERFORMANCE_VERSION &&
+    report.sampleRendererVersion === NATIVE_SAMPLE_PLAYER_VERSION &&
     report.physicalLayer === source.physicalLayer &&
     !report.calibrationCandidateId &&
     exactCoverage &&

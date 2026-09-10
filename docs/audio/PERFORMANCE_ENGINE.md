@@ -86,7 +86,7 @@ Los `hit` son one-shots físicos. La duración escrita conserva el significado r
 
 Los módulos nativos se renderizan con `OfflineAudioContext` usando exactamente el mismo plan acústico del live. El master WAV no imprime ducking ni fades narrativos dependientes de la lectura. Preview usa 32 kHz/16-bit; Studio/Master 48 kHz/24-bit, con límite de 220 MB de buffers float para proteger navegadores móviles. Para one-shots, el límite de memoria se calcula después de conocer la cola física real de las muestras seleccionadas.
 
-El perfil general `tloque-score-audio-v9-acoustic-continuity` garantiza que live y exportación consuman la misma interpretación individual y de conjunto. `humanize=0` conserva neutralidad exacta de tiempo, duración y velocity; las capas V1/V6/V7 siguen activas porque interpretación y variación aleatoria son capas distintas.
+El perfil general `tloque-score-audio-v10-sustain-layers` mantiene la misma interpretación individual, de conjunto y de capas grabadas en live y exportación. `humanize=0` conserva neutralidad exacta de tiempo, duración y velocity; las capas V1/V6/V7 siguen activas porque interpretación y variación aleatoria son capas distintas. El [crossfade nativo sostenido](../NATIVE_SUSTAIN_LAYERS_V1.md) sigue las rampas de expresión dentro de una nota sin reiniciar las grabaciones.
 
 Native Hybrid Performance V6 conserva esa misma interpretación, transporta las decisiones V1/V6/V7 y compila los legatos monofónicos de cuerdas frotadas en unidades físicas de frase. La capa sampleada mantiene todos sus eventos; sólo el resonador subordinado comparte una vida waveguide hasta un `rest`, una ruptura de frase, un acorde o una articulación no frotada.
 

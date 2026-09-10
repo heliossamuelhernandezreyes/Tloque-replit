@@ -9,7 +9,7 @@ import { analyzeAudioBuffer } from "./AudioRenderAnalysis"
 import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import { scheduleHybridBowedStringPhrase } from "./PhysicalBowedStringOverlay"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
-import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
+import { buildNativeSampleScorePlan, nativeSampleVoiceEnvelope, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
 import { buildNativeRecipeIndex, nativeTrackAtTime } from "./NativeRecipeIndex"
 import { createNativeRenderGraph } from "./NativeRenderGraph"
@@ -242,7 +242,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
     for (const voice of plan.voices) {
       const destination = graph.trackGain.get(voice.trackId), zone = zoneById.get(voice.zoneId)
       if (!destination || !zone) continue
-      scheduled.push(player.playSelection({ zone, playbackRate: voice.playbackRate, gain: voice.sampleGain }, voice.startSeconds, voice.durationSeconds, destination, 0, voice.oneShot, { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression, dynamics: voice.dynamics, performanceGesture: voice.performanceGesture, conductorGesture: voice.conductorGesture }))
+      scheduled.push(player.playSelection({ zone, playbackRate: voice.playbackRate, gain: voice.sampleGain }, voice.startSeconds, voice.durationSeconds, destination, 0, voice.oneShot, nativeSampleVoiceEnvelope(voice)))
     }
     for (const auxiliary of plan.auxiliaryVoices) {
       const destination = graph.trackGain.get(auxiliary.trackId), zone = zoneById.get(auxiliary.zoneId)

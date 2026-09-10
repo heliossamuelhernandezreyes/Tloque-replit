@@ -39,7 +39,7 @@ export function buildComposerBrief(brief: ComposerBrief): string {
   const bpm = Math.max(20, Math.min(300, Math.round(brief.bpm) || 64))
   const bars = Math.max(1, Math.round(brief.seconds * bpm / (60 * numerator * 4 / denominator)))
   return [
-    "ENCARGO DEL COMPOSITOR TLOQUE · skill 3.9",
+    "ENCARGO DEL COMPOSITOR TLOQUE · skill 3.9.1",
     `Crea una obra instrumental original para ${brief.purpose === "reading" ? "acompañar lectura: baja densidad, sin sobresaltos ni promesas cognitivas" : "escucha protagonista, con contraste y dirección musical"}.`,
     `Carácter: ${brief.mood.trim().slice(0, 600) || "Sereno, con dirección musical"}.`,
     `Duración objetivo: aproximadamente ${brief.seconds} s. Compás ${brief.meter}; tempo ${bpm} negras por minuto. Orientación: ${bars} compases antes de rubato y colas.`,
