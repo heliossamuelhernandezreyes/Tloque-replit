@@ -1,6 +1,8 @@
 import type { TloqueArticulation } from "./instrument-manifest"
 
 export const TLOQUE_SAMPLE_PACK_VERSION = 1 as const
+/** Playback implementation identity, separate from the unchanged asset schema. */
+export const NATIVE_SAMPLE_PLAYER_VERSION = "tloque-native-sample-player-v4-sustain-layers" as const
 
 export type TloqueMute = "none" | "straight" | "harmon" | "mute"
 export type TloqueVibratoColour = "none" | "vibrato" | "expression"

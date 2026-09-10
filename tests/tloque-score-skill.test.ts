@@ -12,6 +12,7 @@ import { ORCHESTRAL_ROOM_VERSION } from "../client/src/audio/OrchestralRoom"
 import { BOWED_STRING_OVERLAY_VERSION } from "../client/src/audio/PhysicalBowedStringOverlay"
 import { AIR_COLUMN_OVERLAY_VERSION } from "../client/src/audio/PhysicalAirColumnOverlay"
 import { NATIVE_SAMPLE_PLAYER_VERSION } from "../client/src/audio/NativeSamplePackEngine"
+import { NATIVE_SAMPLE_LAYER_DYNAMICS_VERSION } from "../client/src/audio/NativeSampleVelocityBlend"
 import { UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION } from "../client/src/audio/PerformanceDirector"
 import { TLOQUE_SCORE_AUDIO_PROFILE } from "../client/src/audio/ScoreAudioMath"
 import { TLOQUE_NATIVE_CONCERT_PROFILE } from "../client/src/audio/ScoreExporter"
@@ -33,7 +34,7 @@ test("la skill canónica y la descarga son exactamente la misma fuente", async (
     readFile(downloadableSkillPath, "utf8"),
   ])
   assert.equal(download, canonical)
-  assert.match(canonical, /version: "3\.9\.0"/)
+  assert.match(canonical, /version: "3\.9\.1"/)
 })
 
 test("todos los ejemplos de la skill compilan con el contrato actual", async () => {
@@ -77,6 +78,7 @@ test("la documentación anuncia exactamente las versiones orquestales implementa
     BOWED_STRING_OVERLAY_VERSION,
     AIR_COLUMN_OVERLAY_VERSION,
     NATIVE_SAMPLE_PLAYER_VERSION,
+    NATIVE_SAMPLE_LAYER_DYNAMICS_VERSION,
     NATIVE_PHYSICAL_MODEL_SOURCES[0].engineVersion,
     UNIVERSAL_PERFORMANCE_DIRECTOR_VERSION,
     TLOQUE_SCORE_AUDIO_PROFILE,

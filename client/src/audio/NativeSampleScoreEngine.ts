@@ -12,7 +12,7 @@ import { buildNativeRecipeIndex, nativeTrackAtTime } from "./NativeRecipeIndex"
 import { NativeRealtimeLookahead, NATIVE_REALTIME_LOOKAHEAD_SECONDS, NATIVE_REALTIME_TICK_MS, type NativeRealtimeTask } from "./NativeRealtimeLookahead"
 import { createNativeRenderGraph } from "./NativeRenderGraph"
 import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
-import { buildNativeSampleScorePlan, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
+import { buildNativeSampleScorePlan, nativeSampleVoiceEnvelope, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { schedulePhysicalReedVoice } from "./PhysicalReedModel"
 import {
   scoreTrackExpression,
@@ -208,7 +208,7 @@ export class NativeSampleScoreEngine {
                 destination,
                 0,
                 voice.oneShot,
-                { ...(voice.fadeInSeconds > 0 ? { fadeInSeconds: voice.fadeInSeconds } : {}), expression: voice.expression, dynamics: voice.dynamics, performanceGesture: voice.performanceGesture, conductorGesture: voice.conductorGesture },
+                nativeSampleVoiceEnvelope(voice),
               ).catch(error => {
                 if (!semanticTrack || this.context !== context) return null
                 markFallback(voice.trackId, error)

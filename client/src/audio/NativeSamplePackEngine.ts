@@ -35,9 +35,11 @@ export interface NativeSamplePlaybackEnvelope {
   dynamics?: OrchestralContinuousDynamics
   performanceGesture?: IntelligentPerformanceGesture
   conductorGesture?: OrchestraConductorGesture
+  /** Recorded-layer equal-power weights, independent of expression/amplitude. */
+  layerGainCurve?: Float32Array
 }
 
-export const NATIVE_SAMPLE_PLAYER_VERSION = "tloque-native-sample-player-v3-acoustic-continuity" as const
+export { NATIVE_SAMPLE_PLAYER_VERSION } from "@shared/native-sample-pack"
 
 const MAX_EDGE_TRANSPOSE_SEMITONES = 4
 const NEIGHBOUR_ROOT_WINDOW_SEMITONES = 2
@@ -212,18 +214,25 @@ export class NativeSamplePackPlayer {
     const buffer = await this.buffer(selection.zone)
     const source = this.context.createBufferSource(); source.buffer = buffer; source.playbackRate.value = selection.playbackRate
     const gain = this.context.createGain()
+    const startAt = Math.max(this.context.currentTime, startTime)
     let tail: AudioNode = gain; let panner: StereoPannerNode | null = null; let tone: BiquadFilterNode | null = null
     if (typeof this.context.createStereoPanner === "function") { panner = this.context.createStereoPanner(); panner.pan.value = Math.max(-1, Math.min(1, pan)); gain.connect(panner); tail = panner }
     const phrasing = this.context.createGain()
     tail.connect(destination); source.connect(phrasing)
+    let layerGain: GainNode | null = null
+    if (!oneShot && envelope.layerGainCurve) {
+      layerGain = this.context.createGain()
+      layerGain.gain.setValueCurveAtTime(envelope.layerGainCurve, startAt, Math.max(0.01, durationSeconds))
+      phrasing.connect(layerGain)
+    }
+    const colourInput = layerGain ?? phrasing
     if (!oneShot && envelope.dynamics?.sustained) {
       tone = this.context.createBiquadFilter(); tone.type = "lowpass"; tone.Q.value = 0.24
-      tone.frequency.setValueCurveAtTime(orchestralDynamicCutoffCurve(envelope.dynamics, this.context.sampleRate, "recorded"), Math.max(this.context.currentTime, startTime), Math.max(0.01, durationSeconds))
-      phrasing.connect(tone); tone.connect(gain)
-    } else phrasing.connect(gain)
+      tone.frequency.setValueCurveAtTime(orchestralDynamicCutoffCurve(envelope.dynamics, this.context.sampleRate, "recorded"), startAt, Math.max(0.01, durationSeconds))
+      colourInput.connect(tone); tone.connect(gain)
+    } else colourInput.connect(gain)
     const loopStart = selection.zone.loopStartSeconds, loopEnd = selection.zone.loopEndSeconds
     if (loopStart !== undefined && loopEnd !== undefined && loopEnd > loopStart) { source.loop = true; source.loopStart = loopStart; source.loopEnd = loopEnd }
-    const startAt = Math.max(this.context.currentTime, startTime)
     if (!oneShot && envelope.expression) {
       const duration = Math.max(0.01, durationSeconds)
       if (envelope.expression.swell > 0 || envelope.expression.interpretation) phrasing.gain.setValueCurveAtTime(orchestralExpressionCurve(envelope.expression, duration, "gain"), startAt, duration)
@@ -250,7 +259,7 @@ export class NativeSamplePackPlayer {
     }
     source.start(startAt)
     if (!oneShot || source.loop) source.stop(stopAt)
-    source.addEventListener("ended", () => { source.disconnect(); phrasing.disconnect(); tone?.disconnect(); gain.disconnect(); panner?.disconnect() }, { once: true })
+    source.addEventListener("ended", () => { source.disconnect(); phrasing.disconnect(); layerGain?.disconnect(); tone?.disconnect(); gain.disconnect(); panner?.disconnect() }, { once: true })
     return source
   }
 

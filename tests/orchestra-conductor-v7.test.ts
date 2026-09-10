@@ -246,7 +246,7 @@ test("samples sostenidos conservan los gestos V6/V7 y los overrides físicos sig
     performanceGesture: decision.gesture,
     conductorGesture: decision.conductor,
   }, sourceAttack, sourceRelease)
-  assert.equal(NATIVE_SAMPLE_PLAYER_VERSION, "tloque-native-sample-player-v3-acoustic-continuity")
+  assert.equal(NATIVE_SAMPLE_PLAYER_VERSION, "tloque-native-sample-player-v4-sustain-layers")
   assert.ok(Math.abs(shaped.fadeIn - sourceAttack * decision.gesture.attackTimeScale * decision.conductor.attackCohesionScale) < 1e-9)
   assert.ok(Math.abs(shaped.fadeOut - sourceRelease * decision.gesture.releaseTimeScale * decision.conductor.releaseCohesionScale) < 1e-9)
   assert.equal(shaped.overlapTail, shaped.fadeOut)
