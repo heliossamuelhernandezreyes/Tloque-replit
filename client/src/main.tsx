@@ -1,7 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
-import { installTloqueScoreFileBridge } from "./lib/tloqueScoreFileBridge"
 
 interface BoundaryState { failed: boolean }
 
@@ -46,8 +45,6 @@ function BootFailure() {
 const rootElement = document.getElementById("root")
 if (!rootElement) throw new Error("No se encontró el contenedor principal")
 const root = createRoot(rootElement)
-
-installTloqueScoreFileBridge()
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {

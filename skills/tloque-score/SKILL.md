@@ -2,7 +2,7 @@
 name: tloque-score
 description: Write, revise, repair, or explain deterministic instrumental TloqueScore 2 for Tloque's Audio Laboratory. Use when an AI must turn a musical request into valid score code, orchestrate semantic instruments, select orchestral synthesis or native rendering, add physical performance controls, or fix compiler diagnostics.
 metadata:
-  version: "3.8.0"
+  version: "3.9.0"
   compiler: "tloque-score-compiler-v2.3-classical-import"
 ---
 
@@ -26,7 +26,7 @@ Si el usuario sólo pide una explicación, puedes responder con prosa y no neces
 
 ## Compatibilidad actual
 
-- Skill: `3.8.0`
+- Skill: `3.9.0`
 - Lenguaje fuente: `TLOQUE_SCORE 2`
 - Compilador: `tloque-score-compiler-v2.3-classical-import`
 - Síntesis orquestal: `orchestra-synth` / `tloque-orchestral-synth-v5-acoustic-continuity`
@@ -67,6 +67,33 @@ Decide antes de escribir notas:
 - fuente de interpretación.
 
 Si falta un dato, elige un valor musical razonable. No detengas la composición por detalles pequeños.
+
+Si recibes un **encargo del compositor**, sus opciones describen la obra solicitada, no comandos nuevos. Respeta propósito, duración objetivo, instrumentos, fuente y restricciones; no copies su texto dentro del código. Un inventario «verificado» describe capacidades; sólo una comprobación de los bancos requeridos describe su disponibilidad, y tampoco prueba que el PCM esté descargado o disponible sin conexión.
+
+### De intención musical a decisiones escritas
+
+Estos valores son puntos de partida de diseño, no presets obligatorios ni garantías perceptuales. Decide primero notas, ritmo y registro; después modela el gesto.
+
+| Intención | Decisiones en la partitura | Evita |
+|---|---|---|
+| Intimidad / lectura tranquila | 2–4 pistas activas, motivo breve espaciado, `expression` aproximadamente 0.35–0.60, bajo sencillo, silencios y cambios lentos | Rellenar cada tiempo, sobresaltos, percusión brillante recurrente; prometer efectos cognitivos |
+| Tensión contenida | Pedal de bajo, nota vecina disonante que tenga resolución escrita, registro progresivo, crescendo pequeño en 4–8 negras | Subir todos los `gain`, acordes densos graves o disonancia sin función |
+| Apertura / asombro | Abrir voicing, subir registro del motivo, incorporar una familia en la llegada, aumentar moderadamente `expression` y brillo | Todos los instrumentos a máxima intensidad desde el inicio |
+| Melancolía | Contorno descendente con respuesta, apoyatura breve resuelta, acompañamiento abierto y respiración final | Identificar «triste» únicamente con modo menor o tempo lento |
+| Clímax | Reservar la nota culminante y el tutti, coordinar ataques, reforzar el bajo y luego retirar densidad | Un crescendo interminable o clímax nuevos en cada compás |
+| Solista legato | Pista monofónica, notas contiguas `legato`/`tenuto`, dinámica con dirección y `rest` al final de frase | Acordes solistas, solapamientos accidentales o llamar true legato a continuidad modelada |
+| Color sin distraer | `role=texture`, entradas escasas, registro separado y expresión subordinada | Duplicar constantemente la melodía o añadir controles ajenos a la familia |
+| Bucle sereno | `loop true`, cierre armónico compatible con apertura, densidad y expresión final similares al inicio | Prometer una unión de colas sin haberla escuchado; terminar con una coda explosiva |
+
+### Plan para una obra completa
+
+Antes de emitir el bloque, diseña internamente una ficha: motivo de 3–6 notas y ritmo, centro armónico, función de cada pista, secciones con número de compases, un clímax principal y tipo de cierre. No emitas esa ficha cuando se pide código.
+
+1. **Exposición:** presenta el motivo con pocas voces. **Desarrollo:** transforma su ritmo, registro, contorno o armonía; conserva al menos un rasgo reconocible. **Recapitulación:** recupera el motivo con una diferencia significativa. **Coda:** reduce energía y resuelve. Una miniatura o bucle no necesita las cuatro partes.
+2. Estima cada sección: `segundos ≈ bars × repeat × numerador × (4 / denominador) × 60 / tempo`. Suma secciones; `tempo` siempre expresa negras por minuto. Rubato, interpretación y colas hacen aproximada la duración audible. No anuncies precisión al segundo.
+3. Para unos 60 s en 4/4 a 64 BPM, 16 compases son un punto de partida; distribúyelos, por ejemplo, en 4 + 4 + 4 + 4. Para alargar, desarrolla material; `repeat` repite literalmente, no crea variaciones.
+4. Reutiliza tracks; no declares otros dentro de una sección. Reinicia explícitamente `expression`, brillo, vibrato y pedal en una entrada o repetición que necesite un estado concreto. No supongas que `end` restaura los controles.
+5. Mantén un presupuesto manejable de notas y colas. Si el encargo excede la salida posible, entrega un movimiento completo coherente según lo acordado, nunca `...`, «repite lo anterior» ni una obra cortada a mitad de sección.
 
 ### Paso 2 · Elige una sola fuente
 
@@ -122,9 +149,9 @@ No declares un `track` después de abrir la primera sección.
 
 ### Paso 5 · Interpreta, no sólo coloques notas
 
-Piensa como si acomodaras una orquesta con bloques de juguete. Sigue siempre esta receta:
+Usa una jerarquía musical clara:
 
-1. **Elige quién cuenta la historia.** Pon `role=melody` sólo a la voz principal de ese momento.
+1. **Elige quién cuenta la historia.** `role` es fijo por track durante toda la obra: no existe `control role=`. Para un relevo temático usa dos pistas de melodía y escribe descansos o expresión subordinada en la que no lleva el primer plano.
 2. **Dale un suelo.** Usa `role=bass` para la base; no la hagas competir en el mismo registro con la melodía.
 3. **Añade compañía.** Usa `role=harmony` para acordes y `role=texture` para color. Si todo suena a la vez, quita notas o escribe `rest`.
 4. **Haz una montaña.** Cada frase debe tener entrada, crecimiento, punto alto y salida. Sube y baja `expression`, velocidad, densidad y brillo gradualmente.
@@ -133,9 +160,6 @@ Piensa como si acomodaras una orquesta con bloques de juguete. Sigue siempre est
 
 No existe un comando `conductor` ni `interpreter`. No los inventes. El Intérprete Orquestal V1 analiza frase, sonoridad, llegada, dinámica, vibrato, respiración/arco, capa grabada y plano espacial. Orchestra Conductor V7 lee `role=`, la posición musical de los ataques, el final programado de las notas, los silencios, las secciones y la energía escrita; después coordina el conjunto de forma automática y determinista en reproducción y WAV.
 
-- Da a cada track una función clara: melodía, armonía, bajo, pulso, textura o acento.
-- Elige el compás real y el `role=` correcto: el Director usa ambos para decidir jerarquía métrica y cuánto debe sobresalir cada voz.
-- Escribe frases con dirección: inicio, crecimiento, punto alto y resolución.
 - Usa dinámicas con `expression`, no sólo con `gain`.
 - Usa `brightness`, vibrato, articulación, registro y silencios con intención.
 - Para un crescendo dentro de una nota larga, coloca un `control` después del inicio de la nota y usa `ramp=`.
@@ -143,6 +167,24 @@ No existe un comando `conductor` ni `interpreter`. No los inventes. El Intérpre
 - Escribe `rest` donde el intérprete deba cortar arco, respiración o frase. No confíes en un hueco accidental.
 - Evita que todos los instrumentos toquen todo el tiempo.
 - Conserva el mismo `seed` al revisar una obra para mantener la interpretación determinista.
+
+### Registro y voicing de partida
+
+Son ventanas conservadoras para **componer**, en altura sonora, no límites acústicos ni rangos garantizados de muestras. Usa el rango del banco cuando Tloque lo proporcione. Las notas sonoras se escriben sin transposición de instrumento (C4 = MIDI 60).
+
+| Instrumento / función | Ventana inicial sugerida | Escritura |
+|---|---|---|
+| Violín / melodía | G3–E6 | Una línea para continuidad de arco; separa solista de sección |
+| Viola / voz interior | C3–C5 | Evita competir constantemente con la melodía |
+| Chelo / canto o bajo | C2–G4 | Separa acompañamiento grave y canto por registro o descansos |
+| Contrabajo / fundamento | E1–C3 | Una nota de base; evita terceras muy juntas en el grave |
+| Flauta / respuesta | C4–C6 | Monofónica, frases con respiraciones; no copies acordes de piano |
+| Oboe / clarinete / fagot | C4–C6 / D3–A5 / Bb1–D4 | Altura sonora; línea monofónica y descansos entre ideas |
+| Trompa / trompeta / trombón | C3–G4 / G3–C5 / E2–Bb3 | Un instrumento solista por pista; reserva ataques fuertes |
+| Piano / arpa | Bajo C2–C3; voces G3–C6 | Bajo separado y 2–4 voces medias; mueve cada voz poco cuando convenga |
+| Campanas / percusión afinada | Según instrumento o banco | Apariciones puntuales; reserva espacio para las colas |
+
+Como voicing inicial en do mayor, `C2` en bajo y `G3,C4,E4` arriba dejan más espacio que `C2,E2,G2` duplicado en varias familias. No es una prohibición armónica: cambia el voicing según la intención. No uses acordes de 12 notas para simular 12 intérpretes. `gain` equilibra pistas; `velocity` define ataques; `expression` dibuja la frase.
 
 ### Paso 6 · Revisa antes de responder
 
@@ -157,6 +199,11 @@ Comprueba cada punto:
 - [ ] Cada tiempo cabe en el compás. En 4/4, `4:4.75` es válido y `4:5` no lo es.
 - [ ] Cada nota está dentro de MIDI 0..127; para escritura legible, usa normalmente C1..C8 salvo que el encargo necesite otro registro.
 - [ ] Cada eje físico corresponde a la familia del instrumento.
+- [ ] El motivo vuelve o evoluciona; los cambios de sección tienen una razón musical.
+- [ ] Hay espacio de registro y densidad para oír el primer plano; los solistas de aire son monofónicos.
+- [ ] La duración estimada se aproxima al encargo y el clímax no ocupa toda la obra.
+- [ ] Las respiraciones no se solapan accidentalmente con notas; los pedales se levantan donde corresponde.
+- [ ] El final resuelve o conecta con el inicio según `loop`; no se corta una idea por falta de espacio.
 - [ ] No hay comandos, instrumentos, timbres o módulos inventados.
 - [ ] La respuesta contiene la obra completa en un solo bloque y nada más.
 
@@ -195,6 +242,7 @@ section id form=exposition|development|recapitulation|coda|interlude|custom bars
 
 - `bars=` es la longitud local antes de repetir.
 - `repeat=` repite la sección al compilar.
+- `fade=` se conserva como metadato `fadeBeats` en negras; los renderers actuales no lo aplican como fundido audible. Para una salida real, escribe `control expression=… ramp=…` en posiciones concretas. No dependas de `fade` para resolver el final.
 - `meter=` es opcional; si falta, la sección hereda el compás global. Úsalo cuando la obra cambie de compás.
 - El total compilado no puede superar 4096 compases, 131072 negras ni 4 horas.
 - Puede haber como máximo 2048 secciones.
@@ -218,6 +266,7 @@ bar:beat C3,Eb3,G3 duration velocity=0.01..1 articulation=normal|legato|staccato
 - Un acorde: `2:1 C3,E3,G3 4 velocity=0.48`
 - Usa sostenidos o bemoles como `F#4` o `Bb3`.
 - `duration` admite `0.03125..256` tiempos de negra.
+- `bar:beat` usa compás local y unidades del **denominador**. En 6/8, `1:4` empieza a 1.5 negras desde el inicio; `duration=1` dura dos corcheas. Un compás de 6/8 dura 3 negras, no 6. Las subdivisiones como `1:6.5` son válidas; `1:7` no. En 4/4, posición y duración usan la misma unidad.
 - `timbre=` en una nota sustituye el timbre del track sólo para esa nota.
 - Un evento admite de 1 a 12 notas.
 
@@ -229,13 +278,15 @@ rest bar:beat duration
 
 Ejemplo: `rest 3:3 2`. El silencio es explícito y ayuda a separar frases. No escribas una nota con velocity cero.
 
+Su duración puede atravesar compases: `rest 1:1 6` cubre dos compases de 6/8. El inicio debe pertenecer a la sección; no uses silencios que invadan accidentalmente notas o la siguiente sección. `rest` describe una pausa musical, no borra una nota que hayas escrito encima.
+
 ### Control expresivo o físico
 
 ```text
 control bar:beat expression=0..1 brightness=0..1 vibrato=0..1 pedal=down|up bend=-2..2 pressure=0..1 embouchure=0..1 bow=0..1 pluck=0..1 damper=0..1 coupling=0..1 ramp=0..64
 ```
 
-Una línea necesita al menos un valor. Sólo escribe los valores que cambian. El nuevo valor persiste hasta que otro control del mismo eje lo cambie. `ramp=` expresa la transición en tiempos.
+Una línea necesita al menos un valor. Sólo escribe los valores que cambian. El nuevo valor persiste hasta que otro control del mismo eje lo cambie. `ramp=` expresa la transición en **negras**, igual que `duration`, incluso si el denominador del compás es 8. `ramp=0` aplica el cambio en esa posición; un control posterior al ataque permite crecer dentro de una nota sostenida.
 
 El compositor también puede importar `.musicxml`, `.xml` y `.mxl`; el puente los convierte a este mismo lenguaje y muestra cualquier aproximación. Si una IA recibe el archivo original para componer o reparar, su salida sigue siendo un único bloque `tloque-score`, no XML.
 
@@ -290,7 +341,7 @@ Con `module orchestra-synth`:
 - no hacen falta bancos descargados;
 - las notas largas responden a cambios continuos de `expression` y `brightness` dentro de la nota;
 - en violín, viola, chelo y contrabajo, una frase monofónica enlazada conserva una sola cuerda física entre sus notas;
-- `expression`, `brightness`, `vibrato` y `pitchBend` actúan continuamente sobre la excitación, el arco y el cuerpo durante la nota;
+- `expression`, `brightness`, `vibrato` y `bend` actúan continuamente sobre la excitación, el arco y el cuerpo durante la nota;
 - un acorde, un silencio o una interrupción rompe ese enlace;
 - esa continuidad es modelado físico, no true legato grabado; no la describas como una grabación real;
 - `strings.violin` representa un solista sintético y `strings.violin-section` una pequeña sección sintética;
@@ -302,7 +353,7 @@ Para reducir sobrecarga, evita acordes enormes con colas largas en muchos tracks
 
 ## Cómo aprovechar el Intérprete Orquestal V1 y el ejecutante V6
 
-Con `module native-auto` y los bancos instalados:
+El análisis de frase, armonía y gesto funciona con `orchestra-synth` y `native-auto`. No necesita un comando nuevo. Las capacidades **grabadas** de la lista siguiente requieren `native-auto` y los bancos correspondientes:
 
 - cada nota recibe análisis y gesto deterministas: fase de frase, tensión interválica, llegada, medio interpretativo, continuidad, curva dinámica, vibrato, transición, dirección de arco y respiración;
 - `expression` en el instante de cada nota participa en la mezcla continua de capas `p..f`, pero el renderer conserva aparte la amplitud escrita para no contar la dinámica dos veces;
@@ -484,6 +535,107 @@ hit 4:3 triangle-open-large 1 velocity=0.38
 end
 ```
 
+## Ejemplo: conversación monofónica en 6/8
+
+Dos compases contienen 6 negras en total. El relevo usa dos roles fijos de melodía y respiraciones explícitas; `1:4` es la segunda mitad del compás, no la cuarta negra.
+
+```tloque-score
+TLOQUE_SCORE 2
+title "Dos respiraciones"
+tempo 60
+meter 6/8
+loop false
+seed 20260909
+humanize 0.06
+quality master
+module orchestra-synth
+track flute synth=warm instrument=woodwinds.flute program=73 role=melody gain=0.22 pan=0.18 attack=0.04 release=0.35 expression=0.56 brightness=0.52 vibrato=0.06
+track cello synth=bass instrument=strings.cello program=42 role=melody gain=0.24 pan=-0.12 attack=0.06 release=0.5 expression=0.56 brightness=0.40 vibrato=0.08
+section dialogue form=exposition bars=2 repeat=1 fade=0 tempo=60 rubato=0.03
+use flute
+control 1:1 expression=0.48 pressure=0.48 embouchure=0.48 ramp=0
+1:1 E5 0.5 velocity=0.46 articulation=legato
+1:2 G5 1 velocity=0.50 articulation=legato
+1:4 A5 1 velocity=0.52 articulation=tenuto
+rest 1:6 0.5
+rest 2:1 3
+use cello
+rest 1:1 3
+control 2:1 expression=0.54 pressure=0.52 bow=0.40 ramp=0
+2:1 E3 0.5 velocity=0.46 articulation=legato
+2:2 G3 1 velocity=0.50 articulation=legato
+control 2:4 expression=0.40 ramp=1
+2:4 C4 1 velocity=0.44 articulation=tenuto
+rest 2:6 0.5
+end
+```
+
+## Ejemplo: miniatura de lectura con desarrollo y cierre
+
+Ocho compases, aproximadamente 30 s antes de colas. El motivo E–G–C se transforma, vuelve y cierra; el acompañamiento permanece abierto. Es una decisión estética de baja densidad, no una intervención cognitiva validada. Para una obra más larga, desarrolla cada parte en vez de repetir este ejemplo sin cambios.
+
+```tloque-score
+TLOQUE_SCORE 2
+title "Margen de luz"
+tempo 64
+meter 4/4
+loop false
+seed 20260909
+humanize 0.05
+quality master
+module orchestra-synth
+track piano synth=warm instrument=piano.grand program=0 role=harmony gain=0.24 pan=-0.12 attack=0.01 release=1 expression=0.44 brightness=0.38 vibrato=0
+track solo synth=pad instrument=strings.violin program=40 role=melody gain=0.23 pan=0.14 attack=0.08 release=0.7 expression=0.50 brightness=0.44 vibrato=0.08
+section seed-theme form=exposition bars=2 repeat=1 fade=0 tempo=64 rubato=0.03
+use piano
+1:1 C3,G3,E4 4 velocity=0.38
+2:1 F3,A3,C4 4 velocity=0.36
+use solo
+1:1 E4 1 velocity=0.44 articulation=legato
+1:2 G4 1 velocity=0.46 articulation=legato
+1:3 C5 2 velocity=0.48 articulation=tenuto
+2:1 A4 2 velocity=0.43 articulation=tenuto
+rest 2:3 2
+end
+section reflection form=development bars=2 repeat=1 fade=0 tempo=64 rubato=0.03
+use piano
+1:1 A2,E3,C4 4 velocity=0.38
+2:1 G2,D3,B3 4 velocity=0.40
+use solo
+control 1:1 expression=0.52 ramp=0
+1:1 C5 1 velocity=0.47 articulation=legato
+1:2 B4 1 velocity=0.46 articulation=legato
+1:3 A4 2 velocity=0.44 articulation=tenuto
+2:1 F4 1 velocity=0.44 articulation=legato
+2:2 D5 2 velocity=0.50 articulation=tenuto
+rest 2:4 1
+end
+section return-theme form=recapitulation bars=2 repeat=1 fade=0 tempo=64 rubato=0.04
+use piano
+1:1 C3,G3,E4 4 velocity=0.40
+2:1 G2,D3,B3 4 velocity=0.37
+use solo
+control 1:1 expression=0.56 ramp=0
+1:1 E4 1 velocity=0.46 articulation=legato
+1:2 G4 1 velocity=0.48 articulation=legato
+1:3 C5 2 velocity=0.52 articulation=tenuto
+2:1 B4 2 velocity=0.44 articulation=tenuto
+rest 2:3 2
+end
+section last-light form=coda bars=2 repeat=1 fade=1 tempo=64 rubato=0.04
+use piano
+1:1 C3,G3,E4 4 velocity=0.34
+2:1 C3,G3,C4 3 velocity=0.30
+rest 2:4 1
+use solo
+control 1:1 expression=0.46 ramp=0
+1:1 E4 3 velocity=0.40 articulation=tenuto
+control 1:2 expression=0.32 ramp=2
+rest 1:4 1
+rest 2:1 4
+end
+```
+
 ## Si el compilador devuelve un error
 
 1. Lee el número de línea y el mensaje.
@@ -493,3 +645,5 @@ end
 5. Devuelve la partitura completa en un solo bloque `tloque-score` y nada más.
 
 No ocultes un error sustituyendo un instrumento por otro que el usuario no pidió. No elimines música válida para hacer desaparecer un diagnóstico. Conserva la intención musical y cambia la mínima cantidad necesaria.
+
+Separa tres revisiones: **sintáctica** (el compilador acepta), **musical** (motivo, registro, conducción de voces, respiración, forma) y **sonora** (escucha/render y bancos reales). Compilar no demuestra que suene bien. Si no ejecutaste el compilador o no escuchaste el render, no afirmes que lo hiciste. Si recibes un encargo de reparación con líneas `L…`, no confundas sus números con compases musicales.
