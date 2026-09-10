@@ -4,6 +4,10 @@ Tloque es una plataforma de lectura y publicación digital con biblioteca,
 lector, TTS, lectura guardada sin conexión, comunidad, Fonoteca, cartas coleccionables,
 marcos y herramientas creativas.
 
+La experiencia visual incluye un motor 3D compartido y opcional para orbes,
+portadas, tarjetas portal y marcos. Sus controles, límites y verificación están
+en [Tloque Visual Engine V1](docs/VISUAL_ENGINE_V1.md).
+
 ## Requisitos
 
 - Node.js 20.19 o posterior.
@@ -47,6 +51,10 @@ npm run build   # cliente y servidor para producción
 npm run check:bundle # presupuesto del shell inicial ya construido
 npm start       # ejecuta dist/index.cjs
 ```
+
+En Replit, Run ejecuta `npm run replit` para servir la versión compilada. Tras
+un pull que cambie dependencias, ejecutar `npm ci` antes de volver a pulsar Run.
+`npm run dev` sigue disponible para desarrollo con recarga de módulos.
 
 ## Configuración de producción
 

@@ -1,4 +1,7 @@
+import type { VisualEntitlements } from "@shared/visual-experience"
+
 export interface AuthUser {
+  visualEntitlements?: VisualEntitlements
   id:          number
   email:       string
   name:        string

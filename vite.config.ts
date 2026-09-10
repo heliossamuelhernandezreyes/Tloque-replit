@@ -28,12 +28,15 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname, "client"),
   build: {
+    manifest: true,
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return
+          // Keep the renderer out of the initial React shell. It is dynamically loaded.
+          if (/node_modules\/(?:three|@react-three|react-reconciler|suspend-react|react-use-measure|its-fine)\//.test(id)) return "visual-3d"
           if (id.includes("framer-motion") || id.includes("motion-dom") || id.includes("motion-utils")) return "motion"
           if (id.includes("@tanstack")) return "query"
           if (id.includes("@radix-ui")) return "ui"

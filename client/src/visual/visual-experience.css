@@ -1,0 +1,35 @@
+.tq-visual-surface { position: fixed; inset: 0; pointer-events: none !important; overflow: hidden; }
+.tq-visual-surface canvas { pointer-events: none !important; display: block; }
+.tq-visual-slot { position: relative; isolation: isolate; }
+.tq-visual-fallback { width: 100%; height: 100%; transition: opacity 180ms ease; }
+.tq-visual-slot[data-visual-ready="true"] > .tq-visual-fallback { opacity: 0; visibility: hidden; }
+.tq-visual-slot[data-visual-ready="true"] > .tq-visual-fallback * { animation-play-state: paused !important; }
+.tq-orb-visual { width: 100%; height: 100%; pointer-events: none; }
+.tq-orb-visual > .tq-visual-fallback { display: flex; align-items: center; justify-content: center; }
+.tq-orb-progress { display: none; position: absolute; inset: 0; pointer-events: none; }
+.tq-orb-visual[data-visual-ready="true"] + .tq-orb-progress, .tq-orb-rose + .tq-orb-progress { display: block; }
+.tq-portal-visual { width: min(100%, 360px); aspect-ratio: 5 / 7; margin-inline: auto; touch-action: pan-y; }
+.tq-frame-profile { aspect-ratio: 1; }
+.tq-reveal-visual { width: min(70vw, 320px); height: 320px; margin-inline: auto; }
+.tq-reveal-visual > .tq-visual-fallback { display: grid; place-items: center; }
+.tq-viewer-backdrop { position: fixed; inset: 0; z-index: 900; background: rgb(3 4 9 / 96%); }
+.tq-viewer-content { position: fixed; inset: 0; z-index: 910; overflow-y: auto; overscroll-behavior: contain; padding: max(64px, env(safe-area-inset-top)) 24px max(40px, env(safe-area-inset-bottom)); display: grid; align-items: center; outline: none; }
+.tq-viewer-content > .tq-viewer-layout { width: min(100%, 760px); margin: auto; display: grid; gap: 28px; }
+.tq-viewer-close { position: fixed; z-index: 920; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #ffffff26; border-radius: 50%; background: #161821; color: #f5f3ed; }
+.tq-viewer-close:focus-visible, .tq-carousel-control:focus-visible { outline: 2px solid #e8cc88; outline-offset: 4px; }
+.tq-portal-caption { color: #aaaab6; font-size: 13px; line-height: 1.6; text-align: center; margin-top: 12px; }
+.tq-carousel-control { width: 40px; height: 40px; border: 1px solid #ffffff20; border-radius: 50%; display: grid; place-items: center; background: #ffffff06; color: #e1dfeb; transition: background 150ms; }
+.tq-carousel-control:hover { background: #ffffff14; }
+.tq-carousel-control:disabled { opacity: .25; }
+.fan-presentation { position: relative; isolation: isolate; transform-origin: 50% 60%; }
+.fan-glow { background: radial-gradient(ellipse at 50% 48%, var(--book-light) 0%, transparent 66%); }
+.tq-book-stage { position: relative; width: min(100%, 420px); margin-inline: auto; isolation: isolate; }
+.tq-book-stage::before { content: ""; position: absolute; inset: 2% -18% -3%; z-index: -1; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, var(--book-light), transparent 68%); opacity: .65; }
+.tq-book-stage::after { content: ""; position: absolute; inset: auto 8% 2%; height: 14%; z-index: -1; pointer-events: none; background: radial-gradient(ellipse, var(--book-light), transparent 70%); opacity: .6; }
+.tq-book-visual { width: 100%; height: clamp(240px, 36svh, 420px); }
+.tq-book-fallback { height: 90%; width: auto; max-width: 76%; aspect-ratio: 2 / 3; margin: 0 auto; position: relative; top: 4%; border-radius: 3px 10px 10px 3px; overflow: hidden; border-inline-start: 4px solid #ffffff20; box-shadow: 12px 16px 30px #0008, 3px 0 0 #cbbfaa, 7px 0 0 #51443c; transform: perspective(1000px) rotateY(-9deg); background: #171722; }
+.tq-book-fallback img { height: 100%; width: 100%; object-fit: cover; }
+@media (min-width: 700px) { .tq-viewer-content > .tq-viewer-layout { grid-template-columns: minmax(0, 1fr) minmax(0, .85fr); align-items: center; } }
+@media (prefers-reduced-motion: reduce) { .tq-visual-fallback, .tq-carousel-control { transition: none; } .tq-book-fallback { transform: none; } }
+.tloque-reduce-motion .tq-book-fallback { transform: none; }
+.tloque-reduce-motion .tq-visual-fallback { transition: none; }

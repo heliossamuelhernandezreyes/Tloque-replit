@@ -1,117 +1,50 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from "react"
-import { motion, AnimatePresence } from "framer-motion"
-import { X } from "lucide-react"
-import CollectibleCard, { type CardData } from "@/components/CollectibleCard"
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
+import { useLocation } from "wouter"
+import type { CardData } from "@/components/CollectibleCard"
+import CollectibleCard from "@/components/CollectibleCard"
 import { useSettings } from "@/context/SettingsContext"
+import VisualDialog from "@/visual/VisualDialog"
+import ImmersiveCard from "@/visual/ImmersiveCard"
 
-// ─────────────────────────────────────────────────────────────
-// EL VISOR DE TARJETAS — uno solo, para toda la app.
-//
-// Cualquier tarjeta, en cualquier pantalla, se toca y se abre aquí.
-//
-// Y va con los cuatro arreglos contra el parpadeo de Android:
-//   1. El blur del fondo es HERMANO, no ancestro del 3D.
-//      (backdrop-filter sobre contenido preserve-3d rotando obliga al
-//       navegador a recomponer el desenfoque en CADA frame.)
-//   2. La animación de entrada SUELTA su transform al terminar: mientras
-//      un ancestro tenga transform, el 3D del hijo vive en su capa.
-//   3. La carta tiene capa propia y estable (translateZ + backface-visibility).
-//   4. `contain: paint` encierra los repaints: lo de adentro no repinta lo de afuera.
-// ─────────────────────────────────────────────────────────────
-
-interface ViewerState {
-  card: CardData
-  accentColor: string
-  accentGlow: string
-}
-
-interface Ctx {
-  open: (card: CardData, accentColor?: string, accentGlow?: string) => void
-  close: () => void
-}
-
+interface ViewerState { card: CardData; accentColor: string; accentGlow: string }
+interface Ctx { open: (card: CardData, accentColor?: string, accentGlow?: string) => void; close: () => void }
 const CardViewerContext = createContext<Ctx>({ open: () => {}, close: () => {} })
-
 export const useCardViewer = () => useContext(CardViewerContext)
 
+/** One accessible viewer; collections remain lightweight DOM previews. */
 export function CardViewerProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ViewerState | null>(null)
-  const [settled, setSettled] = useState(false)   // ¿la animación de entrada terminó?
+  const [immersive, setImmersive] = useState(true)
+  const [portalReady, setPortalReady] = useState(false)
+  const [location] = useLocation()
   const { t } = useSettings()
-
   const open = useCallback((card: CardData, accentColor = "#c9a84c", accentGlow = "#c9a84c") => {
-    setSettled(false)
+    setImmersive(true)
+    setPortalReady(false)
     setState({ card, accentColor, accentGlow })
   }, [])
-
-  const close = useCallback(() => {
-    setState(null)
-    setSettled(false)
-  }, [])
-
-  return (
-    <CardViewerContext.Provider value={{ open, close }}>
-      {children}
-
-      <AnimatePresence>
-        {state && (
-          <div className="fixed inset-0 z-[900]">
-            {/* (1) EL FONDO — hermano, nunca ancestro de la carta.
-                   Su blur ya no obliga a recomponer el 3D en cada frame. */}
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              onClick={close}
-              className="absolute inset-0"
-              style={{ background: "rgba(0,0,0,0.9)", backdropFilter: "blur(10px)" }}
-            />
-
-            <button
-              onClick={close}
-              className="absolute top-6 right-6 z-10 p-2 rounded-full"
-              style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.7)" }}
-              aria-label="Cerrar">
-              <X className="w-5 h-5" />
-            </button>
-
-            {/* La carta, en su propia rama. Nada con blur por encima. */}
-            <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
-              <motion.div
-                initial={{ scale: 0.88, opacity: 0, y: 16 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.88, opacity: 0 }}
-                transition={{ type: "spring", stiffness: 280, damping: 26 }}
-                onAnimationComplete={() => setSettled(true)}
-                onClick={e => e.stopPropagation()}
-                className="w-full max-w-[300px] pointer-events-auto"
-                // (2) Al asentarse, SUELTA el transform: el 3D de adentro
-                //     deja de vivir dentro de la capa del ancestro.
-                style={settled
-                  ? { transform: "none", willChange: "auto" }
-                  : { willChange: "transform, opacity" }}
-              >
-                {/* (3) y (4): capa propia, estable, con los repaints contenidos */}
-                <div style={{
-                  transform: "translateZ(0)",
-                  backfaceVisibility: "hidden",
-                  contain: "paint",
-                }}>
-                  <CollectibleCard
-                    card={state.card}
-                    accentColor={state.accentColor}
-                    accentGlow={state.accentGlow}
-                    zoomable={false}          /* ya estamos dentro del visor */
-                  />
-                </div>
-                <p className="text-center text-[10px] font-sans mt-4"
-                  style={{ color: "rgba(255,255,255,0.4)" }}>
-                  {t("cardZoomHint")}
-                </p>
-              </motion.div>
-            </div>
+  const close = useCallback(() => setState(null), [])
+  useEffect(close, [location, close])
+  return <CardViewerContext.Provider value={{ open, close }}>
+    {children}
+    <VisualDialog open={!!state} onClose={close} title={state?.card.name || t("portalView")} description={t("portalHint")}>
+      {state && <div className="tq-viewer-layout">
+        <div>
+          {immersive ? <ImmersiveCard card={state.card} accentColor={state.accentColor} onReadyChange={setPortalReady} /> : <CollectibleCard card={state.card} accentColor={state.accentColor} accentGlow={state.accentGlow} zoomable={false} />}
+          {immersive && portalReady && <p className="tq-portal-caption">{t("portalHint")}</p>}
+        </div>
+        <div className="space-y-4 pb-5">
+          <div className="flex gap-2" aria-label={t("portalView")}>
+            <button aria-pressed={immersive} onClick={() => setImmersive(true)} className="min-h-11 rounded-full border border-white/20 px-4 text-sm text-zinc-300 aria-pressed:bg-white/10">{t("visualPortal")}</button>
+            <button aria-pressed={!immersive} onClick={() => setImmersive(false)} className="min-h-11 rounded-full border border-white/20 px-4 text-sm text-zinc-300 aria-pressed:bg-white/10">{t("visualOriginal")}</button>
           </div>
-        )}
-      </AnimatePresence>
-    </CardViewerContext.Provider>
-  )
+          <p className="text-xs tracking-[.2em] uppercase text-zinc-400">TQ-{String(state.card.id).padStart(6, "0")}</p>
+          <h2 className="text-3xl font-display text-zinc-100 leading-tight">{state.card.name}</h2>
+          {state.card.subtitle && <p className="text-base text-zinc-300">{state.card.subtitle}</p>}
+          {state.card.description && <p className="text-[15px] leading-7 text-zinc-400 whitespace-pre-line">{state.card.description}</p>}
+          {state.card.rarity && <p className="text-xs uppercase tracking-widest" style={{ color: state.accentColor }}>{state.card.rarity}</p>}
+        </div>
+      </div>}
+    </VisualDialog>
+  </CardViewerContext.Provider>
 }

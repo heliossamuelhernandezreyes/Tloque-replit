@@ -65,3 +65,6 @@ jobs:
 
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Replit compiled server startup
+        run: node scripts/check-replit-start.mjs

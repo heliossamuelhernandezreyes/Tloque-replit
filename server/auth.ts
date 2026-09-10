@@ -8,6 +8,7 @@ import { users, admins, books } from "@shared/schema"
 import { eq } from "drizzle-orm"
 import type { Express, RequestHandler } from "express"
 import { configuredPublicOrigin } from "./security"
+import { visualEntitlements } from "../shared/visual-experience"
 
 const PgStore = connectPgSimple(expressSession)
 
@@ -250,6 +251,7 @@ export function setupAuthRoutes(app: Express) {
         status: user.subscriptionStatus || "inactive",
         expiresAt: user.subscriptionExpiresAt || null,
       },
+      visualEntitlements: visualEntitlements(user, adminStatus),
     })
   })
 }

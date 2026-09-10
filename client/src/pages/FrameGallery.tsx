@@ -7,6 +7,8 @@ import WalletPanel from "@/components/WalletPanel"
 import { useFrames, type GalleryFrame } from "@/hooks/useFrames"
 import { useAuth } from "@/hooks/useAuth"
 import { useSettings } from "@/context/SettingsContext"
+import VisualSlot from "@/visual/VisualEngine"
+import VisualDialog from "@/visual/VisualDialog"
 
 const ACCENT = "#c9a84c"
 
@@ -31,6 +33,7 @@ export default function FrameGallery() {
   const queryClient = useQueryClient()
   const { frames, isLoading } = useFrames()
   const [showWallet, setShowWallet] = useState(false)
+  const [previewFrame, setPreviewFrame] = useState<GalleryFrame | null>(null)
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string; missing?: number } | null>(null)
 
   const { data: wallet } = useQuery<{ tinta: number; papel: number }>({
@@ -152,6 +155,7 @@ export default function FrameGallery() {
                 <div className="mt-2.5 px-0.5">
                   <p className="text-[12.5px] font-display font-semibold text-zinc-200 truncate">{f.name}</p>
                   <p className="text-[9.5px] text-zinc-600 font-sans mt-0.5">{targetLabel(f.target)}</p>
+                  <button onClick={() => setPreviewFrame(f)} className="mt-2 min-h-10 w-full rounded-lg border border-white/15 text-xs text-zinc-300 hover:bg-white/5">{t("visualFramePreview")}</button>
 
                   {f.owned ? (
                     <div className="mt-1.5 flex items-center gap-1 text-[10.5px] font-sans font-semibold"
@@ -182,6 +186,21 @@ export default function FrameGallery() {
         </div>
       )}
 
+      <VisualDialog open={!!previewFrame} onClose={() => setPreviewFrame(null)} title={previewFrame?.name || t("visualFramePreview")}>
+        {previewFrame && <div className="tq-viewer-layout">
+          <VisualSlot priority={100} interactive label={previewFrame.name}
+            className={`tq-portal-visual ${previewFrame.target === "profile" ? "tq-frame-profile" : ""}`}
+            options={{ kind: "frame", color: ACCENT, frame: previewFrame.pkg, shape: previewFrame.target === "profile" ? "profile" : "card" }}>
+            <FrameRenderer preset={previewFrame.pkg} shape={previewFrame.target === "profile" ? "profile" : "card"}><SampleArt /></FrameRenderer>
+          </VisualSlot>
+          <div className="space-y-4 text-zinc-300">
+            <h2 className="text-3xl font-display">{previewFrame.name}</h2>
+            <p className="text-sm text-zinc-400">{targetLabel(previewFrame.target)}</p>
+            <p className="text-sm leading-6">{t("portalHint")}</p>
+            <p className="text-xs text-zinc-400">{t("visualFrameMaterialNote")}</p>
+          </div>
+        </div>}
+      </VisualDialog>
       <WalletPanel open={showWallet} onClose={() => setShowWallet(false)}
         accentColor={ACCENT} accentGlow={ACCENT} />
     </div>

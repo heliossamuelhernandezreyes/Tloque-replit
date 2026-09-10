@@ -1,5 +1,5 @@
 import { useRoute, useLocation } from "wouter"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { Layout } from "@/components/layout"
 import { useBook } from "@/hooks/use-books"
 import { Loader2, ArrowLeft, Bookmark, BookmarkCheck, BookOpen, Clock, Pencil, Download, Maximize2, Minimize2, EyeOff, Eye, Shield, ChevronRight } from "lucide-react"
@@ -21,6 +21,8 @@ import HeartCount from "@/components/HeartCount"
 import InfoDot from "@/components/InfoDot"
 import { generateBookPdf, generateCoverKit } from "@/lib/bookPdf"
 import { coverFor, backCoverFor, showingPremium } from "@/lib/covers"
+import BookPresentation from "@/visual/BookPresentation"
+import VisualDialog from "@/visual/VisualDialog"
 
 function readingTime(book: any): string {
   let words = 0
@@ -39,6 +41,7 @@ function readingTime(book: any): string {
 }
 
 export default function BookPage() {
+  const systemReduced = useReducedMotion()
   const [, params]      = useRoute("/book/:id")
   const [, setLocation] = useLocation()
   const { toast }       = useToast()
@@ -60,6 +63,7 @@ export default function BookPage() {
   const [coverOnly, setCoverOnly]   = useState(false)
   const [bookStatus, setBookStatus] = useState<string>("published")
   const [savingVis,  setSavingVis]  = useState(false)
+  useEffect(() => { setImgFailed(false); setCoverOnly(false) }, [id])
 
   useEffect(() => {
     if (!id) return
@@ -250,13 +254,13 @@ export default function BookPage() {
     <Layout>
       <div className="relative min-h-screen pb-36 overflow-x-hidden">
 
-        {/* ── PORTADA A PANTALLA COMPLETA — fondo nítido ── */}
-        <div className="fixed inset-0 z-0">
+        {/* Quiet ambient backdrop; the cover itself is presented as an object. */}
+        <div className="fixed inset-0 z-0 pointer-events-none" aria-hidden="true">
           {hasImage ? (
             <img
               src={shownCover}
-              alt={book.title}
-              className="w-full h-full object-cover"
+              alt=""
+              className="w-full h-full object-cover opacity-20"
               onError={() => setImgFailed(true)}
             />
           ) : (
@@ -270,7 +274,7 @@ export default function BookPage() {
               background: `radial-gradient(ellipse 90% 60% at 50% 78%, ${gc.glow}55 0%, transparent 65%)`,
               mixBlendMode: "screen",
             }}
-            animate={{ opacity: [0.35, 0.7, 0.35] }}
+            animate={{ opacity: settings.reduceMotion || systemReduced ? 0.35 : [0.35, 0.55, 0.35] }}
             transition={{ duration: 7.5, repeat: Infinity, ease: "easeInOut" }}
           />
           {isPremiumView && (
@@ -282,19 +286,18 @@ export default function BookPage() {
           {/* Degradado para legibilidad — se atenúa al ver solo la portada */}
           <motion.div
             className="absolute inset-0"
-            animate={{ opacity: coverOnly ? 0.12 : 1 }}
+            animate={{ opacity: 1 }}
             transition={{ duration: 0.5 }}
             style={{
               background:
-                "linear-gradient(to top, rgba(0,0,0,0.98) 0%, rgba(0,0,0,0.92) 20%, rgba(0,0,0,0.5) 48%, rgba(0,0,0,0.22) 70%, rgba(0,0,0,0.62) 100%)",
+                "linear-gradient(to top, #06070b 12%, rgba(6,7,11,.85) 45%, rgba(6,7,11,.55) 100%)",
             }}
           />
         </div>
 
-        {/* Zona tocable para salir del modo "solo portada" */}
-        {coverOnly && (
-          <div className="fixed inset-0 z-20" onClick={() => setCoverOnly(false)} />
-        )}
+        <VisualDialog open={coverOnly} onClose={() => setCoverOnly(false)} title={book.title}>
+          {hasImage && <img src={shownCover} alt={book.title} className="mx-auto max-h-[80svh] max-w-full object-contain rounded-lg" />}
+        </VisualDialog>
 
         {/* ── BOTONES FLOTANTES ── */}
         <motion.button
@@ -302,6 +305,7 @@ export default function BookPage() {
           animate={{ opacity: 1, x: 0   }}
           transition={{ delay: 0.15 }}
           onClick={() => setLocation("/")}
+          aria-label={t("lobby")}
           className="fixed top-4 left-4 z-30 p-2.5 rounded-full backdrop-blur-xl"
           style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.12)" }}
         >
@@ -314,6 +318,9 @@ export default function BookPage() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2 }}
           onClick={() => setCoverOnly(v => !v)}
+          aria-label={t("preview")}
+          aria-expanded={coverOnly}
+          disabled={!hasImage}
           className="fixed top-4 right-16 z-30 p-2.5 rounded-full backdrop-blur-xl transition-all duration-300"
           style={coverOnly ? {
             background: `${gc.glow}30`,
@@ -335,6 +342,8 @@ export default function BookPage() {
           animate={{ opacity: 1, x: 0  }}
           transition={{ delay: 0.15 }}
           onClick={toggleSave}
+          aria-label={isSaved ? t("savedBook") : t("saveBook")}
+          aria-pressed={isSaved}
           className="fixed top-4 right-4 z-30 p-2.5 rounded-full backdrop-blur-xl transition-all duration-400 overflow-visible"
           style={isSaved ? {
             background: `${gc.glow}30`,
@@ -366,17 +375,17 @@ export default function BookPage() {
           </AnimatePresence>
         </motion.button>
 
-        {/* Espaciador — deja ver la portada antes de que empiece el contenido */}
-        <div style={{ height: "46vh" }} />
-
+        <div className="relative max-w-6xl mx-auto grid lg:grid-cols-[.9fr_1fr] gap-3 lg:gap-12 lg:pt-10 px-1 sm:px-6">
+          <div className="relative z-10 lg:sticky lg:top-24 lg:self-start px-5">
+            {!coverOnly && <BookPresentation key={id} title={book.title} cover={hasImage ? shownCover : undefined} color={gc.color} />}
+          </div>
 
         {/* ── CONTENIDO ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: coverOnly ? 0 : 1, y: 0 }}
-          transition={{ delay: coverOnly ? 0 : 0.25, duration: coverOnly ? 0.35 : 0.5 }}
-          style={{ pointerEvents: coverOnly ? "none" : "auto" }}
-          className="px-5 sm:px-8 max-w-lg mx-auto mt-6 relative z-10 space-y-5"
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: settings.reduceMotion ? 0 : 0.35 }}
+          className="px-5 sm:px-6 max-w-xl w-full mx-auto relative z-10 space-y-5"
         >
           {/* badge — clásico o género */}
           <div className="flex items-center gap-2 flex-wrap">
@@ -410,7 +419,7 @@ export default function BookPage() {
 
           {/* título y autor */}
           <div className="space-y-1.5">
-            <h1 className="text-2xl sm:text-3xl font-display font-bold text-white leading-tight tracking-wide"
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold text-white leading-[1.1] tracking-tight"
               style={{ textShadow: "0 2px 12px rgba(0,0,0,0.95), 0 1px 3px rgba(0,0,0,1)" }}>
               {book.title}
             </h1>
@@ -433,7 +442,7 @@ export default function BookPage() {
                   style={{ color: "rgba(255,255,255,0.92)", textShadow: "0 1px 6px rgba(0,0,0,0.9)" }}>
                   {book.author}
                 </p>
-                <p className="text-[10px] font-sans flex items-center gap-0.5" style={{ color: gc.color + "cc" }}>
+                <p className="text-xs font-sans flex items-center gap-0.5" style={{ color: gc.color }}>
                   {t("viewProfile")} <ChevronRight className="w-2.5 h-2.5" />
                 </p>
               </div>
@@ -447,29 +456,19 @@ export default function BookPage() {
                 <HeartCount bookId={numericId} accentColor={gc.color} />
               )}
               {chapterCount > 0 && (
-                <div className="flex items-center gap-1.5 text-zinc-600 text-xs font-sans">
+                <div className="flex items-center gap-1.5 text-zinc-400 text-sm font-sans">
                   <BookOpen className="w-3 h-3" />
                   <span>{chapterCount} {chapterCount === 1 ? t("chapter") : t("chapters")}</span>
                 </div>
               )}
               {timeRead && (
-                <div className="flex items-center gap-1.5 text-zinc-600 text-xs font-sans">
+                <div className="flex items-center gap-1.5 text-zinc-400 text-sm font-sans">
                   <Clock className="w-3 h-3" />
                   <span>{timeRead} {t("readingTime")}</span>
                 </div>
               )}
             </div>
           )}
-
-        {/* sinopsis */}
-          <p className="text-zinc-200 text-sm sm:text-[15px] leading-[1.85] font-sans"
-            style={{ textShadow: "0 1px 8px rgba(0,0,0,0.95), 0 1px 2px rgba(0,0,0,1)" }}>
-            {book.synopsis || t("synopsisUnavailable")}
-          </p>
-
-          {/* separador */}
-          <div className="h-px w-16 rounded-full"
-            style={{ background: `linear-gradient(to right, ${gc.color}50, transparent)` }} />
 
           {/* botones */}
           <div className="flex flex-col gap-3 pt-1 pb-6">
@@ -490,13 +489,6 @@ export default function BookPage() {
                 boxShadow:  `0 6px 28px ${gc.glow}55, 0 2px 8px rgba(0,0,0,0.3)`,
               }}
             >
-              {/* shimmer */}
-              <motion.div
-                animate={{ x: ["-100%", "200%"] }}
-                transition={{ duration: 2.5, repeat: Infinity, repeatDelay: 3.5 }}
-                className="absolute inset-y-0 w-1/3 pointer-events-none"
-                style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent)" }}
-              />
               {hasSavedProgress ? t("resumeBook") : t("readBook")}
               {hasSavedProgress && readProgress > 0 && (
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[11px] font-sans opacity-70">
@@ -504,6 +496,13 @@ export default function BookPage() {
                 </span>
               )}
             </motion.button>
+
+            <section aria-labelledby="tq-synopsis-title" className="pt-6 pb-5">
+              <h2 id="tq-synopsis-title" className="text-xs uppercase tracking-[.18em] font-sans text-zinc-400 mb-3">{t("synopsis")}</h2>
+              <p className="text-zinc-200 text-base leading-[1.85] font-sans whitespace-pre-line">
+                {book.synopsis || t("synopsisUnavailable")}
+              </p>
+            </section>
 
             {/* nota de dominio público para clásicos */}
             {isClassic && (
@@ -682,6 +681,7 @@ export default function BookPage() {
             </motion.button>
           </div>
         </motion.div>
+        </div>
       </div>
 
       {/* Modal: biblioteca gratuita llena */}

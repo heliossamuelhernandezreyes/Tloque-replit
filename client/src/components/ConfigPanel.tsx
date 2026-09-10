@@ -6,6 +6,7 @@ import { useSettings, LANGUAGE_LABELS, type ReadingMode, type FontSize, type App
 import { useEffect, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { clearLocalAccountData } from "@/lib/privacy"
+import VisualPreferences from "@/visual/VisualPreferences"
 
 interface Props {
   open:    boolean
@@ -579,6 +580,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
 
               {/* ── APARIENCIA ── */}
               <Section icon={Palette} title={t("sectionAppearance")}>
+                <VisualPreferences />
                 <Slider
                   value={settings.cosmicIntensity}
                   onChange={v => updateSetting("cosmicIntensity", v)}
