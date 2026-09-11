@@ -69,3 +69,14 @@ test("realtime no eagerly decodes every selected zone", async () => {
   assert.match(source, /player\.preload\(\[preload\.zone\]\)/)
   assert.doesNotMatch(source, /player\.preload\(plan\.zones\)/)
 })
+
+test("decoded samples are evicted only after last-use plus the lookahead offset", async () => {
+  const { readFile } = await import("node:fs/promises")
+  const engine = await readFile("client/src/audio/NativeSampleScoreEngine.ts", "utf8")
+  const player = await readFile("client/src/audio/NativeSamplePackEngine.ts", "utf8")
+  assert.match(engine, /preload\.releaseAtSeconds \+ NATIVE_REALTIME_LOOKAHEAD_SECONDS/)
+  assert.match(engine, /player\.evictSampleUrl\(preload\.zone\.sampleUrl\)/)
+  assert.doesNotMatch(engine, /timeSeconds: preload\.releaseAtSeconds,\s*run: \(\) => \{ player\.evictSampleUrl/)
+  assert.match(player, /evictSampleUrl\(sampleUrl: string\) \{ return this\.buffers\.delete\(sampleUrl\) \}/)
+  assert.match(player, /get retainedSampleCount\(\) \{ return this\.buffers\.size \}/)
+})
