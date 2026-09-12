@@ -101,7 +101,7 @@ try {
   await page.locator('[role="dialog"]').waitFor({ state: "hidden" })
   await page.goto("http://127.0.0.1:4182/")
   await page.locator('.tq-orb-visual[data-visual-ready="true"]').waitFor({ timeout: 30000 })
-  await page.getByRole("button", { name: /^Géneros?$/ }).click({ delay: 1800 })
+  await page.getByRole("button", { name: "Tu género", exact: true }).click({ delay: 1800 })
   await page.getByRole("button", { name: "Apariencia", exact: true }).click()
   await page.getByRole("button", { name: "Explorar el orbe", exact: true }).click()
   await page.locator('[role="dialog"] .tq-visual-slot[data-visual-ready="true"]').waitFor({ timeout: 30000 })

@@ -150,7 +150,7 @@ let uid = 0
 
 export default function FrameRenderer(props: FrameRendererProps) {
   const scene = readFrameScene(props.preset)
-  return scene ? <FramePoster scene={scene} shape={props.shape} className={props.className} asOverlay={props.asOverlay}>{props.children}</FramePoster> : <LegacyFrameRenderer {...props}/>
+  return scene ? <FramePoster scene={scene} shape={props.shape ?? (props.preset?.runtimePreset?.target === "profile" ? "profile" : "card")} className={props.className} asOverlay={props.asOverlay}>{props.children}</FramePoster> : <LegacyFrameRenderer {...props}/>
 }
 
 function LegacyFrameRenderer({ preset, shape, className, nameText, children, asOverlay }: FrameRendererProps) {
