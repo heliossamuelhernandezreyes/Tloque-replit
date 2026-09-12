@@ -8,6 +8,9 @@ import {
 import { visualColor, visualFrame } from "@shared/visual-experience"
 import { isSafeImageSource } from "@shared/media"
 import type { VisualOptions } from "./VisualEngine"
+import { evaluateFrameScene, frameGeometryKey, readFrameScene } from "@shared/frame-scene"
+import { frameOrnaments } from "./frame-ornaments"
+import { cinematicVertex, portalFragment, singularityFragment } from "./cinematic-shaders"
 
 export interface VisualScene {
   update: (time: number, dt: number, aspect: number, pointer: { x: number; y: number }, options: VisualOptions) => void
@@ -15,7 +18,10 @@ export interface VisualScene {
   ready: () => boolean
   dispose: () => void
 }
-export const sceneKey = (options: VisualOptions) => JSON.stringify([options.kind, options.theme, visualColor(options.color), options.images?.slice(0, 3), visualFrame(options.frame, options.color), options.shape])
+export const sceneKey = (options: VisualOptions) => {
+  const native = readFrameScene(options.frame)
+  return JSON.stringify([options.kind, options.theme, visualColor(options.color), options.images?.slice(0, 3), native ? frameGeometryKey(native) : visualFrame(options.frame, options.color), options.shape])
+}
 
 function roundedPath<T extends Shape | Path>(path: T, width: number, height: number, radius: number): T {
   const x = -width / 2, y = -height / 2, r = Math.min(radius, width / 2, height / 2)
@@ -27,40 +33,16 @@ function roundedPath<T extends Shape | Path>(path: T, width: number, height: num
   path.closePath(); return path
 }
 
-const orbitalVertex = `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`
-const orbitalFragment = `
-  varying vec2 vUv;
-  uniform float uTime; uniform float uEnergy; uniform vec3 uColor;
-  float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-  void main(){
-    vec2 p=(vUv-.5)*2.; float r=length(p); float angle=atan(p.y,p.x);
-    float hole=.285+uEnergy*.055;
-    float photon=exp(-pow((r-hole-.03)*56.,2.));
-    vec2 disk=vec2(p.x,p.y*2.65+.08*sin(p.x*5.));
-    float dr=length(disk); float da=atan(disk.y,disk.x);
-    float turbulence=.6+.4*sin(da*9.-uTime*1.3+sin(dr*29.+uTime)*1.5);
-    float spiral=exp(-pow((dr-.58)*10.,2.))*turbulence;
-    float farArc=exp(-pow((r-.43)*28.,2.))*(.55+.45*sin(angle*4.-uTime));
-    float halo=exp(-r*4.8)*.24;
-    float cut=smoothstep(hole-.015,hole+.025,r);
-    float light=(spiral*(p.y<0.?1.:cut)+photon+farArc*cut*.32+halo)*(.72+uEnergy*.5);
-    vec3 c=mix(uColor,vec3(1.,.94,.83),clamp(photon+spiral*.4,0.,1.));
-    float edge=1.-smoothstep(.82,1.,r);
-    float alpha=clamp(light*edge,0.,1.);
-    if(r<hole+.01){alpha=1.;c=vec3(.002,.002,.005);light=1.;}
-    gl_FragColor=vec4(c*light,alpha);
-    #include <tonemapping_fragment>
-    #include <colorspace_fragment>
-  }`
-
 /** One bounded scene per visible slot. No scripts, remote shaders or user geometry. */
 export function createVisualScene(options: VisualOptions, maxTextureEdge: number, environment?: Texture): VisualScene {
   const scene = new Scene()
+  const native = readFrameScene(options.frame)
   scene.environment = environment ?? null
+  scene.environmentIntensity = native ? .45 : 1
   const camera = new PerspectiveCamera(36, 1, 0.1, 40)
   camera.position.z = 5.2
   const group = new Group(); scene.add(group)
-  scene.add(new HemisphereLight(0xdbe7ff, 0x211324, 2.2), new AmbientLight(0xffffff, 0.5))
+  scene.add(new HemisphereLight(0xdbe7ff, 0x211324, native ? .5 : 2.2), new AmbientLight(0xffffff, native ? .08 : .5))
   const key = new DirectionalLight(0xfff0d6, 4); key.position.set(-3, 5, 6); scene.add(key)
   const rim = new DirectionalLight(0x7dc8ff, 3); rim.position.set(4, -1, 3); scene.add(rim)
   const ownedTextures = new Set<Texture>()
@@ -75,6 +57,11 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
   let particles: Points | undefined
   let openness = 0, pointerX = 0, pointerY = 0
   let portalWidth = 2.12, portalHeight = options.shape === "profile" ? 2.12 : 3
+  let ornaments: ReturnType<typeof frameOrnaments> | undefined
+  let bezelMaterial: MeshPhysicalMaterial | undefined
+  let portalMesh: Mesh | undefined
+  let nebula: ShaderMaterial | undefined
+  const arches: Mesh<TorusGeometry, MeshStandardMaterial>[] = []
   const color = new Color(visualColor(options.color))
 
   function loadTexture(url: string, targetAspect: number, attach: (texture: Texture) => void) {
@@ -121,7 +108,7 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
   }
 
   if (options.kind === "orb" && options.theme !== "fluorescent-rose") {
-    orbitMaterial = new ShaderMaterial({ vertexShader: orbitalVertex, fragmentShader: orbitalFragment, uniforms: {
+    orbitMaterial = new ShaderMaterial({ vertexShader: cinematicVertex, fragmentShader: singularityFragment, uniforms: {
       uTime: { value: 0 }, uEnergy: { value: .5 }, uColor: { value: color },
     }, transparent: true, depthWrite: false })
     group.add(new Mesh(new PlaneGeometry(3.05, 3.05), orbitMaterial))
@@ -164,31 +151,53 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
     })
     else failed = true // Keep the DOM title when this edition has no cover.
   } else {
-    const frame = visualFrame(options.frame, options.color)
+    const frame = native ? { ...visualFrame(options.frame, options.color), ...native.material, thickness: native.geometry.depth, radius: native.geometry.radius } : visualFrame(options.frame, options.color)
     const profile = options.shape === "profile"
     const rimWidth = .08 + frame.thickness
-    const outer = profile ? new Shape().absarc(0, 0, 1.18, 0, Math.PI * 2, false) as Shape : roundedPath(new Shape(), 2.38, 3.3, frame.radius + .12)
+    const width = native?.geometry.width ?? .13
+    const outer = profile ? new Shape().absarc(0, 0, 1.05 + width, 0, Math.PI * 2, false) as Shape : roundedPath(new Shape(), portalWidth + width * 2, portalHeight + width * 2, frame.radius + .12)
     const hole = profile ? new Path().absarc(0, 0, 1.05, 0, Math.PI * 2, true) : roundedPath(new Path(), portalWidth, portalHeight, .12)
     outer.holes.push(hole)
-    const bezel = new Mesh(new ExtrudeGeometry(outer, { depth: rimWidth, bevelEnabled: true, bevelThickness: .025, bevelSize: .028, bevelSegments: 3, steps: 1, curveSegments: 12 }),
-      new MeshPhysicalMaterial({ color: frame.color, metalness: frame.metalness, roughness: frame.roughness, clearcoat: .85, clearcoatRoughness: .2 }))
+    bezelMaterial = new MeshPhysicalMaterial({ color: frame.color, metalness: frame.metalness, roughness: frame.roughness, clearcoat: .85, clearcoatRoughness: .2, envMapIntensity: native ? .5 : 1 })
+    const bezel = new Mesh(new ExtrudeGeometry(outer, { depth: rimWidth, bevelEnabled: true, bevelThickness: .025, bevelSize: .028, bevelSegments: 3, steps: 1, curveSegments: 12 }), bezelMaterial)
     group.add(bezel)
+    if (native) {
+      ornaments = frameOrnaments(native, profile); group.add(ornaments.root)
+      const backing = new Mesh(new ExtrudeGeometry(outer, { depth: .07, bevelEnabled: true, bevelThickness: .025, bevelSize: .014, bevelSegments: 2, curveSegments: 12 }), new MeshPhysicalMaterial({ color: 0x171d2b, metalness: .7, roughness: .3, envMapIntensity: .6 }))
+      backing.scale.set(1.055, 1.045, 1); backing.position.z = -.1; group.add(backing)
+    }
     // A separate 3D world becomes a texture ONLY on the aperture geometry.
     // It cannot paint outside the rounded/circular portal, even after rotation.
     const targetHeight = Math.min(maxTextureEdge, 1024)
     renderTarget = new WebGLRenderTarget(Math.round(targetHeight * portalWidth / portalHeight), targetHeight, { depthBuffer: true })
     world = new Scene(); world.background = new Color(0x090c19); world.environment = environment ?? null
+    world.environmentIntensity = native ? .15 : 1
     worldCamera = new PerspectiveCamera(40, portalWidth / portalHeight, .1, 45); worldCamera.position.z = 6
-    world.add(new HemisphereLight(0xeaf0ff, 0x17122a, 3))
-    const worldLight = new DirectionalLight(0xb78cff, 5); worldLight.position.set(3, 4, 4); world.add(worldLight)
+    world.add(new HemisphereLight(0xeaf0ff, 0x17122a, native ? .45 : 3))
+    const worldLight = new DirectionalLight(0xb78cff, native ? 1.2 : 5); worldLight.position.set(3, 4, 4); world.add(worldLight)
+    if (native) {
+      nebula = new ShaderMaterial({ vertexShader: cinematicVertex, fragmentShader: portalFragment, uniforms: {
+        uTime: { value: 0 }, uEnergy: { value: .5 }, uColor: { value: new Color(native.portal.color) },
+      } })
+      const sky = new Mesh(new PlaneGeometry(45, 45), nebula); sky.position.z = -18; world.add(sky)
+    }
     // Receding geometric arches and a reflective floor give an actual spatial backdrop.
     for (let i = 0; i < 5; i++) {
-      const arch = new Mesh(new TorusGeometry(2.4, .055, 8, 64), new MeshStandardMaterial({ color, emissive: color, emissiveIntensity: .3, metalness: .4, roughness: .35 }))
-      arch.position.z = -i * 2; world.add(arch)
+      const archColor = native ? new Color(native.material.accent) : color
+      const arch = new Mesh(new TorusGeometry(2.4, native ? .014 : .055, 8, 96), new MeshStandardMaterial({ color: archColor, emissive: archColor, emissiveIntensity: native ? .16 : .3, metalness: .4, roughness: .35, envMapIntensity: native ? .15 : 1 }))
+      arch.position.z = -i * 2; if (native) arch.rotation.z = i * .17
+      world.add(arch); arches.push(arch)
     }
-    const floor = new Mesh(new PlaneGeometry(30, 30), new MeshStandardMaterial({ color: 0x151126, metalness: .4, roughness: .32 }))
-    floor.rotation.x = -Math.PI / 2; floor.position.y = -2.5; floor.position.z = -6; world.add(floor)
-    particles = sparkField(48, world, 3)
+    if (native) {
+      const planet = new Mesh(new SphereGeometry(.8, 32, 24), new MeshStandardMaterial({ color: 0x182340, roughness: .7, metalness: .1, envMapIntensity: .15 }))
+      planet.position.set(.9, .2, -4); world.add(planet)
+      const moon = new Mesh(new SphereGeometry(.12, 20, 12), new MeshStandardMaterial({ color: 0x879bbb, roughness: .6, envMapIntensity: .2 }))
+      moon.position.set(-.6, 1.05, -5); world.add(moon)
+    } else {
+      const floor = new Mesh(new PlaneGeometry(30, 30), new MeshStandardMaterial({ color: 0x151126, metalness: .4, roughness: .32 }))
+      floor.rotation.x = -Math.PI / 2; floor.position.y = -2.5; floor.position.z = -6; world.add(floor)
+    }
+    particles = sparkField(native?.portal.particles ?? 48, world, 3)
     particles.position.z = -1
     const urls = (options.images ?? []).slice(0, 3).filter(url => !!url)
     for (const [index, url] of urls.entries()) {
@@ -205,6 +214,7 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
     for (let i = 0; i < uv.count; i++) uv.setXY(i, p.getX(i) / portalWidth + .5, p.getY(i) / portalHeight + .5)
     const portal = new Mesh(windowGeometry, new MeshBasicMaterial({ map: renderTarget.texture, side: DoubleSide, toneMapped: false }))
     portal.position.z = -.015; group.add(portal)
+    portalMesh = portal
     const glass = new Mesh(windowGeometry, new MeshPhysicalMaterial({ color: 0xc8deff, metalness: .15, roughness: .18, transparent: true, opacity: frame.glass * .3, clearcoat: 1, depthWrite: false }))
     glass.position.z = .09; group.add(glass)
   }
@@ -224,8 +234,12 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
       const lerp = 1 - Math.exp(-dt * 7)
       openness += ((current.active ? 1 : current.pressed ? .9 : .15) - openness) * lerp
       pointerX += (pointer.x - pointerX) * lerp; pointerY += (pointer.y - pointerY) * lerp
+      const currentScene = readFrameScene(current.frame)
+      const inspection = current.transport?.current.mode === "inspection"
+      if (inspection) time = current.transport!.current.time
       camera.aspect = aspect
       camera.position.z = options.kind === "portal" || options.kind === "frame" || options.kind === "book" ? Math.max(5.8, 3.8 / aspect) : Math.max(4.8, 4.8 / aspect)
+      if (currentScene) camera.position.z = Math.max(7.8, 5.1 / aspect)
       camera.updateProjectionMatrix()
       if (orbitMaterial) { orbitMaterial.uniforms.uTime.value = time; orbitMaterial.uniforms.uEnergy.value = openness + (current.pulse ? .5 : 0) }
       petals.forEach((petal, index) => { petal.rotation.x = (.95 - openness * .84) + Math.sin(time * .8 + index * .2) * .025 })
@@ -240,9 +254,42 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
         worldCamera.position.x = pointerX * .22; worldCamera.position.y = -pointerY * .18
         worldCamera.setViewOffset(w, h, -pointerX * 22, pointerY * 18, w, h)
       }
+      if (currentScene && ornaments && bezelMaterial) {
+        const pose = evaluateFrameScene(currentScene, inspection ? time : 0)
+        const radians = Math.PI / 180
+        group.rotation.set(pose.tilt * radians - pointerY * .09, pose.orbit * radians + pointerX * .14, 0)
+        group.scale.setScalar(pose.zoom * (options.shape === "profile" ? .9 : .8))
+        ornaments.parts.forEach((part, i) => {
+          const spread = pose.assembly * (.19 + (i % 2) * .1)
+          part.group.position.set(part.x * (1 + spread), part.y * (1 + spread), .17 + pose.assembly * .3)
+          part.group.rotation.x = Math.sin(time * .4 + i) * .025 + pose.assembly * (currentScene.style === "bloom" ? .9 : .22)
+        })
+        ornaments.orbits.forEach((ring, i) => { ring.rotation.set(time * .35 + i * .6, time * .25 + i * .9, 0) })
+        ornaments.jewel.rotation.y = time * .4
+        for (const material of [bezelMaterial, ornaments.metal]) {
+          material.color.set(currentScene.material.color); material.metalness = currentScene.material.metalness; material.roughness = currentScene.material.roughness
+        }
+        ornaments.crystal.color.set(currentScene.material.accent); ornaments.crystal.emissive.set(currentScene.material.accent)
+        ornaments.crystal.emissiveIntensity = currentScene.material.glow * (.35 + pose.energy)
+        ornaments.light.color.set(currentScene.material.accent); ornaments.light.opacity = Math.min(.95, currentScene.material.glow * (.4 + pose.energy))
+        key.color.set(currentScene.lighting.key); key.intensity = currentScene.lighting.intensity * .6
+        rim.color.set(currentScene.lighting.rim); rim.intensity = currentScene.lighting.intensity * .4
+        arches.forEach(arch => { arch.material.color.set(currentScene.material.accent); arch.material.emissive.set(currentScene.material.accent) })
+        if (portalMesh) { portalMesh.scale.setScalar(Math.max(.001, pose.aperture)); portalMesh.visible = currentScene.portal.enabled }
+        if (nebula) {
+          nebula.uniforms.uTime.value = time * currentScene.portal.speed
+          nebula.uniforms.uColor.value.set(currentScene.portal.color); nebula.uniforms.uEnergy.value = pose.energy
+        }
+        if (worldCamera) {
+          const parallax = currentScene.portal.depth
+          worldCamera.position.x = (pointerX * .4 + pose.orbit * .012) * parallax
+          worldCamera.position.y = (-pointerY * .3 + pose.tilt * .01) * parallax
+        }
+        if (particles) { particles.rotation.z = time * .035 * currentScene.portal.speed; particles.rotation.y = Math.sin(time * .2) * .08 }
+      }
     },
     render(renderer) {
-      if (renderTarget && world && worldCamera) {
+      if (renderTarget && world && worldCamera && portalMesh?.visible !== false) {
         const viewport = renderer.getViewport(new Vector4())
         const scissor = renderer.getScissor(new Vector4())
         const wasScissored = renderer.getScissorTest()

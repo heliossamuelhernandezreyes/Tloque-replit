@@ -68,3 +68,26 @@ jobs:
 
       - name: Replit compiled server startup
         run: node scripts/check-replit-start.mjs
+
+  visual-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Install browser tooling (QA only)
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Exercise the real interface against an isolated fixture API
+        run: npm run test:visual:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cinematic-visual-qa
+          path: .tloque_cache/visual-qa/
+          retention-days: 7

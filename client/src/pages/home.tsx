@@ -676,11 +676,11 @@ function Carousel({
   const startIdx = 0
   const [emblaRef, emblaApi] = useEmblaCarousel({
     align:         "center",
-    dragFree:      false,
+    dragFree:      true,
     containScroll: false,
     loop:          displayBooks.length > 3,
     startIndex:    startIdx,
-    duration:      settings.reduceMotion ? 0 : 30,
+    duration:      settings.reduceMotion ? 0 : 20,
   })
 
   // (El abanico ya no usa estado de React: applyOffsets escribe directo al DOM)

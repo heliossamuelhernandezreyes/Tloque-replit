@@ -1,5 +1,7 @@
 import { ReactNode, useMemo } from "react"
 import { useSettings } from "@/context/SettingsContext"
+import { readFrameScene } from "@shared/frame-scene"
+import FramePoster from "@/visual/FramePoster"
 
 // ─────────────────────────────────────────────────────────────
 // FrameRenderer v2 — dibuja un marco del Taller (runtimePreset 1.0.0)
@@ -146,7 +148,12 @@ interface FrameRendererProps {
 
 let uid = 0
 
-export default function FrameRenderer({ preset, shape, className, nameText, children, asOverlay }: FrameRendererProps) {
+export default function FrameRenderer(props: FrameRendererProps) {
+  const scene = readFrameScene(props.preset)
+  return scene ? <FramePoster scene={scene} shape={props.shape ?? (props.preset?.runtimePreset?.target === "profile" ? "profile" : "card")} className={props.className} asOverlay={props.asOverlay}>{props.children}</FramePoster> : <LegacyFrameRenderer {...props}/>
+}
+
+function LegacyFrameRenderer({ preset, shape, className, nameText, children, asOverlay }: FrameRendererProps) {
   const { settings } = useSettings()
   const rp  = preset?.runtimePreset ?? preset ?? {}
   const ap  = rp.appearance ?? {}
