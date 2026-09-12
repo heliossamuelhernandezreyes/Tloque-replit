@@ -8,10 +8,10 @@ import {
 import { VISUAL_STRINGS } from "../client/src/visual/visual-strings"
 
 const now = Date.parse("2026-09-10T00:00:00Z")
-const active = { subscriptionPlan: "estetic", subscriptionStatus: "active", subscriptionExpiresAt: "2026-10-10T00:00:00Z" }
+const active = { subscriptionPlan: "aesthetic", subscriptionStatus: "active", subscriptionExpiresAt: "2026-10-10T00:00:00Z" }
 
 test("el servidor concede la rosa sólo a planes activos o administración", () => {
-  for (const subscriptionPlan of ["estetic", "audio"]) assert.deepEqual(visualEntitlements({ ...active, subscriptionPlan }, false, now).themes, ORB_THEMES)
+  for (const subscriptionPlan of ["aesthetic", "audio"]) assert.deepEqual(visualEntitlements({ ...active, subscriptionPlan }, false, now).themes, ORB_THEMES)
   for (const subscriptionPlan of ["reader", "premium", null]) assert.deepEqual(visualEntitlements({ ...active, subscriptionPlan }, false, now).themes, ["singularity"])
   assert.deepEqual(visualEntitlements(null, true, now), { themes: [...ORB_THEMES], expiresAt: null })
 })
@@ -67,13 +67,16 @@ test("un diálogo retira del render los libros y el orbe de fondo", () => {
 test("recorta una vista fuera de pantalla sin estirar su cámara", () => {
   assert.deepEqual(visualViewport({ left: -10, top: -20, right: 90, bottom: 180, width: 100, height: 200 }, 300, 400), { viewport: [-10, 220, 100, 200], scissor: [0, 220, 90, 180] })
   assert.equal(visualViewport({ left: 0, top: 410, right: 100, bottom: 500, width: 100, height: 90 }, 300, 400), null)
+  assert.deepEqual(visualViewport({ left: 20, top: 10, right: 220, bottom: 310, width: 200, height: 300 }, 400, 500, { left: 0, top: 80, right: 400, bottom: 500 }), { viewport: [20, 190, 200, 300], scissor: [20, 190, 200, 230] })
 })
 
-test("el abanico es simétrico, acotado y estable ante offsets inválidos", () => {
+test("el carrusel conserva escala y plano: sólo se modulan opacidad y luz", () => {
   assert.equal(carouselPose(0).scale, 1)
   for (const offset of [1, 2, 300]) {
     assert.equal(carouselPose(offset).scale, carouselPose(-offset).scale)
-    assert.equal(carouselPose(offset).rotate, -carouselPose(-offset).rotate)
+    assert.equal(carouselPose(offset).rotate, 0)
+    assert.equal(carouselPose(offset).lift, 0)
+    assert.equal(carouselPose(offset).scale, 1)
     assert.ok(carouselPose(offset).opacity >= .64)
     assert.ok(carouselPose(offset).scale >= .78)
   }

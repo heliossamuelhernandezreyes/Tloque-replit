@@ -1,10 +1,10 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useState, useCallback, useEffect, lazy, Suspense, type ReactNode } from "react"
 import { useLocation } from "wouter"
 import type { CardData } from "@/components/CollectibleCard"
-import CollectibleCard from "@/components/CollectibleCard"
 import { useSettings } from "@/context/SettingsContext"
 import VisualDialog from "@/visual/VisualDialog"
-import ImmersiveCard from "@/visual/ImmersiveCard"
+const CollectibleCard = lazy(() => import("@/components/CollectibleCard"))
+const ImmersiveCard = lazy(() => import("@/visual/ImmersiveCard"))
 
 interface ViewerState { card: CardData; accentColor: string; accentGlow: string }
 interface Ctx { open: (card: CardData, accentColor?: string, accentGlow?: string) => void; close: () => void }
@@ -30,7 +30,9 @@ export function CardViewerProvider({ children }: { children: ReactNode }) {
     <VisualDialog open={!!state} onClose={close} title={state?.card.name || t("portalView")} description={t("portalHint")}>
       {state && <div className="tq-viewer-layout">
         <div>
-          {immersive ? <ImmersiveCard card={state.card} accentColor={state.accentColor} onReadyChange={setPortalReady} /> : <CollectibleCard card={state.card} accentColor={state.accentColor} accentGlow={state.accentGlow} zoomable={false} />}
+          <Suspense fallback={<div className="min-h-80 rounded-2xl border border-white/10 bg-white/5" aria-label="Preparando carta"/>}>
+            {immersive ? <ImmersiveCard card={state.card} accentColor={state.accentColor} onReadyChange={setPortalReady} /> : <CollectibleCard card={state.card} accentColor={state.accentColor} accentGlow={state.accentGlow} zoomable={false} />}
+          </Suspense>
           {immersive && portalReady && <p className="tq-portal-caption">{t("portalHint")}</p>}
         </div>
         <div className="space-y-4 pb-5">

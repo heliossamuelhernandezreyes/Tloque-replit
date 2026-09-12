@@ -60,7 +60,8 @@ function Compositor({ entries, budget, onFailure, onDprChange }: { entries: Visu
       for (let i = entries.length - 1; i >= 0; i--) {
         const entry = entries[i]
         const rect = entry.element.getBoundingClientRect()
-        const crop = visualViewport(rect, size.width, size.height)
+        const clip = entry.element.closest("[data-visual-clip]")?.getBoundingClientRect()
+        const crop = visualViewport(rect, size.width, size.height, clip)
         if (!entry.element.isConnected || !crop) { entry.ready(false); continue }
         let resource = resources.current.get(entry.id)
         const key = resource?.options === entry.options.current && resource.textureEdge === budget.maxTextureEdge ? resource.key : `${budget.maxTextureEdge}:${sceneKey(entry.options.current)}`

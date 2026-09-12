@@ -1,5 +1,5 @@
 /** Cosmetic policy only. Never grants ownership, billing or book access. */
-export const VISUAL_ENGINE_VERSION = "tloque-visual-v1"
+export const VISUAL_ENGINE_VERSION = "tloque-visual-v2"
 export const ORB_THEMES = ["singularity", "fluorescent-rose"] as const
 export type OrbTheme = typeof ORB_THEMES[number]
 export type VisualQuality = "auto" | "essential" | "premium" | "ultra"
@@ -10,7 +10,7 @@ export function visualEntitlements(user: {
 } | null | undefined, admin = false, now = Date.now()): VisualEntitlements {
   const expiry = user?.subscriptionExpiresAt == null ? null : new Date(String(user.subscriptionExpiresAt)).getTime()
   const active = user?.subscriptionStatus === "active"
-    && (user.subscriptionPlan === "estetic" || user.subscriptionPlan === "audio")
+    && (user.subscriptionPlan === "aesthetic" || user.subscriptionPlan === "audio")
     && (expiry === null || (Number.isFinite(expiry) && expiry > now))
   return {
     themes: admin || active ? [...ORB_THEMES] : ["singularity"],
@@ -52,9 +52,9 @@ export function selectVisualEntries<T extends { priority: number }>(entries: rea
 }
 
 /** CSS-pixel viewport/scissor; preserve the full rect so partial visibility never stretches art. */
-export function visualViewport(rect: { left: number; top: number; right: number; bottom: number; width: number; height: number }, width: number, height: number) {
-  const left = Math.max(0, rect.left), top = Math.max(0, rect.top)
-  const right = Math.min(width, rect.right), bottom = Math.min(height, rect.bottom)
+export function visualViewport(rect: { left: number; top: number; right: number; bottom: number; width: number; height: number }, width: number, height: number, clip?: { left: number; top: number; right: number; bottom: number }) {
+  const left = Math.max(0, rect.left, clip?.left ?? 0), top = Math.max(0, rect.top, clip?.top ?? 0)
+  const right = Math.min(width, rect.right, clip?.right ?? width), bottom = Math.min(height, rect.bottom, clip?.bottom ?? height)
   if (right <= left || bottom <= top || rect.width < 2 || rect.height < 2) return null
   return { viewport: [rect.left, height - rect.bottom, rect.width, rect.height] as const, scissor: [left, height - bottom, right - left, bottom - top] as const }
 }
@@ -64,10 +64,10 @@ export function carouselPose(offset: number, reducedMotion = false) {
   const safe = Number.isFinite(offset) ? offset : 0
   const distance = Math.min(4, Math.abs(safe))
   return {
-    scale: reducedMotion ? 1 : 1 - Math.min(distance * 0.075, 0.22),
-    opacity: 1 - Math.min(distance * 0.13, 0.36),
-    rotate: reducedMotion ? 0 : Math.max(-18, Math.min(18, safe * 9)),
-    lift: reducedMotion ? 0 : Math.max(0, 1 - distance) * 6,
+    scale: 1,
+    opacity: reducedMotion ? 1 : 1 - Math.min(distance * 0.045, 0.15),
+    rotate: 0,
+    lift: 0,
     light: Math.max(0.15, 1 - distance * 0.33),
   }
 }

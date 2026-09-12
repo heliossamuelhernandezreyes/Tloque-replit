@@ -7,7 +7,8 @@ import WalletPanel from "@/components/WalletPanel"
 import { useFrames, type GalleryFrame } from "@/hooks/useFrames"
 import { useAuth } from "@/hooks/useAuth"
 import { useSettings } from "@/context/SettingsContext"
-import VisualSlot from "@/visual/VisualEngine"
+import FrameInspection from "@/visual/FrameInspection"
+import { readFrameScene } from "@shared/frame-scene"
 import VisualDialog from "@/visual/VisualDialog"
 
 const ACCENT = "#c9a84c"
@@ -188,16 +189,12 @@ export default function FrameGallery() {
 
       <VisualDialog open={!!previewFrame} onClose={() => setPreviewFrame(null)} title={previewFrame?.name || t("visualFramePreview")}>
         {previewFrame && <div className="tq-viewer-layout">
-          <VisualSlot priority={100} interactive label={previewFrame.name}
-            className={`tq-portal-visual ${previewFrame.target === "profile" ? "tq-frame-profile" : ""}`}
-            options={{ kind: "frame", color: ACCENT, frame: previewFrame.pkg, shape: previewFrame.target === "profile" ? "profile" : "card" }}>
-            <FrameRenderer preset={previewFrame.pkg} shape={previewFrame.target === "profile" ? "profile" : "card"}><SampleArt /></FrameRenderer>
-          </VisualSlot>
+          <FrameInspection key={previewFrame.id} pkg={previewFrame.pkg} shape={previewFrame.target === "profile" ? "profile" : "card"}><SampleArt /></FrameInspection>
           <div className="space-y-4 text-zinc-300">
             <h2 className="text-3xl font-display">{previewFrame.name}</h2>
             <p className="text-sm text-zinc-400">{targetLabel(previewFrame.target)}</p>
             <p className="text-sm leading-6">{t("portalHint")}</p>
-            <p className="text-xs text-zinc-400">{t("visualFrameMaterialNote")}</p>
+            <p className="text-xs text-zinc-400">{readFrameScene(previewFrame.pkg) ? "Escena 3D original. Pulsa reproducir para desplegar el marco y explorar su secuencia cinematográfica." : t("visualFrameMaterialNote")}</p>
           </div>
         </div>}
       </VisualDialog>

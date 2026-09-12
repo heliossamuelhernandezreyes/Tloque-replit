@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useAuth } from "@/hooks/useAuth"
 import { useLocation } from "wouter"
 import { ArrowLeft, Lock, Frame, Droplets, Trash2, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
+import FrameStudio from "@/visual/FrameStudio"
 
 interface GalleryFrame {
   id: number
@@ -18,6 +19,13 @@ interface GalleryFrame {
 // al tocar "Guardar en la galería" manda un postMessage que aquí se
 // recibe y se persiste en el servidor. Abajo, la galería de guardados.
 export default function FrameWorkshop() {
+  const { isAdmin, isLoading } = useAuth()
+  const [legacy, setLegacy] = useState(false)
+  if (isLoading || !isAdmin || legacy) return <LegacyFrameWorkshop onModern={() => setLegacy(false)}/>
+  return <FrameStudio onLegacy={() => setLegacy(true)}/>
+}
+
+function LegacyFrameWorkshop({ onModern }: { onModern: () => void }) {
   const { isAdmin, isLoading } = useAuth()
   const [, setLocation] = useLocation()
   const queryClient = useQueryClient()
@@ -131,6 +139,7 @@ export default function FrameWorkshop() {
             style={{ fontVariant: "small-caps" }}>
           Taller de Marcos
         </h1>
+        <button className="text-xs text-amber-300 min-h-11 px-2" onClick={onModern}>Estudio 3D</button>
         {/* Galería: contador y despliegue */}
         <button onClick={() => setShowGallery(v => !v)}
           className="ml-auto flex items-center gap-1.5 text-[11px] font-sans px-2.5 py-1.5 rounded-lg"

@@ -18,6 +18,7 @@
     "test:audio:render": "node --import tsx --test tests/audio-render/*.test.ts",
     "test:audio:browser": "node scripts/audio-browser-qa.mjs",
     "test:composer:browser": "node --import tsx scripts/composer-browser-qa.mjs",
+    "test:visual:browser": "node --import tsx scripts/visual-browser-qa.mjs",
     "db:push": "drizzle-kit push",
     "db:migrate": "node scripts/migrate.mjs --apply",
     "db:preflight": "node scripts/preflight.mjs"
