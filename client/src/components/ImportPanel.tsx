@@ -1,627 +1,274 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { AnimatePresence, motion } from "framer-motion"
-import {
-  BookOpen, Download, ExternalLink,
-  Loader2, Search, Sparkles, Upload, X,
-} from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import * as Dialog from "@radix-ui/react-dialog"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { ArrowLeft, ArrowRight, BookOpen, Check, Download, ExternalLink, LibraryBig, Loader2, Search, Upload, X } from "lucide-react"
 import { useLocation } from "wouter"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/useAuth"
-import { useBooks } from "@/hooks/use-books"
 import { useSettings } from "@/context/SettingsContext"
 import { useGenre } from "@/context/GenreContext"
 import { slimBook, saveOfflineContent } from "@/lib/offline"
+import { GUTENBERG_LANGUAGES, GUTENBERG_TOPICS, gutenbergLanguageName,
+  type GutenbergBook, type GutenbergCatalogPage, type GutenbergPreview, type GutenbergSort, type GutenbergTopic } from "@shared/gutenberg"
+import { gutenbergCopy } from "./gutenberg-copy"
 
-interface Props {
-  open:    boolean
-  onClose: () => void
+const field = "w-full min-w-0 rounded-xl border border-white/15 bg-white/[.045] px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-amber-200/60 focus:ring-2 focus:ring-amber-200/15"
+const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm text-zinc-200 transition-colors hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-200 disabled:opacity-40"
+
+function Cover({ url, title, large = false }: { url?: string; title: string; large?: boolean }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [url])
+  return <div className={"relative aspect-[2/3] shrink-0 overflow-hidden rounded-lg border border-amber-200/15 bg-gradient-to-br from-[#29251c] to-[#11141a] shadow-lg " + (large ? "w-28 sm:w-36" : "w-16 sm:w-20")}>
+    {url && !failed ? <img src={url} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="h-full w-full object-cover" />
+      : <div className="flex h-full flex-col items-center justify-center gap-2 px-2 text-center text-amber-100/65"><BookOpen className="h-5 w-5" /><span className="line-clamp-3 font-display text-[10px] leading-snug">{title}</span></div>}
+  </div>
 }
 
-type SearchResult = {
-  id:            number
-  title:         string
-  authors:       { name: string }[]
-  languages:     string[]
-  subjects:      string[]
-  download_count: number
-  existingBookId?: number | null
-  alreadyImported?: boolean
-  requestedLanguage?: string
-  languageMatch?: "exact" | "multilingual" | "alternative"
+async function readJson<T>(url: string, signal?: AbortSignal, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, { credentials: "include", ...init, signal })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(data.message || "HTTP " + response.status)
+  return data as T
 }
 
-type PreviewResult = {
-  gutenbergId:      number
-  title:            string
-  author:           string
-  synopsis:         string
-  coverUrl:         string
-  originalLanguage: string
-  publicationYear:  number | null
-  detectedGenre:    string
-  genre?:           string
-  type:             "book" | "story"
-  existingBookId?:  number | null
-  alreadyImported?: boolean
-  chapterCount:     number
-  previewText:      string
-  chapters?:        { title: string; content: string }[]
-  content?:         string
+export default function ImportPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const content = useRef<HTMLDivElement>(null)
+  const opener = useRef<HTMLElement | null>(null)
+  const wasOpen = useRef(false)
+  if (open && !wasOpen.current && typeof document !== "undefined") opener.current = document.activeElement as HTMLElement
+  wasOpen.current = open
+  return <Dialog.Root open={open} onOpenChange={value => { if (!value) onClose() }}>
+    {open && <Dialog.Portal>
+      <Dialog.Overlay className="fixed inset-0 z-[290] bg-black/90" />
+      <Dialog.Content ref={content} onOpenAutoFocus={event => { event.preventDefault(); content.current?.focus() }}
+        onCloseAutoFocus={event => { if (opener.current?.isConnected) { event.preventDefault(); opener.current.focus() } }}
+        className="fixed inset-x-2 bottom-2 top-2 z-[300] mx-auto flex max-w-6xl flex-col overflow-hidden rounded-3xl border border-amber-100/15 bg-[#0b0d11] shadow-2xl outline-none sm:inset-x-5 sm:bottom-5 sm:top-5">
+        <GutenbergExplorer onClose={onClose} />
+      </Dialog.Content>
+    </Dialog.Portal>}
+  </Dialog.Root>
 }
 
-const LANGUAGE_OPTIONS = [
-  { value: "es", label: "Español" },
-  { value: "en", label: "English" },
-  { value: "fr", label: "Français" },
-  { value: "de", label: "Deutsch" },
-  { value: "it", label: "Italiano" },
-  { value: "pt", label: "Português" },
-  { value: "ru", label: "Русский" },
-  { value: "ja", label: "日本語" },
-  { value: "zh", label: "中文" },
-  { value: "ar", label: "العربية" },
-  { value: "nl", label: "Nederlands" },
-  { value: "pl", label: "Polski" },
-  { value: "fi", label: "Suomi" },
-  { value: "sv", label: "Svenska" },
-  { value: "la", label: "Latina" },
-  { value: "el", label: "Ελληνικά" },
-]
-
-function normalizeText(v: string) {
-  return v.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim()
-}
-
-async function savePrivateClassic(book: any) {
-  let current: any[] = []
-  try {
-    const parsed = JSON.parse(localStorage.getItem("novareads_saved") || "[]")
-    current = Array.isArray(parsed) ? parsed : []
-  } catch {
-    current = []
-  }
-  const slim = { ...slimBook(book), isSaved: true }
-  const next = current.some((i: any) => String(i.id) === String(book.id))
-    ? current.map((i: any) => String(i.id) === String(book.id) ? slim : i)
-    : [slim, ...current]
-  localStorage.setItem("novareads_saved", JSON.stringify(next))
-  await saveOfflineContent(book.id, book)   // contenido pesado → IndexedDB
-}
-
-export default function ImportPanel({ open, onClose }: Props) {
-  const [, setLocation] = useLocation()
-  const { toast }       = useToast()
-  const { isAdmin }     = useAuth()
-  const { data: catalogBooks, refetch } = useBooks()
+function GutenbergExplorer({ onClose }: { onClose: () => void }) {
+  const [, navigate] = useLocation()
+  const { toast } = useToast()
+  const { isAdmin } = useAuth()
   const { settings, t } = useSettings()
-  const { cfg }         = useGenre()
-  // El panel solo se expone desde superficies administrativas; la API vuelve
-  // a comprobar el rol. No depende de un ajuste visual del lector.
-  const canPublish      = isAdmin
-
-  const [query,          setQuery]          = useState("")
-  const [lang,           setLang]           = useState("es")
-  const [results,        setResults]        = useState<SearchResult[]>([])
-  const [selected,       setSelected]       = useState<PreviewResult | null>(null)
-  const [adminTitle,     setAdminTitle]     = useState("")
-  const [adminSynopsis,  setAdminSynopsis]  = useState("")
-  const [adminGenre,     setAdminGenre]     = useState("")
-  const [searching,      setSearching]      = useState(false)
-  const [loadingPreview, setLoadingPreview] = useState(false)
-  const [downloading,    setDownloading]    = useState(false)
-  const [importing,      setImporting]      = useState(false)
-  const searchRequest = useRef<AbortController | null>(null)
+  const { cfg } = useGenre()
+  const copy = gutenbergCopy(settings.language)
+  const queryClient = useQueryClient()
+  const [query, setQuery] = useState("")
+  const [filters, setFilters] = useState({ query: "", lang: String(settings.language), topic: "" as GutenbergTopic, sort: "popular" as GutenbergSort, page: 1 })
+  const [selected, setSelected] = useState<GutenbergPreview | null>(null)
+  const [requested, setRequested] = useState<GutenbergBook | null>(null)
+  const [showDetail, setShowDetail] = useState(false)
+  const [previewBusy, setPreviewBusy] = useState(false)
+  const [previewError, setPreviewError] = useState("")
+  const [chapter, setChapter] = useState(0)
+  const [title, setTitle] = useState("")
+  const [synopsis, setSynopsis] = useState("")
+  const [genre, setGenre] = useState("")
+  const [destination, setDestination] = useState<"draft" | "published">("draft")
+  const [saving, setSaving] = useState<"private" | "catalog" | null>(null)
+  const [saveError, setSaveError] = useState("")
   const previewRequest = useRef<AbortController | null>(null)
-
-  // Detectar idioma preferido al abrir
+  const mounted = useRef(true)
+  const resultsPane = useRef<HTMLDivElement>(null)
+  const detailPane = useRef<HTMLDivElement>(null)
+  const detailHeading = useRef<HTMLHeadingElement>(null)
+  const lastResult = useRef<HTMLButtonElement | null>(null)
+  const previewGeneration = useRef(0)
   useEffect(() => {
-    if (!open) return
-    const preferred = LANGUAGE_OPTIONS.some(o => o.value === settings.language)
-      ? settings.language : "es"
-    setLang(preferred)
-  }, [open, settings.language])
-
-  // Limpiar al cerrar
-  useEffect(() => {
-    if (open) return
-    searchRequest.current?.abort()
-    previewRequest.current?.abort()
-    setQuery(""); setResults([]); setSelected(null)
-    setAdminTitle(""); setAdminSynopsis(""); setAdminGenre("")
-  }, [open])
-
-  useEffect(() => () => {
-    searchRequest.current?.abort()
-    previewRequest.current?.abort()
+    mounted.current = true
+    return () => { mounted.current = false; previewRequest.current?.abort() }
   }, [])
 
-  const exactCatalogMatch = useMemo(() => {
-    const nq = normalizeText(query)
-    if (!nq) return null
-    return (catalogBooks || []).find((b: any) =>
-      !!b?.isClassic && (
-        normalizeText(b.title || "") === nq ||
-        normalizeText(b.author || "") === nq
-      )
-    ) || null
-  }, [catalogBooks, query])
+  const catalog = useQuery({
+    queryKey: ["gutenberg-catalog", filters, isAdmin],
+    queryFn: ({ signal }) => readJson<GutenbergCatalogPage>("/api/gutenberg/catalog?" + new URLSearchParams({
+      q: filters.query, lang: filters.lang, topic: filters.topic, sort: filters.sort, page: String(filters.page),
+    }), signal), staleTime: 120_000, gcTime: 180_000, retry: false, refetchOnWindowFocus: false,
+  })
 
-  const selectedLanguageName = LANGUAGE_OPTIONS.find(option => option.value === lang)?.label || lang.toUpperCase()
-  const onlyAlternativeEditions = results.length > 0
-    && results.every(result => result.languageMatch === "alternative")
-
-  async function runSearch(overrideQuery?: string) {
-    const trimmed = (overrideQuery ?? query).trim()
-    if (!trimmed) return
-
-    // Si ya está en el catálogo, redirigir directo
-    if (exactCatalogMatch?.id) {
-      toast({ title: t("alreadyImported"), description: "" })
-      setLocation(`/book/${exactCatalogMatch.id}`)
-      onClose(); return
-    }
-
-    searchRequest.current?.abort()
-    const controller = new AbortController()
-    searchRequest.current = controller
-    setSearching(true); setSelected(null)
-    try {
-      const res = await fetch(
-        `/api/gutenberg/search?q=${encodeURIComponent(trimmed)}&lang=${lang}`,
-        { credentials: "include", signal: controller.signal }
-      )
-      if (!res.ok) throw new Error(t("noResults"))
-      const data = await res.json()
-      setResults(Array.isArray(data) ? data : [])
-    } catch (err: any) {
-      if (err?.name === "AbortError") return
-      toast({ title: err.message || t("noResults"), variant: "destructive" })
-    } finally {
-      if (searchRequest.current === controller) {
-        searchRequest.current = null
-        setSearching(false)
-      }
-    }
+  const editFilters = (patch: Partial<typeof filters>) => {
+    previewRequest.current?.abort(); previewGeneration.current++
+    setFilters(current => ({ ...current, ...patch, page: patch.page ?? 1 }))
+    setSelected(null); setRequested(null); setShowDetail(false); setPreviewBusy(false); setPreviewError("")
+    resultsPane.current?.scrollTo({ top: 0 })
+  }
+  const openExisting = (bookId: number, status?: string) => {
+    navigate(status && status !== "published" ? "/editor?id=" + bookId + "&status=" + encodeURIComponent(status) : "/book/" + bookId)
+    onClose()
   }
 
-  async function openResult(result: SearchResult) {
-    if (result.existingBookId) {
-      setLocation(`/book/${result.existingBookId}`)
-      onClose(); return
-    }
+  async function openEdition(book: GutenbergBook) {
+    if (book.existingBookId) { openExisting(book.existingBookId, book.existingStatus); return }
     previewRequest.current?.abort()
     const controller = new AbortController()
     previewRequest.current = controller
-    setLoadingPreview(true)
+    const generation = ++previewGeneration.current
+    setRequested(book); setShowDetail(true); setSelected(null); setPreviewError(""); setSaveError(""); setPreviewBusy(true)
+    requestAnimationFrame(() => detailHeading.current?.focus())
     try {
-      const res = await fetch(
-        `/api/gutenberg/preview/${result.id}?lang=${lang}`,
-        { credentials: "include", signal: controller.signal }
-      )
-      if (!res.ok) throw new Error(t("noResults"))
-      const data = await res.json()
-      setSelected(data)
-      setAdminTitle(data.title || "")
-      setAdminSynopsis(data.synopsis || "")
-      setAdminGenre(data.detectedGenre || "")
-    } catch (err: any) {
-      if (err?.name === "AbortError") return
-      toast({ title: err.message, variant: "destructive" })
+      const data = await readJson<GutenbergPreview>("/api/gutenberg/preview/" + book.id + "?lang=" + settings.language, controller.signal)
+      if (!mounted.current || generation !== previewGeneration.current) return
+      if (data.existingBookId) { openExisting(data.existingBookId); return }
+      setSelected(data); setTitle(data.title.slice(0, 200)); setSynopsis(data.synopsis); setGenre(data.detectedGenre); setChapter(0)
+      detailPane.current?.scrollTo({ top: 0 })
+    } catch (error) {
+      if (!controller.signal.aborted && mounted.current && generation === previewGeneration.current) setPreviewError(error instanceof Error ? error.message : copy.error)
     } finally {
-      if (previewRequest.current === controller) {
-        previewRequest.current = null
-        setLoadingPreview(false)
-      }
+      if (mounted.current && generation === previewGeneration.current) setPreviewBusy(false)
     }
   }
 
-  async function downloadForMe() {
-    if (!selected) return
-    if (selected.existingBookId) {
-      setLocation(`/book/${selected.existingBookId}`)
-      onClose(); return
-    }
-    setDownloading(true)
+  async function savePrivate() {
+    if (!selected || saving) return
+    const edition = selected
+    setSaving("private"); setSaveError("")
     try {
-      // La vista pública ya contiene el texto completo. Reutilizarla evita una
-      // segunda descarga externa del mismo libro y hace el guardado inmediato.
-      let data: PreviewResult = selected
-      if (!Array.isArray(selected.chapters)) {
-        const res = await fetch(
-          `/api/gutenberg/preview/${selected.gutenbergId}?lang=${lang}`,
-          { credentials: "include" }
-        )
-        if (!res.ok) throw new Error(t("noResults"))
-        data = await res.json()
+      // Edition ID stays stable across UI language changes.
+      const id = "gutenberg-" + edition.gutenbergId
+      const book = { ...edition, id, genre: edition.detectedGenre, isClassic: true, isSaved: true, status: "saved" }
+      await saveOfflineContent(id, book)
+      // Publish the shelf entry only after the complete text is confirmed in IndexedDB.
+      let saved: any[] = []
+      try { const value = JSON.parse(localStorage.getItem("novareads_saved") || "[]"); if (Array.isArray(value)) saved = value } catch { /* recover malformed shelf */ }
+      localStorage.setItem("novareads_saved", JSON.stringify([slimBook(book), ...saved.filter(item => String(item.id) !== id)]))
+      if (mounted.current) { toast({ title: t("saveBook") + " ✓" }); navigate("/book/" + id); onClose() }
+    } catch (error) {
+      if (mounted.current) setSaveError(error instanceof Error ? error.message : copy.error)
+    } finally { if (mounted.current) setSaving(null) }
+  }
+
+  async function importEdition() {
+    if (!selected || !isAdmin || saving) return
+    setSaving("catalog"); setSaveError("")
+    try {
+      const data = await readJson<{ book: { id: number; status: string } }>("/api/admin/gutenberg/import", undefined, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gutenbergId: selected.gutenbergId, genre, overrideTitle: title.trim(),
+          overrideSynopsis: synopsis.trim(), lang: settings.language, status: destination }),
+      })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/books"] }),
+        queryClient.invalidateQueries({ queryKey: ["gutenberg-catalog"] }),
+      ])
+      if (mounted.current) {
+        toast({ title: data.book.status === "draft" ? copy.draftSaved : copy.publish + " ✓" })
+        openExisting(data.book.id, data.book.status)
       }
-      const localId = `gutenberg-${data.gutenbergId}-${lang}`
-      await savePrivateClassic({
-        ...data,
-        id:        localId,
-        genre:     data.genre || data.detectedGenre || "",  // tema visual correcto
-        isClassic: true,
-        isSaved:   true,
-        status:    "saved",
-      })
-      toast({ title: t("importButton") + " ✓" })
-      setLocation(`/book/${localId}`)
-      onClose()
-    } catch (err: any) {
-      toast({ title: err.message, variant: "destructive" })
-    } finally { setDownloading(false) }
+    } catch (error) {
+      if (mounted.current) { setSaveError(error instanceof Error ? error.message : copy.error); void queryClient.invalidateQueries({ queryKey: ["gutenberg-catalog"] }) }
+    } finally { if (mounted.current) setSaving(null) }
   }
 
-  async function publishToCatalog() {
-    if (!selected || !canPublish) return
-    setImporting(true)
-    try {
-      const res = await fetch("/api/admin/gutenberg/import", {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          gutenbergId:      selected.gutenbergId,
-          genre:            adminGenre || selected.detectedGenre || "",
-          overrideTitle:    adminTitle.trim() || selected.title,
-          overrideSynopsis: adminSynopsis.trim() || selected.synopsis,
-          lang,
-        }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.message || t("noResults"))
-      await refetch()
-      toast({ title: t("importButton") + " ✓" })
-      if (data.book?.id) { setLocation(`/book/${data.book.id}`); onClose() }
-    } catch (err: any) {
-      toast({ title: err.message, variant: "destructive" })
-    } finally { setImporting(false) }
-  }
+  const currentChapter = selected?.chapters[chapter]
+  const accent = { backgroundColor: cfg.color, color: "#0b0d11" }
+  return <div className="flex min-h-0 flex-1 flex-col" dir={settings.language === "ar" ? "rtl" : "ltr"}>
+    <header className="relative shrink-0 border-b border-white/10 bg-gradient-to-r from-amber-100/[.06] to-transparent px-4 py-4 sm:px-6 sm:py-5">
+      <div className="flex items-start justify-between gap-3">
+        <div><p className="mb-1 text-[10px] uppercase tracking-[.3em] text-amber-100/60">Project Gutenberg · Tloque</p>
+          <Dialog.Title className="font-display text-xl text-amber-50 sm:text-3xl">{copy.explore}</Dialog.Title>
+          <Dialog.Description className="mt-1 max-w-xl text-xs leading-relaxed text-zinc-400 sm:text-sm">{copy.lead}</Dialog.Description>
+        </div>
+        <Dialog.Close className={button + " shrink-0 rounded-full p-3"} aria-label={t("cancel")}><X className="h-4 w-4" /></Dialog.Close>
+      </div>
+    </header>
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <>
-          {/* Overlay */}
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[290]"
-            style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)" }}
-            onClick={onClose}
-          />
+    <div className="grid min-h-0 flex-1 lg:grid-cols-[1fr_1fr]">
+      <div ref={resultsPane} className={"min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 lg:border-e lg:border-white/10 " + (showDetail ? "hidden lg:block" : "")}>
+        <form onSubmit={event => { event.preventDefault(); editFilters({ query: query.trim() }) }} className="space-y-3">
+          <div className="flex gap-2"><label className="relative min-w-0 flex-1"><span className="sr-only">{copy.search}</span>
+            <Search className="pointer-events-none absolute start-3 top-3 h-4 w-4 text-zinc-500" />
+            <input value={query} onChange={event => setQuery(event.target.value)} maxLength={120} placeholder={copy.search} className={field + " ps-9"} />
+          </label><button type="submit" className={button + " shrink-0 border-transparent px-4"} style={accent} aria-label={t("search")}><Search className="h-4 w-4" /></button></div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="min-w-0 space-y-1 text-[11px] text-zinc-400">{copy.language}
+              <select aria-label={copy.language} className={field} value={filters.lang} onChange={event => editFilters({ lang: event.target.value })}>
+                {GUTENBERG_LANGUAGES.map(([value, label]) => <option key={value} value={value} className="bg-zinc-900">{label}</option>)}
+                <option value="all" className="bg-zinc-900">{copy.all}</option>
+              </select></label>
+            <label className="min-w-0 space-y-1 text-[11px] text-zinc-400">{copy.sort}
+              <select aria-label={copy.sort} className={field} value={filters.sort} onChange={event => editFilters({ sort: event.target.value as GutenbergSort })}>
+                {(["popular", "descending", "ascending"] as const).map(value => <option key={value} value={value} className="bg-zinc-900">{copy[value]}</option>)}
+              </select></label>
+          </div>
+          <label className="block space-y-1 text-[11px] text-zinc-400">{copy.topic}<select aria-label={copy.topic} className={field} value={filters.topic} onChange={event => editFilters({ topic: event.target.value as GutenbergTopic })}>
+            {GUTENBERG_TOPICS.map((value, i) => <option key={value} value={value} className="bg-zinc-900">{copy.topics[i]}</option>)}
+          </select></label>
+        </form>
 
-          {/* Panel */}
-          <motion.div
-            initial={{ opacity: 0, y: 30, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 30, scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 260, damping: 28 }}
-            className="fixed inset-x-3 top-4 bottom-4 z-[300] overflow-hidden rounded-[28px]"
-            style={{
-              background:  "rgba(8,10,14,0.97)",
-              border:      `1px solid ${cfg.color}20`,
-              boxShadow:   "0 30px 120px rgba(0,0,0,0.65)",
-            }}
-          >
-            {/* Glow superior */}
-            <div className="absolute inset-0 pointer-events-none"
-              style={{ background: `radial-gradient(circle at 50% 0%, ${cfg.glow}18, transparent 55%)` }} />
-
-            <div className="relative flex h-full flex-col">
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-4"
-                style={{ borderBottom: `1px solid ${cfg.color}15` }}>
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.28em] font-sans"
-                    style={{ color: cfg.color + "66" }}>
-                    Project Gutenberg
-                  </p>
-                  <h2 className="text-white font-display text-xl font-bold">
-                    {canPublish ? t("importTitle") : t("importTitle")}
-                  </h2>
-                </div>
-                <button onClick={onClose} aria-label={t("cancel")}
-                  className="rounded-full p-2 transition-colors"
-                  style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.4)" }}>
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Body — dos columnas en pantallas grandes */}
-              <div className="grid flex-1 overflow-hidden lg:grid-cols-[1.1fr_0.9fr]">
-
-                {/* Columna izquierda — búsqueda */}
-                <div className="overflow-y-auto" style={{ borderRight: `1px solid ${cfg.color}10` }}>
-                  <div className="p-5 space-y-4">
-
-                    {/* Barra de búsqueda */}
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                      <div className="relative col-span-2 sm:col-span-1">
-                        <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-zinc-500" />
-                        <input
-                          value={query}
-                          onChange={e => setQuery(e.target.value)}
-                          onKeyDown={e => e.key === "Enter" && runSearch()}
-                          maxLength={120}
-                          placeholder={t("searchGutenberg")}
-                          className="w-full rounded-2xl py-3 pl-10 pr-4 text-sm text-white outline-none"
-                          style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${cfg.color}20` }}
-                        />
-                      </div>
-                      <select
-                        value={lang}
-                        onChange={e => {
-                          setLang(e.target.value)
-                          setResults([])
-                          setSelected(null)
-                        }}
-                        className="min-w-0 rounded-2xl px-3 py-3 text-sm text-white outline-none"
-                        style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${cfg.color}20` }}
-                      >
-                        {LANGUAGE_OPTIONS.map(o => (
-                          <option key={o.value} value={o.value} className="bg-zinc-900">{o.label}</option>
-                        ))}
-                      </select>
-                      <motion.button
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => runSearch()}
-                        disabled={searching || !query.trim()}
-                        aria-label={t("preview")}
-                        title={t("preview")}
-                        className="flex min-w-12 items-center justify-center rounded-2xl px-4 text-sm font-semibold text-black disabled:opacity-40"
-                        style={{ background: cfg.color }}
-                      >
-                        {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                      </motion.button>
-                    </div>
-
-                    {/* Ya en catálogo */}
-                    {exactCatalogMatch?.id && (
-                      <motion.button
-                        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => { setLocation(`/book/${exactCatalogMatch.id}`); onClose() }}
-                        className="w-full rounded-2xl px-4 py-3 text-left text-sm"
-                        style={{
-                          background: `${cfg.glow}15`,
-                          border:     `1px solid ${cfg.color}30`,
-                          color:      cfg.color,
-                        }}
-                      >
-                        ✦ {t("alreadyImported")} — {exactCatalogMatch.title}
-                      </motion.button>
-                    )}
-
-                    {/* Resultados */}
-                    <div className="space-y-2">
-                      {onlyAlternativeEditions && (
-                        <div className="rounded-2xl px-4 py-3 text-[11px] leading-relaxed text-amber-100/60"
-                          style={{ background: "rgba(217,164,65,0.08)", border: "1px solid rgba(217,164,65,0.2)" }}>
-                          {t("gutenbergAlternativeHint").replace("{language}", selectedLanguageName)}
-                        </div>
-                      )}
-                      {results.map(result => (
-                        <motion.button
-                          key={result.id}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={() => openResult(result)}
-                          className="w-full rounded-[20px] p-4 text-left transition-colors"
-                          style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${cfg.color}12` }}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="flex h-12 w-10 shrink-0 items-center justify-center rounded-xl"
-                              style={{ background: `${cfg.glow}20` }}>
-                              <BookOpen className="w-4 h-4" style={{ color: cfg.color + "88" }} />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="line-clamp-1 text-sm font-semibold text-white">
-                                  {result.title}
-                                </p>
-                                {result.alreadyImported && (
-                                  <span className="rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.2em]"
-                                    style={{ background: `${cfg.glow}20`, color: cfg.color }}>
-                                    {t("alreadyImported")}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="mt-1 text-xs text-zinc-500">
-                                {result.authors[0]?.name || ""}
-                              </p>
-                              <div className="mt-1.5 flex gap-3 text-[11px] text-zinc-600">
-                                <span className={result.languageMatch === "alternative" ? "text-amber-200/55" : ""}>
-                                  {(result.languages || []).map(code => code.toUpperCase()).join(" · ") || "—"}
-                                </span>
-                                <span>{(result.download_count || 0).toLocaleString()} {t("downloads")}</span>
-                              </div>
-                            </div>
-                            <ExternalLink className="w-4 h-4 shrink-0 text-zinc-700" />
-                          </div>
-                        </motion.button>
-                      ))}
-
-                      {!searching && query.trim() && results.length === 0 && (
-                        <div className="rounded-2xl px-4 py-8 text-center text-sm text-zinc-600"
-                          style={{ border: `1px dashed ${cfg.color}20` }}>
-                          {t("noResults")}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Columna derecha — preview + acciones */}
-                <div className="overflow-y-auto">
-                  <div className="p-5 space-y-4">
-
-                    {!selected && !loadingPreview && (
-                      <div className="rounded-[28px] p-6 text-center"
-                        style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${cfg.color}10` }}>
-                        <Sparkles className="mx-auto mb-4 w-6 h-6" style={{ color: cfg.color + "80" }} />
-                        <p className="text-white font-medium text-sm">
-                          {t("searchGutenberg").split("...")[0]}...
-                        </p>
-                        <p className="mt-2 text-xs text-zinc-600">
-                          {canPublish ? t("gutenbergAdminHint") : t("gutenbergPersonalHint")}
-                        </p>
-                      </div>
-                    )}
-
-                    {loadingPreview && (
-                      <div className="rounded-[28px] p-8 text-center"
-                        style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${cfg.color}10` }}>
-                        <Loader2 className="mx-auto mb-3 w-6 h-6 animate-spin" style={{ color: cfg.color }} />
-                        <p className="text-sm text-zinc-500">{t("searching")}...</p>
-                      </div>
-                    )}
-
-                    {selected && (
-                      <div className="space-y-4">
-                        {/* Portada + info */}
-                        <div className="overflow-hidden rounded-[24px]"
-                          style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${cfg.color}12` }}>
-                          <div className="grid gap-0 sm:grid-cols-[160px_1fr]">
-                            <div className="p-4" style={{ background: `${cfg.glow}12` }}>
-                              <div className="aspect-[2/3] overflow-hidden rounded-[18px]"
-                                style={{ border: `1px solid ${cfg.color}20`, background: "rgba(0,0,0,0.4)" }}>
-                                {selected.coverUrl
-                                  ? <img loading="lazy" src={selected.coverUrl} alt={selected.title}
-                                      className="w-full h-full object-cover" />
-                                  : <div className="flex h-full items-center justify-center">
-                                      <BookOpen className="w-8 h-8" style={{ color: cfg.color + "40" }} />
-                                    </div>
-                                }
-                              </div>
-                            </div>
-                            <div className="p-4 space-y-3">
-                              <div className="flex flex-wrap gap-2">
-                                <span className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em]"
-                                  style={{ background: `${cfg.glow}15`, color: cfg.color }}>
-                                  {selected.originalLanguage.toUpperCase()}
-                                </span>
-                                {selected.alreadyImported && (
-                                  <span className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/50"
-                                    style={{ background: "rgba(255,255,255,0.05)" }}>
-                                    {t("alreadyImported")}
-                                  </span>
-                                )}
-                              </div>
-                              <div>
-                                <h3 className="text-lg font-display font-bold text-white leading-tight">
-                                  {selected.title}
-                                </h3>
-                                <p className="mt-0.5 text-sm text-zinc-500">{selected.author}</p>
-                              </div>
-                              <p className="text-sm leading-relaxed text-zinc-400 line-clamp-4">
-                                {selected.synopsis}
-                              </p>
-                              <div className="flex gap-3 text-xs text-zinc-600">
-                                <span>{selected.chapterCount} {t("chapters")}</span>
-                                {selected.publicationYear && <span>{selected.publicationYear}</span>}
-                              </div>
-                              <a
-                                href={`https://www.gutenberg.org/ebooks/${selected.gutenbergId}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1.5 text-[11px] text-white/35 transition-colors hover:text-white/60"
-                              >
-                                <ExternalLink className="h-3 w-3" />
-                                {t("gutenbergSource")}
-                              </a>
-                            </div>
-                          </div>
-                        </div>
-
-                        <p className="rounded-2xl border border-white/[.06] bg-white/[.02] px-4 py-3 text-[11px] leading-relaxed text-white/30">
-                          {t("gutenbergRightsNotice")}
-                        </p>
-
-                        {/* Curación — solo admin */}
-                        {canPublish && !selected.alreadyImported && (
-                          <div className="rounded-[24px] p-4 space-y-3"
-                            style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${cfg.color}12` }}>
-                            <p className="text-[10px] uppercase tracking-[0.24em] text-zinc-600">{t("genre_label")}</p>
-                            <input value={adminTitle}
-                              onChange={e => setAdminTitle(e.target.value)}
-                              className="w-full rounded-2xl px-4 py-2.5 text-sm text-white outline-none"
-                              style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${cfg.color}15` }}
-                              placeholder={t("title")} />
-                            <input value={adminGenre}
-                              onChange={e => setAdminGenre(e.target.value)}
-                              className="w-full rounded-2xl px-4 py-2.5 text-sm text-white outline-none"
-                              style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${cfg.color}15` }}
-                              placeholder={t("genre_label")} />
-                            <textarea value={adminSynopsis}
-                              onChange={e => setAdminSynopsis(e.target.value)}
-                              className="min-h-[100px] w-full rounded-2xl px-4 py-2.5 text-sm text-white outline-none resize-none"
-                              style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${cfg.color}15` }}
-                              placeholder={t("synopsis")} />
-                          </div>
-                        )}
-
-                        {/* Botones de acción */}
-                        <div className="grid grid-cols-2 gap-3">
-                          {/* Descargar para mí — disponible para todos */}
-                          <motion.button whileTap={{ scale: 0.97 }}
-                            onClick={downloadForMe}
-                            disabled={downloading}
-                            className="flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
-                            style={{ background: "rgba(255,255,255,0.07)", border: `1px solid ${cfg.color}20` }}>
-                            {downloading
-                              ? <Loader2 className="w-4 h-4 animate-spin" />
-                              : <Download className="w-4 h-4" />}
-                            {t("saveBook")}
-                          </motion.button>
-
-                          {/* Publicar al catálogo — solo admin */}
-                          {selected.existingBookId ? (
-                            <motion.button whileTap={{ scale: 0.97 }}
-                              onClick={() => { setLocation(`/book/${selected.existingBookId}`); onClose() }}
-                              className="flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-black"
-                              style={{ background: cfg.color }}>
-                              <ExternalLink className="w-4 h-4" />
-                              {t("readBook")}
-                            </motion.button>
-                          ) : canPublish ? (
-                            <motion.button whileTap={{ scale: 0.97 }}
-                              onClick={publishToCatalog}
-                              disabled={importing}
-                              className="flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
-                              style={{ background: cfg.color }}>
-                              {importing
-                                ? <Loader2 className="w-4 h-4 animate-spin" />
-                                : <Upload className="w-4 h-4" />}
-                              {t("importButton")}
-                            </motion.button>
-                          ) : (
-                            <div className="rounded-2xl px-4 py-3 text-xs text-zinc-600 flex items-center justify-center text-center"
-                              style={{ border: `1px dashed ${cfg.color}15` }}>
-                              {t("importSubtitle")}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Vista previa del texto */}
-                        {selected.previewText && (
-                          <div className="rounded-[20px] p-4"
-                            style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${cfg.color}10` }}>
-                            <p className="text-[10px] uppercase tracking-[0.24em] text-zinc-600 mb-2">
-                              {t("preview")}
-                            </p>
-                            <p className="text-sm leading-relaxed text-zinc-500 line-clamp-6">
-                              {selected.previewText}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+        <div className="my-4 flex min-h-5 items-center justify-between gap-2 text-[11px] text-zinc-400" role="status" aria-live="polite">
+          <span>{catalog.isFetching ? t("searching") : catalog.data && !catalog.isError ? copy.results.replace("{n}", catalog.data.count.toLocaleString(settings.language)) : ""}</span>
+          {catalog.data && <span>{copy.page} {catalog.data.page}</span>}
+        </div>
+        {catalog.isError && <div role="alert" className="mb-4 rounded-2xl border border-amber-100/20 bg-amber-100/5 p-4"><p className="text-sm text-zinc-300">{copy.error}</p><button onClick={() => void catalog.refetch()} className={button + " mt-3"}>{copy.retry}</button></div>}
+        {catalog.isPending && !catalog.isError && <div aria-hidden="true" className={"space-y-3 " + (settings.reduceMotion ? "" : "motion-safe:animate-pulse")}>{[1, 2, 3].map(i => <div key={i} className="h-32 rounded-2xl border border-white/5 bg-white/[.035]" />)}</div>}
+        {!catalog.isError && catalog.data?.results.length === 0 && <div className="rounded-2xl border border-dashed border-amber-100/20 px-5 py-8 text-center"><BookOpen className="mx-auto mb-3 h-6 w-6 text-amber-200/50" /><p className="text-sm text-zinc-300">{copy.empty}</p>
+          {filters.lang !== "all" && <button className={button + " mt-4"} onClick={() => editFilters({ lang: "all" })}>{copy.tryAll}</button>}</div>}
+        <div className="space-y-3" aria-busy={catalog.isFetching}>
+          {catalog.data?.results.map(book => <button key={book.id} type="button" onClick={event => { lastResult.current = event.currentTarget; void openEdition(book) }} aria-label={book.title} aria-pressed={requested?.id === book.id}
+            className={"group flex w-full items-start gap-4 rounded-2xl border p-3 text-start transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-200 " + (requested?.id === book.id ? "border-amber-200/45 bg-amber-100/[.065]" : "border-white/10 bg-white/[.02] hover:border-amber-200/30 hover:bg-white/[.045]")}>
+            <Cover url={book.coverUrl} title={book.title} />
+            <div className="min-w-0 flex-1 py-1"><p className="mb-1 text-[10px] uppercase tracking-widest text-amber-100/50">#{book.id} · {book.languages.map(gutenbergLanguageName).join(" / ")}</p>
+              <h3 className="line-clamp-2 break-words font-display text-base leading-snug text-zinc-100">{book.title}</h3>
+              <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{book.authors.map(author => author.name).join(" · ")}</p>
+              {book.alreadyImported ? <p className="mt-2 flex items-center gap-1 text-[11px] text-amber-100/80"><Check className="h-3 w-3" />{copy.existing}{book.existingStatus === "draft" ? " · " + t("drafts") : ""}</p>
+                : <p className="mt-2 text-[11px] text-zinc-500">{Number(book.download_count || 0).toLocaleString(settings.language)} {t("downloads")}</p>}
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  )
+          </button>)}
+        </div>
+        {catalog.data && (catalog.data.previousPage || catalog.data.nextPage) && <nav aria-label={copy.page} className="mt-5 flex justify-between gap-3 pb-2">
+          <button className={button} disabled={!catalog.data.previousPage || catalog.isFetching} onClick={() => editFilters({ page: catalog.data!.previousPage! })}><ArrowLeft className="h-4 w-4" />{copy.previous}</button>
+          <button className={button} disabled={!catalog.data.nextPage || catalog.isFetching} onClick={() => editFilters({ page: catalog.data!.nextPage! })}>{copy.next}<ArrowRight className="h-4 w-4" /></button>
+        </nav>}
+      </div>
+
+      <div ref={detailPane} className={"min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 " + (showDetail ? "" : "hidden lg:block")}>
+        {showDetail && <button onClick={() => { setShowDetail(false); requestAnimationFrame(() => lastResult.current?.focus()) }} className={button + " mb-4 lg:hidden"}><ArrowLeft className="h-4 w-4" />{copy.back}</button>}
+        <h2 ref={detailHeading} tabIndex={-1} className="sr-only">{requested?.title || copy.choose}</h2>
+        {!requested && <div className="flex min-h-[340px] flex-col items-center justify-center rounded-3xl border border-amber-100/10 bg-gradient-to-b from-amber-100/[.045] to-transparent p-8 text-center">
+          <LibraryBig className="mb-6 h-12 w-12 stroke-[1] text-amber-100/50" /><h3 className="font-display text-2xl text-amber-50">{copy.choose}</h3><p className="mt-3 max-w-xs text-sm leading-relaxed text-zinc-400">{copy.chooseHint}</p>
+        </div>}
+        {previewBusy && <div role="status" className="rounded-2xl border border-white/10 p-8 text-center"><Loader2 className="mx-auto mb-4 h-6 w-6 animate-spin text-amber-100/70" /><p className="text-sm text-zinc-300">{copy.loading}</p></div>}
+        {previewError && <div role="alert" className="rounded-2xl border border-amber-100/20 p-5"><p className="text-sm text-zinc-300">{previewError}</p><button className={button + " mt-4"} onClick={() => requested && void openEdition(requested)}>{copy.retry}</button></div>}
+        {selected && <div className="space-y-5">
+          <div className="flex items-start gap-4"><Cover url={selected.coverUrl} title={selected.title} large /><div className="min-w-0 pt-1">
+            <p className="text-[10px] uppercase tracking-widest text-amber-100/60">{selected.languages.map(gutenbergLanguageName).join(" / ")}</p>
+            <h3 className="mt-2 break-words font-display text-xl leading-tight text-amber-50 sm:text-2xl">{selected.title}</h3><p className="mt-2 text-sm text-zinc-400">{selected.author}</p>
+            {selected.translators.length > 0 && <p className="mt-2 text-xs text-zinc-400">{copy.translators}: {selected.translators.join(" · ")}</p>}
+            <a href={selected.sourceUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-amber-100/75 underline underline-offset-4">Gutenberg #{selected.gutenbergId}<ExternalLink className="h-3 w-3" /></a>
+          </div></div>
+          <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-3 text-center">
+            {[[selected.chapterCount, t("chapters")], [selected.wordCount.toLocaleString(settings.language), copy.words], [selected.readingMinutes, copy.minutes]].map(([number, label]) => <div key={label} className="min-w-0"><p className="font-display text-lg text-amber-50">{number}</p><p className="mt-1 text-[10px] leading-tight text-zinc-400">{label}</p></div>)}
+          </div>
+          <div><p className="mb-2 text-[10px] uppercase tracking-widest text-amber-100/60">{selected.synopsisSource === "gutendex" ? copy.sourceSummary : copy.metadataSummary}</p><p dir="auto" className="whitespace-pre-line text-sm leading-relaxed text-zinc-300">{selected.synopsis}</p></div>
+          <p className="text-xs leading-relaxed text-zinc-500">{copy.original}</p>
+          <section className="rounded-2xl border border-amber-100/15 bg-amber-50/[.025] p-4">
+            <h4 className="mb-3 font-display text-lg text-amber-50">{copy.sample}</h4>
+            <label className="block space-y-2 text-xs text-zinc-400">{t("chapters")}<select aria-label={t("chapters")} className={field} value={chapter} onChange={event => setChapter(Number(event.target.value))}>
+              {selected.chapters.map((item, i) => <option key={i} value={i} className="bg-zinc-900">{i + 1}. {item.title.slice(0, 150)}</option>)}
+            </select></label>
+            <div dir="auto" data-testid="gutenberg-sample" className="mt-4 max-h-80 overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-black/20 p-4 font-serif text-base leading-8 text-[#d5d0c5]">{currentChapter?.content.slice(0, 4_000)}</div>
+            <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">{copy.sampleHint}</p>
+          </section>
+          <p className="text-xs leading-relaxed text-zinc-400">{selected.chapterStrategy === "full-text" ? copy.full : copy.detected}</p>
+          {isAdmin && <details className="rounded-2xl border border-white/10 p-4"><summary className="cursor-pointer text-sm text-amber-100/80">{copy.ready}</summary><div className="mt-4 space-y-3">
+            <label className="block space-y-1 text-xs text-zinc-400">{t("title")}<input className={field} value={title} maxLength={200} onChange={event => setTitle(event.target.value)} /></label>
+            <label className="block space-y-1 text-xs text-zinc-400">{t("genre_label")}<input className={field} value={genre} maxLength={60} onChange={event => setGenre(event.target.value)} /></label>
+            <label className="block space-y-1 text-xs text-zinc-400">{t("synopsis")}<textarea className={field + " min-h-32"} value={synopsis} maxLength={8000} onChange={event => setSynopsis(event.target.value)} /></label>
+          </div></details>}
+          <p className="text-[11px] leading-relaxed text-zinc-500">{t("gutenbergRightsNotice")}</p>
+          {saveError && <p role="alert" className="rounded-xl border border-amber-200/20 p-3 text-sm text-amber-100">{saveError}</p>}
+          {isAdmin && <label className="block space-y-1 text-xs text-zinc-400">{copy.importAs}<select aria-label={copy.importAs} className={field} value={destination} onChange={event => setDestination(event.target.value as "draft" | "published")} disabled={!!saving}>
+            <option value="draft" className="bg-zinc-900">{copy.draft}</option><option value="published" className="bg-zinc-900">{copy.publish}</option>
+          </select></label>}
+          <div className="grid gap-3 pb-3 sm:grid-cols-2"><button className={button} onClick={() => void savePrivate()} disabled={!!saving}>{saving === "private" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}{t("saveBook")}</button>
+            {isAdmin && <button className={button + " border-transparent"} style={accent} onClick={() => void importEdition()} disabled={!!saving}>{saving === "catalog" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{destination === "draft" ? copy.draft : copy.publish}</button>}
+          </div>
+        </div>}
+      </div>
+    </div>
+  </div>
 }
