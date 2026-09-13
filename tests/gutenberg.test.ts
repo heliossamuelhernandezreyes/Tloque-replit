@@ -271,6 +271,9 @@ test("reconoce números escritos y conserva secciones grandes dentro del contrat
   assert.ok(!/[\uD800-\uDBFF]$/.test(fitted[0].content))
   const longTitle = "CAPÍTULO I · ".repeat(30)
   assert.ok(fitGutenbergChapters([{ title: longTitle, content: "Último texto." }])[0].content.startsWith(longTitle))
+  const validTitle = "X".repeat(199)
+  assert.equal(fitGutenbergChapters([{ title: validTitle, content: "Breve." }])[0].title, validTitle)
+  assert.ok(fitGutenbergChapters([{ title: validTitle, content: original }])[0].content.startsWith(validTitle))
 })
 
 test("preview e importación comparten la descarga y la portada de la edición exacta", async t => {

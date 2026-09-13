@@ -382,17 +382,18 @@ export function fitGutenbergChapters(chapters: { title: string; content: string 
   const output: { title: string; content: string }[] = []
   for (const chapter of chapters) {
     // Keep long sequences of index headings in the text, rather than truncating them.
-    let content = chapter.title.length > 200 ? chapter.title + "\n\n" + chapter.content : chapter.content
-    const title = chapter.title.slice(0, 180)
+    const preserveHeading = chapter.title.length > 200 || chapter.title.length > 180 && chapter.content.length > 2_000_000
+    let content = preserveHeading ? chapter.title + "\n\n" + chapter.content : chapter.content
+    const title = chapter.title.slice(0, 200)
     let part = 1
     while (content.length > 2_000_000) {
       const paragraph = content.lastIndexOf("\n\n", 1_900_000)
       let end = paragraph > 950_000 ? paragraph : 1_900_000
       if (/[\uD800-\uDBFF]/.test(content[end - 1])) end--
-      output.push({ title: `${title} · ${part++}`, content: content.slice(0, end) })
+      output.push({ title: `${title.slice(0, 180)} · ${part++}`, content: content.slice(0, end) })
       content = content.slice(end)
     }
-    output.push({ title: part > 1 ? `${title} · ${part}` : title, content })
+    output.push({ title: part > 1 ? `${title.slice(0, 180)} · ${part}` : title, content })
   }
   return output
 }
