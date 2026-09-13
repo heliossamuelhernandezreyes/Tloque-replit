@@ -1,5 +1,6 @@
 // Reglas puras de las tarjetas coleccionables — testeables sin BD.
 import { isSafeImageSource } from "@shared/media"
+import { readCardScene } from "@shared/card-scene"
 
 export const MAX_CARDS_PER_BOOK = 6
 export const MAX_LOOSE_CARDS = 24
@@ -46,7 +47,8 @@ export function sanitizeCardFx(input: any): any {
   let frameId: number | null = Math.trunc(Number(input?.frameId))
   if (!Number.isFinite(frameId) || frameId <= 0) frameId = null
 
-  return { mode: layered ? "layered" : "simple", layers, effect, effectIntensity, layerFx, rarity, frameId }
+  const scene = readCardScene(input?.scene)
+  return { mode: layered ? "layered" : "simple", layers, effect, effectIntensity, layerFx, rarity, frameId, ...(scene ? { scene } : {}) }
 }
 
 // Valida y normaliza el cuerpo de creación/edición de una tarjeta.
@@ -65,6 +67,7 @@ export function validateCard(body: any):
       return { ok: false, message: `El precio debe ser de ${CARD_PRICE_MIN} a ${CARD_PRICE_MAX} Tinta` }
     }
   }
+  if (body?.fx?.scene != null && !readCardScene(body.fx.scene)) return { ok: false, message: "La escena de la tarjeta no es válida. Revisa su versión, límites y claves de animación." }
   const fx = sanitizeCardFx(body?.fx)
   if (!fx.layers.back) return { ok: false, message: "La tarjeta necesita al menos el arte de fondo" }
   for (const source of Object.values(fx.layers) as string[]) {

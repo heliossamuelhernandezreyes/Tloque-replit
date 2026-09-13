@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Pause, Play, RotateCcw } from "lucide-react"
 import { readFrameScene, type SceneTransport } from "@shared/frame-scene"
+import type { CardScene } from "@shared/card-scene-runtime"
 import VisualSlot, { useVisualEngine } from "./VisualEngine"
 import FrameRenderer from "@/components/FrameRenderer"
 import "./frame-studio.css"
@@ -47,8 +48,8 @@ export function InspectionControls({ controller, duration, disabled = false }: {
   </div>
 }
 
-export function InspectionStage({ pkg, shape = "card", images, priority = 100, controller, children, onReadyChange }: {
-  pkg: unknown; shape?: "card" | "profile"; images?: string[]; priority?: number; controller: InspectionController; children?: ReactNode; onReadyChange?: (ready: boolean) => void
+export function InspectionStage({ pkg, shape = "card", images, cardScene, color, priority = 100, controller, children, onReadyChange }: {
+  pkg: unknown; shape?: "card" | "profile"; images?: string[]; cardScene?: CardScene; color?: string; priority?: number; controller: InspectionController; children?: ReactNode; onReadyChange?: (ready: boolean) => void
 }) {
   const engine = useVisualEngine()
   const [ready, setReady] = useState(false)
@@ -56,20 +57,21 @@ export function InspectionStage({ pkg, shape = "card", images, priority = 100, c
   useEffect(() => { if (!ready) controller.pause() }, [ready, controller.pause])
   return <div className="tq-inspection-stage">
     <div className="tq-stage-meta"><span>SCENE / 02</span><span data-testid="scene-status">{ready ? "3D EN TIEMPO REAL" : engine.failed ? "VISTA ESENCIAL · GPU NO DISPONIBLE" : engine.enabled ? "PREPARANDO 3D" : "VISTA ESENCIAL"}</span></div>
-    <VisualSlot priority={priority} options={{ kind: images?.length ? "portal" : "frame", frame: pkg, shape, images, transport: controller.transport }} interactive label="Escena del marco" onReadyChange={onReady} className="tq-cinematic-slot">
-      <div className="tq-stage-poster"><FrameRenderer preset={pkg} shape={shape}>{children}</FrameRenderer></div>
+    <VisualSlot priority={priority} options={{ kind: images?.some(Boolean) ? "portal" : "frame", frame: pkg, shape, images, cardScene, color, transport: controller.transport }} interactive label={cardScene ? "Escena de la tarjeta" : "Escena del marco"} onReadyChange={onReady} className="tq-cinematic-slot">
+      <div className="tq-stage-poster">{cardScene ? children : <FrameRenderer preset={pkg} shape={shape}>{children}</FrameRenderer>}</div>
     </VisualSlot>
     <div className="tq-stage-hint">{ready ? "Mueve el puntero o desliza sobre el marco para explorar" : "La vista esencial conserva el diseño sin animaciones 3D"}</div>
   </div>
 }
 
-export default function FrameInspection({ pkg, shape, images, children, onReadyChange }: { pkg: unknown; shape?: "card" | "profile"; images?: string[]; children?: ReactNode; onReadyChange?: (ready: boolean) => void }) {
+export default function FrameInspection({ pkg, shape, images, cardScene, color, children, onReadyChange }: { pkg: unknown; shape?: "card" | "profile"; images?: string[]; cardScene?: CardScene; color?: string; children?: ReactNode; onReadyChange?: (ready: boolean) => void }) {
   const scene = readFrameScene(pkg)
-  const controller = useInspection(scene?.animation.duration ?? 8)
+  const duration = cardScene?.duration ?? scene?.animation.duration ?? 8
+  const controller = useInspection(duration)
   const [ready, setReady] = useState(false)
   const onReady = useCallback((value: boolean) => { setReady(value); onReadyChange?.(value) }, [onReadyChange])
   return <div className="tq-inspection">
-    <InspectionStage pkg={pkg} shape={shape} images={images} controller={controller} onReadyChange={onReady}>{children}</InspectionStage>
-    {scene && <InspectionControls controller={controller} duration={scene.animation.duration} disabled={!ready}/>}
+    <InspectionStage pkg={pkg} shape={shape} images={images} cardScene={cardScene} color={color} controller={controller} onReadyChange={onReady}>{children}</InspectionStage>
+    {(scene || cardScene) && <InspectionControls controller={controller} duration={duration} disabled={!ready}/>}
   </div>
 }

@@ -1,7 +1,7 @@
-import { useRef, useState } from "react"
+import { lazy, Suspense, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus, Trash2, Pencil, Loader2, Heart, Droplets, BookPlus } from "lucide-react"
+import { Plus, Trash2, Pencil, Loader2, Heart, Droplets, BookPlus, Clapperboard } from "lucide-react"
 import { useSettings } from "@/context/SettingsContext"
 import { LayerUpload } from "@/components/LayerUpload"
 import { MATERIALS, RARITY_ORDER, frameGradient, type Rarity } from "@/lib/rarities"
@@ -9,6 +9,9 @@ import CollectibleCard from "@/components/CollectibleCard"
 import FrameRenderer from "@/components/FrameRenderer"
 import { useFrames } from "@/hooks/useFrames"
 import { useLocation } from "wouter"
+import { useAuth } from "@/hooks/useAuth"
+import { readCardScene, type CardScene } from "@shared/card-scene"
+const CardDirector = lazy(() => import("@/visual/CardDirector"))
 
 interface Card {
   id: number; name: string; subtitle: string; description: string
@@ -27,6 +30,7 @@ const EMPTY = {
   layers: { back: "", mid: "", front: "" },
   rarity: "silver" as Rarity,
   frameId: null as number | null,
+  scene: null as CardScene | null,
   layerFx: {
     back:  { effect: "none", intensity: 0.5 },
     mid:   { effect: "none", intensity: 0.5 },
@@ -40,7 +44,8 @@ const EMPTY = {
 export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: Props) {
   const isLoose = bookId == null
   const maxCards = isLoose ? 24 : 6
-  const { usable } = useFrames()
+  const { usable, byId } = useFrames()
+  const { user } = useAuth()
   const myFrames = usable("card")
   const [, navigate] = useLocation()
   const { t } = useSettings()
@@ -49,6 +54,8 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
   const [editing, setEditing] = useState<null | { id?: number }>(null)
   const [assigning, setAssigning] = useState<null | number>(null)   // cardId con selector abierto
   const [form, setForm] = useState(EMPTY)
+  const [directing, setDirecting] = useState(false)
+  const directionDraftKey = `tloque-card-direction-v1:${user?.id}:${bookId ?? "loose"}:${editing?.id ?? "new"}`
   const backRef  = useRef<HTMLInputElement>(null)
   const midRef   = useRef<HTMLInputElement>(null)
   const frontRef = useRef<HTMLInputElement>(null)
@@ -69,7 +76,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
       const body = {
         name: form.name, subtitle: form.subtitle, description: form.description,
         unlock: form.unlock, priceTinta: form.priceTinta,
-        fx: { layers: form.layers, rarity: form.rarity, layerFx: form.layerFx, frameId: form.frameId },
+        fx: { layers: form.layers, rarity: form.rarity, layerFx: form.layerFx, frameId: form.frameId, ...(form.scene ? { scene: form.scene } : {}) },
       }
       const url    = editing?.id ? `/api/cards/${editing.id}`
                    : isLoose     ? "/api/cards"
@@ -87,6 +94,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/books/cards", bookId] })
+      try { localStorage.removeItem(directionDraftKey) } catch { /* optional local recipe */ }
       setEditing(null); setForm(EMPTY)
     },
   })
@@ -132,6 +140,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
       },
       rarity: (card.fx?.rarity || "silver") as Rarity,
       frameId: card.fx?.frameId ?? null,
+      scene: readCardScene(card.fx?.scene),
       layerFx: {
         back:  card.fx?.layerFx?.back  || { effect: "none", intensity: 0.5 },
         mid:   card.fx?.layerFx?.mid   || { effect: "none", intensity: 0.5 },
@@ -243,7 +252,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
                 </button>
               )
             )}
-            <button onClick={() => startEdit(card)} className="p-1.5 rounded-lg"
+            <button onClick={() => startEdit(card)} aria-label={`Editar ${card.name}`} className="p-1.5 rounded-lg"
               style={{ color: gc.color }}>
               <Pencil className="w-3 h-3" />
             </button>
@@ -331,6 +340,15 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
             hint="La más cercana, se mueve más" compact />
           <LayerEffectPicker which="front" label="Efecto al frente (lluvia en el vidrio…)" />
 
+          <div className="rounded-xl border border-amber-200/20 bg-gradient-to-br from-amber-200/5 to-indigo-300/5 p-4 !my-5">
+            <p className="text-[10px] tracking-[.15em] text-amber-200/60">CARD DIRECTOR / 3D</p>
+            <h3 className="text-lg font-display text-zinc-100 mt-1">De ilustración a escena viva.</h3>
+            <p className="text-xs text-zinc-400 leading-relaxed my-2">Compón cada capa, dirige su entrada y prueba el acabado iridiscente. Mismo escenario en el editor y en la inspección del lector.</p>
+            <button disabled={!form.layers.back} onClick={() => setDirecting(true)} className="min-h-11 w-full rounded-lg bg-amber-100/10 border border-amber-200/25 text-amber-100 text-xs flex items-center justify-center gap-2 disabled:opacity-35"><Clapperboard size={17}/>Dirigir escena y animación</button>
+            <p className="text-[10px] text-zinc-500 mt-2">{form.scene ? `Dirección activa · ${form.scene.duration} segundos · ${form.scene.finish.type === "none" ? "arte original" : form.scene.finish.type}` : "Primero añade un fondo. Personaje y primer plano con transparencia dan profundidad."}</p>
+            {form.scene && <button className="text-[10px] text-zinc-400 underline min-h-9" onClick={() => { if (window.confirm("¿Quitar la dirección 3D de esta tarjeta? No se borrará el arte ni el marco.")) setForm(f => ({ ...f, scene: null })) }}>Volver al estilo clásico</button>}
+          </div>
+
           {/* Rareza — material del marco */}
           <div className="pt-1">
             {/* ── MARCO DE LA GALERÍA ── */}
@@ -415,7 +433,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
                     id: -1, name: form.name || "Nombre", subtitle: form.subtitle,
                     description: form.description, unlock: form.unlock, priceTinta: form.priceTinta,
                     owned: true,
-                    fx: { layers: form.layers, rarity: form.rarity, layerFx: form.layerFx, frameId: form.frameId },
+                    fx: { layers: form.layers, rarity: form.rarity, layerFx: form.layerFx, frameId: form.frameId, ...(form.scene ? { scene: form.scene } : {}) },
                   }}
                   accentColor={gc.color}
                   accentGlow={gc.glow}
@@ -445,6 +463,9 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
           </div>
         </div>
       )}
+      {directing && <Suspense fallback={<p role="status" className="text-xs text-zinc-400 py-4">Preparando dirección 3D…</p>}>
+        <CardDirector value={form.scene} images={[form.layers.back, form.layers.mid, form.layers.front]} frame={byId(form.frameId)?.pkg} color={MATERIALS[form.rarity]?.base || gc.color} name={form.name} draftKey={directionDraftKey} onApply={scene => setForm(f => ({ ...f, scene }))} onClose={() => setDirecting(false)}/>
+      </Suspense>}
     </div>
   )
 }

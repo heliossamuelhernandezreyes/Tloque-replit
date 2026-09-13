@@ -1,7 +1,8 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { Mesh, Scene, Texture, TextureLoader, Vector4, type WebGLRenderer, type WebGLRenderTarget } from "three"
+import { Mesh, Scene, ShaderMaterial, Texture, TextureLoader, Vector4, type WebGLRenderer, type WebGLRenderTarget } from "three"
 import { createVisualScene, sceneKey } from "../client/src/visual/scenes"
+import { applyCardMotion, createCardScene } from "../shared/card-scene"
 
 class RendererRecorder {
   viewport = new Vector4(20, 30, 200, 300)
@@ -130,4 +131,43 @@ test("una imagen que llega después del cierre no resucita la escena", () => {
 test("gestos no reconstruyen la escena; cambiar tema sí", () => {
   assert.equal(sceneKey({ kind: "orb", active: false }), sceneKey({ kind: "orb", active: true, pulse: true }))
   assert.notEqual(sceneKey({ kind: "orb" }), sceneKey({ kind: "orb", theme: "fluorescent-rose" }))
+})
+
+test("planos de tarjeta respetan identidad, claves, alfa, tiempo absoluto y disposición", () => {
+  const original = TextureLoader.prototype.load
+  const loaded: Texture[] = []
+  TextureLoader.prototype.load = function (_url, onLoad) {
+    const texture = new Texture({ width: 700, height: 980 } as HTMLImageElement); loaded.push(texture)
+    queueMicrotask(() => onLoad?.(texture))
+    return texture
+  } as typeof original
+  const cardScene = applyCardMotion(createCardScene(), "reveal")
+  cardScene.finish = { type: "prismatic", strength: .4 }
+  const options = { kind: "portal" as const, images: ["https://x.test/back.webp", "", "https://x.test/front.webp"], cardScene, transport: { current: { time: 0, mode: "inspection" as const } } }
+  const resource = createVisualScene(options, 1024), recorder = new RendererRecorder()
+  return new Promise<void>(resolve => queueMicrotask(resolve)).then(() => {
+    assert.equal(resource.ready(), true)
+    resource.update(99, 1 / 30, 1, { x: 0, y: 0 }, options); resource.render(recorder.asRenderer())
+    const planes: Mesh<any, ShaderMaterial>[] = []
+    recorder.renders[0].scene.traverse(object => {
+      if (object instanceof Mesh && object.material instanceof ShaderMaterial && object.material.uniforms.uMap) planes.push(object as Mesh<any, ShaderMaterial>)
+    })
+    assert.deepEqual(planes.map(plane => plane.renderOrder), [1, 3])
+    assert.equal(recorder.renders[0].scene.children.some(object => object instanceof Mesh && object.geometry.type === "TorusGeometry"), false, "authored card without a gallery frame has no forced arches")
+    const front = planes[1]
+    assert.equal(front.material.uniforms.uOpacity.value, 0)
+    assert.equal(front.material.depthTest, false, "procedural background never hides the authored image")
+    options.transport.current.time = 4
+    resource.update(200, 1 / 30, 1, { x: 0, y: 0 }, options)
+    const pose = front.position.clone()
+    assert.equal(front.material.uniforms.uOpacity.value, 1)
+    assert.equal(front.material.uniforms.uFinish.value, 2)
+    resource.update(900, 1 / 30, 1, { x: 0, y: 0 }, options)
+    assert.deepEqual(front.position, pose, "paused transport does not advance with wall time")
+    let disposedTextures = 0, disposedMaterials = 0
+    loaded.forEach(texture => texture.addEventListener("dispose", () => disposedTextures++))
+    planes.forEach(plane => plane.material.addEventListener("dispose", () => disposedMaterials++))
+    resource.dispose(); resource.dispose()
+    assert.equal(disposedTextures, 2); assert.equal(disposedMaterials, 2)
+  }).finally(() => { resource.dispose(); TextureLoader.prototype.load = original })
 })

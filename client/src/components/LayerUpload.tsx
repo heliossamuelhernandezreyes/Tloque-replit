@@ -4,39 +4,12 @@ import { useState } from "react"
 import { motion } from "framer-motion"
 import { X, Check, Image } from "lucide-react"
 import { useSettings } from "@/context/SettingsContext"
+import { prepareLayer, type PreparedLayer } from "@/lib/prepare-layer"
+import { isSafeImageSource } from "@shared/media"
 
-export // ── COMPRESIÓN DE IMÁGENES — evita reventar localStorage (max ~150KB) ──
-function compressImage(file: File, maxSize = 800, quality = 0.8): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = e => {
-      const img = new window.Image()
-      img.onload = () => {
-        let { width, height } = img
-        // Redimensionar manteniendo proporción — lado mayor a maxSize
-        if (width > height && width > maxSize) {
-          height = Math.round((height * maxSize) / width)
-          width  = maxSize
-        } else if (height > maxSize) {
-          width  = Math.round((width * maxSize) / height)
-          height = maxSize
-        }
-        const canvas = document.createElement("canvas")
-        canvas.width  = width
-        canvas.height = height
-        const ctx = canvas.getContext("2d")
-        if (!ctx) { reject(new Error("No canvas context")); return }
-        ctx.drawImage(img, 0, 0, width, height)
-        // PNG conserva transparencia (capas); JPEG para fotos planas
-        const isPng = file.type === "image/png"
-        resolve(canvas.toDataURL(isPng ? "image/png" : "image/jpeg", quality))
-      }
-      img.onerror = () => reject(new Error("Image load failed"))
-      img.src = e.target?.result as string
-    }
-    reader.onerror = () => reject(new Error("File read failed"))
-    reader.readAsDataURL(file)
-  })
+export // ── PREPARACIÓN DE CAPAS — alfa y límite de 400 KB codificados ──
+async function compressImage(file: File, maxSize = 1280, quality = 0.9): Promise<string> {
+  return (await prepareLayer(file, maxSize, quality)).url
 }
 
 export // ── SUBCOMPONENTE: UPLOAD DE CAPA ────────────────────────
@@ -55,20 +28,18 @@ function LayerUpload({
   const [showUrl,  setShowUrl]  = useState(false)
   const [urlValue, setUrlValue] = useState("")
   const [busy,     setBusy]     = useState(false)
+  const [error, setError] = useState("")
+  const [prepared, setPrepared] = useState<PreparedLayer | null>(null)
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    setBusy(true)
+    setBusy(true); setError("")
     try {
-      // Comprimir antes de guardar — evita reventar localStorage
-      const compressed = await compressImage(file)
-      onUpload(compressed)
-    } catch {
-      // Fallback: usar el archivo crudo si la compresión falla
-      const reader = new FileReader()
-      reader.onloadend = () => onUpload(reader.result as string)
-      reader.readAsDataURL(file)
+      const result = await prepareLayer(file)
+      setPrepared(result); onUpload(result.url)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "No se pudo importar la capa")
     } finally {
       setBusy(false)
       e.target.value = ""  // permite volver a subir la misma imagen
@@ -77,7 +48,9 @@ function LayerUpload({
 
   function handleUrl() {
     if (urlValue.trim()) {
+      if (!isSafeImageSource(urlValue.trim(), 400_000)) { setError("Usa una URL HTTPS de imagen o una imagen codificada de hasta 400 KB."); return }
       onUpload(urlValue.trim())
+      setPrepared(null); setError("")
       setShowUrl(false)
       setUrlValue("")
     }
@@ -85,6 +58,8 @@ function LayerUpload({
 
   return (
     <div>
+      {error && <p role="alert" className="text-xs text-red-300 mb-2">{error}</p>}
+      {prepared?.url === url && <p className="text-[10px] text-zinc-400 mb-2">{prepared.width} × {prepared.height} · {Math.ceil(prepared.bytes / 1024)} KB · {prepared.transparent ? "Transparencia conservada" : "Imagen opaca · recorta el sujeto para ver el fondo"}</p>}
       {label && (
         <div className="flex items-center justify-between mb-1">
           <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-sans">{label}</p>
@@ -164,8 +139,7 @@ function LayerUpload({
         </motion.button>
       </div>
 
-      {/* accept="image/*" abre galería + archivos en móvil */}
-      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      <input ref={inputRef} aria-label={label || "Importar capa"} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFile} />
     </div>
   )
 }

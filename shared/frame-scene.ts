@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { visualFrame } from "./visual-experience"
+import { easeMotion, type MotionEase } from "./motion-easing"
 
 /** Portable art direction, never executable code or arbitrary GPU programs. */
 export const FRAME_SCENE_VERSION = "2.0.0"
@@ -14,10 +15,10 @@ export const FRAME_CHANNELS = {
 export type FrameChannel = keyof typeof FRAME_CHANNELS
 const finite = (min: number, max: number) => z.number().finite().min(min).max(max)
 const color = z.string().regex(/^#[a-f\d]{6}$/i)
-const point = z.object({ time: finite(0, 12), value: z.number().finite(), ease: z.enum(["linear", "smooth"]) }).strict()
+const point = z.object({ time: finite(0, 12), value: z.number().finite(), ease: z.enum(["linear", "smooth", "cinematic", "ease-in", "ease-out", "hold"]) }).strict()
 const tracks = Object.fromEntries(Object.entries(FRAME_CHANNELS).map(([key, bounds]) => [key,
   z.array(point.extend({ value: finite(bounds.min, bounds.max) })).min(2).max(16),
-])) as unknown as { [K in FrameChannel]: z.ZodArray<z.ZodType<{ time: number; value: number; ease: "linear" | "smooth" }>> }
+])) as unknown as { [K in FrameChannel]: z.ZodArray<z.ZodType<{ time: number; value: number; ease: MotionEase }>> }
 
 export const frameSceneSchema = z.object({
   version: z.literal(FRAME_SCENE_VERSION),
@@ -57,7 +58,7 @@ export function evaluateFrameScene(scene: FrameScene, seconds: number): FramePos
     if (next <= 0) return [channel, keys[0].value]
     const a = keys[next - 1], b = keys[next]
     const progress = (time - a.time) / (b.time - a.time)
-    const eased = b.ease === "smooth" ? progress * progress * (3 - 2 * progress) : progress
+    const eased = easeMotion(progress, b.ease)
     return [channel, a.value + (b.value - a.value) * eased]
   })) as FramePose
 }

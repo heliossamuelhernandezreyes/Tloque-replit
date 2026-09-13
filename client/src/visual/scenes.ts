@@ -3,7 +3,7 @@ import {
   ExtrudeGeometry, Float32BufferAttribute, Group, HemisphereLight, Mesh, MeshBasicMaterial,
   MeshPhysicalMaterial, MeshStandardMaterial, Path, PerspectiveCamera, PlaneGeometry,
   Points, PointsMaterial, Scene, ShaderMaterial, Shape, ShapeGeometry, SphereGeometry,
-  SRGBColorSpace, Texture, TextureLoader, TorusGeometry, Vector4, WebGLRenderTarget, type WebGLRenderer,
+  SRGBColorSpace, Texture, TextureLoader, TorusGeometry, Vector2, Vector4, WebGLRenderTarget, type WebGLRenderer,
 } from "three"
 import { visualColor, visualFrame } from "@shared/visual-experience"
 import { isSafeImageSource } from "@shared/media"
@@ -11,6 +11,8 @@ import type { VisualOptions } from "./VisualEngine"
 import { evaluateFrameScene, frameGeometryKey, readFrameScene } from "@shared/frame-scene"
 import { frameOrnaments } from "./frame-ornaments"
 import { cinematicVertex, portalFragment, singularityFragment } from "./cinematic-shaders"
+import { CARD_LAYERS, evaluateCardLayer, type CardLayer } from "@shared/card-scene-runtime"
+import { cardArtFragment, cardArtVertex } from "./card-art-shaders"
 
 export interface VisualScene {
   update: (time: number, dt: number, aspect: number, pointer: { x: number; y: number }, options: VisualOptions) => void
@@ -20,7 +22,7 @@ export interface VisualScene {
 }
 export const sceneKey = (options: VisualOptions) => {
   const native = readFrameScene(options.frame)
-  return JSON.stringify([options.kind, options.theme, visualColor(options.color), options.images?.slice(0, 3), native ? frameGeometryKey(native) : visualFrame(options.frame, options.color), options.shape])
+  return JSON.stringify([options.kind, options.theme, visualColor(options.color), options.images?.slice(0, 3), native ? frameGeometryKey(native) : visualFrame(options.frame, options.color), options.shape, !!options.cardScene])
 }
 
 function roundedPath<T extends Shape | Path>(path: T, width: number, height: number, radius: number): T {
@@ -43,8 +45,8 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
   camera.position.z = 5.2
   const group = new Group(); scene.add(group)
   scene.add(new HemisphereLight(0xdbe7ff, 0x211324, native ? .5 : 2.2), new AmbientLight(0xffffff, native ? .08 : .5))
-  const key = new DirectionalLight(0xfff0d6, 4); key.position.set(-3, 5, 6); scene.add(key)
-  const rim = new DirectionalLight(0x7dc8ff, 3); rim.position.set(4, -1, 3); scene.add(rim)
+  const key = new DirectionalLight(0xfff0d6, options.cardScene && !native ? 2 : 4); key.position.set(-3, 5, 6); scene.add(key)
+  const rim = new DirectionalLight(0x7dc8ff, options.cardScene && !native ? 1.4 : 3); rim.position.set(4, -1, 3); scene.add(rim)
   const ownedTextures = new Set<Texture>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
   let disposed = false, pending = 0, failed = false
@@ -62,6 +64,7 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
   let portalMesh: Mesh | undefined
   let nebula: ShaderMaterial | undefined
   const arches: Mesh<TorusGeometry, MeshStandardMaterial>[] = []
+  const artPlanes = new Map<CardLayer, Mesh<PlaneGeometry, ShaderMaterial>>()
   const color = new Color(visualColor(options.color))
 
   function loadTexture(url: string, targetAspect: number, attach: (texture: Texture) => void) {
@@ -182,7 +185,7 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
       const sky = new Mesh(new PlaneGeometry(45, 45), nebula); sky.position.z = -18; world.add(sky)
     }
     // Receding geometric arches and a reflective floor give an actual spatial backdrop.
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < (options.cardScene && !native ? 0 : 5); i++) {
       const archColor = native ? new Color(native.material.accent) : color
       const arch = new Mesh(new TorusGeometry(2.4, native ? .014 : .055, 8, 96), new MeshStandardMaterial({ color: archColor, emissive: archColor, emissiveIntensity: native ? .16 : .3, metalness: .4, roughness: .35, envMapIntensity: native ? .15 : 1 }))
       arch.position.z = -i * 2; if (native) arch.rotation.z = i * .17
@@ -193,15 +196,25 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
       planet.position.set(.9, .2, -4); world.add(planet)
       const moon = new Mesh(new SphereGeometry(.12, 20, 12), new MeshStandardMaterial({ color: 0x879bbb, roughness: .6, envMapIntensity: .2 }))
       moon.position.set(-.6, 1.05, -5); world.add(moon)
-    } else {
+    } else if (!options.cardScene) {
       const floor = new Mesh(new PlaneGeometry(30, 30), new MeshStandardMaterial({ color: 0x151126, metalness: .4, roughness: .32 }))
       floor.rotation.x = -Math.PI / 2; floor.position.y = -2.5; floor.position.z = -6; world.add(floor)
     }
-    particles = sparkField(native?.portal.particles ?? 48, world, 3)
+    particles = sparkField(native?.portal.particles ?? (options.cardScene ? 20 : 48), world, 3)
     particles.position.z = -1
-    const urls = (options.images ?? []).slice(0, 3).filter(url => !!url)
+    const urls = (options.images ?? []).slice(0, 3)
     for (const [index, url] of urls.entries()) {
+      if (!url) continue // Preserve back/mid/front identity when the middle layer is absent.
       loadTexture(url, portalWidth / portalHeight, texture => {
+        if (options.cardScene) {
+          texture.updateMatrix()
+          const material = new ShaderMaterial({ vertexShader: cardArtVertex, fragmentShader: cardArtFragment,
+            uniforms: { uMap: { value: texture }, mapTransform: { value: texture.matrix }, uFinish: { value: 0 }, uStrength: { value: 0 }, uOpacity: { value: 1 }, uView: { value: new Vector2() } },
+            transparent: true, depthWrite: false, depthTest: false, side: DoubleSide, toneMapped: false })
+          const plane = new Mesh(new PlaneGeometry(portalWidth / portalHeight, 1), material)
+          plane.renderOrder = index + 1; world!.add(plane); artPlanes.set(CARD_LAYERS[index], plane)
+          return
+        }
         const z = index * .7
         const height = 2 * Math.tan(20 * Math.PI / 180) * (6 - z) * 1.15
         const plane = new Mesh(new PlaneGeometry(height * portalWidth / portalHeight, height), new MeshBasicMaterial({ map: texture, transparent: true, alphaTest: .01, depthWrite: false, side: DoubleSide }))
@@ -240,6 +253,7 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
       camera.aspect = aspect
       camera.position.z = options.kind === "portal" || options.kind === "frame" || options.kind === "book" ? Math.max(5.8, 3.8 / aspect) : Math.max(4.8, 4.8 / aspect)
       if (currentScene) camera.position.z = Math.max(7.8, 5.1 / aspect)
+      else if (current.cardScene) camera.position.z = Math.max(7.2, 4.7 / aspect)
       camera.updateProjectionMatrix()
       if (orbitMaterial) { orbitMaterial.uniforms.uTime.value = time; orbitMaterial.uniforms.uEnergy.value = openness + (current.pulse ? .5 : 0) }
       petals.forEach((petal, index) => { petal.rotation.x = (.95 - openness * .84) + Math.sin(time * .8 + index * .2) * .025 })
@@ -254,8 +268,24 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
         worldCamera.position.x = pointerX * .22; worldCamera.position.y = -pointerY * .18
         worldCamera.setViewOffset(w, h, -pointerX * 22, pointerY * 18, w, h)
       }
+      if (current.cardScene) {
+        const art = current.cardScene
+        artPlanes.forEach((plane, layer) => {
+          const pose = evaluateCardLayer(art, layer, time, inspection)
+          const z = art.layers[layer].depth * 1.6
+          const height = 2 * Math.tan(20 * Math.PI / 180) * (6 - z)
+          plane.position.set(pose.x * height * portalWidth / portalHeight, -pose.y * height, z)
+          plane.scale.setScalar(height * pose.scale); plane.rotation.z = -pose.rotation * Math.PI / 180
+          const uniforms = plane.material.uniforms
+          uniforms.uOpacity.value = pose.opacity
+          uniforms.uFinish.value = art.finish.type === "none" ? 0 : art.finish.type === "foil" ? 1 : 2
+          uniforms.uStrength.value = art.finish.strength
+          uniforms.uView.value.set(pointerX + group.rotation.y, pointerY - group.rotation.x)
+        })
+      }
       if (currentScene && ornaments && bezelMaterial) {
-        const pose = evaluateFrameScene(currentScene, inspection ? time : 0)
+        const frameTime = current.cardScene ? time / current.cardScene.duration * currentScene.animation.duration : time
+        const pose = evaluateFrameScene(currentScene, inspection ? frameTime : 0)
         const radians = Math.PI / 180
         group.rotation.set(pose.tilt * radians - pointerY * .09, pose.orbit * radians + pointerX * .14, 0)
         group.scale.setScalar(pose.zoom * (options.shape === "profile" ? .9 : .8))
