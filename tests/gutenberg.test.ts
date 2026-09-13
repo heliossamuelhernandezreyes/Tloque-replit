@@ -6,8 +6,17 @@ import {
   downloadBookText,
   normalizeGutenbergLanguage,
   searchGutenberg,
+  browseGutenberg,
+  cleanGutenbergText,
+  countGutenbergWords,
+  fetchGutenbergBookById,
+  processGutenbergBook,
+  isGutenbergAssetUrl,
+  fitGutenbergChapters,
   type GutenbergBook,
 } from "../server/gutenberg"
+import { GutenbergCache } from "../server/gutenberg-cache"
+import { gutenbergIdFromQuery } from "../shared/gutenberg"
 
 function stubBook(textUrl: string): GutenbergBook {
   return {
@@ -40,7 +49,7 @@ test("Gutenberg conserva solo ediciones del idioma pedido y exige texto plano", 
   const requested: URL[] = []
   globalThis.fetch = (async (input: string | URL | Request) => {
     requested.push(new URL(String(input)))
-    return Response.json({ results: [
+    return Response.json({ count: 4, next: null, results: [
       searchBook(1, "es"),
       searchBook(2, "en"),
       searchBook(3, "es", { "application/epub+zip": "https://www.gutenberg.org/ebooks/3.epub3.images" }),
@@ -53,7 +62,7 @@ test("Gutenberg conserva solo ediciones del idioma pedido y exige texto plano", 
     assert.equal(books[0].languageMatch, "exact")
     assert.equal(books[0].requestedLanguage, "es")
     assert.equal(requested[0].searchParams.get("languages"), "es")
-    assert.equal(requested[0].searchParams.get("mime_type"), "text/")
+    assert.equal(requested[0].searchParams.get("mime_type"), "text/plain")
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -64,7 +73,7 @@ test("Gutenberg identifica alternativas sin mezclarlas con coincidencias exactas
   let calls = 0
   globalThis.fetch = (async () => {
     calls++
-    return Response.json({ results: calls === 1 ? [] : [searchBook(7, "en")] })
+    return Response.json({ count: calls === 1 ? 0 : 1, next: null, results: calls === 1 ? [] : [searchBook(7, "en")] })
   }) as typeof fetch
   try {
     const books = await searchGutenberg("Hamlet", "pt-BR")
@@ -145,5 +154,196 @@ test("no inventa el año de publicación a partir de la vida del autor", () => {
   book.authors = [{ name: "Autora, Prueba", birth_year: 1800, death_year: 1880 }]
   assert.equal(detectPublicationYear(book), null)
   book.subjects = ["Fiction -- 1872"]
-  assert.equal(detectPublicationYear(book), 1872)
+  assert.equal(detectPublicationYear(book), null, "subject years are not publication dates")
+})
+
+test("catálogo paginado: conserva idioma, tema y orden sin seguir enlaces externos", async t => {
+  const requested: URL[] = []
+  t.mock.method(globalThis, "fetch", async (input: string) => {
+    const url = new URL(input); requested.push(url)
+    return Response.json({ count: 65, next: "https://127.0.0.1/private?page=3", results: [searchBook(201, "es")] })
+  })
+  const page = await browseGutenberg({ query: "Verne paginado", lang: "es-MX", topic: "adventure", sort: "descending", page: 2 })
+  assert.equal(page.count, 65)
+  assert.equal(page.previousPage, 1)
+  assert.equal(page.nextPage, null)
+  assert.equal(page.results.length, 1)
+  assert.equal(requested.length, 1)
+  assert.deepEqual(Object.fromEntries(requested[0].searchParams), {
+    search: "Verne paginado", languages: "es", topic: "adventure", mime_type: "text/plain", copyright: "false", sort: "descending", page: "2",
+  })
+})
+
+test("catálogo explorable muestra las 32 ediciones y conserva la continuación", async t => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({ count: 70, next: "https://gutendex.com/books/?page=2", results: Array.from({ length: 32 }, (_, i) => searchBook(300 + i, "fr")) }))
+  const page = await browseGutenberg({ lang: "fr" })
+  assert.equal(page.results.length, 32)
+  assert.equal(page.nextPage, 2)
+  assert.equal(page.query, "")
+})
+
+test("idioma sin resultados no dispara búsquedas en otro idioma", async t => {
+  let calls = 0
+  t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json({ count: 0, next: null, results: [] }) })
+  const page = await browseGutenberg({ query: "edición inexistente", lang: "nl" })
+  assert.equal(page.results.length, 0)
+  assert.equal(calls, 1)
+})
+
+test("una falla de la fuente es recuperable y nunca se guarda como resultado vacío", async t => {
+  let calls = 0
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++
+    return calls === 1 ? new Response("unavailable", { status: 503 }) : Response.json({ count: 1, next: null, results: [searchBook(401, "de")] })
+  })
+  await assert.rejects(browseGutenberg({ query: "retry", lang: "de" }), /503/)
+  assert.equal((await browseGutenberg({ query: "retry", lang: "de" })).results[0].id, 401)
+  assert.equal(calls, 2)
+})
+
+test("metadatos anidados inválidos se rechazan antes de llegar al lector", async t => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({ count: 1, next: null, results: [{ ...searchBook(501, "es"), authors: [null] }] }))
+  await assert.rejects(browseGutenberg({ query: "malformed" }), /metadatos inválidos/)
+})
+
+test("buscar por ID o enlace oficial conserva el idioma y la identidad de la edición", async t => {
+  let calls = 0
+  t.mock.method(globalThis, "fetch", async (input: string) => {
+    calls++; assert.equal(String(input), "https://gutendex.com/books/601/")
+    return Response.json(searchBook(601, "en"))
+  })
+  assert.equal((await browseGutenberg({ query: "https://www.gutenberg.org/ebooks/601", lang: "es" })).results.length, 0)
+  assert.equal((await browseGutenberg({ query: "#601", lang: "all" })).results[0].id, 601)
+  assert.equal(calls, 1)
+  assert.equal(gutenbergIdFromQuery("https://gutenberg.org.evil.test/ebooks/601"), null)
+  assert.equal(gutenbergIdFromQuery("https://user@gutenberg.org/ebooks/601"), null)
+  assert.equal(gutenbergIdFromQuery("#0"), null)
+})
+
+test("solo ediciones con estado de copyright falso y archivo permitido entran al catálogo", async t => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({ count: 4, next: null, results: [
+    searchBook(701, "es"), { ...searchBook(702, "es"), copyright: true }, { ...searchBook(703, "es"), copyright: null },
+    searchBook(704, "es", { "text/plain": "https://127.0.0.1/secret" }),
+  ] }))
+  assert.deepEqual((await browseGutenberg({ query: "availability" })).results.map(book => book.id), [701])
+})
+
+test("no acepta puertos, credenciales, subdominios ni rutas de proxy como fuentes de texto", () => {
+  for (const url of ["http://www.gutenberg.org/files/1/1.txt", "https://x:www@gutenberg.org/files/1/1.txt",
+    "https://www.gutenberg.org:3000/files/1/1.txt", "https://proxy.gutenberg.org/files/1/1.txt", "https://www.gutenberg.org/redirect?url=internal"]) {
+    assert.equal(isGutenbergAssetUrl(url), false, url)
+  }
+})
+
+test("limpia los marcadores después del preámbulo sin perder prólogo, notas o ilustraciones", () => {
+  const body = "PRÓLOGO\nA la memoria del lector.\n\n[Ilustración: El puerto]\n\n[Nota del transcriptor: Una nota.]\n"
+  const clean = cleanGutenbergText("\uFEFFThe Project Gutenberg eBook\r\nTitle: Prueba\r\n\r\n*** START OF THE PROJECT GUTENBERG EBOOK PRUEBA ***\r\n" + body + "\n*** END OF THE PROJECT GUTENBERG EBOOK PRUEBA ***\nLicence footer")
+  assert.equal(clean, body.trim())
+  assert.equal(cleanGutenbergText("Una novela\ncon una línea\ny otra\n"), "Una novela\ncon una línea\ny otra")
+})
+
+test("la división conserva páginas iniciales y capítulos de una sola frase", () => {
+  const chapters = detectChapters("DEDICATORIA\nPara quien lee.\n\nCAPÍTULO I\nUna frase.\n\nCAPÍTULO II\nOtra frase.\n\nCAPÍTULO III\nFin.")
+  assert.equal(chapters.length, 4)
+  assert.match(chapters[0].content, /Para quien lee/)
+  assert.deepEqual(chapters.slice(1).map(chapter => chapter.content), ["Una frase.", "Otra frase.", "Fin."])
+})
+
+test("los encabezados vacíos consecutivos no eliminan texto ni títulos", () => {
+  const chapters = detectChapters("PART I\n\nCHAPTER I\nBreve.\n\nCHAPTER II\nFin.", "en")
+  assert.match(chapters[0].title, /PART I.*CHAPTER I/)
+  assert.equal(chapters[0].content, "Breve.")
+  assert.equal(chapters[1].content, "Fin.")
+})
+
+test("el tiempo estimado no trata un párrafo chino como una única palabra", () => {
+  assert.equal(countGutenbergWords("Hello world"), 2)
+  assert.ok(countGutenbergWords("这是一本书") >= 5)
+})
+
+test("reconoce números escritos y conserva secciones grandes dentro del contrato del editor", () => {
+  assert.equal(detectChapters("CAPITULO PRIMERO\nInicio.\n\nCAPITULO SEGUNDO\nFin.").length, 2)
+  const original = "A".repeat(1_899_999) + "😀" + "B".repeat(110_000)
+  const fitted = fitGutenbergChapters([{ title: "Libro", content: original }])
+  assert.equal(fitted.length, 2)
+  assert.equal(fitted.map(chapter => chapter.content).join(""), original)
+  assert.ok(fitted.every(chapter => chapter.title.length <= 200 && chapter.content.length <= 2_000_000))
+  assert.ok(!/[\uD800-\uDBFF]$/.test(fitted[0].content))
+  const longTitle = "CAPÍTULO I · ".repeat(30)
+  assert.ok(fitGutenbergChapters([{ title: longTitle, content: "Último texto." }])[0].content.startsWith(longTitle))
+  const validTitle = "X".repeat(199)
+  assert.equal(fitGutenbergChapters([{ title: validTitle, content: "Breve." }])[0].title, validTitle)
+  assert.ok(fitGutenbergChapters([{ title: validTitle, content: original }])[0].content.startsWith(validTitle))
+})
+
+test("preview e importación comparten la descarga y la portada de la edición exacta", async t => {
+  let calls = 0
+  t.mock.method(globalThis, "fetch", async (input: string) => {
+    calls++; assert.equal(String(input), "https://www.gutenberg.org/files/801/801-0.txt")
+    return new Response("*** START OF THE PROJECT GUTENBERG EBOOK TEST ***\n\nPRÓLOGO\nUn comienzo.\n\nCAPÍTULO I\nTexto breve.\n\nCAPÍTULO II\nTexto final.\n\n*** END OF THE PROJECT GUTENBERG EBOOK TEST ***")
+  })
+  const book = { ...searchBook(801, "es"), summaries: ["Resumen original de esta edición."], formats: {
+    "text/plain": "https://www.gutenberg.org/files/801/801-0.txt", "image/jpeg": "https://www.gutenberg.org/cache/epub/801/pg801.cover.medium.jpg",
+  } }
+  const [first, second] = await Promise.all([processGutenbergBook(book, "es"), processGutenbergBook(book, "en")])
+  assert.deepEqual(first, second)
+  assert.equal(calls, 1)
+  assert.equal(first.synopsis, book.summaries[0])
+  assert.equal(first.synopsisSource, "gutendex")
+  assert.equal(first.coverUrl, book.formats["image/jpeg"])
+  assert.equal(first.chapters.length, 3)
+})
+
+test("descarta respuestas HTML y cancela archivos cuyo tamaño supera el límite", async t => {
+  let cancelled = false
+  t.mock.method(globalThis, "fetch", async () => new Response(new ReadableStream({ cancel() { cancelled = true } }), { headers: { "content-length": "12000001" } }))
+  await assert.rejects(downloadBookText(searchBook(901, "en")), /tamaño permitido/)
+  assert.equal(cancelled, true)
+  t.mock.method(globalThis, "fetch", async () => new Response("<!doctype html><html>Error</html>"))
+  await assert.rejects(processGutenbergBook(searchBook(902, "en")), /página web/)
+})
+
+test("el plazo de descarga también cancela un cuerpo que nunca termina", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  let cancelled = false
+  t.mock.method(globalThis, "fetch", async () => new Response(new ReadableStream({ cancel() { cancelled = true } })))
+  const download = downloadBookText(searchBook(903, "en"))
+  await Promise.resolve(); await Promise.resolve()
+  t.mock.timers.tick(20_000)
+  await assert.rejects(download, /tardó demasiado/)
+  assert.equal(cancelled, true)
+})
+
+test("metadatos por ID verifican la identidad devuelta por el servidor", async t => {
+  t.mock.method(globalThis, "fetch", async () => Response.json(searchBook(905, "es")))
+  await assert.rejects(fetchGutenbergBookById(904), /metadatos inválidos/)
+})
+
+test("la caché limita concurrencia, comparte trabajos y elimina las entradas menos usadas", async () => {
+  const cache = new GutenbergCache<number>({ entries: 2, bytes: 100, pending: 1, ttl: 10_000 })
+  let finish!: (value: number) => void
+  let loads = 0
+  const load = () => { loads++; return new Promise<number>(resolve => { finish = resolve }) }
+  const first = cache.get("a", load), second = cache.get("a", load)
+  await Promise.resolve()
+  await assert.rejects(cache.get("busy", async () => 9), /ocupado/)
+  finish(1)
+  assert.deepEqual(await Promise.all([first, second]), [1, 1]); assert.equal(loads, 1)
+  await cache.get("b", async () => 2)
+  assert.equal(await cache.get("a", async () => 9), 1)
+  await cache.get("c", async () => 3)
+  assert.equal(await cache.get("b", async () => 4), 4)
+})
+
+test("la caché expira y nunca retiene errores ni valores que exceden su presupuesto", async t => {
+  let time = 0
+  t.mock.method(Date, "now", () => time)
+  const cache = new GutenbergCache<string>({ entries: 2, bytes: 20, pending: 1, ttl: 10 })
+  await cache.get("a", async () => "old")
+  time = 11
+  assert.equal(await cache.get("a", async () => "new"), "new")
+  await assert.rejects(cache.get("bad", async () => { throw Error("failure") }))
+  assert.equal(await cache.get("bad", async () => "good"), "good")
+  await cache.get("big", async () => "x".repeat(50))
+  assert.equal(await cache.get("big", async () => "small"), "small")
 })

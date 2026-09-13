@@ -85,9 +85,13 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Exercise the real interface against an isolated fixture API
         run: npm run test:visual:browser
+      - name: Gutenberg catalogue, mobile reading and import
+        run: npm run test:gutenberg:browser
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: cinematic-visual-qa
-          path: .tloque_cache/visual-qa/
+          path: |
+            .tloque_cache/visual-qa/
+            .tloque_cache/gutenberg-qa/
           retention-days: 7

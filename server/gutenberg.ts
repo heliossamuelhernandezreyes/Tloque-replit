@@ -1,9 +1,37 @@
-// ── IMPORTADOR DE PROJECT GUTENBERG ──────────────────────
-// Google Books API   → sinopsis editorial de calidad (prioridad 1)
-// Open Library       → descripción como respaldo (prioridad 2)
-// Gutendex subjects  → descripción generada como último recurso
-// Gutendex           → búsqueda y texto completo
-// LibreTranslate     → traducción de sinopsis cuando difiere el idioma
+import { GUTENBERG_LANGUAGES, GUTENBERG_TOPICS, gutenbergIdFromQuery,
+  type GutenbergBook, type GutenbergCatalogPage, type GutenbergSort, type GutenbergTopic,
+  type ProcessedGutenbergBook } from "../shared/gutenberg"
+import { GutenbergCache } from "./gutenberg-cache"
+export type { GutenbergBook } from "../shared/gutenberg"
+export type ProcessedBook = ProcessedGutenbergBook
+
+export class GutenbergSourceError extends Error {
+  readonly status = 503
+}
+
+const metadataCache = new GutenbergCache<GutenbergBook | null>({ entries: 100, bytes: 4_000_000, pending: 8, ttl: 900_000 })
+const catalogCache = new GutenbergCache<GutenbergCatalogPage>({ entries: 40, bytes: 6_000_000, pending: 8, ttl: 120_000 })
+const processedCache = new GutenbergCache<ProcessedBook>({ entries: 6, bytes: 32_000_000, pending: 2, ttl: 600_000 })
+
+// The deadline includes streaming the body, not just receiving HTTP headers.
+async function fetchBytes(url: string, maxBytes: number, timeoutMs = 12_000): Promise<Uint8Array | null> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, { signal: controller.signal, redirect: "error" })
+    if (res.status === 404) { await res.body?.cancel(); return null }
+    if (!res.ok) {
+      await res.body?.cancel()
+      throw new GutenbergSourceError(`La fuente de Gutenberg respondió ${res.status}. Inténtalo de nuevo.`)
+    }
+    return await readBodyWithLimit(res, maxBytes, controller.signal)
+  } catch (error) {
+    if (error instanceof GutenbergSourceError) throw error
+    throw new GutenbergSourceError(controller.signal.aborted
+      ? "Gutenberg tardó demasiado en responder. Vuelve a intentarlo."
+      : "No se pudo consultar Gutenberg. Revisa la conexión e inténtalo de nuevo.")
+  } finally { clearTimeout(timer) }
+}
 
 function fetchWithTimeout(url: string, timeoutMs: number, init: RequestInit = {}): Promise<Response> {
   const controller = new AbortController()
@@ -12,25 +40,31 @@ function fetchWithTimeout(url: string, timeoutMs: number, init: RequestInit = {}
     .finally(() => clearTimeout(timer))
 }
 
-async function readBodyWithLimit(res: Response, maxBytes: number): Promise<Uint8Array> {
+async function readBodyWithLimit(res: Response, maxBytes: number, signal?: AbortSignal): Promise<Uint8Array> {
   const declared = Number(res.headers.get("content-length") || 0)
-  if (declared > maxBytes) throw new Error("El texto excede el tamaño permitido")
+  if (declared > maxBytes) { await res.body?.cancel(); throw new GutenbergSourceError("El texto excede el tamaño permitido") }
   if (!res.body) return new Uint8Array()
   const reader = res.body.getReader()
+  const cancel = () => { void reader.cancel().catch(() => undefined) }
+  signal?.addEventListener("abort", cancel, { once: true })
   const chunks: Uint8Array[] = []
   let total = 0
   try {
     while (true) {
       const { done, value } = await reader.read()
+      if (signal?.aborted) throw new Error("Timeout")
       if (done) break
       if (!value) continue
       total += value.byteLength
-      if (total > maxBytes) throw new Error("El texto excede el tamaño permitido")
+      if (total > maxBytes) throw new GutenbergSourceError("El texto excede el tamaño permitido")
       chunks.push(value)
     }
   } catch (error) {
     await reader.cancel().catch(() => undefined)
     throw error
+  } finally {
+    signal?.removeEventListener("abort", cancel)
+    reader.releaseLock()
   }
   const out = new Uint8Array(total)
   let offset = 0
@@ -58,77 +92,45 @@ function decodeWindows1252(bytes: Uint8Array): string {
   return text
 }
 
-// ── INTERFACES ───────────────────────────────────────────
-export interface GutenbergBook {
-  id:            number
-  title:         string
-  authors:       { name: string; birth_year: number | null; death_year: number | null }[]
-  languages:     string[]
-  subjects:      string[]
-  formats:       Record<string, string>
-  download_count: number
-  requestedLanguage?: string
-  languageMatch?: "exact" | "multilingual" | "alternative"
-}
-
-interface GutenbergSearchResult {
-  count:   number
-  results: GutenbergBook[]
-}
-
 function isGutenbergBook(value: unknown): value is GutenbergBook {
   if (!value || typeof value !== "object") return false
   const book = value as Partial<GutenbergBook>
-  return Number.isInteger(book.id)
+  return Number.isSafeInteger(book.id)
     && (book.id as number) > 0
+    && (book.id as number) <= 999_999_999
     && typeof book.title === "string"
     && book.title.length > 0
     && book.title.length <= 1_000
-    && Array.isArray(book.languages)
-    && Array.isArray(book.authors)
-    && Array.isArray(book.subjects)
+    && Number.isSafeInteger(book.download_count) && (book.download_count as number) >= 0
+    && Array.isArray(book.languages) && book.languages.length <= 30
+    && book.languages.every(code => typeof code === "string" && /^[a-z]{2,3}$/i.test(code))
+    && Array.isArray(book.authors) && book.authors.length <= 100
+    && book.authors.every(person => person && typeof person.name === "string" && person.name.length <= 300)
+    && Array.isArray(book.subjects) && book.subjects.length <= 200
+    && book.subjects.every(subject => typeof subject === "string" && subject.length <= 1_000)
     && !!book.formats
-    && typeof book.formats === "object"
+    && typeof book.formats === "object" && !Array.isArray(book.formats)
+    && Object.keys(book.formats).length <= 60
+    && Object.entries(book.formats).every(([mime, url]) => mime.length <= 200 && typeof url === "string" && url.length <= 2_000)
+    && (book.summaries === undefined || Array.isArray(book.summaries) && book.summaries.length <= 10
+      && book.summaries.every(summary => typeof summary === "string" && summary.length <= 20_000))
+    && (book.translators === undefined || Array.isArray(book.translators) && book.translators.length <= 100
+      && book.translators.every(person => person && typeof person.name === "string" && person.name.length <= 300))
 }
 
 export async function fetchGutenbergBookById(id: number): Promise<GutenbergBook | null> {
-  if (!Number.isInteger(id) || id <= 0) return null
-  const response = await fetchWithTimeout(`https://gutendex.com/books/${id}`, 9_000, { redirect: "error" })
-  if (response.status === 404) return null
-  if (!response.ok) throw new Error(`Gutendex respondió ${response.status}`)
-  const raw = new TextDecoder().decode(await readBodyWithLimit(response, 1_500_000))
-  const value = JSON.parse(raw) as Partial<GutenbergBook>
-  if (value.id !== id || typeof value.title !== "string" || !Array.isArray(value.languages)
-      || !Array.isArray(value.authors) || !Array.isArray(value.subjects)
-      || !value.formats || typeof value.formats !== "object") {
-    throw new Error("Gutendex devolvió metadatos inválidos")
-  }
-  return value as GutenbergBook
-}
-
-export interface ProcessedBook {
-  gutenbergId:      number
-  title:            string
-  author:           string
-  synopsis:         string
-  coverUrl:         string
-  originalLanguage: string
-  publicationYear:  number | null
-  chapters:         { title: string; content: string }[]
-  detectedGenre:    string
-  wordCount:        number
-  type:             "book" | "story"
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 999_999_999) return null
+  return metadataCache.get(String(id), async () => {
+    const bytes = await fetchBytes(`https://gutendex.com/books/${id}/`, 1_500_000)
+    if (!bytes) return null
+    const value: unknown = parseMetadata(bytes)
+    if (!isGutenbergBook(value) || value.id !== id) throw new GutenbergSourceError("Gutendex devolvió metadatos inválidos")
+    return value
+  })
 }
 
 // ── IDIOMAS SOPORTADOS ───────────────────────────────────
-export const SUPPORTED_LANGUAGES: Record<string, string> = {
-  es: "Español",  en: "Inglés",   fr: "Francés",
-  de: "Alemán",   it: "Italiano", pt: "Portugués",
-  ru: "Ruso",     ja: "Japonés",  zh: "Chino",
-  ar: "Árabe",    nl: "Holandés", pl: "Polaco",
-  fi: "Finlandés",sv: "Sueco",    la: "Latín",
-  el: "Griego",
-}
+export const SUPPORTED_LANGUAGES: Record<string, string> = Object.fromEntries(GUTENBERG_LANGUAGES)
 
 // Normalizar texto: quitar tildes y pasar a minúsculas
 function normalizeQuery(q: string): string {
@@ -142,215 +144,145 @@ export function normalizeGutenbergLanguage(lang: string): string {
   return Object.prototype.hasOwnProperty.call(SUPPORTED_LANGUAGES, base) ? base : "es"
 }
 
+export function isGutenbergAssetUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === "https:" && ["gutenberg.org", "www.gutenberg.org"].includes(url.hostname)
+      && !url.username && !url.password && !url.port
+      && /^\/(?:files|cache\/epub)\//.test(url.pathname)
+  } catch { return false }
+}
+
 function plainTextUrl(book: GutenbergBook): string | undefined {
-  return Object.entries(book.formats).find(([mime, value]) =>
-    mime.toLowerCase().startsWith("text/plain") && typeof value === "string" && value.length > 0
-  )?.[1]
+  return Object.entries(book.formats)
+    .filter(([mime, url]) => mime.toLowerCase().startsWith("text/plain") && isGutenbergAssetUrl(url))
+    .sort(([a], [b]) => Number(/utf-8/i.test(b)) - Number(/utf-8/i.test(a)))[0]?.[1]
+}
+
+export function gutenbergCover(book: GutenbergBook): string {
+  const cover = book.formats["image/jpeg"] || book.formats["image/png"] || ""
+  return isGutenbergAssetUrl(cover) ? cover : ""
 }
 
 function classifyLanguage(book: GutenbergBook, requestedLanguage: string): GutenbergBook["languageMatch"] {
-  const languages = book.languages.map(language =>
-    String(language || "").trim().toLowerCase().split(/[-_]/)[0]
-  ).filter(Boolean)
-  if (!languages.includes(requestedLanguage)) return "alternative"
-  return languages.length > 1 ? "multilingual" : "exact"
+  if (!book.languages.includes(requestedLanguage)) return "alternative"
+  return book.languages.length > 1 ? "multilingual" : "exact"
 }
 
-// ── BÚSQUEDA EN GUTENDEX — con fuzzy fallback ────────────
-export async function searchGutenberg(
-  query: string,
-  lang = "es"
-): Promise<GutenbergBook[]> {
-  const cleanQuery = String(query || "").trim().slice(0, 120)
-  if (!cleanQuery) return []
-  const normalized = normalizeQuery(cleanQuery)
-  const requestedLanguage = normalizeGutenbergLanguage(lang)
-  const seen       = new Set<number>()
-  const results:   GutenbergBook[] = []
+function parseMetadata(bytes: Uint8Array): any {
+  try { return JSON.parse(new TextDecoder().decode(bytes)) }
+  catch { throw new GutenbergSourceError("Gutendex devolvió una respuesta inválida. Inténtalo de nuevo.") }
+}
 
-  // Función de búsqueda individual
-  async function fetchBooks(q: string, language?: string): Promise<GutenbergBook[]> {
-    const url = new URL("https://gutendex.com/books/")
-    url.searchParams.set("search", q)
-    // Gutendex compara el inicio del MIME. "text/" excluye imágenes y EPUB
-    // sin depender de la presencia accidental de la palabra "text".
-    url.searchParams.set("mime_type", "text/")
-    if (language) url.searchParams.set("languages", language)
-    try {
-      const res = await fetchWithTimeout(url.toString(), 9000, { redirect: "error" })
-      if (!res.ok) return []
-      const raw = new TextDecoder().decode(await readBodyWithLimit(res, 1_500_000))
-      const data = JSON.parse(raw) as Partial<GutenbergSearchResult>
-      return Array.isArray(data.results)
-        ? data.results.filter(isGutenbergBook).filter(book => !!plainTextUrl(book)).slice(0, 24)
-        : []
-    } catch { return [] }
-  }
-
-  const addBooks = (books: GutenbergBook[], allowAlternatives: boolean) => {
-    for (const book of books) {
-      if (seen.has(book.id)) continue
-      const languageMatch = classifyLanguage(book, requestedLanguage)
-      if (!allowAlternatives && languageMatch === "alternative") continue
-      seen.add(book.id)
-      results.push({ ...book, requestedLanguage, languageMatch })
+export async function browseGutenberg(options: {
+  query?: string; lang?: string; page?: number; sort?: GutenbergSort; topic?: GutenbergTopic
+} = {}): Promise<GutenbergCatalogPage> {
+  const query = String(options.query || "").trim().replace(/\s+/g, " ").slice(0, 120)
+  const language = options.lang === "all" ? "all" : normalizeGutenbergLanguage(options.lang || "es")
+  const page = options.page ?? 1
+  if (!Number.isInteger(page) || page < 1 || page > 5000) throw new Error("Página inválida")
+  const sort: GutenbergSort = options.sort || "popular"
+  const topic: GutenbergTopic = options.topic ?? ""
+  if (!["popular", "ascending", "descending"].includes(sort) || !GUTENBERG_TOPICS.includes(topic)) throw new Error("Filtros inválidos")
+  const key = JSON.stringify([query, language, page, sort, topic])
+  return catalogCache.get(key, async () => {
+    const base = { query, language, page, sort, topic, previousPage: page > 1 ? page - 1 : null }
+    const id = gutenbergIdFromQuery(query)
+    let books: GutenbergBook[], count: number, nextPage: number | null = null
+    if (id) {
+      const book = page === 1 ? await fetchGutenbergBookById(id) : null
+      books = book ? [book] : []; count = books.length
+    } else {
+      const url = new URL("https://gutendex.com/books/")
+      if (query) url.searchParams.set("search", query)
+      if (language !== "all") url.searchParams.set("languages", language)
+      if (topic) url.searchParams.set("topic", topic)
+      url.searchParams.set("mime_type", "text/plain")
+      url.searchParams.set("copyright", "false")
+      url.searchParams.set("sort", sort)
+      url.searchParams.set("page", String(page))
+      const bytes = await fetchBytes(url.toString(), 1_500_000)
+      if (!bytes) {
+        if (page > 1) return { ...base, results: [], count: 0, nextPage: null }
+        throw new GutenbergSourceError("El catálogo de Gutenberg no está disponible.")
+      }
+      const data = parseMetadata(bytes)
+      if (!data || !Array.isArray(data.results) || data.results.length > 32
+        || !Number.isSafeInteger(data.count) || data.count < 0
+        || data.results.some((book: unknown) => !isGutenbergBook(book))) {
+        throw new GutenbergSourceError("Gutendex devolvió metadatos inválidos")
+      }
+      books = data.results
+      count = data.count
+      // Treat next as a hint only. Never fetch a URL supplied by the response.
+      if (typeof data.next === "string" && page < 5000) {
+        try {
+          const next = new URL(data.next)
+          if (next.origin === url.origin && next.pathname === url.pathname
+            && Number(next.searchParams.get("page")) === page + 1) nextPage = page + 1
+        } catch { /* invalid continuation is not followed */ }
+      }
     }
-  }
+    const seen = new Set<number>()
+    const results = books.filter(book => {
+      if (seen.has(book.id) || book.copyright !== false || !plainTextUrl(book)
+        || language !== "all" && !book.languages.includes(language)) return false
+      seen.add(book.id); return true
+    }).map(book => ({ ...book, coverUrl: gutenbergCover(book),
+      requestedLanguage: language, languageMatch: classifyLanguage(book, language) }))
+    return { ...base, results, count: id ? results.length : count, nextPage }
+  })
+}
 
-  // Búsqueda 1: query original con idioma
-  addBooks(await fetchBooks(cleanQuery, requestedLanguage), false)
-
-  // Búsqueda 2: query normalizado (sin tildes) con idioma
-  if (normalized && normalized !== cleanQuery.toLowerCase()) {
-    addBooks(await fetchBooks(normalized, requestedLanguage), false)
-  }
-
-  // Solo si no existe ninguna edición en el idioma solicitado, mostrar otras
-  // ediciones. Nunca se mezclan silenciosamente con coincidencias exactas.
-  if (results.length === 0) {
-    addBooks(await fetchBooks(normalized || cleanQuery), true)
-  }
-
-  return results.slice(0, 12)
+// Compatibility for existing API consumers. The explorer uses the paginated,
+// strict-language catalogue and only searches all languages when explicitly chosen.
+export async function searchGutenberg(query: string, lang = "es"): Promise<GutenbergBook[]> {
+  if (!query.trim()) return []
+  const language = normalizeGutenbergLanguage(lang)
+  let page = await browseGutenberg({ query, lang: language })
+  const normalized = normalizeQuery(query)
+  if (!page.results.length && normalized !== query.toLowerCase()) page = await browseGutenberg({ query: normalized, lang: language })
+  if (page.results.length) return page.results
+  const alternatives = await browseGutenberg({ query: normalized, lang: "all" })
+  return alternatives.results.map(book => ({ ...book, requestedLanguage: language, languageMatch: classifyLanguage(book, language) }))
 }
 
 // ── DESCARGAR TEXTO COMPLETO ─────────────────────────────
 export async function downloadBookText(book: GutenbergBook): Promise<string> {
-  const formats = book.formats
-  const textUrl =
-    formats["text/plain; charset=utf-8"]      ||
-    formats["text/plain; charset=us-ascii"]   ||
-    formats["text/plain; charset=iso-8859-1"] ||
-    formats["text/plain"]                     ||
-    Object.entries(formats).find(([k]) => k.startsWith("text/plain"))?.[1]
-
-  if (!textUrl) throw new Error("No hay versión de texto plano disponible para este libro")
-
-  // Gutendex aporta la URL, pero nunca dejamos que una respuesta externa
-  // convierta el importador en un proxy hacia la red interna.
-  let parsedTextUrl: URL
-  try { parsedTextUrl = new URL(textUrl) }
-  catch { throw new Error("La URL del texto de Gutenberg no es válida") }
-  const host = parsedTextUrl.hostname.toLowerCase()
-  if (parsedTextUrl.protocol !== "https:" || (host !== "gutenberg.org" && !host.endsWith(".gutenberg.org"))) {
-    throw new Error("La fuente del texto no pertenece a Project Gutenberg")
+  const textUrl = plainTextUrl(book)
+  if (!textUrl) {
+    if (Object.keys(book.formats).some(mime => mime.startsWith("text/plain"))) {
+      throw new Error("La fuente del texto no pertenece a Project Gutenberg")
+    }
+    throw new Error("No hay versión de texto plano disponible para este libro")
   }
-
-  // No seguir redirecciones: validar solo el primer host no basta si éste
-  // pudiera redirigir la petición hacia una dirección interna.
-  const res = await fetchWithTimeout(parsedTextUrl.toString(), 12000, { redirect: "error" })
-  if (!res.ok) throw new Error(`Error descargando texto: ${res.status}`)
-
-  const buffer = await readBodyWithLimit(res, 12_000_000)
-  try {
-    // TextDecoder sin fatal=true reemplaza bytes inválidos silenciosamente,
-    // por lo que el respaldo para libros antiguos nunca llegaba a ejecutarse.
-    return new TextDecoder("utf-8", { fatal: true }).decode(buffer)
-  } catch {
-    return decodeWindows1252(buffer)
-  }
+  const buffer = await fetchBytes(textUrl, 12_000_000, 20_000)
+  if (!buffer) throw new GutenbergSourceError("El archivo del libro ya no está disponible en Gutenberg.")
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(buffer) }
+  catch { return decodeWindows1252(buffer) }
 }
 
 // ── LIMPIAR TEXTO DE GUTENBERG ───────────────────────────
 export function cleanGutenbergText(raw: string): string {
-  let text = raw
-
-  text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
-
-  // Eliminar marcadores de inicio de Gutenberg
-  const startMarkers = [
-    /^\s*\*\*\*\s*START OF (THE|THIS) PROJECT GUTENBERG.*?\*\*\*\s*/is,
-    /^\s*\*\*\*\s*COMIENZO DE(L)? (ESTE )?(PROYECTO )?GUTENBERG.*?\*\*\*\s*/is,
-    /^\s*\*\*\*\s*INICIO DE(L)?.+?\*\*\*\s*/is,
-  ]
-  for (const p of startMarkers) {
-    if (p.test(text)) { text = text.replace(p, ""); break }
-  }
-
-  // Eliminar bloque de metadata al inicio
-  if (!text.match(/^(CAPÍTULO|Chapter|CHAPTER|Capítulo|I\.|II\.|III\.)/m)) {
-    const metaLines = [
-      /^The Project Gutenberg (eBook|EBook|Ebook).*/i,
-      /^This (ebook|eBook|EBook) is for the use.*/i,
-      /^Title:/i, /^Author:/i, /^Translator:/i, /^Editor:/i,
-      /^Illustrator:/i, /^Release (date|Date):/i, /^Language:/i,
-      /^Credits:/i, /^Produced by/i, /^Transcribed by/i,
-      /^\[?Transcription/i, /^Character set encoding:/i,
-      /^\*\*\* (START|END)/i, /^START OF THE PROJECT/i,
-      /University of/i, /Internet Archive/i, /pgdp\.net/i,
-      /distributed proofreading/i, /^\(This file was/i,
-      /^from images/i, /^generously made available/i,
-      /^American Libraries/i, /http[s]?:\/\//,
-    ]
-    const lines = text.split("\n")
-    let contentStart = 0
-    let consecutiveEmpty = 0
-
-    for (let i = 0; i < Math.min(lines.length, 120); i++) {
-      const line = lines[i].trim()
-      if (!line) {
-        consecutiveEmpty++
-        if (consecutiveEmpty >= 3 && i > 10) { contentStart = i + 1; break }
-        continue
-      }
-      consecutiveEmpty = 0
-      if (metaLines.some(p => p.test(line))) contentStart = i + 1
-    }
-
-    if (contentStart > 5) text = lines.slice(contentStart).join("\n")
-  }
-
-  // Eliminar footer de Gutenberg
-  const endMarkers = [
-    /\*\*\*\s*END OF (THE|THIS) PROJECT GUTENBERG.*/is,
-    /\*\*\*\s*FIN DE(L)?.*/is,
-    /End of (the )?Project Gutenberg.*/is,
-  ]
-  for (const p of endMarkers) text = text.replace(p, "")
-
-  // Eliminar notas del transcriptor
-  text = text.replace(/\[Nota del transcriptor:.*?\]/gis, "")
-  text = text.replace(/\[Transcriber's Note:.*?\]/gis, "")
-
-  // ── ELIMINAR ETIQUETAS DE ILUSTRACIÓN ────────────────
-  // Gutenberg marca imágenes con [Ilustración] o [Ilustración: descripción]
-  // ya que el formato plano no puede incluir imágenes reales
-  text = text.replace(/\[Ilustración[^\]]*\]/gi, "")
-  text = text.replace(/\[Illustration[^\]]*\]/gi, "")
-  text = text.replace(/\[Illus\.[^\]]*\]/gi, "")
-  text = text.replace(/\[Imagen[^\]]*\]/gi, "")
-  text = text.replace(/\[Figure[^\]]*\]/gi, "")
-  text = text.replace(/\[Fig\.[^\]]*\]/gi, "")
-
-  // Normalizar espaciado
-  text = text.replace(/\n{4,}/g, "\n\n\n")
-
+  let text = raw.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n")
+  // Official markers follow a licence/metadata preamble; they are not at byte 0.
+  // Match entire lines so a quotation in the novel cannot truncate its body.
+  const start = /^\s*\*\*\*\s*(?:START OF (?:THE|THIS) PROJECT GUTENBERG|(?:COMIENZO|INICIO) DEL? (?:ESTE )?(?:PROYECTO )?GUTENBERG)[^\n]*\*\*\*[^\S\n]*$/im.exec(text)
+  if (start) text = text.slice(start.index + start[0].length)
+  const end = /^\s*(?:\*\*\*\s*END OF (?:THE|THIS) PROJECT GUTENBERG[^\n]*|\*\*\*\s*FIN DEL? (?:PROYECTO )?GUTENBERG[^\n]*)$/im.exec(text)
+  if (end) text = text.slice(0, end.index)
+  // Preserve notes, captions, poetry, short sections and internal line breaks.
   return text.trim()
-}
-
-// ── DETECTAR ÍNDICE VS CAPÍTULO REAL ─────────────────────
-// Muchos libros de Gutenberg tienen un índice al inicio que se
-// confunde con el primer capítulo. Un índice se caracteriza por
-// tener muchas líneas muy cortas (< 60 chars) con números.
-function isIndexContent(content: string): boolean {
-  const lines = content.split("\n").filter(l => l.trim().length > 0)
-  if (lines.length < 3) return false
-
-  // Contar líneas que terminan en número (típico de índice con páginas)
-  const linesWithNumbers = lines.filter(l => /\d+\s*$/.test(l.trim())).length
-  const shortLines       = lines.filter(l => l.trim().length < 60).length
-
-  // Si más del 50% de líneas terminan en número Y son cortas → es índice
-  const ratio = linesWithNumbers / lines.length
-  return ratio > 0.4 && shortLines / lines.length > 0.5
 }
 
 // ── DETECTAR Y DIVIDIR CAPÍTULOS ─────────────────────────
 export function detectChapters(
-  text: string
+  text: string, language = "es"
 ): { title: string; content: string }[] {
 
   const chapterPatterns = [
+    // Written numbers and unaccented headings also occur in older editions.
+    /^(?:cap[ií]tulo|capitolo|chapter|chapitre|canto|chant|parte?|libro|book|act[oe]?|scene|escena|jornada)\s+[\p{L}\p{N}]+[^\n]{0,60}$/iu,
     // Español
     /^(CAPÍTULO\s+[IVXLCDM\d]+[^\n]{0,60})$/m,
     /^(Capítulo\s+[IVXLCDM\d]+[^\n]{0,60})$/m,
@@ -395,7 +327,7 @@ export function detectChapters(
     /^(CAPUT\s+[\p{L}\p{N}]+[^\n]{0,60})$/imu,
     /^(ΚΕΦΑΛΑΙΟ\s+[\p{L}\p{N}]+[^\n]{0,60})$/imu,
     // Japonés y chino: 第1章, 第一章, 第1节
-    /^(第\s*[一二三四五六七八九十百千\d]+\s*[章节][^\n]{0,60})$/mu,
+    /^(第\s*[一二三四五六七八九十百千\d]+\s*[章节節回][^\n]{0,60})$/mu,
     // Numerales
     /^([IVXLCDM]{1,6}\.?\s*)$/m,
     /^([IVXLCDM]{1,6}\s*[-–—]\s*[^\n]{2,50})$/m,
@@ -404,41 +336,66 @@ export function detectChapters(
   ]
 
   const lines = text.split("\n")
-  const chapterStarts: { index: number; title: string }[] = []
-
-  lines.forEach((line, i) => {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.length > 80) return
-    if (chapterStarts.length >= 500) return
-
-    for (const pattern of chapterPatterns) {
-      if (pattern.test(trimmed)) {
-        chapterStarts.push({ index: i, title: trimmed })
-        break
-      }
+  const starts: { index: number; title: string }[] = []
+  // Leave capacity for opening pages and oversized sections in the editor's 500-slot schema.
+  for (let index = 0; index < lines.length && starts.length < 480; index++) {
+    const title = lines[index].trim()
+    if (!title || title.length > 80) continue
+    const matches = chapterPatterns.some(pattern => pattern.test(title))
+    // Isolated numerals can also be dialogue or table entries. Require space.
+    const bareNumber = /^[IVXLCDM\d]+\.?$/.test(title)
+    if (matches && (!bareNumber || (index === 0 || !lines[index - 1].trim())
+      && (index + 1 === lines.length || !lines[index + 1].trim()))) {
+      starts.push({ index, title })
     }
-  })
-
-  if (chapterStarts.length >= 2) {
-    const rawChapters: { title: string; content: string }[] = []
-
-    for (let i = 0; i < chapterStarts.length; i++) {
-      const start   = chapterStarts[i].index + 1
-      const end     = i + 1 < chapterStarts.length ? chapterStarts[i+1].index : lines.length
-      const content = lines.slice(start, end).join("\n").trim()
-      if (content.length > 200) {
-        rawChapters.push({ title: chapterStarts[i].title, content })
-      }
-    }
-
-    // Filtrar capítulos que sean índices
-    const realChapters = rawChapters.filter(c => !isIndexContent(c.content))
-
-    if (realChapters.length >= 2) return realChapters
-    if (rawChapters.length >= 2) return rawChapters
   }
 
-  return [{ title: "Texto completo", content: text }]
+  const labels: Record<string, [string, string]> = {
+    es: ["Texto completo", "Páginas iniciales"], en: ["Full text", "Opening pages"],
+    fr: ["Texte intégral", "Pages liminaires"], de: ["Volltext", "Anfangsseiten"],
+    it: ["Testo completo", "Pagine iniziali"], pt: ["Texto completo", "Páginas iniciais"],
+    ja: ["全文", "冒頭"], zh: ["全文", "开篇"], ar: ["النص الكامل", "الصفحات الأولى"],
+    ru: ["Полный текст", "Начальные страницы"], nl: ["Volledige tekst", "Beginpagina’s"],
+    pl: ["Pełny tekst", "Strony początkowe"], fi: ["Koko teksti", "Alkusivut"],
+    sv: ["Hela texten", "Inledande sidor"], la: ["Textus integer", "Paginae initiales"],
+    el: ["Πλήρες κείμενο", "Αρχικές σελίδες"],
+  }
+  const [fullText, opening] = labels[language] || labels.en
+  if (starts.length < 2) return [{ title: fullText, content: text }]
+  const chapters: { title: string; content: string }[] = []
+  const prefix = lines.slice(0, starts[0].index).join("\n").trim()
+  if (prefix) chapters.push({ title: opening, content: prefix })
+  for (let i = 0; i < starts.length; i++) {
+    const { index, title } = starts[i]
+    const content = lines.slice(index + 1, starts[i + 1]?.index ?? lines.length).join("\n").trim()
+    // An empty heading is retained with the following section, not discarded.
+    if (!content) {
+      const next = starts[i + 1]
+      if (next) next.title = title + " · " + next.title
+      else chapters.push({ title, content: title })
+    } else chapters.push({ title, content })
+  }
+  return chapters.length ? chapters : [{ title: fullText, content: text }]
+}
+
+export function fitGutenbergChapters(chapters: { title: string; content: string }[]) {
+  const output: { title: string; content: string }[] = []
+  for (const chapter of chapters) {
+    // Keep long sequences of index headings in the text, rather than truncating them.
+    const preserveHeading = chapter.title.length > 200 || chapter.title.length > 180 && chapter.content.length > 2_000_000
+    let content = preserveHeading ? chapter.title + "\n\n" + chapter.content : chapter.content
+    const title = chapter.title.slice(0, 200)
+    let part = 1
+    while (content.length > 2_000_000) {
+      const paragraph = content.lastIndexOf("\n\n", 1_900_000)
+      let end = paragraph > 950_000 ? paragraph : 1_900_000
+      if (/[\uD800-\uDBFF]/.test(content[end - 1])) end--
+      output.push({ title: `${title.slice(0, 180)} · ${part++}`, content: content.slice(0, end) })
+      content = content.slice(end)
+    }
+    output.push({ title: part > 1 ? `${title.slice(0, 180)} · ${part}` : title, content })
+  }
+  return output
 }
 
 // ── DETECTAR GÉNERO ───────────────────────────────────────
@@ -460,108 +417,16 @@ export function detectGenre(book: GutenbergBook): string {
   return ""
 }
 
-// ── SINOPSIS: GOOGLE BOOKS API (PRIORIDAD 1) ─────────────
-// Descripciones editoriales reales, múltiples idiomas, sin API key
-async function fetchSynopsisFromGoogleBooks(
-  title: string,
-  author: string,
-  langCode: string
-): Promise<string> {
-  try {
-    // Intentar primero en el idioma del usuario
-    const langs = langCode !== "en" ? [langCode, "en"] : ["en"]
-
-    for (const lang of langs) {
-      const query = encodeURIComponent(`${title} ${author}`)
-      const url   = `https://www.googleapis.com/books/v1/volumes?q=${query}&langRestrict=${lang}&maxResults=3&fields=items(volumeInfo(title,description,language))`
-
-      const res = await fetchWithTimeout(url, 8000)
-      if (!res.ok) continue
-
-      const data  = await res.json()
-      const items = data.items || []
-
-      for (const item of items) {
-        const desc = item.volumeInfo?.description
-        if (desc && desc.length > 60 && desc.length < 1200) {
-          // Verificar que no es metadata técnica
-          if (/gutenberg|proofreading|copyright notice/i.test(desc)) continue
-          // Truncar si es muy largo
-          return desc.length > 500 ? desc.slice(0, 500) + "…" : desc
-        }
-      }
-    }
-    return ""
-  } catch {
-    return ""
+// Gutenberg summaries belong to this exact edition. Do not attach an unrelated
+// Google Books/Open Library description or infer its language from the novel.
+function synopsisFor(book: GutenbergBook): Pick<ProcessedBook, "synopsis" | "synopsisSource" | "synopsisLanguage"> {
+  const synopsis = book.summaries?.find(summary => summary.trim())
+  if (synopsis) return { synopsis: synopsis.trim().slice(0, 8_000), synopsisSource: "gutendex", synopsisLanguage: null }
+  return {
+    synopsis: [book.title, book.authors.map(person => normalizeAuthorName(person.name)).join(" · "),
+      book.subjects.slice(0, 4).join(" · ")].filter(Boolean).join("\n"),
+    synopsisSource: "metadata", synopsisLanguage: null,
   }
-}
-
-// ── SINOPSIS: OPEN LIBRARY (PRIORIDAD 2) ─────────────────
-async function fetchSynopsisFromOpenLibrary(
-  title: string,
-  author: string
-): Promise<string> {
-  try {
-    const query = encodeURIComponent(`${title} ${author}`)
-    const res   = await fetchWithTimeout(
-      `https://openlibrary.org/search.json?q=${query}&limit=1&fields=key,title,description,first_sentence`,
-      8000
-    )
-    if (!res.ok) return ""
-
-    const data = await res.json()
-    const doc  = data.docs?.[0]
-
-    // Preferir description completa sobre first_sentence
-    const desc = doc?.description?.value || doc?.description
-    if (desc && typeof desc === "string" && desc.length > 60) {
-      if (!/gutenberg|proofreading/i.test(desc)) {
-        return desc.length > 450 ? desc.slice(0, 450) + "…" : desc
-      }
-    }
-
-    // Fallback a first_sentence
-    const fs = doc?.first_sentence?.value || doc?.first_sentence
-    if (fs && typeof fs === "string" && fs.length > 40) {
-      return fs.length > 400 ? fs.slice(0, 400) + "…" : fs
-    }
-
-    return ""
-  } catch {
-    return ""
-  }
-}
-
-// ── SINOPSIS: DESDE SUBJECTS (PRIORIDAD 3) ───────────────
-// Construir descripción editorial desde los metadatos del libro
-function buildSynopsisFromMetadata(book: GutenbergBook): string {
-  const author = normalizeAuthorName(book.authors[0]?.name || "")
-  const year   = detectPublicationYear(book)
-
-  // Filtrar subjects útiles (eliminar los técnicos y de clasificación)
-  const usefulSubjects = book.subjects
-    .filter(s => {
-      const l = s.toLowerCase()
-      return !l.includes("fiction") && !l.includes("--") &&
-             s.length > 5 && s.length < 60
-    })
-    .slice(0, 3)
-
-  const yearStr = year
-    ? year < 0 ? `del año ${Math.abs(year)} a.C.`
-      : `de ${year}`
-    : ""
-
-  const subjectStr = usefulSubjects.length > 0
-    ? ` Abarca temas de ${usefulSubjects.join(", ").toLowerCase()}.`
-    : ""
-
-  if (author && author !== "Anónimo") {
-    return `Obra clásica de ${author}${yearStr ? " " + yearStr : ""}.${subjectStr} Disponible en dominio público.`
-  }
-
-  return `Obra clásica${yearStr ? " " + yearStr : ""}.${subjectStr} Disponible en dominio público.`
 }
 
 // ── TRADUCIR CON LIBRETRANSLATE ───────────────────────────
@@ -604,40 +469,9 @@ export async function translateText(
   return text // devolver original si todo falla
 }
 
-// ── PORTADA DESDE OPEN LIBRARY ────────────────────────────
-export async function fetchCoverFromOpenLibrary(
-  title: string,
-  author: string
-): Promise<string> {
-  try {
-    const query = encodeURIComponent(`${title} ${author}`)
-    const res   = await fetchWithTimeout(
-      `https://openlibrary.org/search.json?q=${query}&limit=1&fields=cover_i`,
-      8000
-    )
-    if (!res.ok) return ""
-    const data    = await res.json()
-    const coverId = data.docs?.[0]?.cover_i
-    if (!coverId) return ""
-    return `https://covers.openlibrary.org/b/id/${coverId}-L.jpg`
-  } catch {
-    return ""
-  }
-}
-
-// ── AÑO DE PUBLICACIÓN ────────────────────────────────────
-export function detectPublicationYear(book: GutenbergBook): number | null {
-  for (const subject of book.subjects) {
-    const match = subject.match(/(\d{4})/)
-    if (match) {
-      const year = parseInt(match[1])
-      if (year >= 1400 && year <= 1928) return year
-    }
-  }
-  // La fecha de muerte o "nacimiento + 35" no es una fecha de publicación.
-  // Es preferible mostrar el dato como desconocido que inventar metadatos.
-  return null
-}
+// Gutenberg does not expose the original print publication year. Years inside
+// subjects describe settings/periods, not necessarily publication.
+export function detectPublicationYear(_book: GutenbergBook): number | null { return null }
 
 // ── NORMALIZAR NOMBRE DE AUTOR ────────────────────────────
 function normalizeAuthorName(raw: string): string {
@@ -648,59 +482,39 @@ function normalizeAuthorName(raw: string): string {
   return raw
 }
 
+export function countGutenbergWords(text: string): number {
+  // Whitespace alone reports one word for entire Chinese/Japanese paragraphs.
+  const spaced = text.replace(/([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}])/gu, " $1 ")
+  let count = 0
+  for (const _match of spaced.matchAll(/\S+/gu)) count++
+  return count
+}
+
 // ── FUNCIÓN PRINCIPAL ─────────────────────────────────────
-export async function processGutenbergBook(
-  book:         GutenbergBook,
-  userLang = "es"
-): Promise<ProcessedBook> {
-  const bookLang   = book.languages[0] || "en"
-  const authorName = normalizeAuthorName(book.authors[0]?.name || "")
 
-  // 1. Descargar texto y portada en paralelo
-  const [rawText, coverUrl] = await Promise.all([
-    downloadBookText(book),
-    fetchCoverFromOpenLibrary(book.title, authorName),
-  ])
-  const cleanText = cleanGutenbergText(rawText)
-
-  // 2. Detectar capítulos
-  const chapters = detectChapters(cleanText)
-
-  // 3. Detectar género y año
-  const genre     = detectGenre(book)
-  const year      = detectPublicationYear(book)
-  const wordCount = cleanText.split(/\s+/).length
-  const type: "book" | "story" = wordCount < 8000 ? "story" : "book"
-
-  // 4. Sinopsis — cascada de calidad
-  //    Google Books (mejor) → Open Library → metadatos propios
-  let synopsis = await fetchSynopsisFromGoogleBooks(book.title, authorName, userLang)
-
-  if (!synopsis) {
-    synopsis = await fetchSynopsisFromOpenLibrary(book.title, authorName)
-  }
-
-  if (!synopsis) {
-    synopsis = buildSynopsisFromMetadata(book)
-  }
-
-  // 5. Traducir si la sinopsis está en idioma distinto al usuario
-  if (synopsis && bookLang !== userLang && userLang !== "en") {
-    const translated = await translateText(synopsis, bookLang, userLang)
-    if (translated && translated !== synopsis) synopsis = translated
-  }
-
-  return {
-    gutenbergId:      book.id,
-    title:            book.title,
-    author:           authorName,
-    synopsis,
-    coverUrl,
-    originalLanguage: bookLang,
-    publicationYear:  year,
-    chapters,
-    detectedGenre:    genre,
-    wordCount,
-    type,
-  }
+export async function processGutenbergBook(book: GutenbergBook, _userLang = "es"): Promise<ProcessedBook> {
+  if (!isGutenbergBook(book)) throw new Error("Metadatos del libro inválidos")
+  if (book.copyright !== false) throw new Error("Esta edición no está habilitada para importar desde Gutenberg.")
+  return processedCache.get(String(book.id), async () => {
+    const rawText = await downloadBookText(book)
+    if (/^\s*(?:<!doctype html|<html[\s>])/i.test(rawText)) throw new GutenbergSourceError("Gutenberg devolvió una página web en lugar del texto.")
+    const cleanText = cleanGutenbergText(rawText)
+    if (!cleanText) throw new GutenbergSourceError("El archivo de Gutenberg no contiene texto legible.")
+    const bookLang = book.languages[0] || "und"
+    const detected = detectChapters(cleanText, bookLang)
+    const chapters = fitGutenbergChapters(detected)
+    const wordCount = countGutenbergWords(cleanText)
+    return {
+      gutenbergId: book.id, title: book.title,
+      author: book.authors.map(person => normalizeAuthorName(person.name)).join(" · ") || "—",
+      ...synopsisFor(book), coverUrl: gutenbergCover(book),
+      originalLanguage: bookLang, languages: book.languages,
+      translators: (book.translators || []).map(person => normalizeAuthorName(person.name)),
+      publicationYear: null, chapters, detectedGenre: detectGenre(book), wordCount,
+      readingMinutes: Math.max(1, Math.ceil(wordCount / 230)),
+      chapterStrategy: detected.length > 1 ? "headings" : "full-text",
+      type: wordCount < 8000 ? "story" : "book",
+      sourceUrl: `https://www.gutenberg.org/ebooks/${book.id}`,
+    }
+  })
 }

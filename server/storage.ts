@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { books, bookRevisions, comments, type CreateBookRequest, type UpdateBookRequest, type BookResponse, type Comment } from "@shared/schema";
-import { eq, and, desc, getTableColumns, sql } from "drizzle-orm";
+import { eq, and, desc, getTableColumns, inArray, sql } from "drizzle-orm";
 
 export type BookChangeType = "create" | "update" | "publish" | "unpublish" | "restore" | "delete"
 
@@ -22,6 +22,7 @@ export interface IStorage {
   getBooksByAuthor(authorId: number): Promise<any[]>;
   getBook(id: number): Promise<BookResponse | undefined>;
   findBookByGutenbergId(gutenbergId: number): Promise<BookResponse | undefined>;
+  getGutenbergReferences(ids: number[], includeUnpublished?: boolean): Promise<{ id: number; gutenbergId: number | null; status: string }[]>;
   createBook(book: CreateBookRequest): Promise<BookResponse>;
   updateBook(id: number, updates: UpdateBookRequest, options?: BookUpdateOptions): Promise<BookResponse>;
   deleteBook(id: number, changedBy?: number | null): Promise<void>;
@@ -64,6 +65,15 @@ export class DatabaseStorage implements IStorage {
   async findBookByGutenbergId(gutenbergId: number): Promise<BookResponse | undefined> {
     const [book] = await db.select().from(books).where(eq(books.gutenbergId, gutenbergId)).limit(1);
     return book;
+  }
+
+  async getGutenbergReferences(ids: number[], includeUnpublished = false) {
+    if (!ids.length) return []
+    return db.select({ id: books.id, gutenbergId: books.gutenbergId, status: books.status })
+      .from(books).where(and(
+        inArray(books.gutenbergId, ids.slice(0, 32)),
+        includeUnpublished ? undefined : eq(books.status, "published"),
+      ))
   }
 
   async createBook(insertBook: CreateBookRequest): Promise<BookResponse> {

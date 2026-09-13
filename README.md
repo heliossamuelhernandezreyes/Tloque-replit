@@ -121,6 +121,9 @@ producción, salvo una prueba administrativa deliberada y controlada.
 
 ## Diccionario e idiomas
 
+- Gutenberg incorpora exploración paginada, idiomas y temas, revisión de capítulos
+  y guardado como borrador. Consulta [el explorador Gutenberg](docs/gutenberg-explorer.md).
+
 - La interfaz ofrece nueve idiomas y actualiza `lang`/`dir`, incluido
   el flujo RTL para árabe. Project Gutenberg y el diccionario reconocen además
   las dieciséis lenguas documentales del importador.
