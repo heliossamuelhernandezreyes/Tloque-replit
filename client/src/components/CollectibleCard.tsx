@@ -8,6 +8,7 @@ import { useCardViewer } from "@/components/CardViewer"
 import CardParticles, { type ParticleEffect } from "@/components/CardParticles"
 import { collectionMaterialFor, collectionTier, frameGradient } from "@/lib/rarities"
 import { useSettings } from "@/context/SettingsContext"
+import { readCardScene } from "@shared/card-scene"
 
 export interface CardData {
   id:          number
@@ -140,6 +141,7 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
             title={card.name}
             coverUrl={backArt}
             coverFx={card.fx}
+            cardScene={readCardScene(card.fx?.scene) ?? undefined}
             accentColor={accentColor}
             accentGlow={accentGlow}
             className="!rounded-[22px] h-full"

@@ -7,6 +7,8 @@ import { createFrameScene, evaluateFrameScene, FRAME_CHANNELS, frameSceneSchema,
 import { InspectionControls, InspectionStage, useInspection } from "./FrameInspection"
 import FramePoster from "./FramePoster"
 import "./frame-studio.css"
+import { MOTION_EASES, type MotionEase } from "@shared/motion-easing"
+import { applyFrameMotion, FRAME_MOTION_PRESETS } from "@shared/frame-motion-presets"
 
 interface Draft { name: string; price: number; target: FrameTarget; scene: FrameScene }
 interface SavedFrame { id: number; name: string; priceTinta: number; target: FrameTarget; pkg: unknown; visible?: boolean }
@@ -162,11 +164,11 @@ export default function FrameStudio({ onLegacy }: { onLegacy: () => void }) {
           <section><h3>Coreografía</h3><p>Selecciona una clave en la pista o sitúa el tiempo y cambia su valor. La galería reproduce esta misma secuencia.</p><Slider label="Duración · segundos" value={draft.scene.animation.duration} min={3} max={12} step={1} onChange={v => { controller.reset(); edit(s => { const ratio = v / s.animation.duration; for (const keys of Object.values(s.animation.tracks)) keys.forEach((key, i) => { key.time = i === keys.length - 1 ? v : key.time * ratio }); s.animation.duration = v }) }}/>
             <label className="tq-studio-field">Pista<select aria-label="Pista" value={channel} onChange={e => setChannel(e.target.value as FrameChannel)}>{Object.entries(FRAME_CHANNELS).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}</select></label>
             <div className="tq-key-card"><small>{currentKey ? "CLAVE SELECCIONADA" : "NUEVA CLAVE"}</small><strong>{time.toFixed(2)} <span>segundos</span></strong><Slider label={bounds.label} value={pose[channel]} min={bounds.min} max={bounds.max} step={bounds.step} onChange={setKey}/>
-              {currentKey && <label className="tq-studio-field">Llegada a esta clave<select value={currentKey.ease} onChange={e => edit(s => { s.animation.tracks[channel].find(key => key.time === currentKey.time)!.ease = e.target.value as "smooth" | "linear" })}><option value="smooth">Suave · sin rebote</option><option value="linear">Lineal</option></select></label>}
+              {currentKey && <label className="tq-studio-field">Llegada a esta clave<select aria-label="Curva de llegada del marco" value={currentKey.ease} onChange={e => edit(s => { s.animation.tracks[channel].find(key => key.time === currentKey.time)!.ease = e.target.value as MotionEase })}>{Object.entries(MOTION_EASES).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}
               <button disabled={!currentKey || currentKey.time === 0 || currentKey.time === draft.scene.animation.duration} onClick={() => edit(s => { s.animation.tracks[channel] = s.animation.tracks[channel].filter(key => key.time !== currentKey?.time) })}><Trash2 size={14}/>Eliminar clave</button>
               <small>{track.length}/16 claves en esta pista. Los extremos se conservan.</small>
             </div>
-          </section><section><h3>Diseñado para leer</h3><p>La inspección se inicia al pulsar reproducir. Se pausa al ocultar la pestaña. Sin destellos de pantalla, sonido automático ni resorte en la cámara.</p></section>
+          </section><section><h3>Secuencias de dirección</h3><p>Reemplazan solo las pistas. El diseño, los materiales y el portal se conservan; puedes deshacer.</p>{Object.entries(FRAME_MOTION_PRESETS).map(([key, label]) => <button className="tq-frame-motion-preset" key={key} onClick={() => { controller.reset(); change({ ...draft, scene: applyFrameMotion(draft.scene, key as keyof typeof FRAME_MOTION_PRESETS) }); setNotice(`${label}: secuencia lista para inspeccionar.`) }}>{label}</button>)}</section><section><h3>Diseñado para leer</h3><p>La inspección se inicia al pulsar reproducir. Se pausa al ocultar la pestaña. Sin destellos de pantalla, sonido automático ni resorte en la cámara.</p></section>
         </>}
       </aside>
     </main>

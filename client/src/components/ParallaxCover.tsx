@@ -3,6 +3,7 @@ import { BookOpen } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { hasLayeredCover, normalizeCoverFx } from "@/lib/cover-effects"
 import { useSettings } from "@/context/SettingsContext"
+import { cardLayerStyle, type CardScene } from "@shared/card-scene-runtime"
 
 // ─────────────────────────────────────────────────────────────
 // PARALLAXCOVER — sin framer-motion. A propósito.
@@ -36,6 +37,7 @@ interface ParallaxCoverProps {
   children?:      ReactNode
   layerSlots?:    { back?: ReactNode; mid?: ReactNode; front?: ReactNode }
   frameOverlay?:  ReactNode
+  cardScene?: CardScene
 }
 
 // Partículas deterministas (no random en cada render)
@@ -69,12 +71,13 @@ function spring(current: number, target: number, velocity: number, dt: number,
 export default function ParallaxCover({
   title, coverUrl, coverFx,
   accentColor, accentGlow,
-  className, imageClassName, children, layerSlots, frameOverlay,
+  className, imageClassName, children, layerSlots, frameOverlay, cardScene,
 }: ParallaxCoverProps) {
   const { settings } = useSettings()
   const fx      = useMemo(() => normalizeCoverFx(coverFx), [coverFx])
   const motes   = useMemo(() => buildMotes(title || "Tloque"), [title])
-  const layered = hasLayeredCover(fx)
+  const layered = !!cardScene || hasLayeredCover(fx)
+  const artRef = useRef(cardScene); artRef.current = cardScene
 
   // Lo ÚNICO que vive en estado de React: si la imagen falló.
   // No cambia con el movimiento, así que no re-renderiza nunca durante la interacción.
@@ -122,6 +125,8 @@ export default function ParallaxCover({
   useEffect(() => {
     if (settings.reduceMotion || !inViewport) {
       if (rotator.current) rotator.current.style.transform = "none"
+      for (const ref of [backRef, midRef, frontRef, imgRef, sheenRef, foilRef, glowRef]) if (ref.current) ref.current.style.transform = "none"
+      cur.current = { x: 0, y: 0, vx: 0, vy: 0 }; target.current = { x: 0, y: 0 }
       return
     }
     let raf = 0
@@ -169,9 +174,14 @@ export default function ParallaxCover({
         //   mid   = base × 1.0   (la imagen)
         //   front = base × 1.5   (cercana: se mueve más) → ESO es el parallax
         set(imgRef.current,    18,  14, " scale(1.02)")
-        set(backRef.current,   6.3, 4.9)      // 18×0.35 · 14×0.35
-        set(midRef.current,   18,  14)        // 18×1.0  · 14×1.0
-        set(frontRef.current, 27,  21)        // 18×1.5  · 14×1.5
+        if (artRef.current) {
+          for (const [layer, ref] of [["back", backRef], ["mid", midRef], ["front", frontRef]] as const) {
+            const depth = .2 + artRef.current.layers[layer].depth
+            set(ref.current, 22 * depth, 17 * depth)
+          }
+        } else {
+          set(backRef.current, 6.3, 4.9); set(midRef.current, 18, 14); set(frontRef.current, 27, 21)
+        }
         set(sheenRef.current,  38,  26)
         set(foilRef.current,   22,  18)
         if (glowRef.current) glowRef.current.style.transform = `translate3d(${(c.x * 14).toFixed(2)}px, 0, 0)`
@@ -287,7 +297,7 @@ export default function ParallaxCover({
 
       {/* ── EL FLOTAR: CSS puro, en su PROPIO elemento, sin JS. ──
           Antes vivía en el mismo nodo que la rotación y peleaban. */}
-      <div className={`absolute inset-0 ${inViewport && !settings.reduceMotion ? "tqp-float" : ""}`} style={{ borderRadius: "inherit" }}>
+      <div className={`absolute inset-0 ${inViewport && !settings.reduceMotion && !cardScene ? "tqp-float" : ""}`} style={{ borderRadius: "inherit" }}>
 
         {/* ── EL ROTADOR: solo lo toca el bucle, nunca React. ── */}
         <div
@@ -335,7 +345,7 @@ export default function ParallaxCover({
                     <img src={L.back} alt="" draggable={false}
                       className="absolute inset-0 h-full w-full"
                       style={{ objectFit: "cover", objectPosition: "center",
-                               transform: "scale(1.06)", filter: "brightness(0.72) saturate(1.05)" }} />
+                               ...(cardScene ? cardLayerStyle(cardScene, "back") : { transform: "scale(1.06)", filter: "brightness(0.72) saturate(1.05)" }) }} />
                     {layerSlots?.back}
                   </div>
                 )}
@@ -344,7 +354,7 @@ export default function ParallaxCover({
                     style={{ willChange: "transform" }}>
                     <img src={L.mid} alt="" draggable={false}
                       className="absolute inset-0 h-full w-full"
-                      style={{ objectFit: "cover", objectPosition: "center", transform: "scale(1.03)" }} />
+                      style={{ objectFit: "cover", objectPosition: "center", ...(cardScene ? cardLayerStyle(cardScene, "mid") : { transform: "scale(1.03)" }) }} />
                     {layerSlots?.mid}
                   </div>
                 )}
@@ -353,7 +363,7 @@ export default function ParallaxCover({
                     style={{ willChange: "transform" }}>
                     <img src={L.front} alt="" draggable={false}
                       className="absolute inset-0 h-full w-full"
-                      style={{ objectFit: "cover", objectPosition: "center", opacity: 0.92 }} />
+                      style={{ objectFit: "cover", objectPosition: "center", ...(cardScene ? cardLayerStyle(cardScene, "front") : { opacity: .92 }) }} />
                     {layerSlots?.front}
                   </div>
                 )}

@@ -7,6 +7,9 @@ marcos y herramientas creativas.
 La experiencia visual incluye un motor 3D compartido y opcional para orbes,
 portadas, tarjetas portal y marcos. Sus controles, límites y verificación están
 en [Tloque Visual Engine V1](docs/VISUAL_ENGINE_V1.md).
+El [Card Director](docs/card-art-direction.md) permite componer capas, editar
+secuencias y preparar imágenes transparentes desde el estudio de tarjetas;
+incluye la investigación de herramientas y los límites de esta arquitectura.
 
 ## Requisitos
 

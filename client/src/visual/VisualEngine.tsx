@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { allowedOrbTheme, selectVisualEntries, visualBudget, type OrbTheme, type VisualQuality } from "@shared/visual-experience"
 import "./visual-experience.css"
 import type { SceneTransport } from "@shared/frame-scene"
+import type { CardScene } from "@shared/card-scene-runtime"
 
 export interface VisualOptions {
   kind: "orb" | "portal" | "frame" | "reveal" | "book"
@@ -16,6 +17,7 @@ export interface VisualOptions {
   pulse?: boolean
   images?: string[]
   frame?: unknown
+  cardScene?: CardScene
   shape?: "card" | "profile"
   transport?: { current: SceneTransport }
 }
