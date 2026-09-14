@@ -1,0 +1,42 @@
+name: Vendor print fonts
+on:
+  push:
+    branches: [codex/physical-edition-studio]
+    paths: [.github/workflows/vendor-print-fonts.yml]
+permissions:
+  contents: write
+jobs:
+  fonts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: codex/physical-edition-studio
+      - name: Vendor the fixed Source Serif release and verify Git blob hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p client/src/print/assets
+          while read -r source expected; do
+            filename="${source##*/}"
+            curl --fail --silent --show-error --location --retry 2 --max-time 30 "https://raw.githubusercontent.com/adobe-fonts/source-serif/4.005R/$source" -o "client/src/print/assets/$filename"
+            actual=$(git hash-object "client/src/print/assets/$filename")
+            test "$actual" = "$expected"
+          done <<'FONTS'
+          LICENSE.md ebe298c6b488d68a43ec9b60155fb6b862a46bc1
+          TTF/SourceSerif4-Bold.ttf c4159ff2a409d9224dfa97af4e5167817e91e833
+          TTF/SourceSerif4-It.ttf e818087d0c75997a38189f6cf578c468df175062
+          TTF/SourceSerif4-Regular.ttf 964a2bf8934182485cf4e2348c8443091739334f
+          FONTS
+      - name: Save fonts only to the isolated print-studio branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add client/src/print/assets
+          if ! git diff --cached --quiet; then
+            git commit -m "Vendor Source Serif 4.005 with OFL license and verified hashes"
+            git push origin HEAD:codex/physical-edition-studio
+          fi
