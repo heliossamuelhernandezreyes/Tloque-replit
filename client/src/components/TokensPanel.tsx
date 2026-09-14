@@ -19,7 +19,7 @@ interface Props {
   accentColor: string
   accentGlow:  string
   isDownloading: boolean
-  onPrintCopy: (copy: { folio: string; key: string }, format: "a5" | "letter" | "booklet" | "cover") => void
+  onPrintCopy: (copy: { folio: string; key: string }) => void
   premiumUnlocked?: boolean
 }
 
@@ -27,7 +27,6 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
   const { t } = useSettings()
   const queryClient = useQueryClient()
   const [showKeys, setShowKeys] = useState(false)
-  const [printMenuFor, setPrintMenuFor] = useState<number | null>(null)
   const [payMenu, setPayMenu] = useState<"support" | "sale" | null>(null)
   const [showWallet, setShowWallet] = useState(false)
 
@@ -229,7 +228,6 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
           {allCopies.map(({ copy, kind }) => {
             const isMineClaim = copy.claimedByOwner
             const isFree      = !copy.digitalClaimed
-            const menuOpen    = printMenuFor === copy.id
             return (
               <div key={copy.id} className="rounded-xl overflow-hidden"
                 style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
@@ -253,7 +251,8 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
                   </div>
                   <button
                     disabled={isDownloading}
-                    onClick={() => setPrintMenuFor(menuOpen ? null : copy.id)}
+                    onClick={() => onPrintCopy({ folio: copy.folio, key: copy.claimKey })}
+                    aria-label={t("tokenPdfBtn") + " " + copy.folio}
                     className="flex items-center gap-1 text-[10px] font-sans px-2.5 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-40"
                     style={{ background: `${accentGlow}15`, color: accentColor, border: `1px solid ${accentColor}30` }}
                   >
@@ -261,22 +260,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
                     {t("tokenPdfBtn")}
                   </button>
                 </div>
-                {/* Menú de formato */}
-                {menuOpen && (
-                  <div className="grid grid-cols-2 gap-1.5 px-3 pb-2.5">
-                    {([["a5", "pdfFormatBook"], ["letter", "pdfFormatHome"], ["booklet", "pdfFormatBooklet"], ["cover", "pdfFormatCover"]] as const).map(([f, k]) => (
-                      <button
-                        key={f}
-                        disabled={isDownloading}
-                        onClick={() => { setPrintMenuFor(null); onPrintCopy({ folio: copy.folio, key: copy.claimKey }, f) }}
-                        className="text-[10px] font-sans px-2 py-2 rounded-lg disabled:opacity-40"
-                        style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.75)", border: "1px solid rgba(255,255,255,0.1)" }}
-                      >
-                        {t(k)}
-                      </button>
-                    ))}
-                  </div>
-                )}
+
               </div>
             )
           })}

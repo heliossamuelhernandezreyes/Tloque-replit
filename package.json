@@ -20,6 +20,7 @@
     "test:composer:browser": "node --import tsx scripts/composer-browser-qa.mjs",
     "test:visual:browser": "node --import tsx scripts/visual-browser-qa.mjs",
     "test:gutenberg:browser": "node --import tsx scripts/gutenberg-browser-qa.mjs",
+    "test:print:browser": "node --import tsx scripts/print-browser-qa.mjs",
     "db:push": "drizzle-kit push",
     "db:migrate": "node scripts/migrate.mjs --apply",
     "db:preflight": "node scripts/preflight.mjs"

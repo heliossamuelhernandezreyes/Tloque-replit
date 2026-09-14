@@ -11,6 +11,7 @@ export function renderCover(cover: CoverLayout, fonts: PrintFonts, title: string
   if (cover.issues.some(i => i.severity === "error")) throw new Error("Invalid cover")
   const doc = pdfDocument(cover.width, cover.height, fonts)
   doc.setProperties({ title: title + " · Cover", creator: "Tloque · Edition Studio", subject: "Cover spread · RGB artwork · No PDF/X output intent" })
+  doc.viewerPreferences({ Duplex: "Simplex", PrintScaling: "None" })
   cover.ops.forEach(op => drawCoverOp(doc, op))
   setPageBoxes(doc, cover.width, cover.height, cover.bleed)
   return doc.output("arraybuffer")
