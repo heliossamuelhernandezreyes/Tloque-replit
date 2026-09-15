@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { Layout } from "@/components/layout"
 import { useBook } from "@/hooks/use-books"
 import { Loader2, ArrowLeft, Bookmark, BookmarkCheck, BookOpen, Clock, Pencil, Download, Maximize2, Minimize2, EyeOff, Eye, Shield, ChevronRight } from "lucide-react"
-import { useState, useEffect } from "react"
+import { lazy, Suspense, useState, useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import UserAvatar from "@/components/UserAvatar"
 import { useAuth } from "@/hooks/useAuth"
@@ -14,15 +14,17 @@ import BookmarkBurst from "@/components/BookmarkBurst"
 import { useSoundFX } from "@/hooks/useSoundFX"
 import { FREE_SAVE_LIMIT, countsTowardLimit } from "@/lib/library"
 import { pushSaveBook, pushUnsaveBook } from "@/lib/sync"
-import { slimBook, saveOfflineContent, removeOfflineContent } from "@/lib/offline"
+import { slimBook, saveOfflineContent, removeOfflineContent, getOfflineContent } from "@/lib/offline"
 import TokensPanel from "@/components/TokensPanel"
 import CardsGallery from "@/components/CardsGallery"
 import HeartCount from "@/components/HeartCount"
 import InfoDot from "@/components/InfoDot"
-import { generateBookPdf, generateCoverKit } from "@/lib/bookPdf"
+import type { PdfCopy, PrintBook } from "@/print/model"
 import { coverFor, backCoverFor, showingPremium } from "@/lib/covers"
 import BookPresentation from "@/visual/BookPresentation"
 import VisualDialog from "@/visual/VisualDialog"
+
+const PrintStudio = lazy(() => import("@/print/PrintStudio"))
 
 function readingTime(book: any): string {
   let words = 0
@@ -59,7 +61,7 @@ export default function BookPage() {
   const [imgFailed, setImgFailed]   = useState(false)
   const [showBurst, setShowBurst]   = useState(false)
   const [showLibraryFull, setShowLibraryFull] = useState(false)
-  const [showFormats, setShowFormats] = useState(false)
+  const [printSession, setPrintSession] = useState<{ book: PrintBook; copy?: PdfCopy } | null>(null)
   const [coverOnly, setCoverOnly]   = useState(false)
   const [bookStatus, setBookStatus] = useState<string>("published")
   const [savingVis,  setSavingVis]  = useState(false)
@@ -188,23 +190,20 @@ export default function BookPage() {
 
   // Retomar lectura donde se quedó
 
-  // Genera el PDF del libro. copy = ejemplar físico (folio+QR+clave).
-  // format: "a5" (imprenta) | "letter" (impresora casera) | "booklet" (folleto para doblar y engrapar)
-  async function downloadPDF(copy?: { folio: string; key: string }, opts?: { format?: "a5" | "letter" | "booklet" | "cover" }) {
+  // Lightweight shelf records store their complete manuscript in IndexedDB.
+  async function openPrintStudio(copy?: PdfCopy) {
     if (!book || isDownloading) return
     setIsDownloading(true)
     try {
-      const bookForPdf = { ...book, coverUrl: shownCover, backCoverUrl: backCoverFor(book, user?.id) }
-      if (opts?.format === "cover") {
-        await generateCoverKit(bookForPdf, t, copy)
-      } else {
-        await generateBookPdf(bookForPdf, t, copy, { format: (opts?.format as any) || "a5" })
+      let complete = book
+      if (!book.chapters?.some((c: { content?: string }) => c.content?.trim()) && !book.content?.trim()) {
+        const offline = await getOfflineContent(id)
+        if (offline) complete = { ...book, ...offline }
       }
-    } catch (err) {
-      console.error("PDF error:", err)
-    } finally {
-      setIsDownloading(false)
-    }
+      setPrintSession({ book: { ...complete, coverUrl: shownCover, backCoverUrl: backCoverFor(book, user?.id) }, copy })
+    } catch {
+      toast({ title: settings.language === "es" ? "No se pudo abrir el taller de impresión" : "The print studio could not be opened", description: t("tryAgain") })
+    } finally { setIsDownloading(false) }
   }
 
   function startReading() {
@@ -504,59 +503,18 @@ export default function BookPage() {
               </p>
             </section>
 
-            {/* nota de dominio público para clásicos */}
-            {isClassic && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-center gap-1.5">
-                  <span className="text-[10px] font-sans uppercase tracking-widest"
-                    style={{ color: "rgba(255,210,100,0.5)" }}>
-                    {t("domainPublicShort")}
-                  </span>
-                  <InfoDot
-                    text={`${t("domainPublic")} ${t("audioCtaText")}`}
-                    color="rgba(255,210,100,0.6)"
-                    size={13}
-                  />
-                </div>
-
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  disabled={isDownloading}
-                  onClick={() => setShowFormats(v => !v)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-sans"
-                  style={{
-                    background: isDownloading ? "rgba(255,210,100,0.05)" : "rgba(255,210,100,0.08)",
-                    color:      isDownloading ? "rgba(255,210,100,0.3)" : "rgba(255,210,100,0.7)",
-                    border:     "1px solid rgba(255,210,100,0.2)",
-                  }}
-                >
-                  {isDownloading
-                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    : <Download className="w-3.5 h-3.5" />
-                  }
-                  {isDownloading ? `${t("searching")}...` : t("downloadPDF")}
-                </motion.button>
-
-                {showFormats && !isDownloading && (
-                  <div className="space-y-1.5">
-                    {([["a5", "pdfFormatBook"], ["letter", "pdfFormatHome"], ["booklet", "pdfFormatBooklet"], ["cover", "pdfFormatCover"]] as const).map(([f, k]) => (
-                      <button
-                        key={f}
-                        onClick={() => { setShowFormats(false); downloadPDF(undefined, { format: f }) }}
-                        className="w-full py-2.5 rounded-xl text-[11px] font-sans"
-                        style={{
-                          background: "rgba(255,210,100,0.05)",
-                          color:      "rgba(255,210,100,0.65)",
-                          border:     "1px solid rgba(255,210,100,0.15)",
-                        }}
-                      >
-                        {t(k)}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Print proofs for classics/authors, or a licensed copy below. */}
+            {(isClassic || isMine || showAdmin) && <div className="space-y-2">
+              {isClassic && <div className="flex items-center justify-center gap-1.5">
+                <span className="text-[10px] font-sans uppercase tracking-widest text-amber-200/60">{t("domainPublicShort")}</span>
+                <InfoDot text={t("domainPublic") + " " + t("audioCtaText")} color="rgba(255,210,100,0.6)" size={13} />
+              </div>}
+              <button disabled={isDownloading} onClick={() => void openPrintStudio()}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-sans border border-amber-200/20 bg-amber-200/10 text-amber-100/80 disabled:opacity-40">
+                {isDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                {isDownloading ? t("searching") + "..." : settings.language === "es" ? "Crear edición física" : "Create print edition"}
+              </button>
+            </div>}
 
             {/* Ejemplares físicos — solo obras de autores vivos del catálogo */}
             {!isClassic && numericId !== null && book.authorId && user && (
@@ -565,7 +523,7 @@ export default function BookPage() {
                 accentColor={gc.color}
                 accentGlow={gc.glow}
                 isDownloading={isDownloading}
-                onPrintCopy={(c, f) => downloadPDF(c, { format: f })}
+                onPrintCopy={c => void openPrintStudio(c)}
                 premiumUnlocked={isPremiumView}
               />
             )}
@@ -683,6 +641,8 @@ export default function BookPage() {
         </motion.div>
         </div>
       </div>
+
+      {printSession && <Suspense fallback={<div role="status" className="fixed inset-0 z-[2500] grid place-items-center bg-black/90"><Loader2 className="h-7 w-7 animate-spin" /></div>}><PrintStudio book={printSession.book} copy={printSession.copy} onClose={() => setPrintSession(null)} /></Suspense>}
 
       {/* Modal: biblioteca gratuita llena */}
       <AnimatePresence>

@@ -27,6 +27,8 @@ export default defineConfig({
     },
   },
   root: path.resolve(import.meta.dirname, "client"),
+  // PDF composition runs in a module worker with lazy dependencies.
+  worker: { format: "es" },
   build: {
     manifest: true,
     outDir: path.resolve(import.meta.dirname, "dist/public"),

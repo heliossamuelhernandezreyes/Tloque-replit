@@ -1,0 +1,59 @@
+name: Print edition check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  print-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build the production app and module worker
+        run: npm run build && npm run check:bundle
+      - name: Install browser tooling (QA only)
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install independent PDF inspection tools (QA only)
+        run: |
+          python -m pip install pypdf==6.10.0 Pillow==11.3.0
+          sudo apt-get update -qq
+          sudo apt-get install -y poppler-utils
+      - name: Exercise the built studio and download physical editions
+        run: npm run test:print:browser
+      - name: Inspect actual PDFs and render proofs
+        run: python scripts/check-print-pdfs.py
+      - name: Reviewable fixture previews in text-only environments
+        run: |
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+          for name in ("proofs-interior", "proofs-cover", "studio-screens", "studio-mobile-screens"):
+              encoded = base64.b64encode(Path(".tloque_cache/print-qa", name + ".jpg").read_bytes()).decode()
+              print("TLOQUE_PROOF_START " + name)
+              for offset in range(0, len(encoded), 4000):
+                  print("TLOQUE_PROOF_CHUNK " + encoded[offset:offset + 4000])
+              print("TLOQUE_PROOF_END")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: physical-edition-proofs
+          path: .tloque_cache/print-qa/
+          retention-days: 7
