@@ -25,7 +25,7 @@ def close(actual, target, label):
     assert math.isclose(float(actual), target, abs_tol=0.02), (label, actual, target)
 
 
-def inspect(name, width, height, duplex):
+def inspect(name, width, height, duplex, require_text=True):
     reader = PdfReader(ROOT / (name + ".pdf"))
     assert not reader.is_encrypted
     catalog = reader.trailer["/Root"]
@@ -49,8 +49,9 @@ def inspect(name, width, height, duplex):
             assert "/FontFile2" in descriptor, (name, number, "Unembedded TrueType")
             assert len(descriptor["/FontFile2"].get_data()) > 1000
             embedded.add(str(font["/BaseFont"]))
-    assert embedded, name + ": missing font resources"
-    print(name + ": " + str(len(reader.pages)) + " pages, " + str(width) + " x " + str(height) + " mm, embedded Unicode fonts")
+    if require_text:
+        assert embedded, name + ": missing font resources"
+    print(name + ": " + str(len(reader.pages)) + " pages, " + str(width) + " x " + str(height) + " mm; all used text fonts embedded")
     return reader
 
 
@@ -99,9 +100,10 @@ kit = inspect("cover-kit", 215.9, 279.4, "/Simplex")
 assert len(kit.pages) == 2
 assert all("100%" in page.extract_text() for page in kit.pages)
 assert "Pegar" in kit.pages[1].extract_text()
-artwork = inspect("cover-artwork", 310.75, 216.35, "/Simplex")
+artwork = inspect("cover-artwork", 310.75, 216.35, "/Simplex", require_text=False)
 assert len(artwork.pages) == 1 and len(artwork.pages[0].images) == 2
 assert all(image.image.size == (600, 900) for image in artwork.pages[0].images)
+assert not artwork.pages[0].extract_text(), "Do not duplicate lettering already in original artwork"
 job = (ROOT / "booklet-job.txt").read_text()
 assert "Cuadernillo | Hoja | Cara | Izquierda | Derecha" in job
 assert "fixture-key" not in job
