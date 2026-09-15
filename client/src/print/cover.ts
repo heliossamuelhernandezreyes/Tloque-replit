@@ -5,7 +5,7 @@ export interface PrintImage { data: string; width: number; height: number }
 export type CoverOp = PageOp | { kind: "rect"; x: number; y: number; width: number; height: number; gray: number }
   | { kind: "image"; x: number; y: number; width: number; height: number; data: string }
 export interface CoverLayout { width: number; height: number; trimWidth: number; trimHeight: number; spine: number; bleed: number; ops: CoverOp[]; issues: PrintIssue[]; ppi: number | null }
-export function composeCover(book: PrintBook, interior: EditionLayout, metrics: FontMetrics, art: PrintImage | null, copy?: PdfCopy, origin = "https://tloque.app"): CoverLayout {
+export function composeCover(book: PrintBook, interior: EditionLayout, metrics: FontMetrics, art: PrintImage | null, copy?: PdfCopy, origin = "https://tloque.app", backArt: PrintImage | null = null): CoverLayout {
   const { width: w, height: h, settings: s } = interior, b = s.bleedMm, spine = s.spineMm
   const width = w * 2 + spine + b * 2, height = h + b * 2, frontX = b + w + spine
   const cover: CoverLayout = { width, height, trimWidth: w, trimHeight: h, spine, bleed: b, ops: [], issues: [], ppi: null }
@@ -22,25 +22,35 @@ export function composeCover(book: PrintBook, interior: EditionLayout, metrics: 
     rows.forEach((row, i) => cover.ops.push({ kind: "text", text: row.text, x, y: start + i * size * PT_MM * 1.35, width: row.width, pt: size, font, role: "title", gray }))
   }
   const safe = 15
+  const addArtwork = (image: PrintImage, x: number) => {
+    const scale = Math.min(w / image.width, h / image.height)
+    const aw = image.width * scale, ah = image.height * scale
+    cover.ops.push({ kind: "image", data: image.data, x: x + (w - aw) / 2, y: b + (h - ah) / 2, width: aw, height: ah })
+    const ppi = Math.floor(25.4 / scale)
+    cover.ppi = cover.ppi === null ? ppi : Math.min(cover.ppi, ppi)
+  }
   if (s.coverArt && art) {
-    // Fit the complete original cover, preserving embedded lettering and aspect
-    // ratio. The solid surround extends into bleed; the artwork is not upscaled.
-    const scale = Math.min(w / art.width, h / art.height)
-    const aw = art.width * scale, ah = art.height * scale
-    cover.ops.push({ kind: "image", data: art.data, x: frontX + (w - aw) / 2, y: b + (h - ah) / 2, width: aw, height: ah })
-    cover.ppi = Math.floor(25.4 / scale)
-    if (cover.ppi < 300) cover.issues.push({ code: "coverResolution", severity: "warning", scope: "cover", detail: String(cover.ppi) })
+    // Keep original aspect ratio and embedded lettering; never resample upward.
+    addArtwork(art, frontX)
   } else if (s.coverArt && book.coverUrl) cover.issues.push({ code: "coverMissing", severity: "warning", scope: "cover" })
   if (!(s.coverArt && art)) {
     writeBlock(book.title, frontX + safe, b + h * .29, w - safe * 2, 32, 24, 12, "bold")
     writeBlock(book.author, frontX + safe, b + h * .29 + 46, w - safe * 2, 18, 12, 9, "italic")
     writeBlock("TLOQUE", frontX + safe, b + h - 12, w - safe * 2, 10, 8, 8, "normal", 185)
   }
-  writeBlock(book.synopsis || book.title, b + safe, b + 34, w - safe * 2, h - 100, 12, 9, "normal")
+  const illustratedBack = s.backCoverArt && backArt
+  if (illustratedBack) addArtwork(illustratedBack, b)
+  else {
+    if (s.backCoverArt && book.backCoverUrl) cover.issues.push({ code: "coverMissing", severity: "warning", scope: "cover" })
+    writeBlock(book.synopsis || book.title, b + safe, b + 34, w - safe * 2, h - 100, 12, 9, "normal")
+  }
+  if (cover.ppi !== null && cover.ppi < 300) cover.issues.push({ code: "coverResolution", severity: "warning", scope: "cover", detail: String(cover.ppi) })
+
   if (copy) {
+    if (illustratedBack) cover.ops.push({ kind: "rect", x: b + safe - 3, y: b + h - 53, width: w - safe * 2 + 6, height: 43, gray: 20 })
     cover.ops.push({ kind: "qr", value: origin + "/claim/" + encodeURIComponent(copy.folio), x: b + safe, y: b + h - 50, size: 29 })
     writeBlock(copy.folio, b + safe, b + h - 14, w - safe * 2, 8, 8, 8, "normal", 230)
-  } else writeBlock("TLOQUE", b + safe, b + h - 18, w - safe * 2, 10, 9, 9, "normal", 185)
+  } else if (!illustratedBack) writeBlock("TLOQUE", b + safe, b + h - 18, w - safe * 2, 10, 9, 9, "normal", 185)
   // A printer-specific template is needed to determine safe spine lettering.
   return cover
 }

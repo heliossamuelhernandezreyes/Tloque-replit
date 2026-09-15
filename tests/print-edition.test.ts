@@ -108,3 +108,35 @@ test("PDFs embed TrueType fonts and publish real trim boxes and print scaling pr
   assert.match(bytes, /^%PDF-1\./); assert.match(bytes, /\/FontFile2/); assert.match(bytes, /\/ToUnicode/)
   assert.match(bytes, /\/TrimBox/); assert.match(bytes, /\/PrintScaling \/None/); assert.doesNotMatch(bytes, /\/OutputIntents|PDF\/X/)
 })
+
+test("long metadata fits the title page; overset headings block export", () => {
+  const metadata = { ...book, title: "La memoria del río ".repeat(10).trim(), author: "Lucía Márquez ".repeat(10).trim() }
+  const layout = compose({}, metadata)
+  assert.equal(layout.issues.some(i => i.severity === "error"), false)
+  const title = layout.pages[0].ops.filter(op => op.kind === "text").map(op => op.text).join("")
+  assert.ok(compact(title).startsWith(compact(metadata.title + metadata.author)))
+  for (const oversized of [
+    { ...book, title: sample.repeat(40) },
+    { ...book, chapters: [{ title: sample.repeat(40), content: sample }] },
+  ]) {
+    const failed = compose({}, oversized)
+    assert.ok(failed.issues.some(i => i.code === "layoutOverflow" && i.severity === "error" && i.page))
+    assert.throws(() => renderInterior(failed, fonts, oversized.title))
+  }
+})
+
+test("existing front and back artwork keep their proportions without duplicate cover text", () => {
+  const original = { ...book, coverUrl: "/front.png", backCoverUrl: "/back.png" }
+  const front = { data: "front-image", width: 1600, height: 2400 }, back = { data: "back-image", width: 1500, height: 2300 }
+  const copy = { folio: "QA-ART-ONLY", key: "fixture-private-key" }
+  const cover = composeCover(original, compose({ spineMm: 8 }), metrics, front, copy, "https://example.test", back)
+  const images = cover.ops.filter(op => op.kind === "image")
+  assert.deepEqual(images.map(op => op.data), [front.data, back.data])
+  assert.ok(Math.abs(images[0].width / images[0].height - front.width / front.height) < 1e-8)
+  assert.ok(Math.abs(images[1].width / images[1].height - back.width / back.height) < 1e-8)
+  assert.ok(!JSON.stringify(cover).includes(copy.key))
+  assert.ok(!cover.ops.some(op => op.kind === "text" && op.text.includes("El río guardaba")))
+  const textBack = composeCover(original, compose({ spineMm: 8, backCoverArt: false }), metrics, front, undefined, "https://example.test", back)
+  assert.equal(textBack.ops.filter(op => op.kind === "image").length, 1)
+  assert.ok(textBack.ops.some(op => op.kind === "text" && op.text.includes("El río guardaba")))
+})

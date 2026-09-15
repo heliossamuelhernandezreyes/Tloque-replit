@@ -17,13 +17,13 @@ export interface EditionSettings {
   bodyPt: number; leading: number; inner: number; outer: number; top: number; bottom: number
   recto: boolean; toc: boolean; headers: boolean; justify: boolean
   textMode: "paragraphs" | "reflow" | "verse"; signature: 4 | 8 | 16 | 32
-  spineMm: number; bleedMm: number; coverArt: boolean
+  spineMm: number; bleedMm: number; coverArt: boolean; backCoverArt: boolean
 }
 export const DEFAULT_EDITION: EditionSettings = {
   version: 1, destination: "press", trim: "a5", paper: "letter", template: "classic",
   bodyPt: 11, leading: 1.42, inner: 21, outer: 16, top: 19, bottom: 21,
   recto: true, toc: true, headers: true, justify: true, textMode: "paragraphs",
-  signature: 16, spineMm: 0, bleedMm: 3.175, coverArt: true,
+  signature: 16, spineMm: 0, bleedMm: 3.175, coverArt: true, backCoverArt: true,
 }
 const pick = <T extends string | number>(v: unknown, options: readonly T[], fallback: T): T => options.includes(v as T) ? v as T : fallback
 const bounded = (v: unknown, lo: number, hi: number, fallback: number) => typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
@@ -41,6 +41,7 @@ export function editionSettings(value?: Partial<EditionSettings> | null): Editio
     textMode: pick(v.textMode, ["paragraphs", "reflow", "verse"], d.textMode),
     signature: pick(v.signature, [4, 8, 16, 32], d.signature), spineMm: bounded(v.spineMm, 0, 70, 0),
     bleedMm: bounded(v.bleedMm, 3, 6, d.bleedMm), coverArt: typeof v.coverArt === "boolean" ? v.coverArt : d.coverArt,
+    backCoverArt: typeof v.backCoverArt === "boolean" ? v.backCoverArt : d.backCoverArt,
   }
 }
 export function useTemplate(settings: EditionSettings, template: PrintTemplate): EditionSettings {
@@ -54,7 +55,7 @@ export function pageSize(s: EditionSettings): { width: number; height: number } 
   return s.trim === "trade" ? { width: 152.4, height: 228.6 } : s.trim === "digest" ? { width: 139.7, height: 215.9 } : { width: 148, height: 210 }
 }
 export interface PrintIssue {
-  code: "missingText" | "tooLong" | "missingGlyph" | "unsupportedScript" | "gutter" | "coverMissing" | "coverResolution" | "spineRequired" | "colorProfile" | "longWord" | "coverOverflow"
+  code: "missingText" | "tooLong" | "missingGlyph" | "unsupportedScript" | "gutter" | "coverMissing" | "coverResolution" | "spineRequired" | "colorProfile" | "longWord" | "coverOverflow" | "layoutOverflow"
   severity: "error" | "warning" | "info"; scope: "interior" | "cover"; detail?: string; page?: number
 }
 export interface TextOp {

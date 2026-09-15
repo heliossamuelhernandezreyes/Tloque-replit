@@ -96,9 +96,16 @@ export function composeEdition(book: PrintBook, input: EditionSettings, metrics:
 
   page("title")
   const titleFont = settings.template === "contemporary" ? "normal" : "bold"
-  const titlePt = settings.template === "large" ? 25 : 23
+  let titlePt = settings.template === "large" ? 25 : 23, authorPt = 12
+  const titleHeight = () => wrapText(clean(book.title), tw, metrics, titlePt, titleFont).length * titlePt * PT_MM * 1.35
+    + 10 + wrapText(clean(book.author), tw, metrics, authorPt, "italic").length * authorPt * PT_MM * 1.35
+  while (height * .32 + titleHeight() > height - 44 && (titlePt > 16 || authorPt > 10)) {
+    if (titlePt > 16) titlePt -= .5
+    else authorPt -= .5
+  }
   y = block(book.title, height * 0.32, titlePt, titleFont, "title")
-  y = block(book.author, y + 10, 12, "italic", "title")
+  y = block(book.author, y + 10, authorPt, "italic", "title")
+  if (y > height - 44) layout.issues.push({ code: "layoutOverflow", severity: "error", scope: "interior", page: 1 })
   current!.ops.push({ kind: "line", x: width / 2 - 8, x2: width / 2 + 8, y: height - 36, y2: height - 36, gray: 80, weight: .25 })
   text("TLOQUE", width / 2, height - 27, 9, "normal", "title", true, 60)
 
@@ -188,6 +195,17 @@ export function composeEdition(book: PrintBook, input: EditionSettings, metrics:
     text(number, left(pageNumber) + tw - metrics.width(number, 10.5), slot.y, 10.5, "normal", "toc")
   }
   if (layout.pages.length % 2) page("blank")
+  // Never export overset front matter or a chapter heading outside the paper.
+  // Page numbers and running headers intentionally sit outside the body frame.
+  layout.pages.forEach((p, index) => {
+    if (p.ops.some(op => op.kind === "text" && (
+      op.x < -.01 || op.x + op.width > width + .01 || op.y - op.pt * PT_MM * .75 < 0
+      || op.y + op.pt * PT_MM * .25 > height
+      || (["legal", "toc", "heading"].includes(op.role) && op.y > bottomY)
+    )) && !layout.issues.some(i => i.code === "layoutOverflow" && i.page === index + 1)) {
+      layout.issues.push({ code: "layoutOverflow", severity: "error", scope: "interior", page: index + 1 })
+    }
+  })
   const gutterMin = layout.pages.length > 700 ? 22.3 : layout.pages.length > 500 ? 19.1 : layout.pages.length > 300 ? 15.9 : 12.7
   if (inner < gutterMin) layout.issues.push({ code: "gutter", severity: "warning", scope: "interior", detail: String(gutterMin) })
   return layout

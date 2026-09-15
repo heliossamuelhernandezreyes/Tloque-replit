@@ -1,5 +1,6 @@
 import type { PrintIssue } from "./model"
 const es = {
+  backArtwork: "Usar la contraportada ilustrada", backArtworkHint: "Conserva su diseño original. Desactívala para componer una contraportada con texto. Revisa la zona del folio en la maqueta.",
   adjustments: "Ajustes", previewTab: "Maqueta", zoom: "Ampliar maqueta",
   cut: "Continua: recortar", fold: "Discontinua: doblar", glue: "Pegar", kit: "Descargar cubierta recortable PDF",
   kitHint: "Dos hojas verticales, a una cara y al 100 %. Recorta las líneas continuas, dobla las discontinuas y pega la pestaña de la contraportada bajo el lomo. Usa papel compatible con tu impresora.",
@@ -35,6 +36,7 @@ const es = {
 }
 type Key = keyof typeof es
 const en: Record<Key, string> = {
+  backArtwork: "Use back cover artwork", backArtworkHint: "Keep its original design. Turn it off to typeset a text back cover. Check the folio area in the preview.",
   adjustments: "Settings", previewTab: "Preview", zoom: "Enlarge preview",
   cut: "Solid: cut", fold: "Dashed: fold", glue: "Glue", kit: "Download cut-out cover PDF",
   kitHint: "Two portrait sheets, single-sided, at 100%. Cut solid lines, fold dashed lines and glue the back-cover tab under the spine. Use paper your printer supports.",
@@ -64,6 +66,7 @@ export const printText = (language: string) => (key: Key) => (language.startsWit
 export function issueText(language: string, issue: PrintIssue): string {
   const spanish = language.startsWith("es")
   const messages: Record<PrintIssue["code"], [string, string]> = {
+    layoutOverflow: ["Un título, crédito o entrada del índice rebasa el espacio de la página. Revisa el texto o el formato antes de imprimir.", "A title, credit or contents entry exceeds its page area. Review the text or format before printing."],
     missingText: ["Falta el texto completo del libro.", "The complete book text is missing."],
     tooLong: ["Esta edición supera 6 millones de caracteres o 1800 páginas. Divídela en volúmenes.", "This edition exceeds 6 million characters or 1800 pages. Split it into volumes."],
     missingGlyph: ["La fuente no cubre todos los caracteres. No se exportará texto incompleto.", "The font does not cover every character. Incomplete text will not be exported."],

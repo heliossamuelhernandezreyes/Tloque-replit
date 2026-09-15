@@ -2,8 +2,6 @@
 Install QA-only tools: pypdf==6.10.0, Pillow, poppler-utils.
 Run after npm run test:print:browser. Does not certify PDF/X or printer approval.
 """
-import base64
-import io
 import json
 import math
 import subprocess
@@ -101,6 +99,9 @@ kit = inspect("cover-kit", 215.9, 279.4, "/Simplex")
 assert len(kit.pages) == 2
 assert all("100%" in page.extract_text() for page in kit.pages)
 assert "Pegar" in kit.pages[1].extract_text()
+artwork = inspect("cover-artwork", 310.75, 216.35, "/Simplex")
+assert len(artwork.pages) == 1 and len(artwork.pages[0].images) == 2
+assert all(image.image.size == (600, 900) for image in artwork.pages[0].images)
 job = (ROOT / "booklet-job.txt").read_text()
 assert "Cuadernillo | Hoja | Cara | Izquierda | Derecha" in job
 assert "fixture-key" not in job
@@ -123,7 +124,19 @@ proofs = [
     render("cover-wrap", 1, "proof-wrap"),
     render("cover-kit", 1, "proof-kit-front"),
     render("cover-kit", 2, "proof-kit-back"),
+    render("cover-artwork", 1, "proof-artwork"),
 ]
+
+# A structurally valid clip operator can still be applied to an empty path.
+# Check actual rendered ink: neither wrap panel may spill into a sheet margin.
+for image_path, panel_width in ((proofs[5], 139.7 + 6.2), (proofs[6], 139.7 + 12)):
+    rendered = Image.open(image_path).convert("L")
+    sx, sy = rendered.width / 215.9, rendered.height / 279.4
+    x, y = (215.9 - panel_width) / 2, (279.4 - 215.9) / 2
+    top, bottom = round((y + 20) * sy), round((y + 195.9) * sy)
+    for region in ((0, top, round((x - 2) * sx), bottom),
+                   (round((x + panel_width + 2) * sx), top, rendered.width, bottom)):
+        assert rendered.crop(region).getextrema()[0] >= 250, (image_path.name, "Cover ink escaped its cut-out panel")
 
 
 def contact(name, paths, columns=2, cell=(700, 920)):

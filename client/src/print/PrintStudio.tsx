@@ -36,7 +36,7 @@ export default function PrintStudio({ book, copy, destination, onClose }: { book
   const [step, setStep] = useState(0), [part, setPart] = useState<"interior" | "cover">("interior")
   const [mobileView, setMobileView] = useState<"controls" | "preview">("controls"), [zoom, setZoom] = useState(false)
   const [page, setPage] = useState(0), [guides, setGuides] = useState(false)
-  const [art, setArt] = useState<PrintImage | null>(null), [artLoading, setArtLoading] = useState(!!book.coverUrl)
+  const [art, setArt] = useState<PrintImage | null>(null), [backArt, setBackArt] = useState<PrintImage | null>(null), [artLoading, setArtLoading] = useState(!!(book.coverUrl || book.backCoverUrl))
   const [blurb, setBlurb] = useState(book.synopsis || ""), [coverConfirmed, setCoverConfirmed] = useState(false)
   const [result, setResult] = useState<{ interior: EditionLayout; cover: CoverLayout } | null>(null)
   const [busy, setBusy] = useState(true), [exporting, setExporting] = useState(false), [error, setError] = useState("")
@@ -46,12 +46,12 @@ export default function PrintStudio({ book, copy, destination, onClose }: { book
 
   useEffect(() => {
     const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 15000)
-    setArtLoading(!!book.coverUrl)
-    loadCoverImage(book.coverUrl, abort.signal).then(image => { if (!abort.signal.aborted) { setArt(image); setArtLoading(false) } })
+    setArtLoading(!!(book.coverUrl || book.backCoverUrl))
+    Promise.all([loadCoverImage(book.coverUrl, abort.signal), loadCoverImage(book.backCoverUrl, abort.signal)]).then(([image, backImage]) => { if (!abort.signal.aborted) { setArt(image); setBackArt(backImage); setArtLoading(false) } })
     const failed = () => setArtLoading(false)
     abort.signal.addEventListener("abort", failed)
     return () => { abort.signal.removeEventListener("abort", failed); abort.abort(); clearTimeout(timer) }
-  }, [book.coverUrl, attempt])
+  }, [book.coverUrl, book.backCoverUrl, attempt])
 
   useEffect(() => {
     setBusy(true); setExporting(false); setError(""); setCoverConfirmed(false)
@@ -69,11 +69,11 @@ export default function PrintStudio({ book, copy, destination, onClose }: { book
       task.onerror = () => { if (worker.current === task) { setError("generation"); setBusy(false); setExporting(false) } }
       const request: WorkerRequest = { type: "compose", book: { ...book, synopsis: blurb }, settings,
         labels: printLabels(book.originalLanguage || language), kitLabels: { cut: t("cut"), fold: t("fold"), glue: t("glue") },
-        copy, origin: window.location.origin, art }
+        copy, origin: window.location.origin, art, backArt }
       task.postMessage(request)
     }, 280)
     return () => { clearTimeout(timer); worker.current?.terminate(); worker.current = null }
-  }, [book, settings, language, copy, art, blurb, attempt])
+  }, [book, settings, language, copy, art, backArt, blurb, attempt])
 
   const update = (patch: Partial<EditionSettings>, resetSpine = true) => {
     setBusy(true)
@@ -151,7 +151,8 @@ export default function PrintStudio({ book, copy, destination, onClose }: { book
             {settings.destination !== "home" && <details className="print-details print-cover-settings" onToggle={e => { if (e.currentTarget.open) setPart("cover") }}><summary>{t("coverSettings")}</summary>
               <div className="print-fields"><NumberField label={t("spine")} value={settings.spineMm} min={0} max={70} step={.1} onChange={spineMm => update({ spineMm }, false)} /><NumberField label={t("bleed")} value={settings.bleedMm} min={3} max={6} step={.1} onChange={bleedMm => update({ bleedMm }, false)} /></div><p className="print-note">{t("spineHint")}</p>
               <Toggle checked={settings.coverArt} onChange={coverArt => update({ coverArt }, false)}>{t("artwork")}</Toggle>
-              <label className="print-field"><span>{t("blurb")}</span><textarea aria-label={t("blurb")} value={blurb} onChange={e => { setBusy(true); setBlurb(e.target.value) }} rows={5} maxLength={8000} /></label><p className="print-note">{t("blurbHint")}</p>
+              {book.backCoverUrl && <><Toggle checked={settings.backCoverArt} onChange={backCoverArt => update({ backCoverArt }, false)}>{t("backArtwork")}</Toggle><p className="print-note">{t("backArtworkHint")}</p></>}
+              <label className="print-field"><span>{t("blurb")}</span><textarea disabled={!!(settings.backCoverArt && backArt)} aria-label={t("blurb")} value={blurb} onChange={e => { setBusy(true); setBlurb(e.target.value) }} rows={5} maxLength={8000} /></label><p className="print-note">{t("blurbHint")}</p>
               {issues.filter(i => i.scope === "cover" && (settings.destination === "press" || i.code !== "colorProfile")).map((i, n) => <div className="print-issue" key={n}><TriangleAlert size={14} /><span>{issueText(language, i)}</span></div>)}
               {settings.destination === "booklet" && <p className="print-note">{t("kitHint")}</p>}
               {kitTooWide && <p role="alert" className="print-note">{t("kitTooWide")}</p>}
@@ -174,7 +175,7 @@ export default function PrintStudio({ book, copy, destination, onClose }: { book
           </div>
           <div className="print-preview-footer">
             {(part === "interior" || settings.destination === "home") && <><div className="print-page-controls"><button className="print-icon" aria-label={t("previousPage")} disabled={!page || busy} onClick={() => setPage(n => n - 1)}><ChevronLeft /></button><span>{t("page")} <strong>{page + 1}</strong> {t("of")} {result?.interior.pages.length || "—"}</span><button className="print-icon" aria-label={t("nextPage")} disabled={busy || !result || page >= result.interior.pages.length - 1} onClick={() => setPage(n => n + 1)}><ChevronRight /></button></div><select aria-label={t("chapter")} value={result?.interior.chapters.find(c => c.page - 1 === page)?.page || ""} onChange={e => setPage(Number(e.target.value) - 1)}><option value="" disabled>{t("chapter")}</option><option value="1">{t("titlePage")}</option>{result?.interior.chapters.map((c, i) => <option key={i} value={c.page}>{c.title}</option>)}</select></>}
-            {part === "cover" && settings.destination !== "home" && <p>{result?.cover.width.toFixed(2)} × {result?.cover.height.toFixed(2)} mm · {result?.cover.ppi ? result.cover.ppi + " ppi" : t("noCover")}</p>}
+            {part === "cover" && settings.destination !== "home" && <p>{result?.cover.width.toFixed(2)} × {result?.cover.height.toFixed(2)} mm · {result?.cover.ppi != null ? result.cover.ppi + " ppi" : t("noCover")}</p>}
           </div>
         </section>
       </div>

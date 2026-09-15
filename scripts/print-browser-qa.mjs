@@ -16,6 +16,7 @@ const vite = await preview({ preview: { host: "127.0.0.1", port: 4184, strictPor
 const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"],
   ...(process.env.TLOQUE_QA_CHROME ? { executablePath: process.env.TLOQUE_QA_CHROME } : {}) })
 const errors = [], writes = [], expected = {}
+let artBook
 const sentence = "Lucía cruzó el río y encontró la biblioteca abierta. ¿Quién recordaba todavía el nombre de aquella ciudad? La lámpara iluminaba sus páginas, y cada palabra traía consigo una memoria distinta."
 const book = { id: 85, title: "La memoria del río", author: "Lucía Márquez", originalLanguage: "es",
   genre: "fantasia", isClassic: true, status: "published", coverUrl: "", revision: 1,
@@ -56,6 +57,7 @@ async function setup(mobile = false) {
     let data = {}
     if (url.pathname === "/api/auth/me") data = { id: 99, email: "fixture@example.test", name: "Print QA", avatar: "", isAdmin: true, persona: "admin" }
     else if (url.pathname === "/api/books/85") data = book
+    else if (url.pathname === "/api/books/86") data = artBook
     else if (url.pathname === "/api/books") data = []
     else if (url.pathname === "/api/frames") data = { frames: [] }
     else if (url.pathname.includes("notifications")) data = { notifications: [], unread: 0 }
@@ -137,6 +139,33 @@ try {
   assert.equal(JSON.stringify(storage).includes(sentence.slice(0, 30)), false)
   await page.getByRole("button", { name: "Cerrar taller", exact: true }).click()
   assert.equal(await page.locator("#root").evaluate(el => getComputedStyle(el).visibility), "visible")
+
+  // Tiny, original test artwork exercises decoding, embedding, low-resolution
+  // warnings and the optional illustrated back. No external image service.
+  const pictures = await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 600; canvas.height = 900
+    const ctx = canvas.getContext("2d")
+    return ["#164b79", "#285a36"].map((color, i) => {
+      ctx.fillStyle = color; ctx.fillRect(0, 0, 600, 900)
+      ctx.fillStyle = "#e3c078"; ctx.fillRect(60, 90, 480, 12)
+      ctx.font = "32px serif"; ctx.fillText(i ? "CONTRAPORTADA DE PRUEBA" : "PORTADA DE PRUEBA", 60, 170)
+      return canvas.toDataURL("image/png")
+    })
+  })
+  artBook = { ...book, id: 86, coverUrl: pictures[0], backCoverUrl: pictures[1] }
+  await page.evaluate(() => localStorage.removeItem("tloque_print_edition_v1"))
+  await open(page, "86")
+  await step(page, "03 Revisión")
+  await page.getByText("Preparar la cubierta", { exact: true }).click()
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="print-preview"] image').length === 2)
+  assert.equal(await page.getByLabel("Texto de contraportada", { exact: true }).isDisabled(), true)
+  await number(page, "Lomo confirmado · mm", 8.4)
+  await page.getByLabel("La imprenta revisará el color y su plantilla de cubierta.", { exact: true }).check()
+  await download(page, "Descargar cubierta PDF", "cover-artwork.pdf")
+  await screenshot(page, "cover-artwork")
+  await page.getByLabel("Usar la contraportada ilustrada", { exact: true }).uncheck(); await ready(page)
+  assert.equal(await page.getByTestId("print-preview").locator("image").count(), 1)
+  assert.equal(await page.getByLabel("Texto de contraportada", { exact: true }).isEnabled(), true)
   await context.close()
 
   console.log("Print QA: mobile controls, readable preview and offline manuscript hydration")
@@ -179,7 +208,7 @@ try {
   await mobile.context.close()
   assert.deepEqual(writes, [], "Printing must not create purchases, copies or API writes")
   assert.deepEqual(errors, [], "Browser runtime errors")
-  console.log("Print browser QA passed: six PDFs, desktop/mobile and offline text")
+  console.log("Print browser QA passed: seven PDFs, desktop/mobile, artwork and offline text")
 } catch (error) {
   console.error("Print QA failed:", error)
   console.error("Runtime errors:", errors)

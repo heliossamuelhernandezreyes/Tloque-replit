@@ -26,7 +26,8 @@ export function renderCoverKit(cover: CoverLayout, fonts: PrintFonts, title: str
   doc.setProperties({ title: title + " · Cover kit", creator: "Tloque · Edition Studio", subject: "Two single-sided cover sheets, actual size" })
   const y = (h - ph) / 2
   const panel = (x: number, panelWidth: number, sourceX: number) => {
-    doc.saveGraphicsState(); doc.rect(x, y, panelWidth, ph); doc.clip(); doc.discardPath()
+    // Keep the path unpainted until clip(): rect's default stroke consumes it.
+    doc.saveGraphicsState(); doc.rect(x, y, panelWidth, ph, null); doc.clip(); doc.discardPath()
     cover.ops.forEach(op => drawCoverOp(doc, op, x - sourceX, y - cover.bleed))
     doc.restoreGraphicsState()
   }
