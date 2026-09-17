@@ -3,10 +3,11 @@ import type { Server } from "http";
 import { storage, BookRevisionConflictError, type BookChangeType } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { requireAdmin, isAdmin, refreshAdminCache, FOUNDER_EMAIL } from "./auth";
+import { requireAdmin, hasCapability, FOUNDER_EMAIL } from "./auth";
 import { db } from "./db";
 import { admins, books, bookDrafts, bookRevisions, users, comments, authorProfiles, userState, readingProgress, savedBooks, bookTokens, printCopies, printCopyEvents, notifications, unlockedBooks, tokenOrders, authorEarnings, walletLedger, walletOrders, paperUsageEvents, bookCards, userCards, frames, userFrames, gachaConfig, gachaPity, gachaDraws, insertCommentSchema } from "@shared/schema";
 import { randomBytes } from "crypto";
+import { ADMIN_ROLES } from "../shared/admin-permissions";
 import { rateLimit } from "./rateLimit";
 import {
   validateCard, MAX_CARDS_PER_BOOK, MAX_LOOSE_CARDS,
@@ -71,12 +72,12 @@ export async function registerRoutes(
   function canViewBook(req: any, book: any): boolean {
     if (book?.status === "published") return true
     if (!req.isAuthenticated()) return false
-    return isAdmin(req.user) || (!!book?.authorId && book.authorId === (req.user as any)?.id)
+    return hasCapability(req.user, "manageCatalog") || (!!book?.authorId && book.authorId === (req.user as any)?.id)
   }
 
   function canEditBook(req: any, book: any): boolean {
     if (!req.isAuthenticated()) return false
-    return isAdmin(req.user) || (!!book?.authorId && book.authorId === (req.user as any)?.id)
+    return hasCapability(req.user, "manageCatalog") || (!!book?.authorId && book.authorId === (req.user as any)?.id)
   }
 
   function withoutPremiumArt<T extends Record<string, any>>(book: T, allowed: boolean): T {
@@ -89,7 +90,7 @@ export async function registerRoutes(
   // control de acceso.
   async function entitledBookIds(req: any, catalog: Array<{ id: number; authorId?: number | null }>): Promise<Set<number>> {
     if (!req.isAuthenticated() || catalog.length === 0) return new Set()
-    if (isAdmin(req.user)) return new Set(catalog.map(book => book.id))
+    if (hasCapability(req.user, "manageCatalog")) return new Set(catalog.map(book => book.id))
     const userId = (req.user as any).id as number
     const ids = catalog.map(book => book.id)
     const allowed = new Set(catalog.filter(book => book.authorId === userId).map(book => book.id))
@@ -235,12 +236,11 @@ export async function registerRoutes(
   app.put(api.books.update.path, rateLimit(60_000, 24), async (req, res) => {
     try {
       const id      = Number(req.params.id);
-      const input   = api.books.update.input.parse(req.body);
       const existing = await storage.getBook(id);
 
       if (!existing) return res.status(404).json({ message: "Book not found" });
 
-      const userIsAdmin = req.isAuthenticated() && isAdmin(req.user);
+      const userIsAdmin = req.isAuthenticated() && hasCapability(req.user, "manageCatalog");
 
       // Autorización:
       //  - Admin puede editar cualquier libro (incluidos los clásicos).
@@ -257,6 +257,7 @@ export async function registerRoutes(
         }
       }
 
+      const input = api.books.update.input.parse(req.body)
       const { expectedRevision, ...requestedUpdates } = input
       const updates = userIsAdmin ? requestedUpdates : authorBookInput(requestedUpdates, req.user)
       // Un autor puede corregir una obra moderada, pero no levantar su propia
@@ -413,7 +414,7 @@ export async function registerRoutes(
       // Restaurar texto/diseño no debe publicar, retirar o reasignar la obra
       // como efecto lateral. El autor visible de un clásico también se conserva.
       safeSnapshot.status = book.status
-      if (!isAdmin(req.user)) safeSnapshot.author = (req.user as any)?.name || book.author
+      if (!hasCapability(req.user, "manageCatalog")) safeSnapshot.author = (req.user as any)?.name || book.author
       const restored = await storage.updateBook(id, safeSnapshot, {
         expectedRevision: parsed.expectedRevision,
         changedBy: (req.user as any).id,
@@ -446,7 +447,7 @@ export async function registerRoutes(
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Inicia sesión" });
       }
-      const userIsAdmin = isAdmin(req.user);
+      const userIsAdmin = hasCapability(req.user, "manageCatalog");
       const userId      = (req.user as any)?.id;
       const isOwner     = !!existing.authorId && existing.authorId === userId;
       if (!userIsAdmin && !isOwner) {
@@ -468,7 +469,7 @@ export async function registerRoutes(
   // Helper: ¿el usuario puede moderar este libro? (autor o admin)
   async function canModerate(req: any, book: any): Promise<boolean> {
     if (!req.isAuthenticated()) return false
-    if (isAdmin(req.user)) return true
+    if (hasCapability(req.user, "manageCatalog")) return true
     const userId = (req.user as any)?.id
     return !!(book.authorId && book.authorId === userId)
   }
@@ -596,7 +597,7 @@ export async function registerRoutes(
     }
   })
 
-  registerGutenbergRoutes(app, { storage, requireAdmin, isAdmin, rateLimit })
+  registerGutenbergRoutes(app, { storage, requireAdmin, isAdmin: user => hasCapability(user, "manageCatalog"), rateLimit })
 
   // ── ADMIN: ELIMINAR LIBRO DEL CATÁLOGO ──────────────────
   app.delete("/api/admin/books/:id", requireAdmin, rateLimit(60_000, 10), async (req, res) => {
@@ -662,7 +663,7 @@ export async function registerRoutes(
   app.get("/api/admin/admins", requireAdmin, async (_req, res) => {
     try {
       const rows = await db.select().from(admins)
-      res.json(rows)
+      res.json(rows.map(row => ({ ...row, isFounder: row.email.trim().toLowerCase() === FOUNDER_EMAIL })))
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
     }
@@ -681,12 +682,25 @@ export async function registerRoutes(
       if (existing.length > 0) {
         return res.status(409).json({ message: "Este email ya es administrador" })
       }
-      const [row] = await db.insert(admins).values({ email, addedBy }).returning()
-      await refreshAdminCache()
+      const parsedRole = z.enum(ADMIN_ROLES).safeParse(req.body?.role ?? "catalog")
+      if (!parsedRole.success) return res.status(400).json({ message: "Selecciona un rol válido" })
+      const role = parsedRole.data
+      const [row] = await db.insert(admins).values({ email, addedBy, role }).returning()
       res.status(201).json(row)
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
     }
+  })
+
+  app.patch("/api/admin/admins/:email", requireAdmin, rateLimit(60_000, 10), async (req, res) => {
+    const role = z.enum(ADMIN_ROLES).safeParse(req.body?.role)
+    if (!role.success) return res.status(400).json({ message: "Selecciona un rol válido" })
+    const email = String(req.params.email).trim().toLowerCase()
+    if (email === FOUNDER_EMAIL) return res.status(403).json({ message: "El fundador conserva sus permisos" })
+    const [updated] = await db.update(admins).set({ role: role.data })
+      .where(eq(admins.email, email)).returning()
+    if (!updated) return res.status(404).json({ message: "Administrador no encontrado" })
+    res.json(updated)
   })
 
   // ── ADMIN: ELIMINAR ADMINISTRADOR ────────────────────────
@@ -698,7 +712,6 @@ export async function registerRoutes(
         return res.status(403).json({ message: "No puedes eliminar al administrador fundador" })
       }
       await db.delete(admins).where(eq(admins.email, emailToRemove))
-      await refreshAdminCache()
       res.status(204).send()
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
@@ -873,7 +886,7 @@ export async function registerRoutes(
       // Marco del avatar (id corto)
       if (typeof req.body?.frame === "string") {
         const frame = await allowedProfileFrame(
-          req.body.frame, userId, isAdmin(req.user), String((req.user as any)?.frame || ""),
+          req.body.frame, userId, hasCapability(req.user, "manageFrames"), String((req.user as any)?.frame || ""),
         )
         if (frame === null) return res.status(403).json({ message: "No tienes acceso a ese marco" })
         updates.frame = frame
@@ -1848,7 +1861,7 @@ export async function registerRoutes(
       if (!copy) return res.status(404).json({ message: "Ejemplar no encontrado" })
       const [token] = await db.select().from(bookTokens).where(eq(bookTokens.id, copy.tokenId))
       if (!token || token.kind !== "sale") return res.status(404).json({ message: "Permiso comercial no encontrado" })
-      if (token.ownerUserId !== userId && !isAdmin(req.user)) {
+      if (token.ownerUserId !== userId && !hasCapability(req.user, "manageFinance")) {
         return res.status(403).json({ message: "No puedes administrar este ejemplar" })
       }
       const now = new Date()
@@ -2264,12 +2277,12 @@ export async function registerRoutes(
       const book = await storage.getBook(bookId)
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
       if (book.status === "deleted") return res.status(404).json({ message: "Libro no encontrado" })
-      if (book.authorId !== userId && !isAdmin(req.user)) {
+      if (book.authorId !== userId && !hasCapability(req.user, "manageCatalog")) {
         return res.status(403).json({ message: "Solo el autor puede crear tarjetas" })
       }
       const v = validateCard(req.body)
       if (!v.ok) return res.status(400).json({ message: v.message })
-      if (!(await canUseCardFrame(userId, v.card.fx.frameId, isAdmin(req.user)))) {
+      if (!(await canUseCardFrame(userId, v.card.fx.frameId, hasCapability(req.user, "manageFrames")))) {
         return res.status(403).json({ message: "No tienes acceso a ese marco" })
       }
       const card = await db.transaction(async (tx) => {
@@ -2298,18 +2311,18 @@ export async function registerRoutes(
       if (!card) return res.status(404).json({ message: "Tarjeta no encontrada" })
       // Suelta: el dueño es authorId. Con libro: el dueño es el autor del libro.
       if (card.bookId == null) {
-        if (card.authorId !== userId && !isAdmin(req.user)) {
+        if (card.authorId !== userId && !hasCapability(req.user, "manageCatalog")) {
           return res.status(403).json({ message: "Solo el autor puede editar tarjetas" })
         }
       } else {
         const book = await storage.getBook(card.bookId)
-        if (!book || (book.authorId !== userId && !isAdmin(req.user))) {
+        if (!book || (book.authorId !== userId && !hasCapability(req.user, "manageCatalog"))) {
           return res.status(403).json({ message: "Solo el autor puede editar tarjetas" })
         }
       }
       const v = validateCard(req.body)
       if (!v.ok) return res.status(400).json({ message: v.message })
-      if (!(await canUseCardFrame(userId, v.card.fx.frameId, isAdmin(req.user), (card.fx as any)?.frameId))) {
+      if (!(await canUseCardFrame(userId, v.card.fx.frameId, hasCapability(req.user, "manageFrames"), (card.fx as any)?.frameId))) {
         return res.status(403).json({ message: "No tienes acceso a ese marco" })
       }
       const [updated] = await db.update(bookCards).set(v.card)
@@ -2330,12 +2343,12 @@ export async function registerRoutes(
       const [card] = await db.select().from(bookCards).where(eq(bookCards.id, cardId))
       if (!card) return res.status(404).json({ message: "Tarjeta no encontrada" })
       if (card.bookId == null) {
-        if (card.authorId !== userId && !isAdmin(req.user)) {
+        if (card.authorId !== userId && !hasCapability(req.user, "manageCatalog")) {
           return res.status(403).json({ message: "Solo el autor puede borrar tarjetas" })
         }
       } else {
         const book = await storage.getBook(card.bookId)
-        if (!book || (book.authorId !== userId && !isAdmin(req.user))) {
+        if (!book || (book.authorId !== userId && !hasCapability(req.user, "manageCatalog"))) {
           return res.status(403).json({ message: "Solo el autor puede borrar tarjetas" })
         }
       }
@@ -2375,7 +2388,7 @@ export async function registerRoutes(
       const userId = (req.user as any).id
       const v = validateCard(req.body)
       if (!v.ok) return res.status(400).json({ message: v.message })
-      if (!(await canUseCardFrame(userId, v.card.fx.frameId, isAdmin(req.user)))) {
+      if (!(await canUseCardFrame(userId, v.card.fx.frameId, hasCapability(req.user, "manageFrames")))) {
         return res.status(403).json({ message: "No tienes acceso a ese marco" })
       }
       const card = await db.transaction(async (tx) => {
@@ -2405,13 +2418,13 @@ export async function registerRoutes(
       const [card] = await db.select().from(bookCards).where(eq(bookCards.id, cardId))
       if (!card) return res.status(404).json({ message: "Tarjeta no encontrada" })
       if (card.bookId != null) return res.status(400).json({ message: "La tarjeta ya pertenece a una obra" })
-      if (card.authorId !== userId && !isAdmin(req.user)) {
+      if (card.authorId !== userId && !hasCapability(req.user, "manageCatalog")) {
         return res.status(403).json({ message: "Solo el autor puede asignar sus tarjetas" })
       }
       const book = await storage.getBook(bookId)
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
       if (book.status === "deleted") return res.status(404).json({ message: "Libro no encontrado" })
-      if (book.authorId !== userId && !isAdmin(req.user)) {
+      if (book.authorId !== userId && !hasCapability(req.user, "manageCatalog")) {
         return res.status(403).json({ message: "Solo puedes asignar a tus propias obras" })
       }
       const updated = await db.transaction(async (tx) => {
@@ -2470,7 +2483,7 @@ export async function registerRoutes(
         ownedIds = new Set(mine.map(m => m.frameId))
       }
       const visibleToUser = list.filter(frame =>
-        frame.visible || ownedIds.has(frame.id) || (req.isAuthenticated() && isAdmin(req.user)))
+        frame.visible || ownedIds.has(frame.id) || (req.isAuthenticated() && hasCapability(req.user, "manageFrames")))
       res.json({
         frames: visibleToUser.map(f => {
           const { createdBy: _createdBy, ...publicFrame } = f
@@ -2727,7 +2740,7 @@ export async function registerRoutes(
 
       const [book] = await db.select().from(books).where(eq(books.id, bookId))
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
-      if (book.authorId !== userId && !isAdmin(req.user)) {
+      if (book.authorId !== userId && !hasCapability(req.user, "manageCatalog")) {
         return res.status(403).json({ message: "Solo el autor" })
       }
 
@@ -2789,7 +2802,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Una tarjeta suelta no puede entrar al sorteo: asígnala a una obra primero" })
       }
       const [book] = await db.select().from(books).where(eq(books.id, card.bookId))
-      if (!book || (book.authorId !== userId && !isAdmin(req.user))) {
+      if (!book || (book.authorId !== userId && !hasCapability(req.user, "manageCatalog"))) {
         return res.status(403).json({ message: "Solo el autor" })
       }
       if (book.status !== "published") {

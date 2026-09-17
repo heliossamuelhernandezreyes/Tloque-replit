@@ -1,3 +1,4 @@
+import { accountFetch as fetch } from "@/lib/account-context"
 import { useRoute, useLocation } from "wouter"
 import { motion, AnimatePresence } from "framer-motion"
 import { Layout } from "@/components/layout"
@@ -50,7 +51,8 @@ export default function AuthorPage() {
   const { t }           = useSettings()
 
   const authorName = decodeURIComponent(params?.name || "")
-  const { user, isAdmin } = useAuth()
+  const { user, can } = useAuth()
+  const isAdmin = can("manageCatalog")
   const [editing, setEditing] = useState(false)
   const [publicView, setPublicView] = useState(false)   // "cómo me ven los demás"
   const [payoutBusy, setPayoutBusy] = useState(false)

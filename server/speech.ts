@@ -29,7 +29,7 @@ import {
 } from "@shared/speech"
 import { isSafeHttpsUrl, isSafeStorageKey } from "@shared/media"
 import { db } from "./db"
-import { isAdmin } from "./auth"
+import { hasCapability } from "./auth"
 import { rateLimit } from "./rateLimit"
 import { hasActiveSubscription } from "./subscription"
 import { analyzeSpeechWithGroq, speechOracleConfigured } from "./speechOracle"
@@ -89,7 +89,7 @@ function chapterContent(book: typeof books.$inferSelect, index: number): string 
 }
 
 function canEdit(book: typeof books.$inferSelect, user: any): boolean {
-  return Boolean(user) && (book.authorId === user.id || isAdmin(user))
+  return Boolean(user) && (book.authorId === user.id || hasCapability(user, "manageCatalog"))
 }
 
 export function speechContentHash(content: string): string {
@@ -146,7 +146,7 @@ async function audiobookAccessReason(
   user: any,
 ): Promise<AudiobookAccessReason> {
   if (!user) return null
-  if (isAdmin(user)) return "admin"
+  if (hasCapability(user, "manageAudioCatalog")) return "admin"
   if (book.authorId === user.id) return "author"
   if (hasActiveSubscription(user, "elevenlabs")) return "subscription"
   const [[unlocked], [card]] = await Promise.all([
@@ -211,7 +211,7 @@ export function registerSpeechRoutes(app: Express) {
   })
 
   app.post("/api/admin/voices", rateLimit(60_000, 20), async (req, res) => {
-    if (!req.isAuthenticated() || !isAdmin(req.user)) return res.status(403).json({ message: "Acceso de administrador requerido" })
+    if (!req.isAuthenticated() || !hasCapability(req.user, "manageAudioCatalog")) return res.status(403).json({ message: "Acceso de administrador requerido" })
     const parsed = voiceInputSchema.safeParse(req.body)
     if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0]?.message || "Voz inválida" })
     try {
@@ -228,7 +228,7 @@ export function registerSpeechRoutes(app: Express) {
   })
 
   app.put("/api/admin/voices/:id", rateLimit(60_000, 30), async (req, res) => {
-    if (!req.isAuthenticated() || !isAdmin(req.user)) return res.status(403).json({ message: "Acceso de administrador requerido" })
+    if (!req.isAuthenticated() || !hasCapability(req.user, "manageAudioCatalog")) return res.status(403).json({ message: "Acceso de administrador requerido" })
     const id = positiveInt(req.params.id)
     const parsed = voiceInputSchema.safeParse(req.body)
     if (!id || !parsed.success) return res.status(400).json({ message: "Voz inválida" })
@@ -632,7 +632,7 @@ export function registerSpeechRoutes(app: Express) {
     const id = positiveInt(req.params.id)
     if (!id) return res.status(400).json({ message: "Trabajo inválido" })
     const [job] = await db.select().from(audiobookJobs).where(eq(audiobookJobs.id, id))
-    if (!job || (job.userId !== (req.user as any).id && !isAdmin(req.user))) return res.status(404).json({ message: "Trabajo no encontrado" })
+    if (!job || (job.userId !== (req.user as any).id && !hasCapability(req.user, "manageCatalog"))) return res.status(404).json({ message: "Trabajo no encontrado" })
     const [cached] = job.status === "ready"
       ? await db.select().from(audiobookCache).where(and(eq(audiobookCache.cacheKey, job.cacheKey), eq(audiobookCache.status, "ready")))
       : [undefined]

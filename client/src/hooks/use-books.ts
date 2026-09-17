@@ -1,12 +1,11 @@
+import { accountFetch as fetch } from "@/lib/account-context"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type BookInput, type BookUpdateInput } from "@shared/routes";
-import localforage from "localforage";
+import { createAccountStore } from "@/lib/account-store";
+import { AccountChangedError } from "@/lib/account-context"
 
 // Initialize offline storage
-const store = localforage.createInstance({
-  name: "Novareads",
-  storeName: "books"
-});
+const store = createAccountStore("books")
 
 export class BookConflictError extends Error {
   constructor(
@@ -28,7 +27,8 @@ export function useBooks() {
         const data = await res.json();
 
         // Cache for offline
-        await store.setItem("books_list", data);
+        try { await store.setItem("books_list", data) }
+        catch (error) { if (error instanceof AccountChangedError) throw error }
         return data; // Trusting standard response without strict parse to avoid breakages on missing fields
       } catch (error) {
         console.warn("Network fetch failed, attempting offline cache for list...");
@@ -59,10 +59,11 @@ export function useBook(id: number | null) {
       const url = buildUrl(api.books.get.path, { id });
       try {
         const res = await fetch(url, { credentials: "include" });
-        if (res.status === 404) return null;
+        if ([401, 403, 404].includes(res.status)) return null;
         if (!res.ok) throw new Error("Failed to fetch book");
         const data = await res.json();
-        await store.setItem(`book_${id}`, data);
+        try { await store.setItem(`book_${id}`, data) }
+        catch (error) { if (error instanceof AccountChangedError) throw error }
         return data;
       } catch (error) {
         const cached = await store.getItem(`book_${id}`);
@@ -125,7 +126,8 @@ export function useUpdateBook() {
 
       const updatedBook = await res.json();
       // Update local cache
-      await store.setItem(`book_${id}`, updatedBook);
+      try { await store.setItem(`book_${id}`, updatedBook) }
+      catch (error) { if (error instanceof AccountChangedError) throw error }
       return updatedBook;
     },
     onSuccess: (_, variables) => {
@@ -148,7 +150,8 @@ export function useDeleteBook() {
 
       if (!res.ok) throw new Error("Failed to delete book");
       // Remove from offline cache
-      await store.removeItem(`book_${id}`);
+      try { await store.removeItem(`book_${id}`) }
+      catch (error) { if (error instanceof AccountChangedError) throw error }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.books.list.path] });

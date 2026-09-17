@@ -1,4 +1,4 @@
-import localforage from "localforage"
+import { createAccountStore } from "@/lib/account-store"
 
 export type DurableDraftEnvelope<T> = {
   schemaVersion: 1 | 2
@@ -9,11 +9,7 @@ export type DurableDraftEnvelope<T> = {
   value: T
 }
 
-const editorDraftStore = localforage.createInstance({
-  name: "tloque",
-  storeName: "editor_drafts_v1",
-  description: "Copias de recuperación del editor de manuscritos",
-})
+const editorDraftStore = createAccountStore("editor_drafts_v1")
 
 function draftKey(id: string | number): string {
   return `book:${String(id)}`

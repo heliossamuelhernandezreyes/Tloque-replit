@@ -14,6 +14,7 @@ import Onboarding  from "@/components/Onboarding"
 import LoginScreen from "@/components/LoginScreen"
 import { useAuth } from "@/hooks/useAuth"
 import { pullAndMerge } from "@/lib/sync"
+import type { AdminCapability } from "@shared/admin-permissions"
 
 const NotFound = lazy(() => import("@/pages/not-found"))
 const Home = lazy(() => import("@/pages/home"))
@@ -77,7 +78,7 @@ function needsOnboarding(): boolean {
 }
 
 function Router() {
-  const adminPage = (Page: ComponentType<any>) => () => <AdminOnly><Page /></AdminOnly>
+  const adminPage = (Page: ComponentType<any>, capability?: AdminCapability) => () => <AdminOnly capability={capability}><Page /></AdminOnly>
   return (
     <Suspense fallback={<RouteFallback />}>
       <Switch>
@@ -97,28 +98,28 @@ function Router() {
         <Route path="/tarjetas/:bookId"        component={CardStudio} />
         <Route path="/marcos"                  component={FrameGallery} />
         <Route path="/admin"                   component={adminPage(AdminHub)} />
-        <Route path="/admin/liquidaciones"     component={adminPage(PayoutAdmin)} />
-        <Route path="/admin/diag"              component={adminPage(FlickerLab)} />
-        <Route path="/admin/marcos"            component={adminPage(FrameWorkshop)} />
-        <Route path="/admin/fonoteca"          component={adminPage(AudioCatalogAdmin)} />
-        <Route path="/admin/audio/vsco-strings" component={adminPage(VscoInstallerAdmin)} />
-        <Route path="/admin/audio/vsco-woodwinds" component={adminPage(VscoInstallerAdmin)} />
-        <Route path="/admin/audio/vsco-brass" component={adminPage(VscoInstallerAdmin)} />
-        <Route path="/admin/audio/vsco-percussion" component={adminPage(VscoInstallerAdmin)} />
-        <Route path="/admin/audio/vsco-violin" component={adminPage(VscoInstallerAdmin)} />
-        <Route path="/admin/audio/keyboards" component={adminPage(KeyboardInstallerAdmin)} />
-        <Route path="/admin/audio/physical-models" component={adminPage(PhysicalModelLab)} />
+        <Route path="/admin/liquidaciones"     component={adminPage(PayoutAdmin, "manageFinance")} />
+        <Route path="/admin/diag"              component={adminPage(FlickerLab, "runDiagnostics")} />
+        <Route path="/admin/marcos"            component={adminPage(FrameWorkshop, "manageFrames")} />
+        <Route path="/admin/fonoteca"          component={adminPage(AudioCatalogAdmin, "manageAudioCatalog")} />
+        <Route path="/admin/audio/vsco-strings" component={adminPage(VscoInstallerAdmin, "manageAudioCatalog")} />
+        <Route path="/admin/audio/vsco-woodwinds" component={adminPage(VscoInstallerAdmin, "manageAudioCatalog")} />
+        <Route path="/admin/audio/vsco-brass" component={adminPage(VscoInstallerAdmin, "manageAudioCatalog")} />
+        <Route path="/admin/audio/vsco-percussion" component={adminPage(VscoInstallerAdmin, "manageAudioCatalog")} />
+        <Route path="/admin/audio/vsco-violin" component={adminPage(VscoInstallerAdmin, "manageAudioCatalog")} />
+        <Route path="/admin/audio/keyboards" component={adminPage(KeyboardInstallerAdmin, "manageAudioCatalog")} />
+        <Route path="/admin/audio/physical-models" component={adminPage(PhysicalModelLab, "manageAudioCatalog")} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>
   )
 }
 
-function AdminOnly({ children }: { children: ReactNode }) {
-  const { isAdmin, isLoading, authError, retryAuth } = useAuth()
+function AdminOnly({ children, capability }: { children: ReactNode; capability?: AdminCapability }) {
+  const { isAdmin, can, isLoading, authError, retryAuth } = useAuth()
   if (isLoading) return <RouteFallback />
   if (authError) return <AuthUnavailable onRetry={() => { void retryAuth() }} />
-  if (!isAdmin) return <NotFound />
+  if (!isAdmin || (capability && !can(capability))) return <NotFound />
   return <>{children}</>
 }
 

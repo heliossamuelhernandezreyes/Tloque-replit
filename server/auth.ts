@@ -3,12 +3,16 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20"
 import expressSession from "express-session"
 import connectPgSimple from "connect-pg-simple"
 import { pool } from "./db"
+import { enforceAccountContext } from "./accountSession"
 import { db } from "./db"
 import { users, admins, books } from "@shared/schema"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import type { Express, RequestHandler } from "express"
 import { configuredPublicOrigin } from "./security"
 import { visualEntitlements } from "../shared/visual-experience"
+import { ADMIN_CAPABILITIES, administrativeCapability } from "../shared/admin-permissions"
+import { hasCapability, isAdmin, resolvePrincipalPermissions } from "./principalPermissions"
+export { hasCapability, isAdmin } from "./principalPermissions"
 
 const PgStore = connectPgSimple(expressSession)
 
@@ -24,44 +28,13 @@ if (process.env.NODE_ENV === "production"
 export const FOUNDER_EMAIL = configuredAdminEmail
 const SESSION_COOKIE_NAME = "tloque.sid"
 
-// Cache en memoria — se actualiza cada 5 minutos para no pegar la BD en cada request
-let adminCache: Set<string> = new Set(FOUNDER_EMAIL ? [FOUNDER_EMAIL] : [])
-let adminCacheTime = 0
-const CACHE_TTL = 5 * 60 * 1000
-
-export async function refreshAdminCache(): Promise<void> {
-  try {
-    const rows = await db.select().from(admins)
-    adminCache = new Set([
-      ...(FOUNDER_EMAIL ? [FOUNDER_EMAIL] : []),
-      ...rows.map(r => r.email.trim().toLowerCase()),
-    ])
-    adminCacheTime = Date.now()
-  } catch {
-    // Mantener el último valor conocido. Vaciarlo aquí hacía que réplicas
-    // distintas retiraran temporalmente permisos a admins delegados.
-  }
-}
-
-export async function isAdminEmail(email: string): Promise<boolean> {
-  if (Date.now() - adminCacheTime > CACHE_TTL) {
-    await refreshAdminCache()
-  }
-  return adminCache.has(email.trim().toLowerCase())
-}
-
-export function isAdmin(user: any): boolean {
-  // Sincrónico — usa el caché en memoria
-  return !!user && typeof user.email === "string" && adminCache.has(user.email.trim().toLowerCase())
-}
-
 export function requireAdmin(req: any, res: any, next: any) {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ message: "No autenticado" })
-  }
-  if (!isAdmin(req.user)) {
-    return res.status(403).json({ message: "Sin permisos de administrador" })
-  }
+  if (!req.isAuthenticated()) return res.status(401).json({ message: "No autenticado" })
+  const path = req.originalUrl.split("?")[0]
+  const capability = administrativeCapability(path)
+  const allowed = path === "/api/admin/me" ? isAdmin(req.user)
+    : capability !== null && hasCapability(req.user, capability)
+  if (!allowed) return res.status(403).json({ message: "No tienes permiso para esta función" })
   next()
 }
 
@@ -71,19 +44,11 @@ export async function ensureFounderAdmin(): Promise<void> {
     // En desarrollo sin ADMIN_EMAIL no insertar una identidad ficticia en la
     // base. Los administradores ya registrados siguen cargándose normalmente.
     if (!configuredAdminEmail) {
-      await refreshAdminCache()
       console.warn("ADMIN_EMAIL is not configured; no founder account was inserted")
       return
     }
-    const existing = await db.select().from(admins)
-      .where(eq(admins.email, FOUNDER_EMAIL))
-    if (existing.length === 0) {
-      await db.insert(admins).values({
-        email:   FOUNDER_EMAIL,
-        addedBy: "system",
-      })
-    }
-    await refreshAdminCache()
+    await db.insert(admins).values({ email: FOUNDER_EMAIL, addedBy: "system", role: "full" })
+      .onConflictDoNothing({ target: admins.email })
   } catch (err) {
     if (process.env.NODE_ENV === "production") throw err
     console.warn("Could not ensure founder admin:", err)
@@ -189,9 +154,22 @@ export const sessionMiddleware: RequestHandler = expressSession({
 })
 
 export function setupAuth(app: Express) {
-  app.use(sessionMiddleware)
-  app.use(passport.initialize())
-  app.use(passport.session())
+  // Static resources do not need session/database work. All privileged routes
+  // resolve the role afresh, once per request, in every server instance.
+  app.use("/api", sessionMiddleware, passport.initialize(), passport.session())
+  app.use("/api", async (req, _res, next) => {
+    try {
+      if (req.isAuthenticated()) {
+        const user = req.user as any
+        const founder = !!FOUNDER_EMAIL && user.email.trim().toLowerCase() === FOUNDER_EMAIL
+        const [admin] = founder ? [] : await db.select({ role: admins.role }).from(admins)
+          .where(sql`lower(${admins.email}) = ${user.email.trim().toLowerCase()}`).limit(1)
+        resolvePrincipalPermissions(user, admin?.role, founder)
+      }
+      next()
+    } catch (error) { next(error) } // No stale authorization after a DB failure.
+  })
+  app.use("/api", enforceAccountContext)
 }
 
 export function setupAuthRoutes(app: Express) {
@@ -213,6 +191,7 @@ export function setupAuthRoutes(app: Express) {
     })
   })
   app.get("/api/auth/me", async (req, res) => {
+    res.setHeader("Cache-Control", "private, no-store")
     if (!req.isAuthenticated()) return res.json(null)
     const user = req.user as any
     // Incluir isAdmin en la respuesta para que el cliente no necesite hardcodear emails
@@ -240,11 +219,7 @@ export function setupAuthRoutes(app: Express) {
         createBooks: true,
         manageOwnBooks: true,
         manageEditions: true,
-        manageCatalog: adminStatus,
-        manageAudioCatalog: adminStatus,
-        manageFrames: adminStatus,
-        manageAdmins: adminStatus,
-        runDiagnostics: adminStatus,
+        ...Object.fromEntries(ADMIN_CAPABILITIES.map(capability => [capability, hasCapability(user, capability)])),
       },
       subscription: {
         plan: user.subscriptionPlan || "reader",

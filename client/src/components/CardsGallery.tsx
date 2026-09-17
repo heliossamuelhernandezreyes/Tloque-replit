@@ -1,3 +1,4 @@
+import { accountFetch as fetch } from "@/lib/account-context"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { motion } from "framer-motion"
 import CollectibleCard, { type CardData } from "@/components/CollectibleCard"

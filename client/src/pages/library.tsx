@@ -1,3 +1,4 @@
+import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { useLocation } from "wouter"
 import { Layout } from "@/components/layout"
@@ -32,9 +33,9 @@ function loadAll(key: string): any[] {
 export default function Library() {
   const { toast }  = useToast()
   const { cfg }    = useGenre()
-  const { user, logout, isAdmin } = useAuth()
+  const { user, logout, can } = useAuth()
   const { t, settings } = useSettings()
-  const isAdminActive = isAdmin && (settings?.adminMode ?? true)
+  const isAdminActive = can("manageCatalog") && (settings?.adminMode ?? true)
   const { data: serverBooks, refetch: refetchBooks } = useBooks()
   const { data: myServerBooks, refetch: refetchMyBooks } = useMyBooks()
 

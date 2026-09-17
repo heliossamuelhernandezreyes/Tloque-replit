@@ -1,3 +1,4 @@
+import { accountFetch as fetch } from "@/lib/account-context"
 import { useQuery } from "@tanstack/react-query"
 
 export interface GalleryFrame {

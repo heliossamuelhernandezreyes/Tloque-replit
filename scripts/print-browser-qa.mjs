@@ -55,7 +55,7 @@ async function setup(mobile = false) {
     if (!url.pathname.startsWith("/api/")) return route.continue()
     if (request.method() !== "GET") { writes.push(request.method() + " " + url.pathname); return route.fulfill({ status: 405, json: {} }) }
     let data = {}
-    if (url.pathname === "/api/auth/me") data = { id: 99, email: "fixture@example.test", name: "Print QA", avatar: "", isAdmin: true, persona: "admin" }
+    if (url.pathname === "/api/auth/me") data = { id: 99, email: "fixture@example.test", name: "Print QA", avatar: "", isAdmin: true, capabilities: { manageCatalog: true, manageFrames: true, manageAudioCatalog: true, manageFinance: true, manageAdmins: true, runDiagnostics: true }, persona: "admin" }
     else if (url.pathname === "/api/books/85") data = book
     else if (url.pathname === "/api/books/86") data = artBook
     else if (url.pathname === "/api/books") data = []
@@ -175,9 +175,9 @@ try {
   await mobile.page.goto("http://127.0.0.1:4184/qa-empty")
   await mobile.page.evaluate(async value => {
     const { chapters, ...slim } = value
-    localStorage.setItem("novareads_saved", JSON.stringify([{ ...slim, id: "gutenberg-85", hasOfflineContent: true, chapterCount: chapters.length }]))
+    localStorage.setItem("tloque.account.v1:99:local:novareads_saved", JSON.stringify([{ ...slim, id: "gutenberg-85", hasOfflineContent: true, chapterCount: chapters.length }]))
     const db = await new Promise((resolve, reject) => {
-      const request = indexedDB.open("Novareads", 1)
+      const request = indexedDB.open("tloque_account_99", 1)
       request.onupgradeneeded = () => request.result.createObjectStore("offline_content")
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
     })

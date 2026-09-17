@@ -1,3 +1,4 @@
+import { accountFetch as fetch } from "@/lib/account-context"
 import { useState, useRef, useEffect } from "react"
 import { useLocation } from "wouter"
 import { ArrowLeft, Activity } from "lucide-react"

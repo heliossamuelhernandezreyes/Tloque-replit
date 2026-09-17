@@ -37,7 +37,7 @@ try {
   const script = await fetch(`${origin}${bundle[1]}`)
   assert.equal(script.status, 200)
   assert.match(script.headers.get("content-type") || "", /javascript/)
-  const session = await fetch(`${origin}/api/auth/me`)
+  const session = await fetch(`${origin}/api/auth/me`, { headers: { "X-Tloque-Client": "accounts-v1" } })
   assert.equal(session.status, 200, "la consulta de sesión debe responder para visitantes")
   assert.equal(await session.json(), null, "sin sesión no debe identificarse a ningún usuario")
   const wallet = await fetch(`${origin}/api/wallet`)

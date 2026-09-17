@@ -1,3 +1,4 @@
+import { accountStorage as localStorage } from "@/lib/account-context"
 import { useEffect, useRef, useState } from "react"
 import { Check, Download, Upload, Undo2, Redo2, Plus, Trash2 } from "lucide-react"
 import { applyCardMotion, CARD_LAYERS, CARD_LAYER_LABELS, CARD_MOTION_PRESETS, CARD_REST, cardSceneSchema, createCardScene, evaluateCardOffset, readCardScene, resizeCardDuration, setCardKey, type CardLayer, type CardMotionPreset, type CardScene, type CardTransform } from "@shared/card-scene"

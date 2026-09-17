@@ -1,3 +1,4 @@
+import { accountStorage as localStorage, accountSessionStorage as sessionStorage } from "@/lib/account-context"
 import { motion, AnimatePresence } from "framer-motion"
 import { X, BookOpen, Flame, Clock, Star, TrendingUp, Zap } from "lucide-react"
 import { useGenre, GENRE_CONFIG, type Genre } from "@/context/GenreContext"
@@ -65,7 +66,7 @@ function getReadingStats(apiBooks: any[]) {
     .sort((a, b) => b[1] - a[1])[0]?.[0] as Genre | undefined
 
   // Capítulos con progreso
-  const chaptersRead = Object.keys(localStorage)
+  const chaptersRead = localStorage.keys()
     .filter(k => k.startsWith("reading_chapter_"))
     .map(k => Number(localStorage.getItem(k) || 0))
     .filter(n => n > 0).length

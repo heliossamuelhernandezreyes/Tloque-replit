@@ -1,3 +1,4 @@
+import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useLocation } from "wouter"
 import { motion, AnimatePresence } from "framer-motion"
@@ -701,7 +702,7 @@ export default function Editor() {
         serverBook = await updateBook.mutateAsync({
           id: localId,
           ...serverPayload,
-          ...(Number.isInteger(form.revision) ? { expectedRevision: form.revision } : {}),
+          expectedRevision: Number(form.revision),
         })
         serverId = localId
       } else {
@@ -794,7 +795,7 @@ export default function Editor() {
         canonical = await updateBook.mutateAsync({
           id,
           status: "draft",
-          ...(Number.isInteger(form.revision) ? { expectedRevision: form.revision } : {}),
+          expectedRevision: Number(form.revision),
         }) as EditableBook
       }
       const book = { ...canonical, id, status: "draft" as const, localSavedAt: Date.now() }

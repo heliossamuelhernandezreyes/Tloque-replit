@@ -1,4 +1,5 @@
 import type { VisualEntitlements } from "@shared/visual-experience"
+import { CLIENT_CONTEXT_HEADER, CLIENT_CONTEXT_VERSION } from "@shared/account-context"
 
 export interface AuthUser {
   visualEntitlements?: VisualEntitlements
@@ -20,6 +21,7 @@ export interface AuthUser {
     manageCatalog: boolean
     manageAudioCatalog: boolean
     manageFrames: boolean
+    manageFinance: boolean
     manageAdmins: boolean
     runDiagnostics: boolean
   }
@@ -47,6 +49,7 @@ export async function fetchCurrentUser(
   try {
     const response = await fetchImpl("/api/auth/me", {
       credentials: "include",
+      headers: { [CLIENT_CONTEXT_HEADER]: CLIENT_CONTEXT_VERSION },
       signal: controller.signal,
     })
     if (response.status === 401) return null

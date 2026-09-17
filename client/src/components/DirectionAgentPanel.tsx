@@ -1,3 +1,4 @@
+import { accountFetch as fetch } from "@/lib/account-context"
 import { useEffect, useMemo, useState } from "react"
 import { Bot, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FileLock2, Loader2, Lock, Music2, Sparkles, Unlock, Volume2 } from "lucide-react"
 import { apiRequest } from "@/lib/queryClient"
