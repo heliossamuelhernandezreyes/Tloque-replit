@@ -1,3 +1,4 @@
+import { accountFetch as fetch, accountContext } from "@/lib/account-context"
 import { motion, AnimatePresence } from "framer-motion"
 import { X, User, BookOpen, Volume2, Palette, Shield, Info, ChevronRight, Check, LogOut, Globe, Download, RotateCcw } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
@@ -185,7 +186,8 @@ export default function ConfigPanel({ open, onClose }: Props) {
         throw new Error(error.message || "delete_failed")
       }
       await clearLocalAccountData()
-      await logout()
+      accountContext.end()
+      window.location.href = "/"
     } catch (error) {
       toast({
         title: "No se pudo eliminar la cuenta",

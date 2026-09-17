@@ -1,3 +1,4 @@
+import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 // Sincronización de racha y progreso con el servidor.
 // Principio: lo LOCAL siempre manda para velocidad y para offline.
 // El servidor es la red de seguridad. Estas funciones nunca rompen

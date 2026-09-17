@@ -1,3 +1,4 @@
+import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useEffect, useRef, useState } from "react"
 import * as Dialog from "@radix-ui/react-dialog"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -52,7 +53,8 @@ export default function ImportPanel({ open, onClose }: { open: boolean; onClose:
 function GutenbergExplorer({ onClose }: { onClose: () => void }) {
   const [, navigate] = useLocation()
   const { toast } = useToast()
-  const { isAdmin } = useAuth()
+  const { can } = useAuth()
+  const isAdmin = can("manageCatalog")
   const { settings, t } = useSettings()
   const { cfg } = useGenre()
   const copy = gutenbergCopy(settings.language)

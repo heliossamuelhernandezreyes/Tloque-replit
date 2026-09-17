@@ -21,7 +21,7 @@ const frames = [{ id: 1, name: "Atlas astral", target: "both", priceTinta: 0, pk
 let saved = null
 const cards = []
 let savedCard = null
-const user = { id: 9001, email: "fixture@example.test", name: "Visual QA", avatar: "", isAdmin: true, persona: "admin", subscription: { plan: "aesthetic", status: "active", expiresAt: null }, visualEntitlements: { themes: ["singularity", "fluorescent-rose"], expiresAt: null } }
+const user = { id: 9001, email: "fixture@example.test", name: "Visual QA", avatar: "", isAdmin: true, capabilities: { manageCatalog: true, manageFrames: true, manageAudioCatalog: true, manageFinance: true, manageAdmins: true, runDiagnostics: true }, persona: "admin", subscription: { plan: "aesthetic", status: "active", expiresAt: null }, visualEntitlements: { themes: ["singularity", "fluorescent-rose"], expiresAt: null } }
 
 async function setup({ mobile = false, essential = false, admin = true } = {}) {
   const context = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1 })
@@ -36,7 +36,7 @@ async function setup({ mobile = false, essential = false, admin = true } = {}) {
     if (url.hostname !== "127.0.0.1") return route.abort()
     if (!url.pathname.startsWith("/api/")) return route.continue()
     let data = {}
-    if (url.pathname === "/api/auth/me") data = { ...user, isAdmin: admin }
+    if (url.pathname === "/api/auth/me") data = { ...user, isAdmin: admin, capabilities: admin ? user.capabilities : {} }
     else if (url.pathname === "/api/frames") data = { frames }
     else if (url.pathname === "/api/admin/frames" && route.request().method() === "POST") {
       if (!admin) return route.fulfill({ status: 403, json: { message: "Forbidden" } })

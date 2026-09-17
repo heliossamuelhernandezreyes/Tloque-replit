@@ -1,3 +1,4 @@
+import { accountStorage as localStorage } from "@/lib/account-context"
 import { useState, useRef, useEffect, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { createPortal } from "react-dom"
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion"

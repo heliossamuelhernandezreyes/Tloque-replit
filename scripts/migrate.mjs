@@ -40,6 +40,7 @@ const migrations = [
   "0014_canonical_constraints.sql",
   "0015_claim_key_protection.sql",
   "0016_payment_incidents.sql",
+  "0017_admin_capabilities.sql",
 ]
 
 const pool = createPool()

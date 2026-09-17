@@ -1,3 +1,4 @@
+import { accountFetch as fetch } from "@/lib/account-context"
 import { useState } from "react"
 import {
   ChevronRight,
@@ -23,10 +24,12 @@ import { useGenre } from "@/context/GenreContext"
 import { useSettings } from "@/context/SettingsContext"
 import { experienceText } from "@shared/experience-i18n"
 
-type Admin = { id: number; email: string; addedBy: string }
+import { ADMIN_ROLES, ADMIN_ROLE_LABELS, type AdminRole, type AdminCapability } from "@shared/admin-permissions"
+
+type Admin = { id: number; email: string; addedBy: string; role: AdminRole; isFounder?: boolean }
 
 export default function AdminHub() {
-  const { isAdmin } = useAuth()
+  const { isAdmin, can } = useAuth()
   const { cfg } = useGenre()
   const { settings, updateSetting, t } = useSettings()
   const [, setLocation] = useLocation()
@@ -34,6 +37,7 @@ export default function AdminHub() {
   const [admins, setAdmins] = useState<Admin[]>([])
   const [loaded, setLoaded] = useState(false)
   const [email, setEmail] = useState("")
+  const [role, setRole] = useState<AdminRole>("catalog")
   const [working, setWorking] = useState(false)
   const [error, setError] = useState("")
   const copy = (key: Parameters<typeof experienceText>[1]) => experienceText(settings.language, key)
@@ -64,7 +68,7 @@ export default function AdminHub() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalizedEmail }),
+        body: JSON.stringify({ email: normalizedEmail, role }),
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const row: Admin = await response.json()
@@ -76,6 +80,21 @@ export default function AdminHub() {
     } finally {
       setWorking(false)
     }
+  }
+
+  async function changeRole(email: string, role: AdminRole) {
+    setWorking(true)
+    setError("")
+    try {
+      const response = await fetch(`/api/admin/admins/${encodeURIComponent(email)}`, {
+        method: "PATCH", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }),
+      })
+      if (!response.ok) throw new Error((await response.json()).message || "No se pudo cambiar el rol")
+      const updated = await response.json() as Admin
+      setAdmins(current => current.map(admin => admin.email === email ? updated : admin))
+    } catch (error) { setError(error instanceof Error ? error.message : "No se pudo cambiar el rol") }
+    finally { setWorking(false) }
   }
 
   async function removeAdmin(value: string) {
@@ -106,15 +125,15 @@ export default function AdminHub() {
     )
   }
 
-  const tools = [
-    { label: copy("catalog"), Icon: Import, action: () => setShowImport(true) },
-    { label: "Liquidaciones", Icon: Banknote, action: () => setLocation("/admin/liquidaciones") },
-    { label: t("gachaTitle"), Icon: Ticket, action: () => setLocation("/sorteo") },
-    { label: copy("frames"), Icon: Sparkles, action: () => setLocation("/admin/marcos") },
-    { label: copy("phonotheque"), Icon: Headphones, action: () => setLocation("/admin/fonoteca") },
-    { label: "Instrumentos premium", Icon: PackageCheck, action: () => setLocation("/admin/audio/keyboards") },
-    { label: "Laboratorio acústico", Icon: FlaskConical, action: () => setLocation("/admin/audio/physical-models") },
-    { label: copy("diagnostics"), Icon: MonitorCog, action: () => setLocation("/admin/diag") },
+  const tools: { label: string; Icon: typeof Import; action: () => void; capability: AdminCapability }[] = [
+    { capability: "manageCatalog", label: copy("catalog"), Icon: Import, action: () => setShowImport(true) },
+    { capability: "manageFinance", label: "Liquidaciones", Icon: Banknote, action: () => setLocation("/admin/liquidaciones") },
+    { capability: "manageFinance", label: t("gachaTitle"), Icon: Ticket, action: () => setLocation("/sorteo") },
+    { capability: "manageFrames", label: copy("frames"), Icon: Sparkles, action: () => setLocation("/admin/marcos") },
+    { capability: "manageAudioCatalog", label: copy("phonotheque"), Icon: Headphones, action: () => setLocation("/admin/fonoteca") },
+    { capability: "manageAudioCatalog", label: "Instrumentos premium", Icon: PackageCheck, action: () => setLocation("/admin/audio/keyboards") },
+    { capability: "manageAudioCatalog", label: "Laboratorio acústico", Icon: FlaskConical, action: () => setLocation("/admin/audio/physical-models") },
+    { capability: "runDiagnostics", label: copy("diagnostics"), Icon: MonitorCog, action: () => setLocation("/admin/diag") },
   ]
 
   return (
@@ -125,7 +144,7 @@ export default function AdminHub() {
         <p className="mt-2 text-sm text-zinc-500">{copy("adminCenterHint")}</p>
 
         <div className="my-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
-          {tools.map(({ label, Icon, action }) => (
+          {tools.filter(tool => can(tool.capability)).map(({ label, Icon, action }) => (
             <button
               key={label}
               onClick={action}
@@ -160,7 +179,7 @@ export default function AdminHub() {
             </div>
           </div>
 
-          <div className="tloque-surface p-5" aria-busy={working}>
+          {can("manageAdmins") && <div className="tloque-surface p-5" aria-busy={working}>
             <div className="flex items-center justify-between gap-3">
               <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => loadAdmins()}>
                 <span className="text-sm font-medium text-white">{copy("admins")}</span>
@@ -197,9 +216,16 @@ export default function AdminHub() {
                   <div key={admin.id} className="flex items-center gap-2 rounded-xl bg-white/[.03] px-3 py-2">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-xs text-white/70">{admin.email}</p>
-                      <p className="text-[10px] text-white/25">{admin.addedBy === "system" ? copy("founder") : admin.addedBy}</p>
+                      <p className="text-xs text-white/50">{admin.isFounder ? copy("founder") : admin.addedBy}</p>
+                      {!admin.isFounder && <select
+                        aria-label={`Permisos de ${admin.email}`} value={admin.role}
+                        disabled={working} onChange={event => void changeRole(admin.email, event.target.value as AdminRole)}
+                        className="mt-2 min-h-11 max-w-full rounded-lg border border-white/15 bg-zinc-900 px-2 text-sm text-white">
+                        {admin.role === "legacy" && <option value="legacy" disabled>{ADMIN_ROLE_LABELS.legacy}</option>}
+                        {ADMIN_ROLES.map(value => <option key={value} value={value}>{ADMIN_ROLE_LABELS[value]}</option>)}
+                      </select>}
                     </div>
-                    {admin.addedBy !== "system" && (
+                    {!admin.isFounder && (
                       <button
                         aria-label={`${copy("remove")} ${admin.email}`}
                         disabled={working}
@@ -211,6 +237,12 @@ export default function AdminHub() {
                     )}
                   </div>
                 ))}
+                <label className="block pt-3 text-sm text-white/70">Permisos de la nueva persona
+                  <select value={role} onChange={event => setRole(event.target.value as AdminRole)}
+                    className="mt-2 min-h-11 w-full rounded-xl border border-white/15 bg-zinc-900 px-3 text-sm text-white">
+                    {ADMIN_ROLES.map(value => <option key={value} value={value}>{ADMIN_ROLE_LABELS[value]}</option>)}
+                  </select>
+                </label>
                 <div className="flex gap-2 pt-2">
                   <input
                     type="email"
@@ -232,7 +264,7 @@ export default function AdminHub() {
                 </div>
               </div>
             )}
-          </div>
+          </div>}
         </div>
       </section>
       <ImportPanel open={showImport} onClose={() => setShowImport(false)} />

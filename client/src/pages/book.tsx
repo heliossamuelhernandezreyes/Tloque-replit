@@ -1,3 +1,4 @@
+import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useRoute, useLocation } from "wouter"
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { Layout } from "@/components/layout"
@@ -86,7 +87,8 @@ export default function BookPage() {
   const book      = apiBook || localBook
   const gc        = GENRE_CONFIG[(book?.genre as Genre) || "todos"]
   const { t, settings } = useSettings()
-  const { isAdmin, user } = useAuth()
+  const { can, user } = useAuth()
+  const isAdmin = can("manageCatalog")
 
   // Dueño de verdad: el authorId del libro (servidor) coincide con la sesión.
   // Un borrador local sin id de servidor también es editable por su creador.

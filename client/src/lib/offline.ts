@@ -1,14 +1,12 @@
+import { accountStorage as localStorage } from "@/lib/account-context"
 // Almacén offline para el CONTENIDO pesado de los libros guardados.
 // El registro ligero (título, autor, portada…) sigue en localStorage
 // (novareads_saved) para que las listas carguen síncronas e instantáneas.
 // El contenido (capítulos/texto) vive aquí, en IndexedDB, que tiene
 // espacio de sobra — así guardar clásicos enteros no revienta la cuota.
-import localforage from "localforage"
+import { createAccountStore } from "@/lib/account-store"
 
-const store = localforage.createInstance({
-  name:      "Novareads",          // misma base que el resto de la app
-  storeName: "offline_content",    // almacén propio para contenido guardado
-})
+const store = createAccountStore("offline_content")
 
 const key = (id: string | number) => `content_${id}`
 

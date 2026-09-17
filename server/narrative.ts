@@ -29,7 +29,7 @@ import {
 } from "@shared/music-brain"
 import { paperChargeFor } from "@shared/paper"
 import { db } from "./db"
-import { isAdmin } from "./auth"
+import { hasCapability } from "./auth"
 import { rateLimit } from "./rateLimit"
 import { hasActiveSubscription } from "./subscription"
 import {
@@ -71,7 +71,7 @@ function chapterContent(book: typeof books.$inferSelect, chapterIndex: number): 
 }
 
 function canEditBook(book: typeof books.$inferSelect, user: any): boolean {
-  return !!user && (book.authorId === user.id || isAdmin(user))
+  return !!user && (book.authorId === user.id || hasCapability(user, "manageCatalog"))
 }
 
 function contentHash(content: string): string {

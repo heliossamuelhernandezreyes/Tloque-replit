@@ -98,6 +98,7 @@ export const EXPECTED_INDEXES = [
 ]
 
 export const EXPECTED_CONSTRAINTS = [
+  "admins_role_allowed",
   "audio_assets_kind_check",
   "audio_assets_source_type_check",
   "adaptive_layers_values_check",

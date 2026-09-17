@@ -1,0 +1,42 @@
+name: Account and permission boundaries
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  boundaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tloque
+          POSTGRES_PASSWORD: security_fixture
+          POSTGRES_DB: tloque_security
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tloque -d tloque_security"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://tloque:security_fixture@localhost:5432/tloque_security
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run build
+      - name: Verify isolated HTTP and PostgreSQL boundaries
+        run: node scripts/check-security-boundaries.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tloque-security-boundaries
+          path: .tloque_cache/security-boundaries/results.json
+          retention-days: 30

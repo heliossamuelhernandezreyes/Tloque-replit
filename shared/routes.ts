@@ -44,7 +44,7 @@ export const api = {
       method: 'PUT' as const,
       path: '/api/books/:id' as const,
       input: insertBookSchema.partial().extend({
-        expectedRevision: z.number().int().min(1).optional(),
+        expectedRevision: z.number().int().min(1),
       }),
       responses: {
         200: z.custom<typeof books.$inferSelect>(),

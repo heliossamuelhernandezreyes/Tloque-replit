@@ -1,3 +1,4 @@
+import { accountFetch as fetch } from "@/lib/account-context"
 import { useEffect, useRef, useState, type RefObject } from "react"
 import { Copy, Download, FileUp, Sparkles } from "lucide-react"
 import type { LinearScoreRecipe } from "@shared/audio"

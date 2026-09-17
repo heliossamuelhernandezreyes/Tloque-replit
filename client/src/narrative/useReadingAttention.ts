@@ -1,3 +1,4 @@
+import { accountStorage as localStorage } from "@/lib/account-context"
 import { useEffect, useRef, useState } from "react"
 import { estimateReadingAttention, type AttentionEstimate } from "@shared/attention"
 

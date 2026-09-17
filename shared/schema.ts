@@ -38,6 +38,7 @@ export const admins = pgTable("admins", {
   id:        serial("id").primaryKey(),
   email:     text("email").notNull().unique(),
   addedBy:   text("added_by").notNull().default("system"),   // email de quien lo agregó
+  role:      text("role").notNull().default("catalog"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 

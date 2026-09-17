@@ -1,3 +1,4 @@
+import { accountFetch as fetch } from "@/lib/account-context"
 import { motion } from "framer-motion"
 import { useQuery } from "@tanstack/react-query"
 import { Loader2, Sparkles, Library as LibraryIcon } from "lucide-react"

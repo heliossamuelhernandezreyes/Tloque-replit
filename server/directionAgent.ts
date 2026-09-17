@@ -32,7 +32,7 @@ import {
 import { narrativeProjectSchema, type NarrativeProjectV1 } from "@shared/narrative"
 import { speechProjectSchema, type SpeechProjectV1 } from "@shared/speech"
 import { db } from "./db"
-import { isAdmin } from "./auth"
+import { hasCapability } from "./auth"
 import { hasActiveSubscription } from "./subscription"
 import { rateLimit } from "./rateLimit"
 import { directChapterWithOracle, oracleConfig, type OracleScoreSummary } from "./oracle"
@@ -73,7 +73,7 @@ function contentFor(book: typeof books.$inferSelect, index: number): string | nu
 }
 
 function canEdit(book: typeof books.$inferSelect, user: any): boolean {
-  return Boolean(user) && (book.authorId === user.id || isAdmin(user))
+  return Boolean(user) && (book.authorId === user.id || hasCapability(user, "manageCatalog"))
 }
 
 function contentHash(content: string): string {

@@ -1,15 +1,14 @@
 import localforage from "localforage"
+import { accountContext, accountStorage, accountSessionStorage } from "./account-context"
 
 /** Borra copias locales vinculadas a la cuenta en este dispositivo. */
 export async function clearLocalAccountData(): Promise<void> {
-  localStorage.clear()
-  sessionStorage.clear()
+  const name = accountContext.databaseName
+  accountStorage.clear()
+  accountSessionStorage.clear()
   await Promise.allSettled([
-    localforage.dropInstance({ name: "Novareads" }),
-    localforage.dropInstance({ name: "tloque" }),
+    localforage.dropInstance({ name }),
   ])
-  if ("caches" in window) {
-    const names = await caches.keys()
-    await Promise.all(names.filter(name => name.startsWith("tloque-")).map(name => caches.delete(name)))
-  }
+  // Public application and sample caches, other accounts and unassigned
+  // historical drafts do not belong to the account being deleted.
 }

@@ -1,3 +1,4 @@
+import { accountStorage as localStorage } from "@/lib/account-context"
 export type CoverFxLayerKey = "back" | "mid" | "front"
 
 export type CoverFxConfig = {

@@ -11,7 +11,7 @@ import {
   uiSoundEventKeySchema, uiSoundRecipeSchema,
 } from "@shared/audio"
 import { db } from "./db"
-import { isAdmin, requireAdmin } from "./auth"
+import { hasCapability, requireAdmin } from "./auth"
 import { rateLimit } from "./rateLimit"
 import { registerAudioUploadRoutes } from "./audioUploads"
 import { ORCHESTRAL_SYNTH_MODULE_ID } from "@shared/orchestral-synthesis"
@@ -408,7 +408,7 @@ export function registerAudioRoutes(app: Express) {
       const [book] = await db.select().from(books).where(eq(books.id, bookId))
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
       const owner = req.isAuthenticated() && book.authorId === (req.user as any).id
-      const admin = req.isAuthenticated() && isAdmin(req.user)
+      const admin = req.isAuthenticated() && hasCapability(req.user, "manageCatalog")
       if (book.status !== "published" && !owner && !admin) {
         return res.status(404).json({ message: "Libro no encontrado" })
       }
@@ -448,7 +448,7 @@ export function registerAudioRoutes(app: Express) {
     try {
       const [book] = await db.select().from(books).where(eq(books.id, bookId))
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
-      if (book.authorId !== (req.user as any).id && !isAdmin(req.user)) {
+      if (book.authorId !== (req.user as any).id && !hasCapability(req.user, "manageCatalog")) {
         return res.status(403).json({ message: "Solo el autor puede asignar música" })
       }
       const chapterCount = Array.isArray(book.chapters) && book.chapters.length ? book.chapters.length : 1
@@ -483,7 +483,7 @@ export function registerAudioRoutes(app: Express) {
     try {
       const [book] = await db.select().from(books).where(eq(books.id, bookId))
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
-      if (book.authorId !== (req.user as any).id && !isAdmin(req.user)) {
+      if (book.authorId !== (req.user as any).id && !hasCapability(req.user, "manageCatalog")) {
         return res.status(403).json({ message: "Solo el autor puede quitar música" })
       }
       await db.delete(chapterAudioAssignments).where(and(

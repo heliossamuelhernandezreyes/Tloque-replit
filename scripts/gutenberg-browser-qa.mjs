@@ -35,7 +35,7 @@ async function setup({ mobile = false } = {}) {
     if (url.hostname !== "127.0.0.1") return route.abort()
     if (!url.pathname.startsWith("/api/")) return route.continue()
     let data = {}
-    if (url.pathname === "/api/auth/me") data = { id: 99, email: "fixture@example.test", name: "Gutenberg QA", avatar: "", isAdmin: true, persona: "admin" }
+    if (url.pathname === "/api/auth/me") data = { id: 99, email: "fixture@example.test", name: "Gutenberg QA", avatar: "", isAdmin: true, capabilities: { manageCatalog: true, manageFrames: true, manageAudioCatalog: true, manageFinance: true, manageAdmins: true, runDiagnostics: true }, persona: "admin" }
     else if (url.pathname === "/api/books") data = []
     else if (url.pathname === "/api/gutenberg/catalog") {
       requests.push(Object.fromEntries(url.searchParams))
@@ -126,8 +126,8 @@ try {
   await mobile.page.getByRole("button", { name: "Guardar en biblioteca", exact: true }).click()
   await mobile.page.waitForURL("**/book/gutenberg-2001")
   const saved = await mobile.page.evaluate(async () => {
-    const shelf = JSON.parse(localStorage.getItem("novareads_saved"))
-    const db = await new Promise((resolve, reject) => { const req = indexedDB.open("Novareads"); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error) })
+    const shelf = JSON.parse(localStorage.getItem("tloque.account.v1:99:local:novareads_saved"))
+    const db = await new Promise((resolve, reject) => { const req = indexedDB.open("tloque_account_99"); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error) })
     const content = await new Promise((resolve, reject) => { const req = db.transaction("offline_content").objectStore("offline_content").get("content_gutenberg-2001"); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error) })
     db.close(); return { shelf, content }
   })
