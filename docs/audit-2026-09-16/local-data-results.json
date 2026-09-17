@@ -1,0 +1,34 @@
+{
+  "id": "cross_account_local_sync",
+  "verdict": "FINDING",
+  "expected": "No account A data uploaded to account B",
+  "actual": [
+    {
+      "path": "/api/sync/streak",
+      "method": "PUT",
+      "body": {
+        "days": 12,
+        "lastDate": "2026-09-16"
+      },
+      "recipient": "current authenticated account B"
+    },
+    {
+      "path": "/api/sync/progress",
+      "method": "PUT",
+      "body": {
+        "bookId": "71",
+        "chapter": 2,
+        "maxChapter": 4
+      },
+      "recipient": "current authenticated account B"
+    },
+    {
+      "path": "/api/sync/library/71",
+      "method": "PUT",
+      "body": null,
+      "recipient": "current authenticated account B"
+    }
+  ],
+  "localDraftRemains": true,
+  "note": "Adapters isolate storage and network; sync logic is bundled from the audited source. Logout source leaves these keys intact."
+}

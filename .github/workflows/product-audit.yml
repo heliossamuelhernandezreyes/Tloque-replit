@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - scripts/audit-product-http.mjs
+      - scripts/audit-local-data.mjs
+      - scripts/audit-client-load.mjs
       - .github/workflows/product-audit.yml
   workflow_dispatch:
 permissions:
@@ -38,9 +40,13 @@ jobs:
       - run: npm run build
       - name: Observe real HTTP authorization and transaction boundaries
         run: node scripts/audit-product-http.mjs
+      - name: Observe account-local synchronization
+        run: node scripts/audit-local-data.mjs
+      - name: Measure selected static import graphs
+        run: node scripts/audit-client-load.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: tloque-product-audit
-          path: .tloque_cache/product-audit/http-results.json
+          path: .tloque_cache/product-audit/*-results.json
           retention-days: 30
