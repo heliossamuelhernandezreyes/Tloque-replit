@@ -30,6 +30,11 @@ La migración 0017 conserva los administradores existentes como `legacy` y pone
 `catalog` como valor predeterminado para nuevas altas. El fundador debe revisar
 los roles anteriores y reducirlos según la función de cada persona.
 
+Si el entorno todavía muestra `ADMIN_EMAIL is not configured`, configurar
+`ADMIN_EMAIL` con el correo de Google del propietario antes de actualizar y
+reiniciar. No se deduce el fundador a partir de quien entre primero: sin un
+fundador configurado, los roles anteriores no podrán delegar accesos.
+
 ## Privacidad en el dispositivo
 
 Las preferencias privadas, progreso, biblioteca, tarjetas y borradores se guardan
@@ -76,6 +81,9 @@ guardado del servidor.
 - Los workflows existentes comprueban migración repetida, actualización desde
   `db:push`, arranque compilado, interfaz visual, Gutenberg e impresión. Sus
   fixtures usan los nuevos permisos y espacios de almacenamiento.
+- Chromium comprueba dos cuentas y dos pestañas con localStorage, sessionStorage
+  e IndexedDB reales: aislamiento, retorno al borrador propio, cierre de sesión
+  y borrado selectivo de copias locales.
 
 Los resultados definitivos corresponden al commit y las ejecuciones enlazadas
 en el PR; la presencia de un script por sí sola no certifica que haya pasado.
