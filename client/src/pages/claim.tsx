@@ -9,7 +9,7 @@ import { useSettings } from "@/context/SettingsContext"
 
 interface ClaimInfo {
   folio:    string
-  status:   "free" | "yours" | "taken"
+  status:   "free" | "yours" | "taken" | "unavailable"
   kind:     string
   bookId:   number
   title:    string
@@ -148,13 +148,19 @@ export default function ClaimPage() {
               </div>
             )}
 
+            {status === "unavailable" && (
+              <div role="status" className="rounded-2xl border border-amber-300/30 bg-amber-300/5 p-5 text-sm text-amber-100">
+                Este ejemplar no admite nuevas activaciones. Su permiso está suspendido o reembolsado; consulta con quien te lo entregó.
+              </div>
+            )}
+
             {status === "free" && (
               <div className="rounded-2xl p-5"
                 style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}>
                 <p className="text-xs font-sans mb-4" style={{ color: "rgba(255,255,255,0.6)" }}>
                   {t("claimFree")}
                 </p>
-                <label className="text-[11px] font-sans font-semibold block mb-2"
+                <label htmlFor="claim-key" className="text-[11px] font-sans font-semibold block mb-2"
                   style={{ color: "rgba(255,255,255,0.7)" }}>
                   {t("claimKeyLabel")}
                 </label>
@@ -162,6 +168,7 @@ export default function ClaimPage() {
                   style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)" }}>
                   <KeyRound className="w-4 h-4 flex-shrink-0" style={{ color: "rgba(201,168,87,0.7)" }} />
                   <input
+                    id="claim-key"
                     value={key}
                     onChange={e => setKey(e.target.value.toUpperCase())}
                     placeholder={t("claimKeyPh")}
@@ -171,7 +178,7 @@ export default function ClaimPage() {
                 </div>
                 {claim.isError && (
                   <p className="text-[11px] font-sans mb-3" style={{ color: "#e8a0a0" }}>
-                    {(claim.error as Error)?.message === "taken" ? t("claimTakenDesc") : t("claimWrongKey")}
+                    {(claim.error as Error)?.message === "taken" ? t("claimTakenDesc") : (claim.error as Error)?.message || t("claimWrongKey")}
                   </p>
                 )}
                 <motion.button

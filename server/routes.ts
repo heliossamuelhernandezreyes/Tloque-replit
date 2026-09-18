@@ -6,7 +6,7 @@ import { z } from "zod";
 import { requireAdmin, hasCapability, FOUNDER_EMAIL } from "./auth";
 import { db } from "./db";
 import { admins, books, bookDrafts, bookRevisions, users, comments, authorProfiles, userState, readingProgress, savedBooks, bookTokens, printCopies, printCopyEvents, notifications, unlockedBooks, tokenOrders, authorEarnings, walletLedger, walletOrders, paperUsageEvents, bookCards, userCards, frames, userFrames, gachaConfig, gachaPity, gachaDraws, insertCommentSchema } from "@shared/schema";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 import { ADMIN_ROLES } from "../shared/admin-permissions";
 import { rateLimit } from "./rateLimit";
 import {
@@ -25,7 +25,7 @@ import { PRICES, TINTA_PACKS, TINTA_CENTS, AUTHOR_SHARE_STORY, AUTHOR_SHARE_BOOK
 import { debitTinta } from "./economy";
 import { registerPayoutRoutes } from "./payouts";
 import { isProtectedClaimKey, protectClaimKey, revealClaimKey, verifyClaimKey } from "./claimKeys";
-import { reconcileOpenIncidentsForPayment, recordPaymentIncident, registerPaymentIncidentRoutes } from "./paymentIncidents";
+import { lockPayment, reconcilePayment, recordPaymentIncident, registerPaymentIncidentRoutes } from "./paymentIncidents";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { isSafeHttpsUrl, isSafeImageSource } from "@shared/media";
 import { PAPER_PLANS, PAPER_RATES } from "@shared/paper";
@@ -1178,8 +1178,8 @@ export async function registerRoutes(
   }
 
   // Valida si un usuario puede adquirir un token de este libro
-  async function validateAcquire(userId: number, bookId: number, kind: string) {
-    const book = await storage.getBook(bookId)
+  async function validateAcquire(userId: number, bookId: number, kind: string, executor: any = db) {
+    const [book] = await executor.select().from(books).where(eq(books.id, bookId))
     if (!book || book.status !== "published") return { error: "Libro no encontrado", code: 404, book: null }
     if (book.isClassic || !book.authorId) {
       return { error: "Los clásicos son de dominio público: no necesitan token", code: 400, book: null }
@@ -1188,8 +1188,8 @@ export async function registerRoutes(
       return { error: "Esta obra es tuya: ya tienes acceso completo", code: 400, book: null }
     }
     if (kind === "support") {
-      const mine = await db.select().from(bookTokens)
-        .where(and(eq(bookTokens.bookId, bookId), eq(bookTokens.ownerUserId, userId), eq(bookTokens.kind, "support")))
+      const mine = await executor.select().from(bookTokens)
+        .where(and(eq(bookTokens.bookId, bookId), eq(bookTokens.ownerUserId, userId), eq(bookTokens.kind, "support"), sql`${bookTokens.licenseStatus} <> 'revoked'`))
       if (mine.length > 0) return { error: "Ya tienes el token de apoyo de esta obra", code: 409, book: null }
     }
     return { error: null, code: 200, book }
@@ -1236,160 +1236,109 @@ export async function registerRoutes(
     }).onConflictDoNothing()
   }
 
+  async function purchaseReply(tx: any, order: typeof tokenOrders.$inferSelect) {
+    if (!order.tokenId) return { code: 409, body: { message: "La compra todavía no está confirmada", orderId: order.id } }
+    const [token] = await tx.select().from(bookTokens).where(eq(bookTokens.id, order.tokenId))
+    if (!token || token.licenseStatus !== "active") {
+      return { code: 409, body: { message: "El permiso está suspendido o reembolsado", orderId: order.id } }
+    }
+    const rows = await tx.select().from(printCopies).where(eq(printCopies.tokenId, token.id)).orderBy(printCopies.id)
+    const copies = rows.map(({ claimKey, claimKeyHash: _hash, claimedByUserId, ...copy }: any) => ({
+      ...copy, claimKey: revealClaimKey(claimKey), digitalClaimed: claimedByUserId != null,
+      claimedByOwner: claimedByUserId === order.userId,
+    }))
+    return { code: 201, body: {
+      mode: order.provider === "beta" ? "free_beta" : order.provider === "tinta" ? "tinta" : "paid",
+      ...(order.provider === "tinta" ? { spent: order.checkoutRequest?.spent } : {}),
+      orderId: order.id, token, copies,
+    } }
+  }
+
   app.post("/api/tokens/acquire", rateLimit(60_000, 10), async (req, res) => {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
       const userId = (req.user as any).id
       const bookId = Number(req.body?.bookId)
-      const kind   = String(req.body?.kind || "")
-      if (isNaN(bookId) || (kind !== "support" && kind !== "sale")) {
-        return res.status(400).json({ message: "Solicitud inválida" })
-      }
-      const check = await validateAcquire(userId, bookId, kind)
-      if (check.error) return res.status(check.code).json({ message: check.error })
-      const book = check.book!
-
-      const price = priceFor(kind as "support" | "sale", book)
+      const kind = String(req.body?.kind || "")
       const payWith = String(req.body?.payWith || "money")
-
-      // ── Pagar con TINTA 🪙 (un toque, sin pasarela) ──
-      if (payWith === "tinta") {
-        const purchase = await db.transaction(async (tx) => {
-          await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)
-          if (kind === "support") {
-            const [owned] = await tx.select().from(bookTokens).where(and(
-              eq(bookTokens.bookId, bookId),
-              eq(bookTokens.ownerUserId, userId),
-              eq(bookTokens.kind, "support"),
-            ))
-            if (owned) return { state: "owned" as const }
-          }
-          const [order] = await tx.insert(tokenOrders).values({
-            userId, bookId, kind, amountCents: price.cents, currency: price.currency,
-            status: "pending", provider: "tinta",
-            ...economySnapshotForBook(book),
-          }).returning()
-          const debit = await debitTinta(tx, {
-            userId, amount: price.tinta, reason: "spend_token",
-            refType: "token_order", refId: order.id,
-          })
-          if (!debit) {
-            await tx.update(tokenOrders).set({ status: "failed" }).where(eq(tokenOrders.id, order.id))
-            return { state: "funds" as const }
-          }
-          const result = await issueTokenWith(tx, userId, bookId, kind as "support" | "sale")
-          await tx.update(tokenOrders)
-            .set({
-              status: "paid", paidAt: new Date(), tokenId: result.token.id,
-              cashBackingCents: debit.cashBackingCents,
-            })
-            .where(eq(tokenOrders.id, order.id))
-          await settleEarnings(order, {
-            grossCents: debit.cashBackingCents,
-            payoutEligible: debit.cashBackingCents > 0,
-          }, tx)
-          return { state: "paid" as const, result }
-        })
-        if (purchase.state === "owned") {
-          return res.status(409).json({ message: "Ya tienes el token de apoyo de esta obra" })
-        }
-        if (purchase.state === "funds") {
-          const balance = await walletBalance(userId, "tinta")
-          return res.status(402).json({
-            message: "tinta_insuficiente", needed: price.tinta, balance,
-          })
-        }
-        return res.status(201).json({ mode: "tinta", spent: price.tinta, ...purchase.result })
+      const purchaseKey = String(req.get("Idempotency-Key") || "")
+      if (!Number.isSafeInteger(bookId) || bookId <= 0 || !["support", "sale"].includes(kind)
+        || !["money", "tinta"].includes(payWith) || !/^[A-Za-z0-9_-]{16,128}$/.test(purchaseKey)) {
+        return res.status(400).json({ message: "Solicitud inválida: actualiza la página antes de comprar" })
       }
-
-      if (!stripeEnabled()) {
-        if (!betaPaymentsEnabled()) {
-          return res.status(503).json({ message: "Los pagos no están configurados" })
-        }
-        // ── Modo beta: sin cobro ──
-        const result = await db.transaction(async (tx) => {
-          await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)
-          if (kind === "support") {
-            const [owned] = await tx.select().from(bookTokens).where(and(
-              eq(bookTokens.bookId, bookId),
-              eq(bookTokens.ownerUserId, userId),
-              eq(bookTokens.kind, "support"),
-            ))
-            if (owned) return { state: "owned" as const, issued: null }
-          }
-          const [order] = await tx.insert(tokenOrders).values({
-            userId, bookId, kind, amountCents: 0, currency: price.currency,
-            status: "paid", provider: "beta", paidAt: new Date(),
-            ...economySnapshotForBook(book),
-          }).returning()
-          const issued = await issueTokenWith(tx, userId, bookId, kind as "support" | "sale")
-          await tx.update(tokenOrders).set({ tokenId: issued.token.id })
-            .where(eq(tokenOrders.id, order.id))
-          return { state: "paid" as const, issued }
-        })
-        if (result.state === "owned") {
-          return res.status(409).json({ message: "Ya tienes el token de apoyo de esta obra" })
-        }
-        return res.status(201).json({ mode: "free_beta", ...result.issued })
-      }
-
-      // ── Modo Stripe: crear orden pendiente y sesión de pago ──
-      const orderResult = await db.transaction(async (tx) => {
+      const purchaseFingerprint = createHash("sha256").update(JSON.stringify({ bookId, kind, payWith })).digest("hex")
+      const outcome = await db.transaction(async tx => {
         await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)
-        if (kind === "support") {
-          const [owned] = await tx.select().from(bookTokens).where(and(
-            eq(bookTokens.bookId, bookId),
-            eq(bookTokens.ownerUserId, userId),
-            eq(bookTokens.kind, "support"),
-          ))
-          if (owned) return { state: "owned" as const, order: null }
+        const [existing] = await tx.select().from(tokenOrders).where(and(
+          eq(tokenOrders.userId, userId), eq(tokenOrders.purchaseKey, purchaseKey),
+        ))
+        if (existing) {
+          if (existing.purchaseFingerprint !== purchaseFingerprint) {
+            return { reply: { code: 409, body: { message: "La clave de compra ya se usó para otra solicitud" } } }
+          }
+          if (existing.tokenId) return { reply: await purchaseReply(tx, existing) }
+          if (existing.provider !== "stripe" || existing.status !== "pending") {
+            return { reply: { code: 409, body: { message: "Esta operación ya terminó; inicia una nueva compra" } } }
+          }
+          if (Number(existing.checkoutRequest?.expiresAt) <= Math.floor(Date.now() / 1000)) {
+            return { reply: { code: 409, body: { message: "La sesión de pago venció; inicia una nueva compra" } } }
+          }
+          return { order: existing }
+        }
+        const check = await validateAcquire(userId, bookId, kind, tx)
+        if (check.error) return { reply: { code: check.code, body: { message: check.error } } }
+        const book = check.book!
+        const price = priceFor(kind as "support" | "sale", book)
+        const provider = payWith === "tinta" ? "tinta" : stripeEnabled() ? "stripe" : "beta"
+        if (provider === "beta" && !betaPaymentsEnabled()) {
+          return { reply: { code: 503, body: { message: "Los pagos no están configurados" } } }
+        }
+        if (provider === "stripe" && kind === "support") {
           const [pending] = await tx.select().from(tokenOrders).where(and(
-            eq(tokenOrders.userId, userId),
-            eq(tokenOrders.bookId, bookId),
-            eq(tokenOrders.kind, "support"),
-            eq(tokenOrders.provider, "stripe"),
-            eq(tokenOrders.status, "pending"),
+            eq(tokenOrders.userId, userId), eq(tokenOrders.bookId, bookId), eq(tokenOrders.kind, "support"),
+            eq(tokenOrders.provider, "stripe"), eq(tokenOrders.status, "pending"),
+            sql`coalesce((${tokenOrders.checkoutRequest}->>'expiresAt')::bigint, extract(epoch from ${tokenOrders.createdAt})::bigint + 2700) > extract(epoch from now())`,
           ))
-          if (pending && Date.now() - pending.createdAt.getTime() < 45 * 60_000) {
-            return { state: "pending" as const, order: null }
-          }
-          if (pending) {
-            await tx.update(tokenOrders).set({ status: "canceled" }).where(eq(tokenOrders.id, pending.id))
-          }
+          if (pending) return { reply: { code: 409, body: { message: "Ya existe un pago pendiente para esta obra" } } }
         }
         const [order] = await tx.insert(tokenOrders).values({
-          userId, bookId, kind, amountCents: price.cents, currency: price.currency,
-          status: "pending", provider: "stripe",
-          ...economySnapshotForBook(book),
+          userId, bookId, kind, amountCents: provider === "beta" ? 0 : price.cents, currency: price.currency,
+          status: "pending", provider, purchaseKey, purchaseFingerprint, ...economySnapshotForBook(book),
         }).returning()
-        return { state: "created" as const, order }
+        if (provider === "stripe") {
+          const checkoutRequest = {
+            orderId: order.id, bookTitle: book.title, kindLabel: kind === "support" ? "Apoyo al autor" : "Permiso de venta",
+            cents: price.cents, currency: price.currency, origin: publicOriginForRequest(req), bookId,
+            expiresAt: Math.floor(Date.now() / 1000) + 60 * 60,
+          }
+          const [pending] = await tx.update(tokenOrders).set({ checkoutRequest }).where(eq(tokenOrders.id, order.id)).returning()
+          return { order: pending }
+        }
+        const debit = provider === "tinta" ? await debitTinta(tx, {
+          userId, amount: price.tinta, reason: "spend_token", refType: "token_order", refId: order.id,
+        }) : null
+        if (provider === "tinta" && !debit) {
+          await tx.update(tokenOrders).set({ status: "failed" }).where(eq(tokenOrders.id, order.id))
+          return { reply: { code: 402, body: { message: "tinta_insuficiente", needed: price.tinta } } }
+        }
+        const issued = await issueTokenWith(tx, userId, bookId, kind as "support" | "sale")
+        const [paid] = await tx.update(tokenOrders).set({
+          status: "paid", paidAt: new Date(), tokenId: issued.token.id,
+          cashBackingCents: debit?.cashBackingCents || 0, checkoutRequest: { spent: price.tinta },
+        }).where(eq(tokenOrders.id, order.id)).returning()
+        if (debit) await settleEarnings(paid, { grossCents: debit.cashBackingCents, payoutEligible: debit.cashBackingCents > 0 }, tx)
+        return { reply: await purchaseReply(tx, paid) }
       })
-      if (orderResult.state === "owned") {
-        return res.status(409).json({ message: "Ya tienes el token de apoyo de esta obra" })
-      }
-      if (orderResult.state === "pending") {
-        return res.status(409).json({ message: "Ya existe un pago pendiente para esta obra" })
-      }
-      const order = orderResult.order!
-
-      const origin = publicOriginForRequest(req)
-      const kindLabel = kind === "support" ? "Apoyo al autor" : "Permiso de venta"
-      let session
-      try {
-        session = await createCheckoutSession({
-          orderId: order.id, bookTitle: book.title, kindLabel,
-          cents: price.cents, currency: price.currency, origin, bookId,
-        })
-      } catch (error) {
-        await db.update(tokenOrders).set({ status: "failed" }).where(eq(tokenOrders.id, order.id))
-        throw error
-      }
-      await db.update(tokenOrders).set({ providerRef: session.id })
-        .where(eq(tokenOrders.id, order.id))
-
+      if (outcome.reply) return res.status(outcome.reply.code).json(outcome.reply.body)
+      const order = outcome.order!
+      if (order.checkoutUrl) return res.status(201).json({ mode: "checkout", url: order.checkoutUrl, orderId: order.id })
+      // The body and provider idempotency key stay identical after a timeout.
+      // A network error cannot tell us whether Stripe created the session.
+      const session = await createCheckoutSession(order.checkoutRequest as Parameters<typeof createCheckoutSession>[0])
+      await db.update(tokenOrders).set({ providerRef: session.id, checkoutUrl: session.url }).where(eq(tokenOrders.id, order.id))
       res.status(201).json({ mode: "checkout", url: session.url, orderId: order.id })
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Error al emitir el token" })
+    } catch {
+      res.status(503).json({ message: "No se pudo confirmar la compra. Reintenta: conservaremos la misma operación." })
     }
   })
 
@@ -1406,7 +1355,7 @@ export async function registerRoutes(
       )
       if (!event) return res.status(400).json({ message: "Firma inválida" })
 
-      if (event.type === "checkout.session.completed") {
+      if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
         const session = event.data?.object || {}
         const paymentRef = typeof session.payment_intent === "string"
           && /^pi_[A-Za-z0-9]+$/.test(session.payment_intent)
@@ -1415,8 +1364,9 @@ export async function registerRoutes(
         // Solo metadata explícita: el client_reference_id lo comparten
         // tokens y monedero, y cruzarlos emitiría tokens equivocados.
         const orderId = Number(session.metadata?.orderId)
-        if (!isNaN(orderId)) {
+        if (Number.isSafeInteger(orderId) && orderId > 0 && paymentRef) {
           const tokenOutcome = await db.transaction(async (tx) => {
+            await lockPayment(tx, paymentRef)
             await tx.execute(sql`select pg_advisory_xact_lock(71001, ${orderId})`)
             const [order] = await tx.select().from(tokenOrders).where(eq(tokenOrders.id, orderId))
             const validPayment = order?.provider === "stripe"
@@ -1433,11 +1383,11 @@ export async function registerRoutes(
               const [owned] = await tx.select().from(bookTokens).where(and(
                 eq(bookTokens.bookId, order.bookId),
                 eq(bookTokens.ownerUserId, order.userId),
-                eq(bookTokens.kind, "support"),
+                eq(bookTokens.kind, "support"), sql`${bookTokens.licenseStatus} <> 'revoked'`,
               ))
               if (owned) {
                 console.error(`Paid duplicate support order requires refund: ${order.id}`)
-                await tx.update(tokenOrders).set({ status: "needs_refund" }).where(eq(tokenOrders.id, order.id))
+                await tx.update(tokenOrders).set({ status: "needs_refund", paymentRef }).where(eq(tokenOrders.id, order.id))
                 return { state: "refund" as const, orderId: order.id }
               }
             }
@@ -1453,6 +1403,7 @@ export async function registerRoutes(
               grossCents: order.amountCents,
               payoutEligible: true,
             }, tx)
+            await reconcilePayment(tx, paymentRef)
             return { state: "paid" as const }
           })
           if (tokenOutcome?.state === "refund") {
@@ -1472,8 +1423,9 @@ export async function registerRoutes(
         }
         // ── Compra de TINTA: acreditar el monedero ──
         const walletOrderId = Number(session.metadata?.walletOrderId)
-        if (!isNaN(walletOrderId) && walletOrderId > 0) {
+        if (Number.isSafeInteger(walletOrderId) && walletOrderId > 0 && paymentRef) {
           await db.transaction(async (tx) => {
+            await lockPayment(tx, paymentRef)
             await tx.execute(sql`select pg_advisory_xact_lock(71002, ${walletOrderId})`)
             const [wo] = await tx.select().from(walletOrders).where(eq(walletOrders.id, walletOrderId))
             const validPayment = wo?.provider === "stripe"
@@ -1483,6 +1435,7 @@ export async function registerRoutes(
               && Number(session.amount_total) === wo.amountCents
               && String(session.currency || "").toLowerCase() === "mxn"
             if (!wo || wo.status !== "pending" || !validPayment) return
+            await tx.execute(sql`select pg_advisory_xact_lock(${wo.userId})`)
             await tx.update(walletOrders)
               .set({ status: "paid", paidAt: new Date(), paymentRef })
               .where(and(eq(walletOrders.id, walletOrderId), eq(walletOrders.status, "pending")))
@@ -1491,9 +1444,9 @@ export async function registerRoutes(
               reason: "purchase", refType: "wallet_order", refId: wo.id,
               cashBackingCents: wo.amountCents,
             })
+            await reconcilePayment(tx, paymentRef)
           })
         }
-        if (paymentRef) await reconcileOpenIncidentsForPayment(paymentRef)
       } else {
         await recordPaymentIncident(event)
       }
@@ -1678,48 +1631,61 @@ export async function registerRoutes(
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
       const userId = (req.user as any).id
-      const pack = TINTA_PACKS.find(p => p.id === String(req.body?.packId || ""))
-      if (!pack) return res.status(400).json({ message: "Paquete inválido" })
-
-      if (!stripeEnabled()) {
-        if (!betaPaymentsEnabled()) {
-          return res.status(503).json({ message: "Los pagos no están configurados" })
+      const packId = String(req.body?.packId || "")
+      const purchaseKey = String(req.get("Idempotency-Key") || "")
+      if (!/^[A-Za-z0-9_-]{16,128}$/.test(purchaseKey)) {
+        return res.status(400).json({ message: "Actualiza la página antes de comprar" })
+      }
+      const purchaseFingerprint = createHash("sha256").update(JSON.stringify({ packId })).digest("hex")
+      const outcome = await db.transaction(async tx => {
+        await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)
+        const [existing] = await tx.select().from(walletOrders).where(and(
+          eq(walletOrders.userId, userId), eq(walletOrders.purchaseKey, purchaseKey),
+        ))
+        if (existing) {
+          if (existing.purchaseFingerprint !== purchaseFingerprint) {
+            return { reply: { code: 409, body: { message: "La clave de compra ya se usó para otra solicitud" } } }
+          }
+          if (existing.status === "paid") return { reply: { code: 201, body: {
+            mode: existing.provider === "beta" ? "free_beta" : "paid", credited: existing.amount, orderId: existing.id,
+          } } }
+          if (existing.status !== "pending" || Number(existing.checkoutRequest?.expiresAt) <= Math.floor(Date.now() / 1000)) {
+            return { reply: { code: 409, body: { message: "Esta operación terminó o venció; inicia una nueva compra" } } }
+          }
+          return { order: existing }
         }
-        // ── Modo beta: acreditar al instante, sin cobro ──
-        await db.transaction(async (tx) => {
-          const [order] = await tx.insert(walletOrders).values({
-            userId, currency: "tinta", amount: pack.tinta, amountCents: 0,
-            status: "paid", provider: "beta", paidAt: new Date(),
-          }).returning()
+        const pack = TINTA_PACKS.find(p => p.id === packId)
+        if (!pack) return { reply: { code: 400, body: { message: "Paquete inválido" } } }
+        const paid = stripeEnabled()
+        if (!paid && !betaPaymentsEnabled()) return { reply: { code: 503, body: { message: "Los pagos no están configurados" } } }
+        const [order] = await tx.insert(walletOrders).values({
+          userId, currency: "tinta", amount: pack.tinta, amountCents: paid ? pack.cents : 0,
+          provider: paid ? "stripe" : "beta", status: paid ? "pending" : "paid", paidAt: paid ? null : new Date(),
+          purchaseKey, purchaseFingerprint,
+        }).returning()
+        if (!paid) {
           await tx.insert(walletLedger).values({
-            userId, currency: "tinta", delta: pack.tinta,
-            reason: "purchase", refType: "wallet_order", refId: order.id,
+            userId, currency: "tinta", delta: pack.tinta, reason: "purchase", refType: "wallet_order", refId: order.id,
           })
-        })
-        return res.status(201).json({ mode: "free_beta", credited: pack.tinta })
-      }
-
-      const [order] = await db.insert(walletOrders).values({
-        userId, currency: "tinta", amount: pack.tinta, amountCents: pack.cents,
-        status: "pending", provider: "stripe",
-      }).returning()
-      const origin = publicOriginForRequest(req)
-      let session
-      try {
-        session = await createCheckoutSession({
+          return { reply: { code: 201, body: { mode: "free_beta", credited: pack.tinta, orderId: order.id } } }
+        }
+        const checkoutRequest = {
           orderId: order.id, bookTitle: `${pack.tinta} Tinta`, kindLabel: "Paquete de Tinta",
-          cents: pack.cents, currency: "mxn", origin, bookId: 0,
+          cents: pack.cents, currency: "mxn", origin: publicOriginForRequest(req), bookId: 0,
           metaKey: "walletOrderId", successPath: `/?tinta=${order.id}`, cancelPath: "/",
-        })
-      } catch (error) {
-        await db.update(walletOrders).set({ status: "failed" }).where(eq(walletOrders.id, order.id))
-        throw error
-      }
-      await db.update(walletOrders).set({ providerRef: session.id })
-        .where(eq(walletOrders.id, order.id))
+          expiresAt: Math.floor(Date.now() / 1000) + 60 * 60,
+        }
+        const [pending] = await tx.update(walletOrders).set({ checkoutRequest }).where(eq(walletOrders.id, order.id)).returning()
+        return { order: pending }
+      })
+      if (outcome.reply) return res.status(outcome.reply.code).json(outcome.reply.body)
+      const order = outcome.order!
+      if (order.checkoutUrl) return res.status(201).json({ mode: "checkout", url: order.checkoutUrl, orderId: order.id })
+      const session = await createCheckoutSession(order.checkoutRequest as Parameters<typeof createCheckoutSession>[0])
+      await db.update(walletOrders).set({ providerRef: session.id, checkoutUrl: session.url }).where(eq(walletOrders.id, order.id))
       res.status(201).json({ mode: "checkout", url: session.url, orderId: order.id })
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Error" })
+    } catch {
+      res.status(503).json({ message: "No se pudo confirmar la recarga. Reintenta: conservaremos la misma operación." })
     }
   })
 
@@ -1824,6 +1790,7 @@ export async function registerRoutes(
         return {
           ...safeCopy,
           book: bookById.get(token.bookId) || null,
+          licenseStatus: token.licenseStatus,
           digitalClaimed: claimedByUserId != null,
         }
       }).sort((a, b) => b.id - a.id)
@@ -1832,7 +1799,7 @@ export async function registerRoutes(
         editions,
         summary: {
           total: editions.length,
-          available: editions.filter(copy => copy.saleStatus === "available").length,
+          available: editions.filter(copy => copy.saleStatus === "available" && copy.licenseStatus === "active").length,
           sold: editions.filter(copy => copy.saleStatus === "sold").length,
           returned: editions.filter(copy => copy.saleStatus === "returned").length,
           digitalClaimed: editions.filter(copy => copy.digitalClaimed).length,
@@ -1866,6 +1833,9 @@ export async function registerRoutes(
       }
       const now = new Date()
       const [updated] = await db.transaction(async tx => {
+        await tx.execute(sql`select pg_advisory_xact_lock(${token.ownerUserId})`)
+        const [freshToken] = await tx.select().from(bookTokens).where(eq(bookTokens.id, token.id))
+        if (freshToken.licenseStatus !== "active" && input.status !== "returned") return []
         const [row] = await tx.update(printCopies).set({
           saleStatus: input.status,
           soldAt: input.status === "sold" ? (copy.soldAt || now) : input.status === "available" ? null : copy.soldAt,
@@ -1881,6 +1851,7 @@ export async function registerRoutes(
         })
         return [row]
       })
+      if (!updated) return res.status(409).json({ message: "El permiso de este ejemplar está suspendido o reembolsado" })
       const { claimKey: _claimKey, claimKeyHash: _claimKeyHash, claimedByUserId, ...safeCopy } = updated
       res.json({ ...safeCopy, digitalClaimed: claimedByUserId != null })
     } catch (err: any) {
@@ -1948,7 +1919,9 @@ export async function registerRoutes(
       const copies = tokenIds.length
         ? await db.select().from(printCopies).where(inArray(printCopies.tokenId, tokenIds))
         : []
+      const activeIds = new Set(tokens.filter(token => token.licenseStatus === "active").map(token => token.id))
       const safeCopies = await Promise.all(copies.map(async copy => {
+        if (!activeIds.has(copy.tokenId)) return { copy, plainClaimKey: "" }
         const plainClaimKey = revealClaimKey(copy.claimKey)
         if (!isProtectedClaimKey(copy.claimKey) || !copy.claimKeyHash) {
           const protectedClaimKey = protectClaimKey(plainClaimKey)
@@ -1995,9 +1968,9 @@ export async function registerRoutes(
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
 
       const me = req.isAuthenticated() ? (req.user as any).id : null
-      const status = !copy.claimedByUserId ? "free"
-        : copy.claimedByUserId === me ? "yours"
-        : "taken"
+      const retainedClaim = copy.claimedByUserId != null && copy.claimedByUserId !== token!.ownerUserId
+      const status = token!.licenseStatus !== "active" && !retainedClaim ? "unavailable"
+        : !copy.claimedByUserId ? "free" : copy.claimedByUserId === me ? "yours" : "taken"
 
       res.json({
         folio,
@@ -2024,6 +1997,9 @@ export async function registerRoutes(
       const result = await db.transaction(async (tx) => {
         const [copy] = await tx.select().from(printCopies).where(eq(printCopies.folio, folio))
         if (!copy) return { state: "missing" as const }
+        const [candidate] = await tx.select().from(bookTokens).where(eq(bookTokens.id, copy.tokenId))
+        if (!candidate) return { state: "token" as const }
+        await tx.execute(sql`select pg_advisory_xact_lock(${candidate.ownerUserId})`)
         await tx.execute(sql`select pg_advisory_xact_lock(74001, ${copy.id})`)
         const [fresh] = await tx.select().from(printCopies).where(eq(printCopies.id, copy.id))
         if (!fresh) return { state: "missing" as const }
@@ -2042,6 +2018,8 @@ export async function registerRoutes(
         }
         const [token] = await tx.select().from(bookTokens).where(eq(bookTokens.id, fresh.tokenId))
         if (!token) return { state: "token" as const }
+        const retainedClaim = fresh.claimedByUserId === userId && userId !== token.ownerUserId
+        if (token.licenseStatus !== "active" && !retainedClaim) return { state: "license" as const }
         if (!fresh.claimedByUserId) {
           const [claimed] = await tx.update(printCopies)
             .set({ claimedByUserId: userId, claimedAt: new Date() })
@@ -2067,6 +2045,7 @@ export async function registerRoutes(
       if (result.state === "missing") return res.status(404).json({ message: "Folio no encontrado" })
       if (result.state === "taken") return res.status(409).json({ message: "taken" })
       if (result.state === "key") return res.status(403).json({ message: "Clave incorrecta" })
+      if (result.state === "license") return res.status(409).json({ message: "Este ejemplar no admite nuevas activaciones: su permiso está suspendido o reembolsado" })
       if (result.state === "token") return res.status(404).json({ message: "Token no encontrado" })
       res.json({ ok: true, bookId: result.bookId })
     } catch (err: any) {

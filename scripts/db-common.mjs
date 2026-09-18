@@ -95,6 +95,12 @@ export const EXPECTED_INDEXES = [
   "token_orders_payment_ref_idx",
   "wallet_orders_payment_ref_idx",
   "payment_incidents_resolution_created_idx",
+  "token_orders_purchase_key_idx",
+  "wallet_orders_purchase_key_idx",
+  "book_tokens_owner_license_idx",
+  "wallet_ledger_payment_adjustment_idx",
+  "payment_incidents_payment_ref_idx",
+  "payment_incidents_provider_object_idx",
 ]
 
 export const EXPECTED_CONSTRAINTS = [
@@ -114,6 +120,9 @@ export const EXPECTED_CONSTRAINTS = [
   "gacha_config_split_check",
   "print_copies_claim_key_hash_check",
   "payment_incidents_contract_check",
+  "book_tokens_license_status_check",
+  "token_orders_purchase_key_check",
+  "wallet_orders_purchase_key_check",
 ]
 
 export function databaseUrl() {
@@ -348,9 +357,11 @@ export async function validateExpectedSchema(client) {
     book_drafts: ["book_id", "author_id", "base_revision", "draft_revision", "data", "updated_at"],
     book_revisions: ["book_id", "revision", "snapshot", "change_type", "created_by", "created_at"],
     api_rate_limits: ["bucket_key", "window_start", "request_count", "expires_at"],
-    token_orders: ["author_user_id", "author_share_bps", "book_type_snapshot", "book_revision_snapshot", "cash_backing_cents", "payment_ref", "refund_ref", "refunded_at"],
+    token_orders: ["author_user_id", "author_share_bps", "book_type_snapshot", "book_revision_snapshot", "cash_backing_cents", "payment_ref", "refund_ref", "refunded_at", "purchase_key", "purchase_fingerprint", "checkout_request", "checkout_url"],
+    book_tokens: ["license_status"],
+    payment_webhook_events: ["event_id", "payment_ref"],
     wallet_ledger: ["cash_backing_cents"],
-    wallet_orders: ["payment_ref"],
+    wallet_orders: ["payment_ref", "purchase_key", "purchase_fingerprint", "checkout_request", "checkout_url"],
     author_earnings: ["payout_eligible", "payout_id"],
     author_payout_accounts: ["user_id", "provider_account_id", "details_submitted", "payouts_enabled", "transfers_active", "requirements_due"],
     author_payouts: ["author_user_id", "amount_cents", "currency", "status", "provider_ref", "failure_code"],

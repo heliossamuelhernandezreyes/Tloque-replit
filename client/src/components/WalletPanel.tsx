@@ -1,4 +1,4 @@
-import { accountFetch as fetch } from "@/lib/account-context"
+import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -72,17 +72,26 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
 
   const buy = useMutation({
     mutationFn: async (packId: string) => {
+      const intent = `wallet-purchase:${packId}`
+      let purchaseKey = localStorage.getItem(intent)
+      if (!purchaseKey) {
+        purchaseKey = crypto.randomUUID()
+        localStorage.setItem(intent, purchaseKey)
+      }
       const res = await fetch("/api/wallet/buy", {
         method:      "POST",
-        headers:     { "Content-Type": "application/json" },
+        headers:     { "Content-Type": "application/json", "Idempotency-Key": purchaseKey },
         credentials: "include",
         body:        JSON.stringify({ packId }),
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        if ([400, 402, 409].includes(res.status)) localStorage.removeItem(intent)
         throw new Error(e.message || "Error")
       }
-      return res.json()
+      const result = await res.json()
+      if (result.mode !== "checkout") localStorage.removeItem(intent)
+      return result
     },
     onSuccess: (data: any) => {
       if (data?.mode === "checkout" && data?.url) {
@@ -120,6 +129,11 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
               </button>
             </div>
 
+            {(wallet?.tinta ?? 0) < 0 && (
+              <p role="status" className="mb-3 rounded-xl border border-amber-300/20 p-3 text-xs text-amber-100">
+                Una devolución o disputa dejó un saldo pendiente. Las próximas recargas compensarán ese saldo antes de poder gastar Tinta.
+              </p>
+            )}
             {/* Saldos */}
             <div className="grid grid-cols-2 gap-2 mb-3">
               <div className="rounded-2xl px-3.5 py-3"

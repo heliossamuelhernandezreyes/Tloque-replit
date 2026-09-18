@@ -251,6 +251,7 @@ export const bookTokens = pgTable("book_tokens", {
   kind:        text("kind").notNull(),                                // "support" | "sale"
   bookId:      integer("book_id").references(() => books.id).notNull(),
   ownerUserId: integer("owner_user_id").references(() => users.id).notNull(),
+  licenseStatus: text("license_status").notNull().default("active"), // active | suspended | revoked
   createdAt:   timestamp("created_at").defaultNow().notNull(),
 })
 
@@ -330,6 +331,10 @@ export const tokenOrders = pgTable("token_orders", {
   paymentRef:  text("payment_ref").default(""),            // PaymentIntent de Stripe
   refundRef:   text("refund_ref").default(""),
   tokenId:     integer("token_id"),                        // token emitido al pagar
+  purchaseKey: text("purchase_key"),
+  purchaseFingerprint: text("purchase_fingerprint").notNull().default(""),
+  checkoutRequest: jsonb("checkout_request").$type<Record<string, any>>(),
+  checkoutUrl: text("checkout_url").notNull().default(""),
   // Instantánea económica: el webhook nunca recalcula el reparto usando una
   // versión posterior del libro.
   authorUserId: integer("author_user_id").references(() => users.id),
@@ -432,6 +437,10 @@ export const walletOrders = pgTable("wallet_orders", {
   provider:    text("provider").notNull().default("beta"),  // "stripe" | "beta"
   providerRef: text("provider_ref").default(""),
   paymentRef:  text("payment_ref").default(""),
+  purchaseKey: text("purchase_key"),
+  purchaseFingerprint: text("purchase_fingerprint").notNull().default(""),
+  checkoutRequest: jsonb("checkout_request").$type<Record<string, any>>(),
+  checkoutUrl: text("checkout_url").notNull().default(""),
   createdAt:   timestamp("created_at").defaultNow().notNull(),
   paidAt:      timestamp("paid_at"),
 })
@@ -444,7 +453,7 @@ export type WalletOrder = typeof walletOrders.$inferSelect
 export const paymentIncidents = pgTable("payment_incidents", {
   id:               serial("id").primaryKey(),
   providerEventId:  text("provider_event_id").notNull().unique(),
-  providerObjectId: text("provider_object_id").notNull(),
+  providerObjectId: text("provider_object_id").notNull().unique(),
   kind:             text("kind").notNull(),
   paymentRef:       text("payment_ref").notNull().default(""),
   tokenOrderId:     integer("token_order_id").references(() => tokenOrders.id),
@@ -463,6 +472,12 @@ export const paymentIncidents = pgTable("payment_incidents", {
 })
 
 export type PaymentIncident = typeof paymentIncidents.$inferSelect
+
+export const paymentWebhookEvents = pgTable("payment_webhook_events", {
+  eventId: text("event_id").primaryKey(),
+  paymentRef: text("payment_ref").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
 
 // Medición auditable de IA. El proveedor reporta tokens o caracteres reales;
 // la regla central de Papel los convierte a unidades enteras. requestKey hace

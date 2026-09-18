@@ -1,0 +1,42 @@
+name: Payment and licence boundaries
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  payments:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tloque
+          POSTGRES_PASSWORD: payment_fixture
+          POSTGRES_DB: tloque_payments
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tloque -d tloque_payments"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://tloque:payment_fixture@localhost:5432/tloque_payments
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run build
+      - name: Verify payments, refunds, QR and historical migration
+        run: node scripts/check-payment-boundaries.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tloque-payment-boundaries
+          path: .tloque_cache/payment-boundaries/results.json
+          retention-days: 30
