@@ -1,0 +1,1462 @@
+{
+  "note": "Static inventory, not an assertion of authorization correctness. Callback references may have guards outside this AST node.",
+  "auditedCommit": "0e88f6c7f5b8d82f6d46e467ca953557704eb869",
+  "routes": [
+    {
+      "file": "server/audio.ts",
+      "line": 188,
+      "method": "GET",
+      "path": "\"/api/audio/ui-manifest\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 232,
+      "method": "POST",
+      "path": "\"/api/admin/audio/score/compile\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 60)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 240,
+      "method": "GET",
+      "path": "\"/api/admin/audio/ui-bindings\"",
+      "middleware": [
+        "requireAdmin"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 255,
+      "method": "PUT",
+      "path": "\"/api/admin/audio/ui-bindings/:eventKey\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 60)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 283,
+      "method": "DELETE",
+      "path": "\"/api/admin/audio/ui-bindings/:eventKey\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 60)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 295,
+      "method": "GET",
+      "path": "\"/api/audio/assets\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 313,
+      "method": "GET",
+      "path": "\"/api/admin/audio/assets\"",
+      "middleware": [
+        "requireAdmin"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 324,
+      "method": "POST",
+      "path": "\"/api/admin/audio/assets\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 20)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 339,
+      "method": "PUT",
+      "path": "\"/api/admin/audio/assets/:id\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 357,
+      "method": "DELETE",
+      "path": "\"/api/admin/audio/assets/:id\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 372,
+      "method": "PUT",
+      "path": "\"/api/audio/assets/:id/favorite\"",
+      "middleware": [
+        "rateLimit(60_000, 60)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 388,
+      "method": "DELETE",
+      "path": "\"/api/audio/assets/:id/favorite\"",
+      "middleware": [
+        "rateLimit(60_000, 60)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 404,
+      "method": "GET",
+      "path": "\"/api/books/:id/audio\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 439,
+      "method": "PUT",
+      "path": "\"/api/books/:id/audio/:chapterIndex\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audio.ts",
+      "line": 476,
+      "method": "DELETE",
+      "path": "\"/api/books/:id/audio/:chapterIndex\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audioUploads.ts",
+      "line": 101,
+      "method": "GET",
+      "path": "\"/api/admin/audio/uploads/status\"",
+      "middleware": [
+        "requireAdmin"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audioUploads.ts",
+      "line": 120,
+      "method": "POST",
+      "path": "\"/api/admin/audio/uploads\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 8)",
+        "express.raw({ type: [\"audio/mpeg\", \"audio/mp3\", \"audio/wav\", \"audio/x-wav\", \"application/octet-stream\"], limit: MAX_UPLOAD_BYTES })"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audioUploads.ts",
+      "line": 158,
+      "method": "POST",
+      "path": "\"/api/admin/audio/module-catalog/:sourceId/install\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 3)",
+        "express.json({ limit: \"8kb\" })"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audioUploads.ts",
+      "line": 208,
+      "method": "POST",
+      "path": "\"/api/admin/audio/module-uploads\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 4)",
+        "express.raw({ type: [\"application/octet-stream\", \"audio/soundfont\", \"application/x-sf2\"], limit: MAX_MODULE_UPLOAD_BYTES })"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/audioUploads.ts",
+      "line": 247,
+      "method": "GET",
+      "path": "\"/api/audio/uploads/:file\"",
+      "middleware": [
+        "rateLimit(60_000, 240)"
+      ],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/audioUploads.ts",
+      "line": 261,
+      "method": "GET",
+      "path": "\"/api/audio/modules/:file\"",
+      "middleware": [
+        "rateLimit(60_000, 240)"
+      ],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/audioUploads.ts",
+      "line": 275,
+      "method": "GET",
+      "path": "\"/api/audio/sample-packs/samples/:file\"",
+      "middleware": [
+        "rateLimit(60_000, 480)"
+      ],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/audioUploads.ts",
+      "line": 289,
+      "method": "GET",
+      "path": "\"/api/audio/sample-packs/manifests/:file\"",
+      "middleware": [
+        "rateLimit(60_000, 240)"
+      ],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/audioUploads.ts",
+      "line": 314,
+      "method": "GET",
+      "path": "\"/api/audio/sample-packs/modules/:moduleId.json\"",
+      "middleware": [
+        "rateLimit(60_000, 240)"
+      ],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/auth.ts",
+      "line": 198,
+      "method": "GET",
+      "path": "\"/api/auth/google\"",
+      "middleware": [
+        "passport.authenticate(\"google\", { scope: [\"profile\", \"email\"] })"
+      ],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/auth.ts",
+      "line": 201,
+      "method": "GET",
+      "path": "\"/api/auth/google/callback\"",
+      "middleware": [
+        "passport.authenticate(\"google\", { failureRedirect: \"/?auth=error\" })"
+      ],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/auth.ts",
+      "line": 205,
+      "method": "POST",
+      "path": "\"/api/auth/logout\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/auth.ts",
+      "line": 215,
+      "method": "GET",
+      "path": "\"/api/auth/me\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/directionAgent.ts",
+      "line": 376,
+      "method": "GET",
+      "path": "\"/api/books/:id/direction/:chapterIndex\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/directionAgent.ts",
+      "line": 407,
+      "method": "POST",
+      "path": "\"/api/books/:id/direction/:chapterIndex/quote\"",
+      "middleware": [
+        "rateLimit(60_000, 12)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/directionAgent.ts",
+      "line": 468,
+      "method": "POST",
+      "path": "\"/api/books/:id/direction/:chapterIndex/run\"",
+      "middleware": [
+        "rateLimit(60_000, 3)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/directionAgent.ts",
+      "line": 609,
+      "method": "PUT",
+      "path": "\"/api/books/:id/direction/:chapterIndex\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/gutenberg-routes.ts",
+      "line": 52,
+      "method": "GET",
+      "path": "\"/api/gutenberg/catalog\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/gutenberg-routes.ts",
+      "line": 71,
+      "method": "GET",
+      "path": "\"/api/gutenberg/search\"",
+      "middleware": [
+        "rateLimit(60_000, 20)",
+        "search"
+      ],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/gutenberg-routes.ts",
+      "line": 72,
+      "method": "GET",
+      "path": "\"/api/admin/gutenberg/search\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 20)",
+        "search"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/gutenberg-routes.ts",
+      "line": 93,
+      "method": "GET",
+      "path": "\"/api/gutenberg/preview/:id\"",
+      "middleware": [
+        "rateLimit(60_000, 6)"
+      ],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/gutenberg-routes.ts",
+      "line": 94,
+      "method": "GET",
+      "path": "\"/api/admin/gutenberg/preview/:id\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 6)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/gutenberg-routes.ts",
+      "line": 96,
+      "method": "POST",
+      "path": "\"/api/admin/gutenberg/import\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 6)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/index.ts",
+      "line": 87,
+      "method": "GET",
+      "path": "\"/healthz\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/index.ts",
+      "line": 91,
+      "method": "GET",
+      "path": "\"/readyz\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/narrative.ts",
+      "line": 160,
+      "method": "GET",
+      "path": "\"/api/audio/scores\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/narrative.ts",
+      "line": 204,
+      "method": "GET",
+      "path": "\"/api/books/:id/narrative/:chapterIndex\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/narrative.ts",
+      "line": 247,
+      "method": "POST",
+      "path": "\"/api/books/:id/narrative/:chapterIndex/oracle\"",
+      "middleware": [
+        "rateLimit(60_000, 3)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/narrative.ts",
+      "line": 338,
+      "method": "PUT",
+      "path": "\"/api/books/:id/narrative/:chapterIndex\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/narrative.ts",
+      "line": 391,
+      "method": "POST",
+      "path": "\"/api/books/:id/narrative/:chapterIndex/compile\"",
+      "middleware": [
+        "rateLimit(60_000, 20)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/narrative.ts",
+      "line": 441,
+      "method": "POST",
+      "path": "\"/api/books/:id/narrative/:chapterIndex/publish\"",
+      "middleware": [
+        "rateLimit(60_000, 20)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/narrative.ts",
+      "line": 485,
+      "method": "GET",
+      "path": "\"/api/books/:id/experience/:chapterIndex\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/nativeSamplePackRoutes.ts",
+      "line": 51,
+      "method": "GET",
+      "path": "\"/api/admin/audio/sample-pack-catalog\"",
+      "middleware": [
+        "requireAdmin"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/nativeSamplePackRoutes.ts",
+      "line": 55,
+      "method": "GET",
+      "path": "\"/api/admin/audio/sample-pack-storage-status\"",
+      "middleware": [
+        "requireAdmin"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/nativeSamplePackRoutes.ts",
+      "line": 65,
+      "method": "POST",
+      "path": "\"/api/admin/audio/sample-pack-catalog/:sourceId/install\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(10 * 60_000, 24, \"native-sample-pack-install\")",
+        "express.json({ limit: \"8kb\" })"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/paymentIncidents.ts",
+      "line": 215,
+      "method": "GET",
+      "path": "\"/api/admin/payment-incidents\"",
+      "middleware": [
+        "requireAdmin"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/paymentIncidents.ts",
+      "line": 222,
+      "method": "POST",
+      "path": "\"/api/admin/payment-incidents/:id/resolve\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 10)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/payouts.ts",
+      "line": 211,
+      "method": "GET",
+      "path": "\"/api/payouts/mine\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/payouts.ts",
+      "line": 252,
+      "method": "POST",
+      "path": "\"/api/payouts/onboarding\"",
+      "middleware": [
+        "rateLimit(60_000, 4)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/payouts.ts",
+      "line": 272,
+      "method": "GET",
+      "path": "\"/api/payouts/onboarding/refresh\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/payouts.ts",
+      "line": 285,
+      "method": "POST",
+      "path": "\"/api/payouts/request\"",
+      "middleware": [
+        "rateLimit(60_000, 3)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/payouts.ts",
+      "line": 334,
+      "method": "GET",
+      "path": "\"/api/admin/payouts\"",
+      "middleware": [
+        "requireAdmin"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/payouts.ts",
+      "line": 342,
+      "method": "POST",
+      "path": "\"/api/admin/payouts/:id/approve\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 10)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/payouts.ts",
+      "line": 424,
+      "method": "POST",
+      "path": "\"/api/admin/payouts/:id/reject\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 10)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/payouts.ts",
+      "line": 434,
+      "method": "POST",
+      "path": "\"/api/payouts/webhook\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 149,
+      "method": "GET",
+      "path": "api.books.list.path",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 161,
+      "method": "GET",
+      "path": "\"/api/books/mine\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 172,
+      "method": "GET",
+      "path": "api.books.get.path",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 206,
+      "method": "POST",
+      "path": "api.books.create.path",
+      "middleware": [
+        "rateLimit(60_000, 6)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 235,
+      "method": "PUT",
+      "path": "api.books.update.path",
+      "middleware": [
+        "rateLimit(60_000, 24)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 300,
+      "method": "GET",
+      "path": "\"/api/books/:id/draft\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 313,
+      "method": "PUT",
+      "path": "\"/api/books/:id/draft\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 367,
+      "method": "DELETE",
+      "path": "\"/api/books/:id/draft\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 381,
+      "method": "GET",
+      "path": "\"/api/books/:id/revisions\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 397,
+      "method": "POST",
+      "path": "\"/api/books/:id/revisions/:revision/restore\"",
+      "middleware": [
+        "rateLimit(60_000, 6)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 434,
+      "method": "DELETE",
+      "path": "api.books.delete.path",
+      "middleware": [
+        "rateLimit(60_000, 12)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 478,
+      "method": "GET",
+      "path": "\"/api/books/:id/comments\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 507,
+      "method": "POST",
+      "path": "\"/api/books/:id/comments\"",
+      "middleware": [
+        "rateLimit(60_000, 6)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 552,
+      "method": "PATCH",
+      "path": "\"/api/comments/:id/status\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 578,
+      "method": "PATCH",
+      "path": "\"/api/books/:id/comments-enabled\"",
+      "middleware": [
+        "rateLimit(60_000, 20)"
+      ],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 602,
+      "method": "DELETE",
+      "path": "\"/api/admin/books/:id\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 10)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 621,
+      "method": "GET",
+      "path": "\"/api/admin/books/all\"",
+      "middleware": [
+        "requireAdmin"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 632,
+      "method": "PATCH",
+      "path": "\"/api/admin/books/:id/visibility\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 657,
+      "method": "GET",
+      "path": "\"/api/admin/me\"",
+      "middleware": [
+        "requireAdmin"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 662,
+      "method": "GET",
+      "path": "\"/api/admin/admins\"",
+      "middleware": [
+        "requireAdmin"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 672,
+      "method": "POST",
+      "path": "\"/api/admin/admins\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 10)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 693,
+      "method": "DELETE",
+      "path": "\"/api/admin/admins/:email\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 10)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 710,
+      "method": "GET",
+      "path": "\"/api/dictionary/:word\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 732,
+      "method": "GET",
+      "path": "\"/api/authors/:name\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 787,
+      "method": "GET",
+      "path": "\"/api/books/:id/hearts\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 819,
+      "method": "GET",
+      "path": "\"/api/authors/:name/card\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 850,
+      "method": "PATCH",
+      "path": "\"/api/profile\"",
+      "middleware": [
+        "rateLimit(60_000, 12)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 911,
+      "method": "PATCH",
+      "path": "\"/api/admin/authors/:name\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 12)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 957,
+      "method": "GET",
+      "path": "\"/api/sync/state\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 980,
+      "method": "PUT",
+      "path": "\"/api/sync/streak\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1007,
+      "method": "PUT",
+      "path": "\"/api/sync/progress\"",
+      "middleware": [
+        "rateLimit(60_000, 60)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1055,
+      "method": "GET",
+      "path": "\"/api/sync/library\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1075,
+      "method": "PUT",
+      "path": "\"/api/sync/library/:bookId\"",
+      "middleware": [
+        "rateLimit(60_000, 60)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1098,
+      "method": "DELETE",
+      "path": "\"/api/sync/library/:bookId\"",
+      "middleware": [
+        "rateLimit(60_000, 60)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1226,
+      "method": "POST",
+      "path": "\"/api/tokens/acquire\"",
+      "middleware": [
+        "rateLimit(60_000, 10)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1384,
+      "method": "POST",
+      "path": "\"/api/payments/webhook\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1495,
+      "method": "GET",
+      "path": "\"/api/payments/config\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1522,
+      "method": "GET",
+      "path": "\"/api/wallet\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1538,
+      "method": "GET",
+      "path": "\"/api/account/export\"",
+      "middleware": [
+        "rateLimit(60_000, 3)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1590,
+      "method": "DELETE",
+      "path": "\"/api/account\"",
+      "middleware": [
+        "rateLimit(60 * 60_000, 3)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1653,
+      "method": "GET",
+      "path": "\"/api/wallet/packs\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1659,
+      "method": "GET",
+      "path": "\"/api/paper/catalog\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1664,
+      "method": "POST",
+      "path": "\"/api/wallet/buy\"",
+      "middleware": [
+        "rateLimit(60_000, 6)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1714,
+      "method": "GET",
+      "path": "\"/api/wallet/history\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1729,
+      "method": "GET",
+      "path": "\"/api/earnings/mine\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1751,
+      "method": "GET",
+      "path": "\"/api/author/stats\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1791,
+      "method": "GET",
+      "path": "\"/api/author/editions\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1840,
+      "method": "PATCH",
+      "path": "\"/api/author/editions/:copyId\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1881,
+      "method": "GET",
+      "path": "\"/api/notifications\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1895,
+      "method": "PATCH",
+      "path": "\"/api/notifications/:id/read\"",
+      "middleware": [
+        "rateLimit(60_000, 60)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1911,
+      "method": "POST",
+      "path": "\"/api/notifications/read-all\"",
+      "middleware": [
+        "rateLimit(60_000, 12)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1925,
+      "method": "GET",
+      "path": "\"/api/tokens/mine\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 1974,
+      "method": "GET",
+      "path": "\"/api/claim/:folio\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2004,
+      "method": "POST",
+      "path": "\"/api/claim/:folio\"",
+      "middleware": [
+        "rateLimit(60_000, 10)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2065,
+      "method": "GET",
+      "path": "\"/api/tokens/unlocked\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2094,
+      "method": "GET",
+      "path": "\"/api/books/:id/cards\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2134,
+      "method": "GET",
+      "path": "\"/api/cards/collection\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2194,
+      "method": "POST",
+      "path": "\"/api/cards/:id/buy\"",
+      "middleware": [
+        "rateLimit(60_000, 10)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2258,
+      "method": "POST",
+      "path": "\"/api/books/:id/cards\"",
+      "middleware": [
+        "rateLimit(60_000, 12)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2291,
+      "method": "PUT",
+      "path": "\"/api/cards/:id\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2324,
+      "method": "DELETE",
+      "path": "\"/api/cards/:id\"",
+      "middleware": [
+        "rateLimit(60_000, 12)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2358,
+      "method": "GET",
+      "path": "\"/api/cards/loose\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2372,
+      "method": "POST",
+      "path": "\"/api/cards\"",
+      "middleware": [
+        "rateLimit(60_000, 12)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2398,
+      "method": "POST",
+      "path": "\"/api/cards/:id/assign\"",
+      "middleware": [
+        "rateLimit(60_000, 12)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2440,
+      "method": "POST",
+      "path": "\"/api/admin/frames\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 20)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2462,
+      "method": "GET",
+      "path": "\"/api/frames\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2491,
+      "method": "POST",
+      "path": "\"/api/frames/:id/buy\"",
+      "middleware": [
+        "rateLimit(60_000, 10)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2545,
+      "method": "DELETE",
+      "path": "\"/api/admin/frames/:id\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 20)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2562,
+      "method": "GET",
+      "path": "\"/api/gacha/status\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2611,
+      "method": "POST",
+      "path": "\"/api/gacha/draw\"",
+      "middleware": [
+        "rateLimit(60_000, 40)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2626,
+      "method": "GET",
+      "path": "\"/api/gacha/history\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2640,
+      "method": "POST",
+      "path": "\"/api/gacha/exclusions\"",
+      "middleware": [
+        "rateLimit(60_000, 20)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2661,
+      "method": "POST",
+      "path": "\"/api/admin/gacha/toggle\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 20)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2676,
+      "method": "GET",
+      "path": "\"/api/admin/gacha/audit\"",
+      "middleware": [
+        "requireAdmin"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2711,
+      "method": "POST",
+      "path": "\"/api/admin/gacha/recompute-scores\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 4)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2721,
+      "method": "GET",
+      "path": "\"/api/books/:id/rarity-info\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2779,
+      "method": "PUT",
+      "path": "\"/api/cards/:id/gacha\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/routes.ts",
+      "line": 2842,
+      "method": "POST",
+      "path": "\"/api/admin/gacha/beta\"",
+      "middleware": [
+        "requireAdmin",
+        "rateLimit(60_000, 4)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 193,
+      "method": "GET",
+      "path": "\"/api/voices\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 213,
+      "method": "POST",
+      "path": "\"/api/admin/voices\"",
+      "middleware": [
+        "rateLimit(60_000, 20)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 230,
+      "method": "PUT",
+      "path": "\"/api/admin/voices/:id\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 246,
+      "method": "GET",
+      "path": "\"/api/books/:id/speech/:chapterIndex\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 282,
+      "method": "PUT",
+      "path": "\"/api/books/:id/speech/:chapterIndex\"",
+      "middleware": [
+        "rateLimit(60_000, 30)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 333,
+      "method": "POST",
+      "path": "\"/api/books/:id/speech/:chapterIndex/oracle\"",
+      "middleware": [
+        "rateLimit(60_000, 3)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 402,
+      "method": "POST",
+      "path": "\"/api/books/:id/speech/:chapterIndex/compile\"",
+      "middleware": [
+        "rateLimit(60_000, 20)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 450,
+      "method": "POST",
+      "path": "\"/api/books/:id/speech/:chapterIndex/publish\"",
+      "middleware": [
+        "rateLimit(60_000, 20)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 484,
+      "method": "GET",
+      "path": "\"/api/books/:id/audiobook/:chapterIndex\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 535,
+      "method": "POST",
+      "path": "\"/api/books/:id/audiobook/:chapterIndex/request\"",
+      "middleware": [
+        "rateLimit(60_000, 4)"
+      ],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 630,
+      "method": "GET",
+      "path": "\"/api/audiobook/jobs/:id\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 642,
+      "method": "GET",
+      "path": "\"/api/audiobooks/:id/stream\"",
+      "middleware": [],
+      "explicitAuth": true
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 681,
+      "method": "POST",
+      "path": "\"/api/internal/audiobook/jobs/claim\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 717,
+      "method": "POST",
+      "path": "\"/api/internal/audiobook/jobs/:id/complete\"",
+      "middleware": [],
+      "explicitAuth": false
+    },
+    {
+      "file": "server/speech.ts",
+      "line": 782,
+      "method": "POST",
+      "path": "\"/api/internal/audiobook/jobs/:id/fail\"",
+      "middleware": [],
+      "explicitAuth": false
+    }
+  ]
+}
