@@ -142,6 +142,7 @@ try {
     const child = spawn(process.execPath, ['--import', resolve('scripts/fixtures/stripe-preload.mjs'), 'dist/index.cjs'], {
       env: { PATH: process.env.PATH, CI: 'true', NODE_ENV: 'production', PORT: String(5292 + instance),
         DATABASE_URL: url.href, APP_URL: 'https://payments.example.test', SESSION_SECRET: secret,
+        ADMIN_EMAIL: 'founder@payments.example.test',
         CLAIM_KEY_SECRET: claimSecret, STRIPE_WEBHOOK_SECRET: webhookSecret, STRIPE_SECRET_KEY: 'sk_test_fixture',
         STRIPE_CONNECT_WEBHOOK_SECRET: 'whsec_fixture', STRIPE_CONNECT_ENABLED: instance < 2 ? 'true' : 'false',
         MONETIZATION_ENABLED: 'true', PAYOUTS_READY: 'true', PAYMENTS_BETA_MODE: 'true',
