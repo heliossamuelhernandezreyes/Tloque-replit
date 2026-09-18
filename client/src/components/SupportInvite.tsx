@@ -49,7 +49,7 @@ export default function SupportInvite({
   const canTinta  = (wallet?.tinta ?? 0) >= needTinta
 
   // ¿Ya tiene el token de apoyo? Entonces no invitar.
-  const { data } = useQuery<{ tokens: { kind: string }[] }>({
+  const { data } = useQuery<{ tokens: { kind: string; licenseStatus: string }[] }>({
     queryKey: [`/api/tokens/mine`, bookId],
     queryFn: async () => {
       const res = await fetch(`/api/tokens/mine?bookId=${bookId}`, { credentials: "include" })
@@ -57,21 +57,31 @@ export default function SupportInvite({
       return res.json()
     },
   })
-  const hasSupport = (data?.tokens || []).some(tk => tk.kind === "support")
+  const hasSupport = (data?.tokens || []).some(tk => tk.kind === "support" && tk.licenseStatus !== "revoked")
 
   const acquire = useMutation({
     mutationFn: async () => {
+      const payWith = canTinta ? "tinta" : "money"
+      const intent = `purchase:${bookId}:support:${payWith}`
+      let purchaseKey = localStorage.getItem(intent)
+      if (!purchaseKey) {
+        purchaseKey = crypto.randomUUID()
+        localStorage.setItem(intent, purchaseKey)
+      }
       const res = await fetch("/api/tokens/acquire", {
         method:      "POST",
-        headers:     { "Content-Type": "application/json" },
+        headers:     { "Content-Type": "application/json", "Idempotency-Key": purchaseKey },
         credentials: "include",
-        body:        JSON.stringify({ bookId, kind: "support", payWith: canTinta ? "tinta" : "money" }),
+        body:        JSON.stringify({ bookId, kind: "support", payWith }),
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        if ([400, 402, 409].includes(res.status)) localStorage.removeItem(intent)
         throw new Error(e.message || "Error")
       }
-      return res.json()
+      const result = await res.json()
+      if (result.mode !== "checkout") localStorage.removeItem(intent)
+      return result
     },
     onSuccess: (data: any) => {
       if (data?.mode === "checkout" && data?.url) {

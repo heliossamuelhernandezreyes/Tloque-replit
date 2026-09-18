@@ -7,16 +7,23 @@ import { rateLimit } from "./rateLimit"
 import {
   authorEarnings,
   authorPayouts,
+  bookTokens,
+  walletLedger,
+  paymentWebhookEvents,
   paymentIncidents,
   tokenOrders,
   walletOrders,
 } from "@shared/schema"
+import { paymentExposure, withheldTinta } from "@shared/payment-reconciliation"
+import { syncOwnerUnlock } from "./licenseLifecycle"
 
 const INCIDENT_EVENTS = new Set([
   "charge.refunded",
   "charge.dispute.created",
   "charge.dispute.updated",
   "charge.dispute.closed",
+  "charge.dispute.funds_withdrawn",
+  "charge.dispute.funds_reinstated",
 ])
 
 const RESTORED_DISPUTE_STATES = new Set(["won", "prevented", "warning_closed"])
@@ -48,7 +55,8 @@ export function paymentIncidentFromStripeEvent(event: any): PaymentIncidentInput
   const paymentRef = stripeRef(object.payment_intent, "pi")
   if (!eventId || !objectId || !paymentRef) return null
   const rawAmount = dispute ? object.amount : object.amount_refunded
-  const amountCents = Number.isSafeInteger(Number(rawAmount)) ? Math.max(0, Number(rawAmount)) : 0
+  if (!Number.isSafeInteger(rawAmount) || rawAmount < 0 || !/^[a-z]{3}$/.test(String(object.currency))) return null
+  const amountCents = rawAmount
   const providerStatus = String(dispute ? object.status : (object.refunded ? "refunded" : "partially_refunded")).slice(0, 80)
   return {
     eventId,
@@ -64,140 +72,135 @@ export function paymentIncidentFromStripeEvent(event: any): PaymentIncidentInput
   }
 }
 
-async function restoreUnencumberedPayment(executor: any, paymentRef: string) {
-  const [otherOpen] = await executor.select({ id: paymentIncidents.id }).from(paymentIncidents).where(and(
-    eq(paymentIncidents.paymentRef, paymentRef),
-    eq(paymentIncidents.resolution, "open"),
-  )).limit(1)
-  if (otherOpen) return
+// Lock order shared by checkout, webhook, reconciliation and manual resolution:
+// payment -> wallet owner -> licence/copy. No network request can publish a
+// temporarily spendable credit before previously received incidents are applied.
+export async function lockPayment(executor: any, paymentRef: string) {
+  await executor.execute(sql`select pg_advisory_xact_lock(73003, hashtext(${paymentRef}))`)
+}
+
+export async function reconcilePayment(executor: any, paymentRef: string): Promise<void> {
+  await lockPayment(executor, paymentRef)
+  const incidents = await executor.select().from(paymentIncidents)
+    .where(eq(paymentIncidents.paymentRef, paymentRef))
+  if (!incidents.length) return
   const [tokenOrder] = await executor.select().from(tokenOrders).where(eq(tokenOrders.paymentRef, paymentRef))
-  if (tokenOrder) {
-    await executor.update(tokenOrders).set({ status: "paid" }).where(eq(tokenOrders.id, tokenOrder.id))
-    await executor.update(authorEarnings).set({ status: "accrued", payoutEligible: true }).where(and(
-      eq(authorEarnings.orderId, tokenOrder.id),
-      eq(authorEarnings.status, "reversed"),
-    ))
+  const [walletOrder] = await executor.select().from(walletOrders).where(eq(walletOrders.paymentRef, paymentRef))
+  await executor.update(paymentIncidents).set({
+    tokenOrderId: tokenOrder?.id || null, walletOrderId: walletOrder?.id || null, updatedAt: new Date(),
+  }).where(eq(paymentIncidents.paymentRef, paymentRef))
+
+  if (walletOrder?.paidAt) {
+    await executor.execute(sql`select pg_advisory_xact_lock(${walletOrder.userId})`)
+    const exposure = paymentExposure(incidents, walletOrder.amountCents, "mxn")
+    const units = withheldTinta(walletOrder.amount, walletOrder.amountCents, exposure.withheldCents)
+    const previous = await executor.execute(sql`
+      select coalesce(sum(delta), 0)::bigint as units, coalesce(sum(cash_backing_cents), 0)::bigint as cents
+      from wallet_ledger where ref_type = 'wallet_order_adjustment' and ref_id = ${walletOrder.id}
+    `)
+    const delta = -units - Number(previous.rows[0].units)
+    const cashBackingCents = -exposure.withheldCents - Number(previous.rows[0].cents)
+    if (delta || cashBackingCents) {
+      await executor.insert(walletLedger).values({
+        userId: walletOrder.userId, currency: "tinta", delta, cashBackingCents,
+        reason: "payment_adjustment", refType: "wallet_order_adjustment", refId: walletOrder.id,
+      })
+    }
+    await executor.update(walletOrders).set({ status: exposure.status }).where(eq(walletOrders.id, walletOrder.id))
   }
-  await executor.update(walletOrders).set({ status: "paid" }).where(eq(walletOrders.paymentRef, paymentRef))
+  if (tokenOrder?.tokenId && tokenOrder.paidAt) {
+    await executor.execute(sql`select pg_advisory_xact_lock(${tokenOrder.userId})`)
+    const exposure = paymentExposure(incidents, tokenOrder.amountCents, tokenOrder.currency)
+    await executor.update(tokenOrders).set({ status: exposure.status }).where(eq(tokenOrders.id, tokenOrder.id))
+    await executor.update(bookTokens).set({ licenseStatus: exposure.licenseStatus }).where(eq(bookTokens.id, tokenOrder.tokenId))
+    await syncOwnerUnlock(executor, tokenOrder.userId, tokenOrder.bookId)
+    const [earning] = await executor.select().from(authorEarnings).where(eq(authorEarnings.orderId, tokenOrder.id))
+    if (earning && exposure.licenseStatus !== "active") {
+      await executor.update(authorEarnings).set({
+        status: earning.status === "accrued" ? "reversed" : earning.status, payoutEligible: false,
+      }).where(eq(authorEarnings.id, earning.id))
+      if (earning.payoutId) {
+        await executor.update(authorPayouts).set({
+          status: "attention", failureCode: `payment:${paymentRef}`.slice(0, 200), updatedAt: new Date(),
+        }).where(eq(authorPayouts.id, earning.payoutId))
+      }
+    } else if (earning?.status === "reversed" && !earning.payoutId) {
+      await executor.update(authorEarnings).set({ status: "accrued", payoutEligible: tokenOrder.cashBackingCents > 0 })
+        .where(eq(authorEarnings.id, earning.id))
+    }
+  }
+}
+
+// Disputes can be reopened and event.created has only second precision. Read
+// the provider's current object under the payment lock instead of guessing an
+// ordering from event timestamps or treating a terminal snapshot as permanent.
+async function currentDispute(input: PaymentIncidentInput, event: any): Promise<PaymentIncidentInput> {
+  const response = await fetch(`https://api.stripe.com/v1/disputes/${input.objectId}`, {
+    headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}` },
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!response.ok) throw new Error("No se pudo verificar la disputa en Stripe; se reintentará el aviso")
+  const object = await response.json()
+  const current = paymentIncidentFromStripeEvent({ ...event, data: { object } })
+  if (!current || current.objectId !== input.objectId || current.paymentRef !== input.paymentRef) {
+    throw new Error("La disputa de Stripe no coincide con el aviso")
+  }
+  return current
 }
 
 export async function recordPaymentIncident(event: any): Promise<boolean> {
-  const input = paymentIncidentFromStripeEvent(event)
-  if (!input) return false
+  const parsed = paymentIncidentFromStripeEvent(event)
+  if (!parsed) {
+    if (INCIDENT_EVENTS.has(String(event?.type || ""))) throw new Error("Aviso de incidencia inválido")
+    return false
+  }
+  let verificationPending = false
   await db.transaction(async tx => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${input.objectId}))`)
-    const [existingIncident] = await tx.select().from(paymentIncidents)
+    await lockPayment(tx, parsed.paymentRef)
+    const [receipt] = await tx.insert(paymentWebhookEvents).values({
+      eventId: parsed.eventId, paymentRef: parsed.paymentRef,
+    }).onConflictDoNothing().returning()
+    if (!receipt) return
+    let input = parsed
+    if (parsed.kind === "dispute") {
+      try { input = await currentDispute(parsed, event) } catch {
+        // A provider outage cannot leave a disputed credit spendable. Apply a
+        // temporary hold, but do not acknowledge/deduplicate this event yet.
+        verificationPending = true
+        input = { ...parsed, fundsRestored: false, providerStatus: "verification_pending" }
+        await tx.delete(paymentWebhookEvents).where(eq(paymentWebhookEvents.eventId, parsed.eventId))
+      }
+    }
+    const [existing] = await tx.select().from(paymentIncidents)
       .where(eq(paymentIncidents.providerObjectId, input.objectId))
-    if (existingIncident && (
-      existingIncident.occurredAt > input.occurredAt
-      || (existingIncident.resolution === "funds_restored" && !input.fundsRestored)
-    )) return
-    const [tokenOrder] = await tx.select().from(tokenOrders).where(eq(tokenOrders.paymentRef, input.paymentRef))
-    const [walletOrder] = await tx.select().from(walletOrders).where(eq(walletOrders.paymentRef, input.paymentRef))
-    const resolution = input.fundsRestored ? "funds_restored" : "open"
-    await tx.insert(paymentIncidents).values({
-      providerEventId: input.eventId,
-      providerObjectId: input.objectId,
-      kind: input.kind,
-      paymentRef: input.paymentRef,
-      tokenOrderId: tokenOrder?.id || null,
-      walletOrderId: walletOrder?.id || null,
-      amountCents: input.amountCents,
-      currency: input.currency,
-      providerStatus: input.providerStatus,
-      reason: input.reason,
-      resolution,
-      resolvedAt: input.fundsRestored ? new Date() : null,
-      occurredAt: input.occurredAt,
-      updatedAt: new Date(),
-    }).onConflictDoUpdate({
-      target: paymentIncidents.providerObjectId,
-      set: {
-        providerEventId: input.eventId,
-        paymentRef: input.paymentRef,
-        tokenOrderId: tokenOrder?.id || null,
-        walletOrderId: walletOrder?.id || null,
-        amountCents: input.amountCents,
-        currency: input.currency,
-        providerStatus: input.providerStatus,
-        reason: input.reason,
-        resolution,
-        resolvedAt: input.fundsRestored ? new Date() : null,
-        updatedAt: new Date(),
-      },
-    })
-
-    if (input.fundsRestored) {
-      await restoreUnencumberedPayment(tx, input.paymentRef)
+    if (verificationPending && existing) input.amountCents = Math.max(input.amountCents, existing.amountCents)
+    if (existing && (existing.paymentRef !== input.paymentRef || existing.currency !== input.currency)) {
+      throw new Error("La incidencia cambió de pago o moneda")
+    }
+    // charge.refunded contains a cumulative total; an older delivery must not
+    // undo a later refund, even when both notifications have the same timestamp.
+    if (existing && input.kind === "refund" && input.amountCents <= existing.amountCents) {
+      await reconcilePayment(tx, input.paymentRef)
       return
     }
-    if (tokenOrder) {
-      await tx.update(tokenOrders).set({ status: input.kind === "refund" ? "refunded" : "payment_attention" })
-        .where(eq(tokenOrders.id, tokenOrder.id))
-      const [earning] = await tx.select().from(authorEarnings).where(eq(authorEarnings.orderId, tokenOrder.id))
-      if (earning?.status === "accrued") {
-        await tx.update(authorEarnings).set({ status: "reversed", payoutEligible: false })
-          .where(eq(authorEarnings.id, earning.id))
-      } else if (earning) {
-        await tx.update(authorEarnings).set({ payoutEligible: false }).where(eq(authorEarnings.id, earning.id))
-        if (earning.payoutId) {
-          await tx.update(authorPayouts).set({
-            status: "attention",
-            failureCode: `${input.kind}:${input.objectId}`.slice(0, 200),
-            updatedAt: new Date(),
-          }).where(eq(authorPayouts.id, earning.payoutId))
-        }
-      }
+    const changed = !existing || existing.amountCents !== input.amountCents || existing.providerStatus !== input.providerStatus
+    const resolution = input.fundsRestored ? "funds_restored" : !changed && existing ? existing.resolution : "open"
+    const values = {
+      providerEventId: input.eventId, providerObjectId: input.objectId, kind: input.kind,
+      paymentRef: input.paymentRef, amountCents: input.amountCents, currency: input.currency,
+      providerStatus: input.providerStatus, reason: input.reason, resolution,
+      occurredAt: input.occurredAt, updatedAt: new Date(),
+      resolvedAt: resolution === "open" ? null : existing?.resolvedAt || new Date(),
+      resolutionNote: changed ? "" : existing?.resolutionNote || "",
+      adminUserId: changed ? null : existing?.adminUserId || null,
     }
-    if (walletOrder) {
-      await tx.update(walletOrders).set({ status: input.kind === "refund" ? "refunded" : "payment_attention" })
-        .where(eq(walletOrders.id, walletOrder.id))
-    }
+    await tx.insert(paymentIncidents).values(values).onConflictDoUpdate({
+      target: paymentIncidents.providerObjectId, set: values,
+    })
+    await reconcilePayment(tx, input.paymentRef)
   })
+  if (verificationPending) throw new Error("Incidencia suspendida preventivamente; Stripe debe reintentar la verificación")
   return true
-}
-
-// Stripe no garantiza el orden de entrega entre checkout y disputas. Si una
-// incidencia llegó primero, enlazarla justo después de confirmar el checkout
-// aplica el mismo bloqueo económico sin depender de un reintento del webhook.
-export async function reconcileOpenIncidentsForPayment(paymentRef: string): Promise<void> {
-  if (!/^pi_[A-Za-z0-9]+$/.test(paymentRef)) return
-  await db.transaction(async tx => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${paymentRef}))`)
-    const incidents = await tx.select().from(paymentIncidents).where(and(
-      eq(paymentIncidents.paymentRef, paymentRef),
-      eq(paymentIncidents.resolution, "open"),
-    ))
-    if (!incidents.length) return
-    const [tokenOrder] = await tx.select().from(tokenOrders).where(eq(tokenOrders.paymentRef, paymentRef))
-    const [walletOrder] = await tx.select().from(walletOrders).where(eq(walletOrders.paymentRef, paymentRef))
-    await tx.update(paymentIncidents).set({
-      tokenOrderId: tokenOrder?.id || null,
-      walletOrderId: walletOrder?.id || null,
-      updatedAt: new Date(),
-    }).where(and(eq(paymentIncidents.paymentRef, paymentRef), eq(paymentIncidents.resolution, "open")))
-    const incident = incidents.find(row => row.kind === "refund") || incidents[0]
-    if (tokenOrder) {
-      await tx.update(tokenOrders).set({ status: incident.kind === "refund" ? "refunded" : "payment_attention" })
-        .where(eq(tokenOrders.id, tokenOrder.id))
-      const [earning] = await tx.select().from(authorEarnings).where(eq(authorEarnings.orderId, tokenOrder.id))
-      if (earning?.status === "accrued") {
-        await tx.update(authorEarnings).set({ status: "reversed", payoutEligible: false })
-          .where(eq(authorEarnings.id, earning.id))
-      } else if (earning?.payoutId) {
-        await tx.update(authorEarnings).set({ payoutEligible: false }).where(eq(authorEarnings.id, earning.id))
-        await tx.update(authorPayouts).set({
-          status: "attention",
-          failureCode: `${incident.kind}:${incident.providerObjectId}`.slice(0, 200),
-          updatedAt: new Date(),
-        }).where(eq(authorPayouts.id, earning.payoutId))
-      }
-    }
-    if (walletOrder) {
-      await tx.update(walletOrders).set({ status: incident.kind === "refund" ? "refunded" : "payment_attention" })
-        .where(eq(walletOrders.id, walletOrder.id))
-    }
-  })
 }
 
 export async function hasOpenPaymentIncidents(executor: any = db): Promise<boolean> {
@@ -225,7 +228,9 @@ export function registerPaymentIncidentRoutes(app: Express) {
       if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: "Incidencia inválida" })
       const input = resolutionSchema.parse(req.body)
       const resolved = await db.transaction(async tx => {
-        await tx.execute(sql`select pg_advisory_xact_lock(73002, ${id})`)
+        const [candidate] = await tx.select().from(paymentIncidents).where(eq(paymentIncidents.id, id))
+        if (!candidate) return null
+        await lockPayment(tx, candidate.paymentRef)
         const [incident] = await tx.select().from(paymentIncidents).where(eq(paymentIncidents.id, id))
         if (!incident || incident.resolution !== "open") return null
         await tx.update(paymentIncidents).set({
@@ -235,9 +240,7 @@ export function registerPaymentIncidentRoutes(app: Express) {
           resolvedAt: new Date(),
           updatedAt: new Date(),
         }).where(and(eq(paymentIncidents.id, id), eq(paymentIncidents.resolution, "open")))
-        if (input.outcome === "funds_restored") {
-          await restoreUnencumberedPayment(tx, incident.paymentRef)
-        }
+        await reconcilePayment(tx, incident.paymentRef)
         return incident
       })
       if (!resolved) return res.status(409).json({ message: "La incidencia ya fue resuelta o no existe" })

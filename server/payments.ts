@@ -108,6 +108,7 @@ export async function createCheckoutSession(opts: {
   metaKey?:     "orderId" | "walletOrderId"   // qué orden confirma el webhook
   successPath?: string                        // retorno propio (monedero)
   cancelPath?:  string
+  expiresAt?: number
 }): Promise<{ id: string; url: string }> {
   const metaKey = opts.metaKey || "orderId"
   const successUrl = opts.successPath
@@ -120,7 +121,7 @@ export async function createCheckoutSession(opts: {
     mode: "payment",
     // Las órdenes pendientes pueden reintentarse después de que Stripe cierre
     // la sesión. El mínimo admitido por Checkout es 30 minutos.
-    expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+    expires_at: opts.expiresAt ?? Math.floor(Date.now() / 1000) + 30 * 60,
     client_reference_id: String(opts.orderId),
     [`metadata[${metaKey}]`]: String(opts.orderId),
     payment_intent_data: { metadata: { [metaKey]: String(opts.orderId) } },

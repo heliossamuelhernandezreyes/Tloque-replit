@@ -12,7 +12,7 @@ interface Copy {
   claimedByOwner: boolean
 }
 interface TokenWithCopies {
-  id: number; kind: "support" | "sale"; copies: Copy[]
+  id: number; kind: "support" | "sale"; licenseStatus: "active" | "suspended" | "revoked"; copies: Copy[]
 }
 
 interface Props {
@@ -72,17 +72,28 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
 
   const acquire = useMutation({
     mutationFn: async ({ kind, payWith }: { kind: "support" | "sale"; payWith: "money" | "tinta" }) => {
+      const intent = `purchase:${bookId}:${kind}:${payWith}`
+      let purchaseKey = localStorage.getItem(intent)
+      if (!purchaseKey) {
+        purchaseKey = crypto.randomUUID()
+        localStorage.setItem(intent, purchaseKey)
+      }
       const res = await fetch("/api/tokens/acquire", {
         method:      "POST",
-        headers:     { "Content-Type": "application/json" },
+        headers:     { "Content-Type": "application/json", "Idempotency-Key": purchaseKey },
         credentials: "include",
         body:        JSON.stringify({ bookId, kind, payWith }),
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        // Keep the key after network/server/429 errors: the first request may
+        // already have succeeded. A completed checkout keeps it until confirmed.
+        if ([400, 402, 409].includes(res.status)) localStorage.removeItem(intent)
         throw new Error(e.message || "Error")
       }
-      return res.json()
+      const result = await res.json()
+      if (result.mode !== "checkout") localStorage.removeItem(intent)
+      return result
     },
     onSuccess: (data: any) => {
       // Con pagos activos: llevar al checkout seguro de Stripe
@@ -98,6 +109,19 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
         .then(r => r.ok ? r.json() : null)
         .then(d => d && localStorage.setItem("novareads_unlocked", JSON.stringify((d.bookIds || []).map(String))))
         .catch(() => {})
+    },
+  })
+
+  const preparePrint = useMutation({
+    mutationFn: async (copyId: number) => {
+      const response = await fetch(`/api/tokens/mine?bookId=${bookId}`, { credentials: "include", cache: "no-store" })
+      if (!response.ok) throw new Error("No se pudo verificar el permiso de impresión. Reintenta cuando tengas conexión.")
+      const fresh: { tokens: TokenWithCopies[] } = await response.json()
+      queryClient.setQueryData(["/api/tokens/mine", bookId], fresh)
+      const token = fresh.tokens.find(item => item.copies.some(copy => copy.id === copyId))
+      const copy = token?.copies.find(item => item.id === copyId)
+      if (token?.licenseStatus !== "active" || !copy?.claimKey) throw new Error("El permiso de impresión está suspendido o reembolsado.")
+      onPrintCopy({ folio: copy.folio, key: copy.claimKey })
     },
   })
 
@@ -131,9 +155,9 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
   }
 
   const tokens     = data?.tokens || []
-  const hasSupport = tokens.some(tk => tk.kind === "support")
-  const allCopies: { copy: Copy; kind: string }[] = []
-  for (const tk of tokens) for (const c of tk.copies) allCopies.push({ copy: c, kind: tk.kind })
+  const hasSupport = tokens.some(tk => tk.kind === "support" && tk.licenseStatus !== "revoked")
+  const allCopies: { copy: Copy; kind: string; licenseStatus: TokenWithCopies["licenseStatus"] }[] = []
+  for (const tk of tokens) for (const c of tk.copies) allCopies.push({ copy: c, kind: tk.kind, licenseStatus: tk.licenseStatus })
 
   return (
     <div className="rounded-2xl p-4 space-y-3"
@@ -226,7 +250,8 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
               {t("tokenKeyShow")}
             </button>
           </div>
-          {allCopies.map(({ copy, kind }) => {
+          {preparePrint.isError && <p role="alert" className="px-1 text-xs text-amber-200">{preparePrint.error.message}</p>}
+          {allCopies.map(({ copy, kind, licenseStatus }) => {
             const isMineClaim = copy.claimedByOwner
             const isFree      = !copy.digitalClaimed
             return (
@@ -246,13 +271,13 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
                       {kind === "sale" && <span className="ml-1.5 text-[8px] font-sans" style={{ color: accentColor + "aa" }}>venta</span>}
                     </p>
                     <p className="text-[9px] font-sans" style={{ color: "rgba(255,255,255,0.4)" }}>
-                      {isMineClaim ? t("tokenYourCopy") : isFree ? t("tokenFreeCopy") : t("tokenClaimedCopy")}
+                      {licenseStatus === "revoked" ? "Permiso reembolsado" : licenseStatus === "suspended" ? "Permiso suspendido: pago en revisión" : isMineClaim ? t("tokenYourCopy") : isFree ? t("tokenFreeCopy") : t("tokenClaimedCopy")}
                       {showKeys && <span className="font-mono ml-2" style={{ color: "rgba(201,168,87,0.8)" }}>{copy.claimKey}</span>}
                     </p>
                   </div>
                   <button
-                    disabled={isDownloading}
-                    onClick={() => onPrintCopy({ folio: copy.folio, key: copy.claimKey })}
+                    disabled={isDownloading || preparePrint.isPending || licenseStatus !== "active" || !copy.claimKey}
+                    onClick={() => preparePrint.mutate(copy.id)}
                     aria-label={t("tokenPdfBtn") + " " + copy.folio}
                     className="flex items-center gap-1 text-[10px] font-sans px-2.5 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-40"
                     style={{ background: `${accentGlow}15`, color: accentColor, border: `1px solid ${accentColor}30` }}
