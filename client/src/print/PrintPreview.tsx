@@ -18,6 +18,9 @@ function Operation({ op }: { op: CoverOp }) {
   const color = "rgb(" + [op.gray, op.gray, op.gray].join(",") + ")"
   if (op.kind === "rect") return <rect x={op.x} y={op.y} width={op.width} height={op.height} fill={color} />
   if (op.kind === "line") return <line x1={op.x} y1={op.y} x2={op.x2} y2={op.y2} stroke={color} strokeWidth={op.weight} />
+  if (op.ink) return <g aria-label={op.text}><title>{op.text}</title>{op.ink.map((item, i) => item.kind === "image"
+    ? <image key={i} href={item.data} x={item.x} y={item.y} width={item.width} height={item.height} />
+    : <path key={i} d={item.path.svg} fill={color} transform={`translate(${item.x} ${item.y}) scale(${item.scale} ${-item.scale})`} />)}</g>
   return <text x={op.x} y={op.y} fill={color} fontSize={op.pt * PT_MM} fontFamily="TloquePrintSerif" fontWeight={op.font === "bold" ? 700 : 400} fontStyle={op.font === "italic" ? "italic" : "normal"}>
     {op.words ? op.words.map((word, i) => <tspan key={i} x={word.x}>{word.text}</tspan>) : op.text}
   </text>

@@ -104,6 +104,17 @@ artwork = inspect("cover-artwork", 310.75, 216.35, "/Simplex", require_text=Fals
 assert len(artwork.pages) == 1 and len(artwork.pages[0].images) == 2
 assert all(image.image.size == (600, 900) for image in artwork.pages[0].images)
 assert not artwork.pages[0].extract_text(), "Do not duplicate lettering already in original artwork"
+unicode_interior = inspect("unicode-interior", 148, 210, "/DuplexFlipLongEdge")
+unicode_cover = inspect("unicode-cover", 307.35, 216.35, "/Simplex", require_text=False)
+unicode_booklet = inspect("unicode-booklet", 279.4, 215.9, "/DuplexFlipShortEdge")
+unicode_kit = inspect("unicode-cover-kit", 215.9, 279.4, "/Simplex")
+unicode_page = unicode_interior.pages[2]
+unicode_ops = ContentStream(unicode_page.get_contents(), unicode_interior).operations
+assert sum(operator == b"Do" for _, operator in unicode_ops) == 3, "One illustration and two inline drawings"
+assert sum(operator == b"f" for _, operator in unicode_ops) > 50, "Extended text must contain actual vector outlines"
+assert all(image.image.size == (1500, 750) for image in unicode_page.images)
+assert len(unicode_kit.pages) == 2
+assert "[[sello]]" not in "".join(p.extract_text() for p in unicode_interior.pages)
 job = (ROOT / "booklet-job.txt").read_text()
 assert "Cuadernillo | Hoja | Cara | Izquierda | Derecha" in job
 assert "fixture-key" not in job
@@ -160,4 +171,8 @@ contact("proofs-interior", proofs[:4])
 contact("proofs-cover", proofs[4:], cell=(700, 930))
 contact("studio-screens", [ROOT / "studio-desktop.png", ROOT / "cover-desktop.png"], columns=1, cell=(1400, 1010))
 contact("studio-mobile-screens", [ROOT / "studio-mobile.png", ROOT / "preview-mobile.png"], cell=(420, 910))
+unicode_proofs = [render("unicode-interior", 3, "proof-unicode"), render("unicode-booklet", 2, "proof-unicode-booklet"),
+                  render("unicode-cover", 1, "proof-unicode-cover"), render("unicode-cover-kit", 1, "proof-unicode-kit")]
+contact("proofs-unicode", unicode_proofs, cell=(800, 1100))
+contact("studio-unicode-screens", [ROOT / "studio-unicode.png"], columns=1, cell=(1440, 1050))
 print("PDF inspection passed: complete text, Unicode, page geometry, fonts, imposition, separate cover and cut-out kit.")

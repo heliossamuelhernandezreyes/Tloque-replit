@@ -4,7 +4,6 @@ import { drawPage, pdfDocument, setPageBoxes, type PrintFonts } from "./pdfRunti
 
 function drawCoverOp(doc: jsPDF, op: CoverOp, dx = 0, dy = 0) {
   if (op.kind === "rect") { doc.setFillColor(String(op.gray / 255)); doc.rect(op.x + dx, op.y + dy, op.width, op.height, "F") }
-  else if (op.kind === "image") doc.addImage(op.data, "JPEG", op.x + dx, op.y + dy, op.width, op.height)
   else drawPage(doc, { kind: "title", ops: [op] }, dx, dy)
 }
 export function renderCover(cover: CoverLayout, fonts: PrintFonts, title: string): ArrayBuffer {

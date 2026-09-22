@@ -1,5 +1,11 @@
 import type { PrintIssue } from "./model"
 const es = {
+  resources: "Caracteres e ilustraciones", resourcesHint: "Amplía los alfabetos del libro y añade dibujos a la edición impresa.",
+  extraFonts: "Fuentes adicionales", uploadFont: "Añadir fuente", fontUploadHint: "TTF, OTF, WOFF o WOFF2, hasta 24 MB. Se usan cuando las fuentes incluidas no contienen un carácter. Puedes aportar una fuente con tu propio alfabeto.",
+  drawnSymbols: "Símbolos dibujados", symbolToken: "Carácter o marcador", uploadSymbol: "Añadir dibujo del símbolo", symbolHint: "Asigna un dibujo a un carácter, emoji o marcador como [[sello]] que aparezca en el manuscrito. Se repetirá dentro del texto, incluso en títulos. PNG, JPG o WebP; hasta 12 MB.",
+  illustrations: "Ilustraciones interiores", illustration: "Ilustración", illustrationChapter: "Capítulo de la ilustración", afterParagraph: "Después del párrafo", paragraphHint: "0 coloca la imagen antes del texto. Párrafos de este capítulo:", imageWidth: "Ancho de la ilustración", caption: "Pie de ilustración (opcional)", uploadIllustration: "Añadir ilustración", remove: "Quitar", loadingResource: "Cargando recurso…",
+  keepResources: "Los recursos permanecen mientras el taller esté abierto. Guárdalos para recuperarlos con este libro y la misma opción de saltos del manuscrito.", saveResources: "Guardar recursos", loadResources: "Cargar recursos guardados", resourceMismatch: "Este archivo corresponde a otro libro o a otra opción de saltos del manuscrito.",
+  resourceError: "No se pudo añadir el recurso. Revisa el formato, tamaño o marcador. Límites: 8 fuentes, 64 símbolos, 100 ilustraciones y 64 MB en conjunto; sin marcadores duplicados.", customFontError: "No se pudo leer la fuente. Quita el archivo y prueba otra fuente con contornos TTF u OTF.",
   backArtwork: "Usar la contraportada ilustrada", backArtworkHint: "Conserva su diseño original. Desactívala para componer una contraportada con texto. Revisa la zona del folio en la maqueta.",
   adjustments: "Ajustes", previewTab: "Maqueta", zoom: "Ampliar maqueta",
   cut: "Continua: recortar", fold: "Discontinua: doblar", glue: "Pegar", kit: "Descargar cubierta recortable PDF",
@@ -13,7 +19,7 @@ const es = {
   letter: "Carta · 215.9 × 279.4 mm", a4: "A4 · 210 × 297 mm", signature: "Páginas por cuadernillo",
   signatureHint: "Cada cuadernillo se dobla por separado y se reúne en orden. Prueba primero uno con tu papel.",
   style: "Dirección editorial", classic: "Literaria", classicHint: "Sangrías y composición clásica.", contemporary: "Contemporánea", contemporaryHint: "Párrafos abiertos y ritmo ligero.", large: "Lectura amplia", largeHint: "Letra de 15 pt y más interlineado.",
-  type: "Tipografía", typeHint: "Source Serif 4 · incluida en el PDF", size: "Cuerpo · pt", leading: "Interlineado", margins: "Márgenes · mm", inner: "Interior", outer: "Exterior", top: "Superior", bottom: "Inferior",
+  type: "Tipografía", typeHint: "Source Serif 4 · DejaVu Sans para caracteres adicionales", size: "Cuerpo · pt", leading: "Interlineado", margins: "Márgenes · mm", inner: "Interior", outer: "Exterior", top: "Superior", bottom: "Inferior",
   structure: "Estructura", recto: "Capítulos en página derecha", toc: "Índice con páginas", headers: "Encabezados de lectura", justify: "Justificado moderado",
   textMode: "Saltos del manuscrito", paragraphs: "Un párrafo por salto de línea", reflow: "Prosa: unir líneas entre renglones vacíos", verse: "Verso: conservar líneas y estrofas",
   textHint: "Elige cómo interpretar los saltos existentes. La opción de prosa ayuda con textos de Gutenberg cortados en renglones.",
@@ -36,6 +42,12 @@ const es = {
 }
 type Key = keyof typeof es
 const en: Record<Key, string> = {
+  resources: "Characters and illustrations", resourcesHint: "Extend the book's alphabets and add drawings to the print edition.",
+  extraFonts: "Additional fonts", uploadFont: "Add font", fontUploadHint: "TTF, OTF, WOFF or WOFF2, up to 24 MB. Used when included fonts lack a character. You can supply a font containing your own alphabet.",
+  drawnSymbols: "Drawn symbols", symbolToken: "Character or marker", uploadSymbol: "Add symbol drawing", symbolHint: "Assign a drawing to a character, emoji or marker such as [[seal]] in the manuscript. It repeats within text, including titles. PNG, JPG or WebP; up to 12 MB.",
+  illustrations: "Interior illustrations", illustration: "Illustration", illustrationChapter: "Illustration chapter", afterParagraph: "After paragraph", paragraphHint: "0 places the image before the text. Paragraphs in this chapter:", imageWidth: "Illustration width", caption: "Caption (optional)", uploadIllustration: "Add illustration", remove: "Remove", loadingResource: "Loading resource…",
+  keepResources: "Resources remain while the studio is open. Save them to reuse with this book and the same manuscript line-break setting.", saveResources: "Save resources", loadResources: "Load saved resources", resourceMismatch: "This file belongs to another book or another manuscript line-break setting.",
+  resourceError: "Could not add this resource. Check its format, size or marker. Limits: 8 fonts, 64 symbols, 100 illustrations and 64 MB combined; no duplicate markers.", customFontError: "Could not read this font. Remove the file and try another font with TTF or OTF outlines.",
   backArtwork: "Use back cover artwork", backArtworkHint: "Keep its original design. Turn it off to typeset a text back cover. Check the folio area in the preview.",
   adjustments: "Settings", previewTab: "Preview", zoom: "Enlarge preview",
   cut: "Solid: cut", fold: "Dashed: fold", glue: "Glue", kit: "Download cut-out cover PDF",
@@ -47,7 +59,7 @@ const en: Record<Key, string> = {
   trim: "Book size", paper: "Printer paper", a5: "A5 · 148 × 210 mm", trade: "Trade · 152.4 × 228.6 mm", digest: "Digest · 139.7 × 215.9 mm", letter: "Letter · 215.9 × 279.4 mm", a4: "A4 · 210 × 297 mm",
   signature: "Pages per signature", signatureHint: "Fold each signature separately and gather in order. Test one with your paper first.",
   style: "Editorial style", classic: "Literary", classicHint: "Indents and classic composition.", contemporary: "Contemporary", contemporaryHint: "Open paragraphs and generous spacing.", large: "Large print", largeHint: "15 pt type with extra leading.",
-  type: "Typography", typeHint: "Source Serif 4 · embedded in the PDF", size: "Type size · pt", leading: "Line spacing", margins: "Margins · mm", inner: "Inside", outer: "Outside", top: "Top", bottom: "Bottom",
+  type: "Typography", typeHint: "Source Serif 4 · DejaVu Sans for additional characters", size: "Type size · pt", leading: "Line spacing", margins: "Margins · mm", inner: "Inside", outer: "Outside", top: "Top", bottom: "Bottom",
   structure: "Structure", recto: "Start chapters on right pages", toc: "Contents with page numbers", headers: "Running headers", justify: "Moderate justification",
   textMode: "Manuscript line breaks", paragraphs: "One paragraph per line break", reflow: "Prose: join lines between blank lines", verse: "Verse: preserve lines and stanzas", textHint: "Choose how to interpret existing breaks. Prose mode helps with Gutenberg texts wrapped into short lines.",
   preview: "Paginated layout", interior: "Interior", cover: "Cover", guides: "Show guides", previousPage: "Previous page", nextPage: "Next page", page: "Page", of: "of", chapter: "Go to chapter", titlePage: "Title page", blanks: "Blank pages",
@@ -66,11 +78,14 @@ export const printText = (language: string) => (key: Key) => (language.startsWit
 export function issueText(language: string, issue: PrintIssue): string {
   const spanish = language.startsWith("es")
   const messages: Record<PrintIssue["code"], [string, string]> = {
+    artworkResolution: ["Un dibujo interior queda por debajo de 300 ppp. Usa una imagen mayor o reduce su tamaño de impresión. Resolución:", "An interior drawing is below 300 ppi. Use a larger image or reduce its print size. Resolution:"],
+    artworkPosition: ["Una ilustración apunta a un capítulo o párrafo que ya no existe. Quita la ilustración y vuelve a colocarla.", "An illustration references a chapter or paragraph that no longer exists. Remove and place it again."],
+    outlinedText: ["Los caracteres adicionales se conservan como trazos y dibujos. Esos renglones no serán texto seleccionable en el PDF.", "Additional characters are preserved as outlines and drawings. Those lines will not be selectable text in the PDF."],
     layoutOverflow: ["Un título, crédito o entrada del índice rebasa el espacio de la página. Revisa el texto o el formato antes de imprimir.", "A title, credit or contents entry exceeds its page area. Review the text or format before printing."],
     missingText: ["Falta el texto completo del libro.", "The complete book text is missing."],
     tooLong: ["Esta edición supera 6 millones de caracteres o 1800 páginas. Divídela en volúmenes.", "This edition exceeds 6 million characters or 1800 pages. Split it into volumes."],
-    missingGlyph: ["La fuente no cubre todos los caracteres. No se exportará texto incompleto.", "The font does not cover every character. Incomplete text will not be exported."],
-    unsupportedScript: ["Esta escritura necesita un motor de composición adicional. El taller actual admite texto latino, griego y cirílico.", "This script needs an additional shaping engine. This studio currently supports Latin, Greek and Cyrillic text."],
+    missingGlyph: ["Falta la forma de un carácter. En Diseño → Caracteres e ilustraciones, añade una fuente que lo contenga o asígnale un dibujo.", "A character shape is missing. In Design → Characters and illustrations, add a font containing it or assign a drawing."],
+    unsupportedScript: ["Añade una fuente que contenga esta escritura o asigna dibujos a los símbolos.", "Add a font containing this script or assign drawings to its symbols."],
     gutter: ["Aumenta el margen interior para este número de páginas. Referencia mínima en mm:", "Increase the inside margin for this page count. Reference minimum in mm:"],
     coverMissing: ["No se pudo cargar la imagen; la cubierta usa el diseño tipográfico.", "The image could not be loaded; the cover uses the typographic design."],
     coverResolution: ["La ilustración queda por debajo de 300 ppp al tamaño de impresión. Resolución actual:", "Artwork is below 300 ppi at print size. Current resolution:"],

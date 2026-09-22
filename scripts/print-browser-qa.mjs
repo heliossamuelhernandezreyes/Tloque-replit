@@ -17,6 +17,8 @@ const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"],
   ...(process.env.TLOQUE_QA_CHROME ? { executablePath: process.env.TLOQUE_QA_CHROME } : {}) })
 const errors = [], writes = [], expected = {}
 let artBook
+const unicodeBook = { id: 87, title: "El alfabeto \ue001", author: "Lucía \u{f0001}", originalLanguage: "es", genre: "fantasia", isClassic: true, status: "published", coverUrl: "", revision: 1,
+  chapters: [{ title: "Lenguas y dibujos", content: "El alfabeto inventado: \ue001 \u{f0001}.\nمرحبا بالعالم 123 (تجربة)\nשלום עולם (123)\nSímbolos: ∑ ∞ ♫ ✦ 😀.\nMi sello: [[sello]] [[sello]].\nÚLTIMA LÍNEA: a\u0323\u0301." }] }
 const sentence = "Lucía cruzó el río y encontró la biblioteca abierta. ¿Quién recordaba todavía el nombre de aquella ciudad? La lámpara iluminaba sus páginas, y cada palabra traía consigo una memoria distinta."
 const book = { id: 85, title: "La memoria del río", author: "Lucía Márquez", originalLanguage: "es",
   genre: "fantasia", isClassic: true, status: "published", coverUrl: "", revision: 1,
@@ -58,6 +60,7 @@ async function setup(mobile = false) {
     if (url.pathname === "/api/auth/me") data = { id: 99, email: "fixture@example.test", name: "Print QA", avatar: "", isAdmin: true, capabilities: { manageCatalog: true, manageFrames: true, manageAudioCatalog: true, manageFinance: true, manageAdmins: true, runDiagnostics: true }, persona: "admin" }
     else if (url.pathname === "/api/books/85") data = book
     else if (url.pathname === "/api/books/86") data = artBook
+    else if (url.pathname === "/api/books/87") data = unicodeBook
     else if (url.pathname === "/api/books") data = []
     else if (url.pathname === "/api/frames") data = { frames: [] }
     else if (url.pathname.includes("notifications")) data = { notifications: [], unread: 0 }
@@ -166,6 +169,63 @@ try {
   await page.getByLabel("Usar la contraportada ilustrada", { exact: true }).uncheck(); await ready(page)
   assert.equal(await page.getByTestId("print-preview").locator("image").count(), 1)
   assert.equal(await page.getByLabel("Texto de contraportada", { exact: true }).isEnabled(), true)
+  await page.getByRole("button", { name: "Cerrar taller", exact: true }).click()
+
+  console.log("Print QA: custom alphabet, Arabic/Hebrew shaping, emoji, drawn symbols, illustrations and resource round-trip")
+  await page.evaluate(() => localStorage.removeItem("tloque_print_edition_v1"))
+  await page.goto("http://127.0.0.1:4184/book/87")
+  await page.getByRole("button", { name: "Crear edición física", exact: true }).click()
+  await page.locator(".print-preview-pane[aria-busy=false]").waitFor()
+  assert.match(await page.locator(".print-error").innerText(), /U\+E001/)
+  await step(page, "02 Diseño")
+  await page.getByText("Caracteres e ilustraciones", { exact: true }).click()
+  await page.getByLabel("Añadir fuente", { exact: true }).setInputFiles("tests/fixtures/print-glyphs.ttf")
+  await ready(page)
+  const drawing = await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 1500; canvas.height = 750
+    const ctx = canvas.getContext("2d")
+    ctx.fillStyle = "#256f82"; ctx.fillRect(40, 40, 1420, 670)
+    ctx.fillStyle = "#f7d590"; ctx.beginPath(); ctx.arc(750, 375, 240, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = "#173540"; ctx.beginPath(); ctx.moveTo(750, 185); ctx.lineTo(870, 430); ctx.lineTo(630, 430); ctx.closePath(); ctx.fill()
+    return canvas.toDataURL("image/png").split(",")[1]
+  })
+  await writeFile(output + "/drawing.png", Buffer.from(drawing, "base64"))
+  await page.getByLabel("Carácter o marcador", { exact: true }).fill("[[sello]]")
+  await page.getByLabel("Añadir dibujo del símbolo", { exact: true }).setInputFiles(output + "/drawing.png")
+  await ready(page)
+  await page.getByLabel("Pie de ilustración (opcional)", { exact: true }).fill("Ilustración interior · dibujo original")
+  await page.getByLabel("Añadir ilustración", { exact: true }).setInputFiles(output + "/drawing.png")
+  await ready(page)
+  await page.getByLabel("Ir al capítulo", { exact: true }).selectOption({ label: "Lenguas y dibujos" })
+  assert.equal(await page.getByTestId("print-preview").locator("image").count(), 3)
+  assert.ok(await page.getByTestId("print-preview").locator("path").count() > 50)
+  await screenshot(page, "studio-unicode")
+  await download(page, "Guardar recursos", "unicode-resources.json")
+  const exportedResources = JSON.parse(await readFile(output + "/unicode-resources.json", "utf8"))
+  assert.equal(exportedResources.resources.fonts.length, 1)
+  assert.equal(exportedResources.resources.symbols.length, 1)
+  assert.equal(exportedResources.resources.illustrations.length, 1)
+  assert.equal("key" in exportedResources, false)
+  const resourceStorage = await page.evaluate(() => localStorage.getItem("tloque_print_edition_v1"))
+  assert.ok(!resourceStorage.includes("base64") && !resourceStorage.includes("[[sello]]"))
+  await page.getByRole("button", { name: "Quitar [[sello]]", exact: true }).click(); await ready(page)
+  assert.equal(await page.getByTestId("print-preview").locator("image").count(), 1)
+  await page.getByLabel("Cargar recursos guardados", { exact: true }).setInputFiles(output + "/unicode-resources.json"); await ready(page)
+  assert.equal(await page.getByTestId("print-preview").locator("image").count(), 3)
+  await step(page, "03 Revisión")
+  await download(page, "Descargar interior PDF", "unicode-interior.pdf")
+  await page.getByText("Preparar la cubierta", { exact: true }).click()
+  await number(page, "Lomo confirmado · mm", 5)
+  await page.getByLabel("La imprenta revisará el color y su plantilla de cubierta.", { exact: true }).check()
+  await download(page, "Descargar cubierta PDF", "unicode-cover.pdf")
+  await step(page, "01 Formato")
+  await page.getByRole("button", { name: /^Cuadernillos/ }).click(); await ready(page)
+  await step(page, "03 Revisión")
+  await download(page, "Descargar cuadernillos PDF", "unicode-booklet.pdf")
+  await page.getByText("Preparar la cubierta", { exact: true }).click()
+  await number(page, "Lomo confirmado · mm", 5)
+  await page.getByLabel("Medí el lomo del bloque de páginas y revisaré una prueba.", { exact: true }).check()
+  await download(page, "Descargar cubierta recortable PDF", "unicode-cover-kit.pdf")
   await context.close()
 
   console.log("Print QA: mobile controls, readable preview and offline manuscript hydration")
@@ -208,7 +268,7 @@ try {
   await mobile.context.close()
   assert.deepEqual(writes, [], "Printing must not create purchases, copies or API writes")
   assert.deepEqual(errors, [], "Browser runtime errors")
-  console.log("Print browser QA passed: seven PDFs, desktop/mobile, artwork and offline text")
+  console.log("Print browser QA passed: eleven PDFs, desktop/mobile, Unicode, custom fonts, inline/interior artwork, resource round-trip and offline text")
 } catch (error) {
   console.error("Print QA failed:", error)
   console.error("Runtime errors:", errors)

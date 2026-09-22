@@ -1,9 +1,9 @@
 import { PT_MM, type EditionLayout, type FontMetrics, type PageOp, type PdfCopy, type PrintBook, type PrintIssue, type TextOp } from "./model"
 import { wrapText } from "./compose"
+import { graphemes } from "./resources"
 
 export interface PrintImage { data: string; width: number; height: number }
 export type CoverOp = PageOp | { kind: "rect"; x: number; y: number; width: number; height: number; gray: number }
-  | { kind: "image"; x: number; y: number; width: number; height: number; data: string }
 export interface CoverLayout { width: number; height: number; trimWidth: number; trimHeight: number; spine: number; bleed: number; ops: CoverOp[]; issues: PrintIssue[]; ppi: number | null }
 export function composeCover(book: PrintBook, interior: EditionLayout, metrics: FontMetrics, art: PrintImage | null, copy?: PdfCopy, origin = "https://tloque.app", backArt: PrintImage | null = null): CoverLayout {
   const { width: w, height: h, settings: s } = interior, b = s.bleedMm, spine = s.spineMm
@@ -13,13 +13,32 @@ export function composeCover(book: PrintBook, interior: EditionLayout, metrics: 
   if (spine <= 0) cover.issues.push({ code: "spineRequired", severity: "error", scope: "cover" })
   cover.issues.push({ code: "colorProfile", severity: "info", scope: "cover" })
   const writeBlock = (value: string, x: number, start: number, maxWidth: number, maxHeight: number, pt: number, minPt: number, font: TextOp["font"], gray = 245) => {
+    if ((metrics.segments || graphemes)(value.normalize("NFC")).some(c => !/^\s+$/u.test(c) && !metrics.hasGlyph(c, font))) {
+      cover.issues.push({ code: "missingGlyph", severity: "error", scope: "cover" }); return
+    }
+    const rowHeight = (text: string, size: number) => {
+      const ext = metrics.extents?.(text, size, font)
+      return Math.max(size * PT_MM * 1.35, ext ? ext.ascent + ext.descent + size * PT_MM * .15 : 0)
+    }
     let size = pt, rows = wrapText(value.normalize("NFC"), maxWidth, metrics, size, font)
-    while (rows.length * size * PT_MM * 1.35 > maxHeight && size > minPt) { size -= .5; rows = wrapText(value.normalize("NFC"), maxWidth, metrics, size, font) }
-    if (rows.length * size * PT_MM * 1.35 > maxHeight) {
+    const blockHeight = () => rows.reduce((sum, row) => sum + rowHeight(row.text, size), 0)
+    while (blockHeight() > maxHeight && size > minPt) { size -= .5; rows = wrapText(value.normalize("NFC"), maxWidth, metrics, size, font) }
+    if (blockHeight() > maxHeight) {
       cover.issues.push({ code: "coverOverflow", severity: "error", scope: "cover" }); return
     }
-    if ([...value.normalize("NFC")].some(c => !/\s/u.test(c) && !metrics.hasGlyph(c, font))) cover.issues.push({ code: "missingGlyph", severity: "error", scope: "cover" })
-    rows.forEach((row, i) => cover.ops.push({ kind: "text", text: row.text, x, y: start + i * size * PT_MM * 1.35, width: row.width, pt: size, font, role: "title", gray }))
+    const direction = metrics.direction?.(value) || "ltr"
+    let y = start
+    rows.forEach(row => {
+      const op: TextOp = { kind: "text", text: row.text, x: direction === "rtl" ? x + maxWidth - row.width : x, y, width: row.width, pt: size, font, role: "title", gray, direction }
+      metrics.prepare?.(op); cover.ops.push(op)
+      for (const ink of op.ink || []) if (ink.kind === "image" && ink.sourceWidth) {
+        const ppi = Math.floor(ink.sourceWidth / ink.width * 25.4)
+        cover.ppi = cover.ppi === null ? ppi : Math.min(cover.ppi, ppi)
+      }
+      const ext = metrics.extents?.(row.text, size, font)
+      if (ext && (y - ext.ascent < b || y + ext.descent > height - b)) cover.issues.push({ code: "coverOverflow", severity: "error", scope: "cover" })
+      y += rowHeight(row.text, size)
+    })
   }
   const safe = 15
   const addArtwork = (image: PrintImage, x: number) => {

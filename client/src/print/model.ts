@@ -55,17 +55,23 @@ export function pageSize(s: EditionSettings): { width: number; height: number } 
   return s.trim === "trade" ? { width: 152.4, height: 228.6 } : s.trim === "digest" ? { width: 139.7, height: 215.9 } : { width: 148, height: 210 }
 }
 export interface PrintIssue {
-  code: "missingText" | "tooLong" | "missingGlyph" | "unsupportedScript" | "gutter" | "coverMissing" | "coverResolution" | "spineRequired" | "colorProfile" | "longWord" | "coverOverflow" | "layoutOverflow"
+  code: "missingText" | "tooLong" | "missingGlyph" | "unsupportedScript" | "gutter" | "coverMissing" | "coverResolution" | "spineRequired" | "colorProfile" | "longWord" | "coverOverflow" | "layoutOverflow" | "artworkResolution" | "artworkPosition" | "outlinedText"
   severity: "error" | "warning" | "info"; scope: "interior" | "cover"; detail?: string; page?: number
 }
 export interface TextOp {
   kind: "text"; text: string; x: number; y: number; width: number; pt: number; font: FontStyle
   gray: number; role: "body" | "heading" | "title" | "legal" | "toc" | "header" | "footer"
   words?: { text: string; x: number }[]; paragraph?: number; line?: number; lines?: number
+  direction?: "ltr" | "rtl"; ink?: TextInk[]
 }
+// Font outlines use font coordinates (Y up); positions and scale use millimetres.
+export interface GlyphPath { svg: string; commands: { op: "m" | "l" | "c" | "h"; c: number[] }[] }
+export type TextInk = { kind: "path"; path: GlyphPath; x: number; y: number; scale: number }
+  | { kind: "image"; data: string; x: number; y: number; width: number; height: number; sourceWidth?: number }
+export interface ImageOp { kind: "image"; data: string; x: number; y: number; width: number; height: number; alt?: string }
 export interface LineOp { kind: "line"; x: number; y: number; x2: number; y2: number; gray: number; weight: number }
 export interface QrOp { kind: "qr"; x: number; y: number; size: number; value: string }
-export type PageOp = TextOp | LineOp | QrOp
+export type PageOp = TextOp | LineOp | QrOp | ImageOp
 export interface PrintPage { kind: "title" | "legal" | "contents" | "chapter" | "body" | "blank"; ops: PageOp[]; chapter?: number }
 export interface ChapterPosition { title: string; page: number }
 export interface EditionLayout {
@@ -73,8 +79,13 @@ export interface EditionLayout {
   settings: EditionSettings; issues: PrintIssue[]; wordCount: number
 }
 export interface FontMetrics {
-  width(text: string, pt: number, style?: FontStyle): number
+  width(text: string, pt: number, style?: FontStyle, direction?: "ltr" | "rtl"): number
   hasGlyph(character: string, style?: FontStyle): boolean
+  segments?(text: string): string[]
+  direction?(text: string): "ltr" | "rtl"
+  canJustify?(text: string): boolean
+  prepare?(op: TextOp): void
+  extents?(text: string, pt: number, style?: FontStyle): { ascent: number; descent: number }
 }
 export interface PrintLabels { contents: string; edition: string; end: string; copy: string; key: string; claim: string; rights: string }
 export function printLabels(language = "es"): PrintLabels {
