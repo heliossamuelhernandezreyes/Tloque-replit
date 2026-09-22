@@ -160,15 +160,16 @@ export function composeEdition(book: PrintBook, input: EditionSettings, metrics:
     const illustrate = (afterParagraph: number) => {
       for (const item of resources.illustrations.filter(i => i.chapter === ci && i.afterParagraph === afterParagraph)) {
         const rows = wrapText(clean(item.caption), tw, metrics, 9)
-        const captionHeight = rows.length ? rows.length * 4.5 + 4 : 0
+        const captionGap = rows.length ? Math.max(4, (metrics.extents?.(rows[0].text, 9)?.ascent || 0) + 1) : 4
+        const captionHeight = rows.length ? rows.reduce((h, row) => h + lineHeight(row.text, 9, "normal"), captionGap) : 0
         const scale = Math.min(tw * item.widthPercent / 100 / item.image.width, (bottomY - top - 14 - captionHeight) / item.image.height)
         const iw = item.image.width * scale, ih = item.image.height * scale
         if (y + ih + captionHeight + 5 > bottomY) continuation(ci)
         current!.ops.push({ kind: "image", data: item.image.data, x: left(layout.pages.length) + (tw - iw) / 2, y, width: iw, height: ih, alt: item.caption })
         const ppi = Math.floor(25.4 / scale)
         if (ppi < 300) layout.issues.push({ code: "artworkResolution", severity: "warning", scope: "interior", detail: String(ppi) + " ppi", page: layout.pages.length })
-        y += ih + 4
-        for (const row of rows) { text(row.text, left(layout.pages.length) + tw / 2, y, 9, "normal", "body", true); y += 4.5 }
+        y += ih + captionGap
+        for (const row of rows) { text(row.text, left(layout.pages.length) + tw / 2, y, 9, "normal", "body", true); y += lineHeight(row.text, 9, "normal") }
         y += lh
       }
     }

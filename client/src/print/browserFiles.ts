@@ -1,6 +1,14 @@
 import { isSafeImageSource } from "@shared/media"
 import type { PrintImage } from "./cover"
 
+export async function verifyPrintImage(image: PrintImage): Promise<void> {
+  const decoded = new Image()
+  try {
+    decoded.src = image.data; await decoded.decode()
+    if (decoded.naturalWidth !== image.width || decoded.naturalHeight !== image.height) throw new Error("resources")
+  } finally { decoded.src = "" }
+}
+
 export async function loadPrintImage(file: File): Promise<PrintImage> {
   if (!/^(image\/(png|jpeg|webp))$/i.test(file.type) || file.size > 12_000_000 || !file.size) throw new Error("resources")
   const url = URL.createObjectURL(file)

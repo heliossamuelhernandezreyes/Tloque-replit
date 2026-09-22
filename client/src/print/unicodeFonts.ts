@@ -7,6 +7,8 @@ import type { PrintFonts } from "./pdfRuntime"
 
 const bidi = bidiFactory()
 const ignored = /^[\p{Default_Ignorable_Code_Point}\s]*$/u
+const formatting = /^\p{Default_Ignorable_Code_Point}*$/u
+const blankGlyph = /^[\p{Default_Ignorable_Code_Point}\s\u2800]*$/u
 const decode = (base64: string) => Uint8Array.from(atob(base64), c => c.charCodeAt(0))
 function readFont(data: string): Font {
   const font = create(decode(data))
@@ -45,7 +47,7 @@ export function unicodeMetrics(base: FontMetrics, fonts: PrintFonts, fallbackDat
   const fontFor = (cluster: string, style: FontStyle): Font | null => {
     const key = style + cluster
     if (selection.has(key)) return selection.get(key)!
-    const font = [primary[style], ...extra, fallback].find(f => [...cluster].every(c => ignored.test(c) || f.hasGlyphForCodePoint(c.codePointAt(0)!))) || null
+    const font = [primary[style], ...extra, fallback].find(f => [...cluster].every(c => formatting.test(c) || f.hasGlyphForCodePoint(c.codePointAt(0)!))) || null
     selection.set(key, font); return font
   }
   const needsOutline = (text: string, style: FontStyle) => {
@@ -94,7 +96,12 @@ export function unicodeMetrics(base: FontMetrics, fonts: PrintFonts, fallbackDat
         ink.push({ kind: "image", data: image.data, x, y: -.8 * h, width: w, height: h, sourceWidth: image.width }); x += w + .08
         continue
       }
-      if (!run.font) throw new Error("missingGlyph")
+      if (!run.font) {
+        // An ideographic space needs one em even when no installed font maps it.
+        // Formatting controls have no visible shape; never draw a .notdef box.
+        if (ignored.test(run.text)) { x += [...run.text].reduce((w, c) => w + (formatting.test(c) ? 0 : c === "\u3000" || c === "\t" ? 1 : .25), 0); continue }
+        throw new Error("missingGlyph")
+      }
       const font = run.font, scale = 1 / font.unitsPerEm
       const layout = font.layout(run.text, { kern: false, rtlm: false }, undefined, undefined, run.level % 2 ? "rtl" : "ltr")
       let pathCache = paths.get(font)
@@ -105,7 +112,7 @@ export function unicodeMetrics(base: FontMetrics, fonts: PrintFonts, fallbackDat
         let path = pathCache!.get(glyph.id)
         if (!path) { path = outline(glyph.path.commands, glyph.path.toSVG()); pathCache!.set(glyph.id, path) }
         if (path.commands.length) ink.push({ kind: "path", path, x: x + p.xOffset * scale, y: -p.yOffset * scale, scale })
-        else if (glyph.codePoints.length && !ignored.test(String.fromCodePoint(...glyph.codePoints))) throw new Error("missingGlyph")
+        else if (glyph.codePoints.length && !blankGlyph.test(String.fromCodePoint(...glyph.codePoints))) throw new Error("missingGlyph")
         x += p.xAdvance * scale
       })
     }

@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Download, Trash2, Upload } from "lucide-react"
-import { downloadFile, loadPrintImage, printFilename } from "./browserFiles"
+import { downloadFile, loadPrintImage, printFilename, verifyPrintImage } from "./browserFiles"
 import { bytesBase64 } from "./fontAssets"
 import { manuscriptParagraphs } from "./compose"
 import { validatePrintResources, validSymbolToken, type PrintResources } from "./resources"
@@ -29,7 +29,11 @@ export default function PrintResourcesPanel({ book, settings, resources, languag
         if (file.size > 70_000_000) throw new Error("resources")
         const project = JSON.parse(await file.text())
         if (project.book !== String(book.id ?? book.title) || project.textMode !== settings.textMode) { setError(t("resourceMismatch")); return }
-        apply(validatePrintResources(project.resources))
+        const loaded = validatePrintResources(project.resources)
+        // Decode imported artwork before enabling export and verify its actual
+        // dimensions. Resource JSON cannot invent aspect ratios or resolution.
+        for (const item of [...loaded.symbols, ...loaded.illustrations]) await verifyPrintImage(item.image)
+        apply(loaded)
       } else {
         const image = await loadPrintImage(file), id = crypto.randomUUID()
         if (kind === "symbol") {
