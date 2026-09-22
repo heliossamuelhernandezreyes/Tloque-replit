@@ -26,14 +26,14 @@ export class GutenbergCache<T> {
       this.entries.delete(key); this.entries.set(key, entry)
       return { value: entry.value, fetchedAt: entry.fetchedAt, stale: false }
     }
-    const running = this.pending.get(key)
-    if (running) return running
     const recover = (error: unknown) => {
       if (entry && entry.expires + staleTtl > Date.now() && allowStale?.(error)) {
         return { value: entry.value, fetchedAt: entry.fetchedAt, stale: true }
       }
       throw error
     }
+    const running = this.pending.get(key)
+    if (running) return running.catch(recover)
     if (this.pending.size >= this.limits.pending) return recover(new GutenbergBusyError())
     const task = Promise.resolve().then(load).then(value => {
       // Conservative UTF-16 estimate, including JSON field names and punctuation.
@@ -48,9 +48,9 @@ export class GutenbergCache<T> {
         this.bytes += bytes
       }
       return { value, fetchedAt, stale: false }
-    }).catch(recover).finally(() => this.pending.delete(key))
+    }).finally(() => this.pending.delete(key))
     this.pending.set(key, task)
-    return task
+    return task.catch(recover)
   }
 
   private remove(key: string) {

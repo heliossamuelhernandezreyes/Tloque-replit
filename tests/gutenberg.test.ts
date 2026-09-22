@@ -456,3 +456,18 @@ test("la recuperación no amplía la caducidad ni el presupuesto de la caché", 
   await cache.get("b", async () => "67890") // The stale entry must also count toward 20 bytes.
   await assert.rejects(cache.getWithStatus("a", unavailable, () => true), /offline/)
 })
+
+test("compartir una descarga no impone la recuperación a quien requiere datos frescos", async t => {
+  let now = 0
+  t.mock.method(Date, "now", () => now)
+  const cache = new GutenbergCache<string>({ entries: 2, bytes: 100, pending: 1, ttl: 10, staleTtl: 20 })
+  await cache.get("a", async () => "saved")
+  now = 11
+  let reject!: (error: Error) => void
+  const recoverable = cache.getWithStatus("a", () => new Promise<string>((_resolve, fail) => { reject = fail }), () => true)
+  const strict = assert.rejects(cache.get("a", async () => "unused"), /offline/)
+  await Promise.resolve()
+  reject(new Error("offline"))
+  assert.equal((await recoverable).stale, true)
+  await strict
+})
