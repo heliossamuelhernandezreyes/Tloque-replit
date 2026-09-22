@@ -99,7 +99,7 @@ function GutenbergExplorer({ onClose }: { onClose: () => void }) {
     resultsPane.current?.scrollTo({ top: 0 })
   }
   const openExisting = (bookId: number, status?: string) => {
-    navigate(status && status !== "published" ? "/editor?id=" + bookId + "&status=" + encodeURIComponent(status) : "/book/" + bookId)
+    navigate(status && status !== "published" ? "/editor?id=" + bookId + "&source=server&status=" + encodeURIComponent(status) : "/book/" + bookId)
     onClose()
   }
 
@@ -180,7 +180,11 @@ function GutenbergExplorer({ onClose }: { onClose: () => void }) {
 
     <div className="grid min-h-0 flex-1 lg:grid-cols-[1fr_1fr]">
       <div ref={resultsPane} className={"min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 lg:border-e lg:border-white/10 " + (showDetail ? "hidden lg:block" : "")}>
-        <form onSubmit={event => { event.preventDefault(); editFilters({ query: query.trim() }) }} className="space-y-3">
+        <form onSubmit={event => {
+          event.preventDefault()
+          if (query.trim() === filters.query && filters.page === 1) void catalog.refetch()
+          else editFilters({ query: query.trim() })
+        }} className="space-y-3">
           <div className="flex gap-2"><label className="relative min-w-0 flex-1"><span className="sr-only">{copy.search}</span>
             <Search className="pointer-events-none absolute start-3 top-3 h-4 w-4 text-zinc-500" />
             <input value={query} onChange={event => setQuery(event.target.value)} maxLength={120} placeholder={copy.search} className={field + " ps-9"} />
@@ -205,7 +209,12 @@ function GutenbergExplorer({ onClose }: { onClose: () => void }) {
           <span>{catalog.isFetching ? t("searching") : catalog.data && !catalog.isError ? copy.results.replace("{n}", catalog.data.count.toLocaleString(settings.language)) : ""}</span>
           {catalog.data && <span>{copy.page} {catalog.data.page}</span>}
         </div>
-        {catalog.isError && <div role="alert" className="mb-4 rounded-2xl border border-amber-100/20 bg-amber-100/5 p-4"><p className="text-sm text-zinc-300">{copy.error}</p><button onClick={() => void catalog.refetch()} className={button + " mt-3"}>{copy.retry}</button></div>}
+        {catalog.isError && <div role="alert" className="mb-4 rounded-2xl border border-amber-100/20 bg-amber-100/5 p-4"><p className="text-sm text-zinc-300">{copy.error}</p><button disabled={catalog.isFetching} onClick={() => void catalog.refetch()} className={button + " mt-3"}>{copy.retry}</button></div>}
+        {!catalog.isError && catalog.data?.cacheStatus === "stale" && <div role="status" data-testid="gutenberg-stale" className="mb-4 rounded-2xl border border-amber-100/20 bg-amber-100/5 p-4">
+          <p className="text-sm leading-relaxed text-zinc-300">{copy.stale}</p>
+          {typeof catalog.data.fetchedAt === "number" && <time dateTime={new Date(catalog.data.fetchedAt).toISOString()} className="mt-2 block text-xs text-zinc-400">{new Date(catalog.data.fetchedAt).toLocaleString(settings.language)}</time>}
+          <button disabled={catalog.isFetching} onClick={() => void catalog.refetch()} className={button + " mt-3"}>{copy.retry}</button>
+        </div>}
         {catalog.isPending && !catalog.isError && <div aria-hidden="true" className={"space-y-3 " + (settings.reduceMotion ? "" : "motion-safe:animate-pulse")}>{[1, 2, 3].map(i => <div key={i} className="h-32 rounded-2xl border border-white/5 bg-white/[.035]" />)}</div>}
         {!catalog.isError && catalog.data?.results.length === 0 && <div className="rounded-2xl border border-dashed border-amber-100/20 px-5 py-8 text-center"><BookOpen className="mx-auto mb-3 h-6 w-6 text-amber-200/50" /><p className="text-sm text-zinc-300">{copy.empty}</p>
           {filters.lang !== "all" && <button className={button + " mt-4"} onClick={() => editFilters({ lang: "all" })}>{copy.tryAll}</button>}</div>}

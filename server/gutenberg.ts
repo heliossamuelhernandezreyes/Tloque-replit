@@ -1,7 +1,7 @@
 import { GUTENBERG_LANGUAGES, GUTENBERG_TOPICS, gutenbergIdFromQuery,
   type GutenbergBook, type GutenbergCatalogPage, type GutenbergSort, type GutenbergTopic,
   type ProcessedGutenbergBook } from "../shared/gutenberg"
-import { GutenbergCache } from "./gutenberg-cache"
+import { GutenbergCache, GutenbergBusyError } from "./gutenberg-cache"
 export type { GutenbergBook } from "../shared/gutenberg"
 export type ProcessedBook = ProcessedGutenbergBook
 
@@ -10,7 +10,7 @@ export class GutenbergSourceError extends Error {
 }
 
 const metadataCache = new GutenbergCache<GutenbergBook | null>({ entries: 100, bytes: 4_000_000, pending: 8, ttl: 900_000 })
-const catalogCache = new GutenbergCache<GutenbergCatalogPage>({ entries: 40, bytes: 6_000_000, pending: 8, ttl: 120_000 })
+const catalogCache = new GutenbergCache<GutenbergCatalogPage>({ entries: 40, bytes: 6_000_000, pending: 8, ttl: 120_000, staleTtl: 1_800_000 })
 const processedCache = new GutenbergCache<ProcessedBook>({ entries: 6, bytes: 32_000_000, pending: 2, ttl: 600_000 })
 
 // The deadline includes streaming the body, not just receiving HTTP headers.
@@ -149,14 +149,26 @@ export function isGutenbergAssetUrl(value: string): boolean {
     const url = new URL(value)
     return url.protocol === "https:" && ["gutenberg.org", "www.gutenberg.org"].includes(url.hostname)
       && !url.username && !url.password && !url.port
-      && /^\/(?:files|cache\/epub)\//.test(url.pathname)
+      && (/^\/(?:files|cache\/epub)\//.test(url.pathname)
+        || /^\/ebooks\/[1-9]\d{0,8}\.txt(?:\.utf-8)?$/.test(url.pathname))
   } catch { return false }
 }
 
-function plainTextUrl(book: GutenbergBook): string | undefined {
+function plainTextSources(book: GutenbergBook): { url: string; mime: string }[] {
+  const seen = new Set<string>()
   return Object.entries(book.formats)
-    .filter(([mime, url]) => mime.toLowerCase().startsWith("text/plain") && isGutenbergAssetUrl(url))
-    .sort(([a], [b]) => Number(/utf-8/i.test(b)) - Number(/utf-8/i.test(a)))[0]?.[1]
+    .filter(([mime, url]) => /^text\/plain(?:\s*;|$)/i.test(mime) && isGutenbergAssetUrl(url))
+    .sort(([a], [b]) => Number(/utf-8/i.test(b)) - Number(/utf-8/i.test(a)))
+    .map(([mime, value]) => {
+      const url = new URL(value)
+      const download = url.pathname.match(/^\/ebooks\/(\d{1,9})\.txt(?:\.utf-8)?$/)
+      // /ebooks/*.txt* are download aliases. Resolve the documented UTF-8
+      // cache path locally instead of following a response's Location header.
+      return download
+        ? { url: `https://www.gutenberg.org/cache/epub/${download[1]}/pg${download[1]}.txt`, mime: "text/plain; charset=utf-8" }
+        : { url: value, mime }
+    })
+    .filter(source => { if (seen.has(source.url)) return false; seen.add(source.url); return true })
 }
 
 export function gutenbergCover(book: GutenbergBook): string {
@@ -185,7 +197,7 @@ export async function browseGutenberg(options: {
   const topic: GutenbergTopic = options.topic ?? ""
   if (!["popular", "ascending", "descending"].includes(sort) || !GUTENBERG_TOPICS.includes(topic)) throw new Error("Filtros inválidos")
   const key = JSON.stringify([query, language, page, sort, topic])
-  return catalogCache.get(key, async () => {
+  const cached = await catalogCache.getWithStatus(key, async () => {
     const base = { query, language, page, sort, topic, previousPage: page > 1 ? page - 1 : null }
     const id = gutenbergIdFromQuery(query)
     let books: GutenbergBook[], count: number, nextPage: number | null = null
@@ -225,13 +237,14 @@ export async function browseGutenberg(options: {
     }
     const seen = new Set<number>()
     const results = books.filter(book => {
-      if (seen.has(book.id) || book.copyright !== false || !plainTextUrl(book)
+      if (seen.has(book.id) || book.copyright !== false || !plainTextSources(book).length
         || language !== "all" && !book.languages.includes(language)) return false
       seen.add(book.id); return true
     }).map(book => ({ ...book, coverUrl: gutenbergCover(book),
       requestedLanguage: language, languageMatch: classifyLanguage(book, language) }))
     return { ...base, results, count: id ? results.length : count, nextPage }
-  })
+  }, error => error instanceof GutenbergSourceError || error instanceof GutenbergBusyError)
+  return { ...cached.value, cacheStatus: cached.stale ? "stale" : "fresh", fetchedAt: cached.fetchedAt }
 }
 
 // Compatibility for existing API consumers. The explorer uses the paginated,
@@ -249,17 +262,29 @@ export async function searchGutenberg(query: string, lang = "es"): Promise<Guten
 
 // ── DESCARGAR TEXTO COMPLETO ─────────────────────────────
 export async function downloadBookText(book: GutenbergBook): Promise<string> {
-  const textUrl = plainTextUrl(book)
-  if (!textUrl) {
+  const sources = plainTextSources(book)
+  if (!sources.length) {
     if (Object.keys(book.formats).some(mime => mime.startsWith("text/plain"))) {
       throw new Error("La fuente del texto no pertenece a Project Gutenberg")
     }
     throw new Error("No hay versión de texto plano disponible para este libro")
   }
-  const buffer = await fetchBytes(textUrl, 12_000_000, 20_000)
-  if (!buffer) throw new GutenbergSourceError("El archivo del libro ya no está disponible en Gutenberg.")
-  try { return new TextDecoder("utf-8", { fatal: true }).decode(buffer) }
-  catch { return decodeWindows1252(buffer) }
+  // Only a missing file tries the next advertised source; upstream errors are
+  // surfaced immediately. Never fan out retries against an overloaded service.
+  for (const { url, mime } of sources.slice(0, 2)) {
+    const buffer = await fetchBytes(url, 12_000_000, 20_000)
+    if (!buffer) continue
+    if (/charset\s*=\s*["']?(?:windows-1252|iso-8859-1|latin-?1)\b/i.test(mime)) return decodeWindows1252(buffer)
+    try { return new TextDecoder("utf-8", { fatal: true }).decode(buffer) }
+    catch {
+      const utf8 = new TextDecoder("utf-8").decode(buffer)
+      // Keep valid Unicode surrounding isolated damaged bytes. An unspecified
+      // legacy file with no valid multibyte sequences still uses Windows-1252.
+      if (/charset\s*=\s*["']?utf-8\b/i.test(mime) || /[^\x00-\x7f]/.test(utf8.replace(/\uFFFD/g, ""))) return utf8
+      return decodeWindows1252(buffer)
+    }
+  }
+  throw new GutenbergSourceError("El archivo del libro ya no está disponible en Gutenberg.")
 }
 
 // ── LIMPIAR TEXTO DE GUTENBERG ───────────────────────────
@@ -327,7 +352,7 @@ export function detectChapters(
     /^(CAPUT\s+[\p{L}\p{N}]+[^\n]{0,60})$/imu,
     /^(ΚΕΦΑΛΑΙΟ\s+[\p{L}\p{N}]+[^\n]{0,60})$/imu,
     // Japonés y chino: 第1章, 第一章, 第1节
-    /^(第\s*[一二三四五六七八九十百千\d]+\s*[章节節回][^\n]{0,60})$/mu,
+    /^(第\s*[一二三四五六七八九十百千\d０-９]+\s*[章节節回][^\n]{0,60})$/mu,
     // Numerales
     /^([IVXLCDM]{1,6}\.?\s*)$/m,
     /^([IVXLCDM]{1,6}\s*[-–—]\s*[^\n]{2,50})$/m,

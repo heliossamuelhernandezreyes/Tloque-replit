@@ -14,7 +14,7 @@ const browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "
   ...(process.env.TLOQUE_QA_CHROME ? { executablePath: process.env.TLOQUE_QA_CHROME } : {}) })
 const errors = [], requests = [], imports = []
 const screenshot = (page, name) => page.screenshot({ path: output + "/" + name + ".png", animations: "disabled", timeout: 45_000 })
-let failNext = false
+let failNext = false, staleNext = false
 const titles = { 2000: "Don Quijote de la Mancha", 2001: "Rimas y leyendas", 2002: "La vida es sueño", 2003: "Viaje al centro de la Tierra" }
 const book = (id, language = "es") => ({ id, title: titles[id], authors: [{ name: id === 2000 ? "Cervantes Saavedra, Miguel de" : "Autor de prueba" }], languages: [language], formats: {}, subjects: ["Fiction"], download_count: 25000, copyright: false, coverUrl: "", alreadyImported: false, existingBookId: null })
 const preview = id => ({ gutenbergId: id, title: titles[id], author: "Miguel de Cervantes Saavedra", synopsis: "Una edición para recorrer sus capítulos, descubrir sus primeras páginas y conservar una copia completa en la biblioteca.", synopsisSource: "gutendex", synopsisLanguage: null,
@@ -44,13 +44,15 @@ async function setup({ mobile = false } = {}) {
       if (language === "fr") await new Promise(resolve => setTimeout(resolve, 350))
       const results = query === "vacío" && language !== "all" ? [] : page === 2 ? [book(2003, language)] : [book(2000, language), book(2001, language), book(2002, language)]
       data = { query, language, page, sort: url.searchParams.get("sort"), topic: url.searchParams.get("topic"), count: results.length ? 35 : 0,
-        nextPage: page === 1 && results.length ? 2 : null, previousPage: page === 2 ? 1 : null, results }
+        nextPage: page === 1 && results.length ? 2 : null, previousPage: page === 2 ? 1 : null, results,
+        cacheStatus: staleNext ? "stale" : "fresh", fetchedAt: Date.now() - (staleNext ? 180_000 : 0) }
+      staleNext = false
     } else if (url.pathname.startsWith("/api/gutenberg/preview/")) {
       data = preview(Number(url.pathname.split("/").pop()))
     } else if (url.pathname === "/api/admin/gutenberg/import") {
       const input = route.request().postDataJSON(); imports.push(input)
       data = { book: { ...preview(input.gutenbergId), id: 50, status: input.status, title: input.overrideTitle } }
-    } else if (url.pathname === "/api/books/50") data = { ...preview(2000), id: 50, status: "draft", revision: 1, isClassic: true }
+    } else if (url.pathname === "/api/books/50") data = { ...preview(2000), id: 50, title: imports.at(-1)?.overrideTitle || titles[2000], status: "draft", revision: 1, isClassic: true }
     else if (url.pathname.includes("notifications")) data = { notifications: [], unread: 0 }
     else if (url.pathname === "/api/frames") data = { frames: [] }
     else if (url.pathname === "/api/sync/state") data = { library: [], progress: [], streak: null }
@@ -90,6 +92,12 @@ try {
   await page.getByRole("button", { name: "Buscar en todos los idiomas", exact: true }).click()
   await page.getByRole("button", { name: titles[2000], exact: true }).waitFor()
   assert.equal(requests.at(-1).lang, "all")
+  staleNext = true
+  await search.fill("guardado"); await search.press("Enter")
+  await page.getByTestId("gutenberg-stale").waitFor()
+  assert.ok(await page.getByRole("button", { name: titles[2000], exact: true }).isVisible())
+  await page.getByRole("button", { name: "Reintentar", exact: true }).click()
+  await page.getByTestId("gutenberg-stale").waitFor({ state: "hidden" })
   failNext = true
   await search.fill("fallo"); await search.press("Enter")
   await page.getByRole("alert").getByText(/No pudimos conectar/).waitFor()
@@ -106,8 +114,15 @@ try {
   await page.getByLabel("Título", { exact: true }).fill("Quijote · edición revisada")
   assert.equal(await page.getByLabel("Destino de la importación").inputValue(), "draft")
   await page.getByRole("button", { name: "Guardar borrador", exact: true }).click()
-  await page.waitForURL("**/editor?id=50&status=draft")
+  await page.waitForURL("**/editor?id=50&source=server&status=draft")
   assert.equal(imports[0].status, "draft"); assert.equal(imports[0].overrideTitle, "Quijote · edición revisada")
+  await page.waitForFunction(() => document.body.textContent.includes("Quijote · edición revisada"))
+  await page.setViewportSize({ width: 600, height: 1000 })
+  await page.getByRole("button", { name: /Quijote · edición revisada/ }).click()
+  const author = page.getByPlaceholder("Tu nombre", { exact: true })
+  await author.waitFor()
+  assert.equal(await author.inputValue(), "Miguel de Cervantes Saavedra")
+  assert.equal(await author.getAttribute("readonly"), null, "server draft keeps its original author and editorial identity")
   await context.close()
 
   console.log("Gutenberg QA: mobile detail, back navigation and full offline copy")
