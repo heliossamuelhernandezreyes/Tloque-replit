@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import { Mesh, Scene, ShaderMaterial, Texture, TextureLoader, Vector4, type WebGLRenderer, type WebGLRenderTarget } from "three"
 import { createVisualScene, sceneKey } from "../client/src/visual/scenes"
 import { applyCardMotion, createCardScene } from "../shared/card-scene"
+import { createSceneContent } from "../shared/scene-content"
 
 class RendererRecorder {
   viewport = new Vector4(20, 30, 200, 300)
@@ -131,6 +132,22 @@ test("una imagen que llega después del cierre no resucita la escena", () => {
 test("gestos no reconstruyen la escena; cambiar tema sí", () => {
   assert.equal(sceneKey({ kind: "orb", active: false }), sceneKey({ kind: "orb", active: true, pulse: true }))
   assert.notEqual(sceneKey({ kind: "orb" }), sceneKey({ kind: "orb", theme: "fluorescent-rose" }))
+})
+
+test("deshacer objetos y efectos restaura el fondo y el vidrio sin reiniciar la vista", () => {
+  const cardScene = createCardScene(); cardScene.content = createSceneContent()
+  cardScene.content.glass = { enabled: true, opacity: .5, roughness: .8, tint: "#ff0000" }; cardScene.content.background = "#221133"
+  const options = { kind: "portal" as const, cardScene }, resource = createVisualScene(options, 1024), recorder = new RendererRecorder()
+  try {
+    resource.update(0, .016, 5 / 7, { x: 0, y: 0 }, options); resource.render(recorder.asRenderer())
+    let glass: any
+    recorder.renders[1].scene.traverse(node => { if (node instanceof Mesh && node.geometry.type === "ShapeGeometry" && (node.material as any).isMeshPhysicalMaterial) glass = node })
+    assert.equal(glass.material.opacity, .5); assert.equal((recorder.renders[0].scene.background as any).getHexString(), "221133")
+    resource.update(0, .016, 5 / 7, { x: 0, y: 0 }, { ...options, cardScene: createCardScene() })
+    assert.equal(glass.material.color.getHexString(), "c8deff"); assert.equal(glass.material.roughness, .18)
+    assert.equal((recorder.renders[0].scene.background as any).getHexString(), "090c19")
+    assert.equal(resource.ready(), true)
+  } finally { resource.dispose() }
 })
 
 test("planos de tarjeta respetan identidad, claves, alfa, tiempo absoluto y disposición", () => {

@@ -20,6 +20,8 @@ export interface VisualOptions {
   cardScene?: CardScene
   shape?: "card" | "profile"
   transport?: { current: SceneTransport }
+  retry?: number
+  onAssetIssue?: (message: string) => void
 }
 export interface VisualEntry {
   id: string

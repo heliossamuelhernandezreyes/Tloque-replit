@@ -11,7 +11,7 @@ import FrameRenderer from "@/components/FrameRenderer"
 import { useFrames } from "@/hooks/useFrames"
 import { useLocation } from "wouter"
 import { useAuth } from "@/hooks/useAuth"
-import { readCardScene, type CardScene } from "@shared/card-scene"
+import { cardSceneFromFx, createCardScene, type CardScene } from "@shared/card-scene"
 const CardDirector = lazy(() => import("@/visual/CardDirector"))
 
 interface Card {
@@ -31,7 +31,7 @@ const EMPTY = {
   layers: { back: "", mid: "", front: "" },
   rarity: "silver" as Rarity,
   frameId: null as number | null,
-  scene: null as CardScene | null,
+  scene: createCardScene() as CardScene | null,
   layerFx: {
     back:  { effect: "none", intensity: 0.5 },
     mid:   { effect: "none", intensity: 0.5 },
@@ -141,7 +141,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
       },
       rarity: (card.fx?.rarity || "silver") as Rarity,
       frameId: card.fx?.frameId ?? null,
-      scene: readCardScene(card.fx?.scene),
+      scene: cardSceneFromFx(card.fx),
       layerFx: {
         back:  card.fx?.layerFx?.back  || { effect: "none", intensity: 0.5 },
         mid:   card.fx?.layerFx?.mid   || { effect: "none", intensity: 0.5 },
@@ -154,48 +154,6 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
 
   const setLayer = (k: "back" | "mid" | "front", url: string) =>
     setForm(f => ({ ...f, layers: { ...f.layers, [k]: url } }))
-
-  // Selector de efecto para UNA capa (efecto + intensidad).
-  // Solo aparece si esa capa tiene imagen.
-  function LayerEffectPicker({ which, label }: { which: "back" | "mid" | "front"; label: string }) {
-    if (!form.layers[which]) return null
-    const cur = form.layerFx[which]
-    const setFx = (patch: Partial<{ effect: string; intensity: number }>) =>
-      setForm(f => ({ ...f, layerFx: { ...f.layerFx, [which]: { ...f.layerFx[which], ...patch } } }))
-    const EFFECTS: [string, string][] = [
-      ["none", "—"], ["snow", "Nieve"], ["rain", "Lluvia"], ["rainGlass", "Gotas"],
-      ["embers", "Brasas"], ["fire", "Fuego"], ["smoke", "Humo"], ["sparkle", "Destello"],
-    ]
-    return (
-      <div className="ml-2 pl-2 mb-1" style={{ borderLeft: `1px solid ${gc.color}20` }}>
-        <p className="text-[8px] font-sans mb-1" style={{ color: "rgba(255,255,255,0.4)" }}>{label}</p>
-        <div className="flex flex-wrap gap-1">
-          {EFFECTS.map(([val, lbl]) => {
-            const sel = cur.effect === val
-            return (
-              <button key={val} onClick={() => setFx({ effect: val })}
-                className="text-[8px] font-sans px-1.5 py-1 rounded-md"
-                style={{ background: sel ? `${gc.glow}25` : "rgba(255,255,255,0.03)",
-                         color: sel ? gc.color : "rgba(255,255,255,0.45)",
-                         border: `1px solid ${sel ? gc.color + "50" : "rgba(255,255,255,0.07)"}` }}>
-                {lbl}
-              </button>
-            )
-          })}
-        </div>
-        {cur.effect !== "none" && (
-          <div className="flex items-center gap-2 mt-1">
-            <input type="range" min={0} max={1} step={0.05} value={cur.intensity}
-              onChange={e => setFx({ intensity: Number(e.target.value) })}
-              className="flex-1" style={{ accentColor: gc.color }} />
-            <span className="text-[8px] font-sans w-7 text-right" style={{ color: gc.color }}>
-              {Math.round(cur.intensity * 100)}%
-            </span>
-          </div>
-        )}
-      </div>
-    )
-  }
 
   const inputStyle = {
     background: "rgba(255,255,255,0.04)",
@@ -329,25 +287,21 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
           )}
 
           {/* Capas del arte */}
-          <LayerUpload label="Fondo (obligatorio)" url={form.layers.back} gc={gc}
+          <LayerUpload label="Fondo (opcional si usas 3D)" url={form.layers.back} gc={gc}
             onUpload={u => setLayer("back", u)} inputRef={backRef} compact />
-          <LayerEffectPicker which="back" label="Efecto tras el fondo" />
           <LayerUpload label="Capa media (opcional)" url={form.layers.mid} gc={gc}
             onUpload={u => setLayer("mid", u)} inputRef={midRef}
             hint="Se mueve al inclinar" compact />
-          <LayerEffectPicker which="mid" label="Efecto en la capa media" />
           <LayerUpload label="Capa frontal (opcional)" url={form.layers.front} gc={gc}
             onUpload={u => setLayer("front", u)} inputRef={frontRef}
             hint="La más cercana, se mueve más" compact />
-          <LayerEffectPicker which="front" label="Efecto al frente (lluvia en el vidrio…)" />
 
           <div className="rounded-xl border border-amber-200/20 bg-gradient-to-br from-amber-200/5 to-indigo-300/5 p-4 !my-5">
             <p className="text-[10px] tracking-[.15em] text-amber-200/60">CARD DIRECTOR / 3D</p>
             <h3 className="text-lg font-display text-zinc-100 mt-1">De ilustración a escena viva.</h3>
-            <p className="text-xs text-zinc-400 leading-relaxed my-2">Compón cada capa, dirige su entrada y prueba el acabado iridiscente. Mismo escenario en el editor y en la inspección del lector.</p>
-            <button disabled={!form.layers.back} onClick={() => setDirecting(true)} className="min-h-11 w-full rounded-lg bg-amber-100/10 border border-amber-200/25 text-amber-100 text-xs flex items-center justify-center gap-2 disabled:opacity-35"><Clapperboard size={17}/>Dirigir escena y animación</button>
-            <p className="text-[10px] text-zinc-500 mt-2">{form.scene ? `Dirección activa · ${form.scene.duration} segundos · ${form.scene.finish.type === "none" ? "arte original" : form.scene.finish.type}` : "Primero añade un fondo. Personaje y primer plano con transparencia dan profundidad."}</p>
-            {form.scene && <button className="text-[10px] text-zinc-400 underline min-h-9" onClick={() => { if (window.confirm("¿Quitar la dirección 3D de esta tarjeta? No se borrará el arte ni el marco.")) setForm(f => ({ ...f, scene: null })) }}>Volver al estilo clásico</button>}
+            <p className="text-xs text-zinc-400 leading-relaxed my-2">Importa modelos y animaciones, crea objetos con formas y añade vidrio, llamas o lluvia. Puedes empezar sin una imagen de fondo.</p>
+            <button onClick={() => setDirecting(true)} className="min-h-11 w-full rounded-lg bg-amber-100/10 border border-amber-200/25 text-amber-100 text-xs flex items-center justify-center gap-2 disabled:opacity-35"><Clapperboard size={17}/>Dirigir escena y animación</button>
+            <p className="text-[10px] text-zinc-500 mt-2">{form.scene ? `Dirección activa · ${form.scene.duration} segundos · ${form.scene.finish.type === "none" ? "arte original" : form.scene.finish.type}` : "Abre el taller y elige Objetos y efectos para empezar con 3D."}</p>
           </div>
 
           {/* Rareza — material del marco */}
@@ -424,7 +378,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
           </div>
 
           {/* Previsualización EN VIVO */}
-          {form.layers.back && (
+          {(form.layers.back || !!form.scene?.content?.objects.length) && (
             <div className="pt-2">
               <p className="text-[9px] text-zinc-500 font-sans mb-1.5 text-center">{t("cardPreviewHint")}</p>
               <div className="max-w-[160px] mx-auto">
@@ -450,7 +404,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
           )}
           <div className="flex gap-1.5">
             <motion.button whileTap={{ scale: 0.97 }}
-              disabled={save.isPending || !form.name.trim() || !form.layers.back}
+              disabled={save.isPending || !form.name.trim() || (!form.layers.back && !form.scene?.content?.objects.length)}
               onClick={() => save.mutate()}
               className="flex-1 py-2.5 rounded-lg text-[11px] font-sans font-semibold disabled:opacity-40"
               style={{ background: gc.color, color: "rgba(0,0,0,0.85)" }}>

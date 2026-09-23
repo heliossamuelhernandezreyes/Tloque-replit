@@ -37,7 +37,6 @@ export function publicOriginForRequest(req: Request): string {
 }
 
 export function securityHeaders(req: Request, res: Response, next: NextFunction) {
-  const isWorkshop = req.path === "/taller-marcos.html"
   const isProduction = process.env.NODE_ENV === "production"
 
   // Vite y los complementos de desarrollo de Replit inyectan un preámbulo
@@ -49,15 +48,13 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
   // El motor de audio puede cargar módulos WebAssembly. `wasm-unsafe-eval`
   // autoriza únicamente la compilación/instanciación de WASM y evita abrir la
   // política a `unsafe-eval`, que también permitiría evaluación dinámica de JS.
-  const scriptPolicy = isWorkshop || !isProduction
+  const scriptPolicy = !isProduction
     ? "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'"
     : "script-src 'self' 'wasm-unsafe-eval'"
   const connectPolicy = isProduction
-    ? "connect-src 'self'"
-    : "connect-src 'self' ws: wss: https:"
-  const frameAncestors = isWorkshop
-    ? "frame-ancestors 'self'"
-    : isProduction
+    ? "connect-src 'self' blob:"
+    : "connect-src 'self' blob: ws: wss: https:"
+  const frameAncestors = isProduction
       ? "frame-ancestors 'none'"
       : "frame-ancestors 'self' https://replit.com https://*.replit.com"
   res.setHeader("Content-Security-Policy", [
@@ -79,8 +76,7 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
   // X-Frame-Options no permite declarar replit.com como origen autorizado y
   // prevalecería sobre frame-ancestors en algunos navegadores. En desarrollo
   // dejamos que la CSP limitada controle el Preview; producción sigue en DENY.
-  if (isWorkshop) res.setHeader("X-Frame-Options", "SAMEORIGIN")
-  else if (isProduction) res.setHeader("X-Frame-Options", "DENY")
+  if (isProduction) res.setHeader("X-Frame-Options", "DENY")
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin")
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(self)")
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin")

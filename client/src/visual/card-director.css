@@ -14,3 +14,6 @@
 .tq-card-scene-poster{position:relative;aspect-ratio:5/7;width:220px;max-width:75%;border:3px solid;border-radius:15px;overflow:hidden;background:#090c19}
 .tq-card-scene-poster>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 @media(max-width:760px){.tq-card-director-grid{display:flex;flex-direction:column}.tq-card-director .tq-studio-center,.tq-card-director .tq-studio-properties{width:100%;padding:18px 14px}.tq-card-director .tq-studio-header{padding:16px 14px}.tq-card-director .tq-cinematic-slot{height:340px}.tq-card-director .tq-studio-actions{width:100%;justify-content:start}.tq-card-director .tq-studio-primary{flex:1;font-size:11px}.tq-card-director .tq-timeline-row{grid-template-columns:102px minmax(0,1fr)}.tq-card-director .tq-studio-stage-title h2{font-size:18px}}
+
+.tq-model-poster{position:absolute;inset:15%;display:grid;place-content:center;text-align:center;gap:8px;color:#bba7e2;font-size:12px}.tq-model-poster strong{font-size:46px;font-weight:400}
+@media(min-width:761px){.tq-card-director-grid{max-height:calc(100dvh - 220px);overflow:hidden;align-items:stretch}.tq-card-director .tq-studio-center,.tq-card-director .tq-studio-properties{min-height:0;overflow-y:auto;overscroll-behavior:contain}.tq-card-director .tq-studio-center{position:relative}}

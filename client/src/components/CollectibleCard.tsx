@@ -1,14 +1,14 @@
 import { motion } from "framer-motion"
-import { memo } from "react"
+import { memo, type ReactNode } from "react"
 import { Lock, Droplets, Heart, Loader2, Sparkles } from "lucide-react"
-import ParallaxCover from "@/components/ParallaxCover"
+import CardScenePoster from "@/visual/CardScenePoster"
 import FrameRenderer from "@/components/FrameRenderer"
 import { useFrames } from "@/hooks/useFrames"
 import { useCardViewer } from "@/components/CardViewer"
-import CardParticles, { type ParticleEffect } from "@/components/CardParticles"
+type ParticleEffect = "none" | "snow" | "rain" | "rainGlass" | "embers" | "fire" | "smoke" | "sparkle"
 import { collectionMaterialFor, collectionTier, frameGradient } from "@/lib/rarities"
 import { useSettings } from "@/context/SettingsContext"
-import { readCardScene } from "@shared/card-scene"
+import { readCardScene, cardSceneFromFx, type CardScene } from "@shared/card-scene"
 
 export interface CardData {
   id:          number
@@ -36,18 +36,15 @@ interface Props {
   onTap?:       () => void // si se pasa, gana sobre el visor
 }
 
-function tintFor(effect: ParticleEffect, accent: string): string {
-  if (effect === "embers" || effect === "fire") return "#ff7a3c"
-  if (effect === "snow")   return "#ffffff"
-  if (effect === "rain" || effect === "rainGlass") return "#b4c8e6"
-  if (effect === "smoke")  return "#8a8a95"
-  return accent
+function StaticCardArt({ coverFx, cardScene, frameOverlay, accentColor }: { title: string; coverUrl: string; coverFx: any; cardScene?: CardScene; accentColor: string; accentGlow: string; className: string; frameOverlay: ReactNode }) {
+  const scene = cardScene ?? cardSceneFromFx(coverFx)
+  return <div className="relative h-full"><CardScenePoster fill scene={scene} images={[coverFx?.layers?.back, coverFx?.layers?.mid, coverFx?.layers?.front]} color={accentColor}/>{frameOverlay}</div>
 }
 
 // Tarjeta coleccionable de Tloque. Viva (parallax 3D + clima por capa)
 // cuando es tuya o en previsualización; silueta con candado si falta.
 function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview , zoomable = true, onTap }: Props) {
-  const { t, settings } = useSettings()
+  const { t } = useSettings()
   const backArt = card.fx?.layers?.back || ""
   const authoredMaterial = card.fx?.rarity || "silver"
   const mat = collectionMaterialFor(card.rarity, card.inGachaPool, authoredMaterial)
@@ -68,17 +65,9 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
 
   // Clima global (compat) y por capa (nuevo)
   const globalEffect = (card.fx?.effect || card.effect || "none") as ParticleEffect
-  const globalIntensity = typeof card.fx?.effectIntensity === "number" ? card.fx.effectIntensity
-                        : (card.effectIntensity ?? 0.5)
   const layerFx = card.fx?.layerFx || {}
   const alive = card.owned || preview
 
-  // Construye el overlay de partículas de una capa (o null si "none")
-  const slot = (which: "back" | "mid" | "front") => {
-    const lf = layerFx[which]
-    if (!lf || lf.effect === "none" || (lf.intensity ?? 0) <= 0) return undefined
-    return <CardParticles effect={lf.effect} intensity={lf.intensity} tint={tintFor(lf.effect, accentColor)} />
-  }
   const hasLayerFx = ["back", "mid", "front"].some(k => layerFx[k]?.effect && layerFx[k].effect !== "none")
 
   if (!alive) {
@@ -137,7 +126,7 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
       <div className="rounded-[22px] relative"
         style={{ boxShadow: `0 8px 28px -8px ${mat.glow}55` }}>
         <div className="relative rounded-[22px] overflow-hidden aspect-[5/7]">
-          <ParallaxCover
+          <StaticCardArt
             title={card.name}
             coverUrl={backArt}
             coverFx={card.fx}
@@ -145,7 +134,6 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
             accentColor={accentColor}
             accentGlow={accentGlow}
             className="!rounded-[22px] h-full"
-            layerSlots={hasLayerFx ? { back: slot("back"), mid: slot("mid"), front: slot("front") } : undefined}
             frameOverlay={
               /* TODO el chrome rota pegado a la carta: marco, textos, sello */
               <div className="absolute inset-0 pointer-events-none">
@@ -161,7 +149,7 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
                       mixBlendMode: "screen",
                       opacity: 0.25 + tier * 0.075,
                     }}
-                    animate={settings.reduceMotion ? undefined : { backgroundPosition: ["120% 0%", "-80% 100%", "120% 0%"] }}
+
                     transition={{ duration: Math.max(4.5, 9 - tier * 0.55), repeat: Infinity, ease: "linear" }}
                   />
                 )}
@@ -184,7 +172,7 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
                       <motion.div
                         className="absolute inset-0"
                         style={{ background: `linear-gradient(115deg, transparent 30%, ${mat.light}cc 50%, transparent 70%)` }}
-                        animate={settings.reduceMotion ? { x: "10%" } : { x: ["-120%", "120%"] }}
+
                         transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut", repeatDelay: 1.5 }}
                       />
                     )}
@@ -253,12 +241,7 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
                 )}
               </div>
             }
-          >
-            {/* Clima global (si no hay efectos por capa configurados) */}
-            {!hasLayerFx && (
-              <CardParticles effect={globalEffect} intensity={globalIntensity} tint={tintFor(globalEffect, accentColor)} />
-            )}
-          </ParallaxCover>
+          />
         </div>
       </div>
     </div>

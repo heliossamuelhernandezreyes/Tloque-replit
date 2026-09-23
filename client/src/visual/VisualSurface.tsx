@@ -16,6 +16,7 @@ function Compositor({ entries, budget, onFailure, onDprChange }: { entries: Visu
   const degraded = useRef(false)
   const initialDpr = useRef(1)
   useEffect(() => {
+    gl.transmissionResolutionScale = .5
     const generator = new PMREMGenerator(gl), room = new RoomEnvironment()
     try { environment.current = generator.fromScene(room, .04); invalidate() }
     catch { onFailure() }

@@ -40,13 +40,14 @@ test("desarrollo permite Vite y WebAssembly sin habilitar eval de JavaScript", (
   assert.equal(production.get("X-Frame-Options"), "DENY")
 })
 
-test("el taller conserva su política aislada y soporte WASM restringido", () => {
+test("la URL retirada del taller usa la misma política estricta de producción", () => {
   const workshop = responseHeaders("/taller-marcos.html", "production")
   const csp = workshop.get("Content-Security-Policy") || ""
-  assert.match(csp, /script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'/)
+  assert.match(csp, /script-src 'self' 'wasm-unsafe-eval'/)
+  assert.doesNotMatch(csp, /script-src[^;]*'unsafe-inline'/)
   assert.doesNotMatch(csp, /(?:^|\s)'unsafe-eval'(?:\s|;|$)/)
-  assert.match(csp, /frame-ancestors 'self'/)
-  assert.equal(workshop.get("X-Frame-Options"), "SAMEORIGIN")
+  assert.match(csp, /frame-ancestors 'none'/)
+  assert.equal(workshop.get("X-Frame-Options"), "DENY")
 })
 
 test("las claves de audiolibro nunca escapan del almacenamiento", () => {

@@ -1,4 +1,5 @@
 import { easeMotion, type MotionEase } from "./motion-easing"
+import type { SceneContent } from "./scene-content"
 
 export const CARD_LAYERS = ["back", "mid", "front"] as const
 export type CardLayer = typeof CARD_LAYERS[number]
@@ -8,6 +9,7 @@ export interface CardKey extends CardTransform { time: number; ease: MotionEase 
 export interface CardScene {
   version: "1.0.0"
   duration: number
+  content?: SceneContent
   finish: { type: "none" | "foil" | "prismatic"; strength: number }
   layers: Record<CardLayer, { transform: CardTransform; depth: number; keys: CardKey[] }>
 }

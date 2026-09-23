@@ -8,6 +8,8 @@ import { createFrameScene, evaluateFrameScene, FRAME_CHANNELS, frameSceneSchema,
 import { InspectionControls, InspectionStage, useInspection } from "./FrameInspection"
 import FramePoster from "./FramePoster"
 import "./frame-studio.css"
+import SceneContentEditor from "./SceneContentEditor"
+import { contentDuration } from "@shared/scene-content"
 import { MOTION_EASES, type MotionEase } from "@shared/motion-easing"
 import { applyFrameMotion, FRAME_MOTION_PRESETS } from "@shared/frame-motion-presets"
 
@@ -23,7 +25,7 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
   return <label className="tq-color-field"><input aria-label={label} type="color" value={value} onChange={e => onChange(e.target.value)}/><span>{label}<small>{value.toUpperCase()}</small></span></label>
 }
 
-export default function FrameStudio({ onLegacy }: { onLegacy: () => void }) {
+export default function FrameStudio() {
   const [, navigate] = useLocation(), { user } = useAuth(), query = useQueryClient()
   const draftKey = `tloque-frame-studio-v2:${user?.id ?? "admin"}`
   const [history, setHistory] = useState<Draft[]>(() => {
@@ -35,12 +37,21 @@ export default function FrameStudio({ onLegacy }: { onLegacy: () => void }) {
   })
   const [index, setIndex] = useState(0), draft = history[index]
   const [shape, setShape] = useState<"card" | "profile">("card")
-  const [tab, setTab] = useState<"design" | "motion">("design")
+  const [tab, setTab] = useState<"design" | "motion" | "objects">("design")
   const [channel, setChannel] = useState<FrameChannel>("orbit")
   const [notice, setNotice] = useState("")
   const [draftSaved, setDraftSaved] = useState(true)
+  const [importing, setImporting] = useState(false)
   const [ready, setReady] = useState(false)
   const file = useRef<HTMLInputElement>(null)
+  const retire = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await fetch(`/api/admin/frames/${id}`, { method: "DELETE", credentials: "include" })
+      if (!response.ok) throw new Error("No se pudo retirar el marco.")
+    },
+    onSuccess: () => { void query.invalidateQueries({ queryKey: ["/api/frames"] }); setNotice("Marco retirado de la venta. Quienes lo tienen lo conservan.") },
+    onError: (error: Error) => setNotice(error.message),
+  })
   const controller = useInspection(draft.scene.animation.duration)
   const pkg = useMemo(() => packageFrameScene(draft.scene, draft.name, draft.target), [draft])
   const track = draft.scene.animation.tracks[channel]
@@ -113,7 +124,7 @@ export default function FrameStudio({ onLegacy }: { onLegacy: () => void }) {
         <button aria-label="Rehacer" disabled={index === history.length - 1} onClick={() => { controller.pause(); setIndex(index + 1) }}><Redo2 size={16}/></button>
         <button title="Importar escena JSON" aria-label="Importar escena" onClick={() => file.current?.click()}><Upload size={16}/></button>
         <button title="Exportar escena JSON" aria-label="Exportar escena" onClick={exportScene}><Download size={16}/></button>
-        <button className="tq-studio-primary" disabled={save.isPending || !draft.name.trim()} onClick={() => save.mutate()}><Save size={15}/><span>{save.isPending ? "Guardando…" : "Guardar versión"}</span></button>
+        <button className="tq-studio-primary" disabled={importing || save.isPending || !draft.name.trim()} onClick={() => save.mutate()}><Save size={15}/><span>{save.isPending ? "Guardando…" : "Guardar versión"}</span></button>
         <input hidden ref={file} type="file" accept="application/json,.json" onChange={e => { void importScene(e.target.files?.[0]); e.target.value = "" }}/>
       </div>
     </header>
@@ -128,11 +139,10 @@ export default function FrameStudio({ onLegacy }: { onLegacy: () => void }) {
           <span>{template.name}<small>{template.note}</small></span><ArrowUpRight size={14}/>
         </button>)}</div>
         <div className="tq-studio-section-title"><span>VERSIONES GUARDADAS</span><span>{gallery?.frames.filter(frame => frame.visible !== false).length ?? 0}</span></div>
-        <div className="tq-saved-list">{gallery?.frames.filter(frame => frame.visible !== false).map(frame => <button key={frame.id} onClick={() => {
+        <div className="tq-saved-list">{gallery?.frames.filter(frame => frame.visible !== false).map(frame => <div className="tq-saved-row" key={frame.id}><button onClick={() => {
           load({ name: `${frame.name.slice(0, 52)} · copia`, price: frame.priceTinta, target: frame.target, scene: sceneFromLegacy(frame.pkg) })
-          setNotice(readFrameScene(frame.pkg) ? "Copia abierta: guardar creará una versión nueva, sin modificar la original." : "Copia convertida al motor 3D. Se recuperan material y proporciones; el diseño antiguo completo sigue intacto en la galería y el taller clásico.")
-        }}><span>{frame.name}<small>{readFrameScene(frame.pkg) ? "Escena 3D" : "Clásico · convertir copia"}</small></span><Plus size={14}/></button>)}</div>
-        <button className="tq-legacy-link" onClick={onLegacy}>Abrir taller clásico <ArrowUpRight size={14}/></button>
+          setNotice(readFrameScene(frame.pkg) ? "Copia abierta: guardar creará una versión nueva, sin modificar la original." : "Copia convertida al motor 3D. Se recuperan material y proporciones; el paquete original se conserva en la galería.")
+        }}><span>{frame.name}<small>{readFrameScene(frame.pkg) ? "Escena 3D" : "Clásico · convertir copia"}</small></span><Plus size={14}/></button><button aria-label={`Retirar marco ${frame.name}`} disabled={retire.isPending} onClick={() => { if (window.confirm(`¿Retirar «${frame.name}» de la venta? Sus propietarios lo conservarán.`)) retire.mutate(frame.id) }}><Trash2 size={14}/></button></div>)}</div>
       </aside>
       <section className="tq-studio-center" aria-label="Vista previa y secuencia">
         <div className="tq-studio-stage-title"><div><small>02 / ESCENARIO</small><h2>{draft.name || "Sin título"}</h2></div><div className="tq-segmented"><button aria-pressed={shape === "card"} onClick={() => setShape("card")}>Carta</button><button aria-pressed={shape === "profile"} onClick={() => setShape("profile")}>Perfil</button></div></div>
@@ -147,8 +157,8 @@ export default function FrameStudio({ onLegacy }: { onLegacy: () => void }) {
       </section>
       <aside className="tq-studio-properties">
         <div className="tq-studio-section-title"><span>03 / DIRECCIÓN DE ARTE</span></div>
-        <div className="tq-segmented tq-property-tabs"><button aria-pressed={tab === "design"} onClick={() => setTab("design")}>Diseño</button><button aria-pressed={tab === "motion"} onClick={() => setTab("motion")}>Animación</button></div>
-        {tab === "design" ? <>
+        <div className="tq-segmented tq-property-tabs"><button aria-pressed={tab === "design"} onClick={() => setTab("design")}>Diseño</button><button aria-pressed={tab === "motion"} onClick={() => setTab("motion")}>Animación</button><button aria-pressed={tab === "objects"} onClick={() => setTab("objects")}>Objetos y efectos</button></div>
+        {tab === "objects" ? <SceneContentEditor value={draft.scene.content} placement="frame" onBusyChange={setImporting} onChange={content => edit(s => { s.content = content; const duration = Math.max(s.animation.duration, Math.ceil(contentDuration(content))); if (duration > s.animation.duration) { const ratio = duration / s.animation.duration; Object.values(s.animation.tracks).forEach(keys => keys.forEach((key, i) => { key.time = i === keys.length - 1 ? duration : key.time * ratio })); s.animation.duration = duration } })}/> : tab === "design" ? <>
           <section><h3>Identidad</h3><label className="tq-studio-field">Nombre<input maxLength={60} value={draft.name} onChange={e => change({ ...draft, name: e.target.value })}/></label>
             <div className="tq-two-fields"><label className="tq-studio-field">Disponible para<select value={draft.target} onChange={e => change({ ...draft, target: e.target.value as FrameTarget })}><option value="both">Carta y perfil</option><option value="card">Cartas</option><option value="profile">Perfil</option></select></label><label className="tq-studio-field">Precio · Tinta<input type="number" min={0} max={1000} value={draft.price} onChange={e => change({ ...draft, price: Math.max(0, Math.min(1000, Math.round(Number(e.target.value) || 0))) })}/></label></div>
           </section>
@@ -162,7 +172,7 @@ export default function FrameStudio({ onLegacy }: { onLegacy: () => void }) {
           <section><h3>Arquitectura</h3><Slider label="Grosor del marco" value={draft.scene.geometry.width} min={.06} max={.2} onChange={v => edit(s => { s.geometry.width = v })}/><Slider label="Profundidad del bisel" value={draft.scene.geometry.depth} min={.04} max={.22} onChange={v => edit(s => { s.geometry.depth = v })}/><Slider label="Curva de esquina" value={draft.scene.geometry.radius} min={.05} max={.3} onChange={v => edit(s => { s.geometry.radius = v })}/><Slider label="Ornamentos" value={draft.scene.geometry.ornaments} min={4} max={16} step={1} onChange={v => edit(s => { s.geometry.ornaments = v })}/></section>
           <section><h3>El mundo interior</h3><label className="tq-studio-check"><input type="checkbox" checked={draft.scene.portal.enabled} onChange={e => edit(s => { s.portal.enabled = e.target.checked })}/>Portal espacial</label><ColorField label="Atmósfera" value={draft.scene.portal.color} onChange={v => edit(s => { s.portal.color = v })}/><Slider label="Paralaje" value={draft.scene.portal.depth} min={.2} max={1} onChange={v => edit(s => { s.portal.depth = v })}/><Slider label="Partículas" value={draft.scene.portal.particles} min={0} max={96} step={1} onChange={v => edit(s => { s.portal.particles = v })}/><Slider label="Flujo del portal" value={draft.scene.portal.speed} min={0} max={1} onChange={v => edit(s => { s.portal.speed = v })}/><p>Las imágenes de la carta equipada se incorporan al portal. El paralaje entre figuras requiere capas separadas.</p></section>
         </> : <>
-          <section><h3>Coreografía</h3><p>Selecciona una clave en la pista o sitúa el tiempo y cambia su valor. La galería reproduce esta misma secuencia.</p><Slider label="Duración · segundos" value={draft.scene.animation.duration} min={3} max={12} step={1} onChange={v => { controller.reset(); edit(s => { const ratio = v / s.animation.duration; for (const keys of Object.values(s.animation.tracks)) keys.forEach((key, i) => { key.time = i === keys.length - 1 ? v : key.time * ratio }); s.animation.duration = v }) }}/>
+          <section><h3>Coreografía</h3><p>Selecciona una clave en la pista o sitúa el tiempo y cambia su valor. La galería reproduce esta misma secuencia.</p><Slider label="Duración · segundos" value={draft.scene.animation.duration} min={3} max={Math.max(120, draft.scene.animation.duration)} step={1} onChange={v => { controller.reset(); edit(s => { const ratio = v / s.animation.duration; for (const keys of Object.values(s.animation.tracks)) keys.forEach((key, i) => { key.time = i === keys.length - 1 ? v : key.time * ratio }); s.animation.duration = v }) }}/>
             <label className="tq-studio-field">Pista<select aria-label="Pista" value={channel} onChange={e => setChannel(e.target.value as FrameChannel)}>{Object.entries(FRAME_CHANNELS).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}</select></label>
             <div className="tq-key-card"><small>{currentKey ? "CLAVE SELECCIONADA" : "NUEVA CLAVE"}</small><strong>{time.toFixed(2)} <span>segundos</span></strong><Slider label={bounds.label} value={pose[channel]} min={bounds.min} max={bounds.max} step={bounds.step} onChange={setKey}/>
               {currentKey && <label className="tq-studio-field">Llegada a esta clave<select aria-label="Curva de llegada del marco" value={currentKey.ease} onChange={e => edit(s => { s.animation.tracks[channel].find(key => key.time === currentKey.time)!.ease = e.target.value as MotionEase })}>{Object.entries(MOTION_EASES).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}

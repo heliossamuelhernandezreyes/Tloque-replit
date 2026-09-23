@@ -1,13 +1,14 @@
 import { z } from "zod"
+import { createSceneContent, EFFECTS, sceneContentSchema, SCENE_MAX_SECONDS } from "./scene-content"
 import { CARD_LAYERS, CARD_REST, type CardLayer, type CardScene } from "./card-scene-runtime"
 export * from "./card-scene-runtime"
 
 const finite = (min: number, max: number) => z.number().finite().min(min).max(max)
 const transform = z.object({ x: finite(-.6, .6), y: finite(-.6, .6), scale: finite(.5, 2), rotation: finite(-45, 45), opacity: finite(0, 1) }).strict()
-const key = transform.extend({ time: finite(0, 12), ease: z.enum(["smooth", "cinematic", "ease-in", "ease-out", "linear", "hold"]) }).strict()
+const key = transform.extend({ time: finite(0, SCENE_MAX_SECONDS), ease: z.enum(["smooth", "cinematic", "ease-in", "ease-out", "linear", "hold"]) }).strict()
 const layer = z.object({ transform, depth: finite(0, 1), keys: z.array(key).min(2).max(16) }).strict()
 export const cardSceneSchema = z.object({
-  version: z.literal("1.0.0"), duration: finite(3, 12),
+  version: z.literal("1.0.0"), duration: finite(3, SCENE_MAX_SECONDS), content: sceneContentSchema.optional(),
   finish: z.object({ type: z.enum(["none", "foil", "prismatic"]), strength: finite(0, .6) }).strict(),
   layers: z.object({ back: layer, mid: layer, front: layer }).strict(),
 }).strict().superRefine((scene, ctx) => {
@@ -25,6 +26,23 @@ export function readCardScene(value: unknown): CardScene | null {
   const parsed = cardSceneSchema.safeParse(value)
   const scene = parsed.success ? parsed.data : null
   cache.set(value, scene)
+  return scene
+}
+
+/** Old cards enter the same 3D renderer; stored originals remain untouched. */
+export function cardSceneFromFx(fx: any): CardScene {
+  const authored = readCardScene(fx?.scene)
+  if (authored) return authored
+  const scene = createCardScene()
+  const effect = [fx?.layerFx?.front, fx?.layerFx?.mid, fx?.layerFx?.back, { effect: fx?.effect, intensity: fx?.effectIntensity }].find(e => e?.effect && e.effect !== "none")
+  if (effect) {
+    scene.content = createSceneContent()
+    const type = effect.effect === "rainGlass" ? "rain" : effect.effect
+    if (Object.hasOwn(EFFECTS, type)) scene.content.effect.type = type
+    scene.content.effect.intensity = Math.min(1, Math.max(0, Number.isFinite(effect.intensity) ? effect.intensity : .5))
+    scene.content.glass.enabled = effect.effect === "rainGlass"
+    if (["fire", "embers"].includes(type)) scene.content.effect.color = "#ff793b"
+  }
   return scene
 }
 export const CARD_MOTION_PRESETS = {

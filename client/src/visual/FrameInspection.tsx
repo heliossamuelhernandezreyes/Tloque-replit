@@ -53,25 +53,27 @@ export function InspectionStage({ pkg, shape = "card", images, cardScene, color,
 }) {
   const engine = useVisualEngine()
   const [ready, setReady] = useState(false)
+  const [issue, setIssue] = useState(""), [retry, setRetry] = useState(0)
   const onReady = useCallback((value: boolean) => { setReady(value); onReadyChange?.(value) }, [onReadyChange])
   useEffect(() => { if (!ready) controller.pause() }, [ready, controller.pause])
   return <div className="tq-inspection-stage">
     <div className="tq-stage-meta"><span>SCENE / 02</span><span data-testid="scene-status">{ready ? "3D EN TIEMPO REAL" : engine.failed ? "VISTA ESENCIAL · GPU NO DISPONIBLE" : engine.enabled ? "PREPARANDO 3D" : "VISTA ESENCIAL"}</span></div>
-    <VisualSlot priority={priority} options={{ kind: images?.some(Boolean) ? "portal" : "frame", frame: pkg, shape, images, cardScene, color, transport: controller.transport }} interactive label={cardScene ? "Escena de la tarjeta" : "Escena del marco"} onReadyChange={onReady} className="tq-cinematic-slot">
+    <VisualSlot priority={priority} options={{ kind: cardScene || images?.some(Boolean) ? "portal" : "frame", frame: pkg, shape, images, cardScene, color, transport: controller.transport, retry, onAssetIssue: setIssue }} interactive label={cardScene ? "Escena de la tarjeta" : "Escena del marco"} onReadyChange={onReady} className="tq-cinematic-slot">
       <div className="tq-stage-poster">{cardScene ? children : <FrameRenderer preset={pkg} shape={shape}>{children}</FrameRenderer>}</div>
     </VisualSlot>
     <div className="tq-stage-hint">{ready ? "Mueve el puntero o desliza sobre el marco para explorar" : "La vista esencial conserva el diseño sin animaciones 3D"}</div>
+    {issue && <p className="tq-asset-status" role="status">{issue}{issue.startsWith("No se pudo") && <button type="button" onClick={() => { setIssue(""); setRetry(n => n + 1) }}>Reintentar vista</button>}</p>}
   </div>
 }
 
-export default function FrameInspection({ pkg, shape, images, cardScene, color, children, onReadyChange }: { pkg: unknown; shape?: "card" | "profile"; images?: string[]; cardScene?: CardScene; color?: string; children?: ReactNode; onReadyChange?: (ready: boolean) => void }) {
+export default function FrameInspection({ pkg, shape, images, cardScene, color, children, priority, onReadyChange }: { priority?: number; pkg: unknown; shape?: "card" | "profile"; images?: string[]; cardScene?: CardScene; color?: string; children?: ReactNode; onReadyChange?: (ready: boolean) => void }) {
   const scene = readFrameScene(pkg)
   const duration = cardScene?.duration ?? scene?.animation.duration ?? 8
   const controller = useInspection(duration)
   const [ready, setReady] = useState(false)
   const onReady = useCallback((value: boolean) => { setReady(value); onReadyChange?.(value) }, [onReadyChange])
   return <div className="tq-inspection">
-    <InspectionStage pkg={pkg} shape={shape} images={images} cardScene={cardScene} color={color} controller={controller} onReadyChange={onReady}>{children}</InspectionStage>
+    <InspectionStage priority={priority} pkg={pkg} shape={shape} images={images} cardScene={cardScene} color={color} controller={controller} onReadyChange={onReady}>{children}</InspectionStage>
     {(scene || cardScene) && <InspectionControls controller={controller} duration={duration} disabled={!ready}/>}
   </div>
 }
