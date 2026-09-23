@@ -44,7 +44,7 @@ jobs:
           python - <<'PY'
           import base64
           from pathlib import Path
-          for name in ("proofs-interior", "proofs-cover", "studio-screens", "studio-mobile-screens"):
+          for name in ("proofs-interior", "proofs-cover", "studio-screens", "studio-mobile-screens", "proofs-unicode", "studio-unicode-screens"):
               encoded = base64.b64encode(Path(".tloque_cache/print-qa", name + ".jpg").read_bytes()).decode()
               print("TLOQUE_PROOF_START " + name)
               for offset in range(0, len(encoded), 4000):

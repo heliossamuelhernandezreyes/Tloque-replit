@@ -8,6 +8,8 @@ import type { CoverLayout, PrintImage } from "./cover"
 import type { ExportKind, WorkerRequest, WorkerResponse } from "./print.worker"
 import { downloadFile, loadCoverImage, printFilename } from "./browserFiles"
 import PrintPreview from "./PrintPreview"
+import PrintResourcesPanel from "./PrintResourcesPanel"
+import { emptyPrintResources } from "./resources"
 import "./print.css"
 
 const STORAGE = "tloque_print_edition_v1"
@@ -41,6 +43,8 @@ export default function PrintStudio({ book, copy, destination, onClose }: { book
   const [result, setResult] = useState<{ interior: EditionLayout; cover: CoverLayout } | null>(null)
   const [busy, setBusy] = useState(true), [exporting, setExporting] = useState(false), [error, setError] = useState("")
   const [attempt, setAttempt] = useState(0), [saved, setSaved] = useState(false)
+  const [resources, setResources] = useState(emptyPrintResources)
+  const [resourcesLoading, setResourcesLoading] = useState(false)
   const worker = useRef<Worker | null>(null), heading = useRef<HTMLHeadingElement>(null)
   const size = pageSize(settings)
 
@@ -69,11 +73,11 @@ export default function PrintStudio({ book, copy, destination, onClose }: { book
       task.onerror = () => { if (worker.current === task) { setError("generation"); setBusy(false); setExporting(false) } }
       const request: WorkerRequest = { type: "compose", book: { ...book, synopsis: blurb }, settings,
         labels: printLabels(book.originalLanguage || language), kitLabels: { cut: t("cut"), fold: t("fold"), glue: t("glue") },
-        copy, origin: window.location.origin, art, backArt }
+        copy, origin: window.location.origin, art, backArt, resources }
       task.postMessage(request)
     }, 280)
     return () => { clearTimeout(timer); worker.current?.terminate(); worker.current = null }
-  }, [book, settings, language, copy, art, backArt, blurb, attempt])
+  }, [book, settings, language, copy, art, backArt, blurb, attempt, resources])
 
   const update = (patch: Partial<EditionSettings>, resetSpine = true) => {
     setBusy(true)
@@ -87,7 +91,7 @@ export default function PrintStudio({ book, copy, destination, onClose }: { book
   const interiorBlocked = !result?.interior.pages.length || !!error || issues.some(i => i.scope === "interior" && i.severity === "error")
   const kitTooWide = settings.destination === "booklet" && size.width + settings.spineMm > (settings.paper === "letter" ? 215.9 : 210) - 20
   const coverBlocked = interiorBlocked || artLoading || kitTooWide || issues.some(i => i.scope === "cover" && i.severity === "error")
-  const inFlight = busy || exporting
+  const inFlight = busy || exporting || resourcesLoading
   const exportPdf = (kind: ExportKind) => {
     if (inFlight || interiorBlocked || (["cover", "coverKit"].includes(kind) && (coverBlocked || !coverConfirmed))) return
     setExporting(true); worker.current?.postMessage({ type: "export", kind } satisfies WorkerRequest)
@@ -136,6 +140,7 @@ export default function PrintStudio({ book, copy, destination, onClose }: { book
           {step === 1 && <>
             <div className="print-templates">{(["classic", "contemporary", "large"] as const).map(key => <button key={key} aria-pressed={settings.template === key} onClick={() => update(useTemplate(settings, key))}><span className={"print-type-sample print-type-" + key}>Aa</span><strong>{t(key)}</strong><small>{t(key === "classic" ? "classicHint" : key === "large" ? "largeHint" : "contemporaryHint")}</small></button>)}</div>
             <p className="print-font-note">{t("typeHint")}</p>
+            <PrintResourcesPanel book={book} settings={settings} resources={resources} language={language} loading={resourcesLoading} onLoading={setResourcesLoading} onChange={value => { setBusy(true); setResources(value); update({}) }} />
             <div className="print-fields"><NumberField label={t("size")} value={settings.bodyPt} min={9} max={18} step={.5} onChange={bodyPt => update({ bodyPt })} /><NumberField label={t("leading")} value={settings.leading} min={1.2} max={1.8} step={.05} onChange={leading => update({ leading })} /></div>
             <details className="print-details"><summary><SlidersHorizontal size={15} />{t("margins")}</summary><div className="print-fields">{(["inner", "outer", "top", "bottom"] as const).map(key => <NumberField key={key} label={t(key)} value={settings[key]} min={key === "outer" ? 13 : 16} max={key === "inner" ? 40 : key === "outer" ? 30 : 34} onChange={value => update({ [key]: value })} />)}</div></details>
             <div className="print-section-title">{t("structure")}</div>
@@ -164,12 +169,12 @@ export default function PrintStudio({ book, copy, destination, onClose }: { book
           </>}
           <div className="print-controls-bottom"><button className="print-reset" onClick={() => { update({ ...DEFAULT_EDITION }); setPage(0) }}><RotateCcw size={13} />{t("reset")}</button>{saved && <span>{t("saved")}</span>}</div>
         </section>
-        <section className="print-preview-pane" aria-label={t("preview")} aria-busy={busy}>
+        <section className="print-preview-pane" aria-label={t("preview")} aria-busy={busy || resourcesLoading}>
           <div className="print-preview-toolbar"><div><button aria-pressed={part === "interior"} onClick={() => setPart("interior")}>{t("interior")}</button>{settings.destination !== "home" && <button aria-pressed={part === "cover"} onClick={() => setPart("cover")}>{t("cover")}</button>}</div><div><Toggle checked={guides} onChange={setGuides}>{t("guides")}</Toggle><button className="print-zoom" aria-label={t("zoom")} aria-pressed={zoom} onClick={() => setZoom(v => !v)}><ZoomIn size={16} /></button></div></div>
           <div className="print-stage" data-zoom={zoom}>
             {result && result.interior.pages.length > 0 && <PrintPreview interior={result.interior} cover={result.cover} page={page} part={settings.destination !== "home" ? part : "interior"} guides={guides} label={t(part) + " · " + t("page") + " " + (page + 1)} />}
             {!result && !error && <div className="print-empty"><BookOpen /><h3>{t("composing")}</h3><p>{t("composingHint")}</p></div>}
-            {!!error && <div className="print-error" role="alert"><TriangleAlert /><p>{error === "fonts" ? t("fontsError") : error === "tooLong" ? issueText(language, { code: "tooLong", severity: "error", scope: "interior" }) : t("error")}</p><button className="print-secondary" onClick={() => setAttempt(n => n + 1)}>{t("retry")}</button></div>}
+            {!!error && <div className="print-error" role="alert"><TriangleAlert /><p>{error === "fonts" ? t("fontsError") : error === "customFont" ? t("customFontError") : error === "resources" ? t("resourceError") : error === "missingGlyph" ? issueText(language, { code: "missingGlyph", severity: "error", scope: "interior" }) : error === "tooLong" ? issueText(language, { code: "tooLong", severity: "error", scope: "interior" }) : t("error")}</p><button className="print-secondary" onClick={() => setAttempt(n => n + 1)}>{t("retry")}</button></div>}
             {result && !result.interior.pages.length && !error && <div className="print-error" role="alert"><TriangleAlert />{result.interior.issues.map((i, n) => <p key={n}>{issueText(language, i)}</p>)}</div>}
             {busy && <div className="print-composing" role="status"><Loader2 size={14} className="animate-spin" />{t("composing")}</div>}
           </div>

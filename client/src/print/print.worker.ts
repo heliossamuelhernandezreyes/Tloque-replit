@@ -1,11 +1,13 @@
 import { composeEdition } from "./compose"
 import { composeCover, type CoverLayout, type PrintImage } from "./cover"
 import { renderCover, renderCoverKit } from "./coverPdf"
-import { loadPrintFonts } from "./fontAssets"
+import { loadPrintFonts, loadFallbackFont } from "./fontAssets"
+import { unicodeMetrics } from "./unicodeFonts"
+import { emptyPrintResources, type PrintResources } from "./resources"
 import { fontMetrics, pdfDocument, renderInterior, type PrintFonts } from "./pdfRuntime"
 import type { EditionLayout, EditionSettings, PdfCopy, PrintBook, PrintLabels } from "./model"
 
-export interface ComposeRequest { type: "compose"; book: PrintBook; settings: EditionSettings; labels: PrintLabels; kitLabels: { cut: string; fold: string; glue: string }; copy?: PdfCopy; origin: string; art: PrintImage | null; backArt: PrintImage | null }
+export interface ComposeRequest { type: "compose"; book: PrintBook; settings: EditionSettings; labels: PrintLabels; kitLabels: { cut: string; fold: string; glue: string }; copy?: PdfCopy; origin: string; art: PrintImage | null; backArt: PrintImage | null; resources?: PrintResources }
 export type ExportKind = "interior" | "booklet" | "cover" | "coverKit"
 export type WorkerRequest = ComposeRequest | { type: "export"; kind: ExportKind }
 export type WorkerResponse = { type: "ready"; interior: EditionLayout; cover: CoverLayout } | { type: "file"; kind: ExportKind; buffer: ArrayBuffer } | { type: "error"; message: string }
@@ -15,8 +17,10 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   try {
     if (event.data.type === "compose") {
       const { book, settings, labels, copy, origin, art, backArt } = event.data
-      const fonts = await loadPrintFonts(), metrics = fontMetrics(pdfDocument(148, 210, fonts))
-      const interior = composeEdition(book, settings, metrics, labels, copy, origin)
+      const [fonts, fallback] = await Promise.all([loadPrintFonts(), loadFallbackFont()])
+      const resources = event.data.resources || emptyPrintResources()
+      const metrics = unicodeMetrics(fontMetrics(pdfDocument(148, 210, fonts)), fonts, fallback, resources)
+      const interior = composeEdition(book, settings, metrics, labels, copy, origin, resources)
       const cover = composeCover(book, interior, metrics, art, copy, origin, backArt)
       result = { interior, cover, fonts, title: book.title, kitLabels: event.data.kitLabels }
       self.postMessage({ type: "ready", interior, cover } satisfies WorkerResponse)
@@ -28,6 +32,6 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       self.postMessage({ type: "file", kind, buffer } satisfies WorkerResponse, { transfer: [buffer] })
     }
   } catch (error) {
-    self.postMessage({ type: "error", message: error instanceof Error && ["fonts", "tooLong"].includes(error.message) ? error.message : "generation" } satisfies WorkerResponse)
+    self.postMessage({ type: "error", message: error instanceof Error && ["fonts", "tooLong", "customFont", "resources", "missingGlyph"].includes(error.message) ? error.message : "generation" } satisfies WorkerResponse)
   }
 }

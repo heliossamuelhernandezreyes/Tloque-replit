@@ -63,7 +63,7 @@ test("booklet imposition includes every padded page exactly once with shorter fi
   assert.throws(() => imposeBooklet(0, 16)); assert.throws(() => imposeBooklet(40, 12))
 })
 
-test("Unicode normalization works; missing glyphs and unsupported shaping block broken PDFs", () => {
+test("Unicode normalization works; the basic Source Serif metrics still reject absent glyphs", () => {
   const supported = compose({}, { ...book, chapters: [{ title: "Ελληνικά · русский", content: "México: acción, corazón — Ελληνικά, русский." }] })
   assert.equal(supported.issues.some(i => i.severity === "error"), false)
   for (const content of ["مرحبا بالعالم", "日本語の本", "Emoji 🦄"]) {

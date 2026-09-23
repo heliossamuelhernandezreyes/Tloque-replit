@@ -1,6 +1,28 @@
 import { isSafeImageSource } from "@shared/media"
 import type { PrintImage } from "./cover"
 
+export async function verifyPrintImage(image: PrintImage): Promise<void> {
+  const decoded = new Image()
+  try {
+    decoded.src = image.data; await decoded.decode()
+    if (decoded.naturalWidth !== image.width || decoded.naturalHeight !== image.height) throw new Error("resources")
+  } finally { decoded.src = "" }
+}
+
+export async function loadPrintImage(file: File): Promise<PrintImage> {
+  if (!/^(image\/(png|jpeg|webp))$/i.test(file.type) || file.size > 12_000_000 || !file.size) throw new Error("resources")
+  const url = URL.createObjectURL(file)
+  try {
+    const img = new Image(); img.src = url; await img.decode()
+    if (!img.naturalWidth || img.naturalWidth * img.naturalHeight > 32_000_000) throw new Error("resources")
+    const canvas = document.createElement("canvas"); canvas.width = img.naturalWidth; canvas.height = img.naturalHeight
+    const ctx = canvas.getContext("2d"); if (!ctx) throw new Error("resources")
+    ctx.drawImage(img, 0, 0)
+    // Preserve transparent drawing backgrounds; never upscale source pixels.
+    return { data: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height }
+  } finally { URL.revokeObjectURL(url) }
+}
+
 export async function loadCoverImage(source: string | undefined, signal: AbortSignal): Promise<PrintImage | null> {
   if (!source || !isSafeImageSource(source)) return null
   let url: string | undefined

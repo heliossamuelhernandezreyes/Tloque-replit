@@ -47,11 +47,21 @@ export function drawPage(doc: jsPDF, page: PrintPage, dx = 0, dy = 0) {
   for (const op of page.ops) {
     if (op.kind === "text") {
       doc.setFont("SourceSerif4", op.font); doc.setFontSize(op.pt); doc.setTextColor(op.gray)
-      if (op.words) op.words.forEach(w => doc.text(w.text, w.x + dx, op.y + dy))
+      if (op.ink) {
+        doc.setFillColor(String(op.gray / 255))
+        for (const item of op.ink) {
+          if (item.kind === "image") doc.addImage(item.data, item.data.startsWith("data:image/png") ? "PNG" : "JPEG", item.x + dx, item.y + dy, item.width, item.height)
+          else {
+            doc.path(item.path.commands.map(c => ({ op: c.op, c: c.c.map((v, i) => i % 2 ? item.y + dy - v * item.scale : item.x + dx + v * item.scale) })))
+            doc.fill()
+          }
+        }
+      } else if (op.words) op.words.forEach(w => doc.text(w.text, w.x + dx, op.y + dy))
       else doc.text(op.text, op.x + dx, op.y + dy)
     } else if (op.kind === "line") {
       doc.setDrawColor(op.gray); doc.setLineWidth(op.weight); doc.line(op.x + dx, op.y + dy, op.x2 + dx, op.y2 + dy)
-    } else drawQr(doc, op.value, op.x + dx, op.y + dy, op.size)
+    } else if (op.kind === "image") doc.addImage(op.data, op.data.startsWith("data:image/png") ? "PNG" : "JPEG", op.x + dx, op.y + dy, op.width, op.height)
+    else drawQr(doc, op.value, op.x + dx, op.y + dy, op.size)
   }
 }
 // Isolate jsPDF's version-specific page dictionary adapter; PDF QA verifies it.
