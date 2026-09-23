@@ -44,6 +44,14 @@ export default function FrameStudio() {
   const [importing, setImporting] = useState(false)
   const [ready, setReady] = useState(false)
   const file = useRef<HTMLInputElement>(null)
+  const retire = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await fetch(`/api/admin/frames/${id}`, { method: "DELETE", credentials: "include" })
+      if (!response.ok) throw new Error("No se pudo retirar el marco.")
+    },
+    onSuccess: () => { void query.invalidateQueries({ queryKey: ["/api/frames"] }); setNotice("Marco retirado de la venta. Quienes lo tienen lo conservan.") },
+    onError: (error: Error) => setNotice(error.message),
+  })
   const controller = useInspection(draft.scene.animation.duration)
   const pkg = useMemo(() => packageFrameScene(draft.scene, draft.name, draft.target), [draft])
   const track = draft.scene.animation.tracks[channel]
@@ -131,10 +139,10 @@ export default function FrameStudio() {
           <span>{template.name}<small>{template.note}</small></span><ArrowUpRight size={14}/>
         </button>)}</div>
         <div className="tq-studio-section-title"><span>VERSIONES GUARDADAS</span><span>{gallery?.frames.filter(frame => frame.visible !== false).length ?? 0}</span></div>
-        <div className="tq-saved-list">{gallery?.frames.filter(frame => frame.visible !== false).map(frame => <button key={frame.id} onClick={() => {
+        <div className="tq-saved-list">{gallery?.frames.filter(frame => frame.visible !== false).map(frame => <div className="tq-saved-row" key={frame.id}><button onClick={() => {
           load({ name: `${frame.name.slice(0, 52)} · copia`, price: frame.priceTinta, target: frame.target, scene: sceneFromLegacy(frame.pkg) })
           setNotice(readFrameScene(frame.pkg) ? "Copia abierta: guardar creará una versión nueva, sin modificar la original." : "Copia convertida al motor 3D. Se recuperan material y proporciones; el paquete original se conserva en la galería.")
-        }}><span>{frame.name}<small>{readFrameScene(frame.pkg) ? "Escena 3D" : "Clásico · convertir copia"}</small></span><Plus size={14}/></button>)}</div>
+        }}><span>{frame.name}<small>{readFrameScene(frame.pkg) ? "Escena 3D" : "Clásico · convertir copia"}</small></span><Plus size={14}/></button><button aria-label={`Retirar marco ${frame.name}`} disabled={retire.isPending} onClick={() => { if (window.confirm(`¿Retirar «${frame.name}» de la venta? Sus propietarios lo conservarán.`)) retire.mutate(frame.id) }}><Trash2 size={14}/></button></div>)}</div>
       </aside>
       <section className="tq-studio-center" aria-label="Vista previa y secuencia">
         <div className="tq-studio-stage-title"><div><small>02 / ESCENARIO</small><h2>{draft.name || "Sin título"}</h2></div><div className="tq-segmented"><button aria-pressed={shape === "card"} onClick={() => setShape("card")}>Carta</button><button aria-pressed={shape === "profile"} onClick={() => setShape("profile")}>Perfil</button></div></div>

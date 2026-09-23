@@ -22,7 +22,7 @@ export default function CardDirector({ value, images, frame, color, name, draftK
   const [history, setHistory] = useState<CardScene[]>(() => [structuredClone(value ?? createCardScene())])
   const [index, setIndex] = useState(0), scene = history[index]
   const [layer, setLayer] = useState<CardLayer>("mid")
-  const [tab, setTab] = useState<"composition" | "motion" | "objects">("composition")
+  const [tab, setTab] = useState<"composition" | "motion" | "objects">(images.some(Boolean) ? "composition" : "objects")
   const [importing, setImporting] = useState(false)
   const [ready, setReady] = useState(false), [notice, setNotice] = useState("")
   const [savedDraft, setSavedDraft] = useState<CardScene | null>(() => {
@@ -86,7 +86,7 @@ export default function CardDirector({ value, images, frame, color, name, draftK
       {notice && <div className="tq-studio-notice" role="status">{notice}<button aria-label="Cerrar aviso de dirección" onClick={() => setNotice("")}>×</button></div>}
       {savedDraft && <div className="tq-studio-notice"><span>Hay un borrador de dirección en este dispositivo.</span><button onClick={() => { controller.reset(); change(savedDraft); setSavedDraft(null) }}>Recuperar borrador</button><button aria-label="Ignorar borrador" onClick={() => setSavedDraft(null)}>×</button></div>}
       <main className="tq-card-director-grid">
-        <section className="tq-studio-center">
+        <section className="tq-studio-center" data-visual-clip>
           <div className="tq-studio-stage-title"><div><small>01 / COMPOSICIÓN EN VIVO</small><h2>{name || "Tu próxima tarjeta"}</h2></div><span className="tq-card-layer-count">{images.filter(Boolean).length} / 3 capas</span></div>
           <InspectionStage pkg={frame} cardScene={scene} images={images} color={color} controller={controller} onReadyChange={setReady}>
             <CardScenePoster scene={scene} images={images} frame={frame} color={color}/>

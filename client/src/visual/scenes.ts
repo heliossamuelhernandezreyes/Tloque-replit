@@ -265,13 +265,14 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
       cardObjects?.update(cardContent, inspection ? time : 0)
       frameObjects?.update(frameContent, inspection ? time : 0)
       const content = cardContent ?? frameContent
-      weather?.update(content?.effect, time)
+      weather?.update(cardContent?.effect.type !== "none" && cardContent?.effect ? cardContent.effect : frameContent?.effect ?? cardContent?.effect, time)
       if (world && content) (world.background as Color).set(content.background)
       if (glassMesh && content) {
-        glassMesh.visible = content.glass.enabled
-        glassMesh.material.color.set(content.glass.tint)
-        glassMesh.material.opacity = content.glass.opacity
-        glassMesh.material.roughness = content.glass.roughness
+        const glass = cardContent?.glass.enabled ? cardContent.glass : frameContent?.glass ?? cardContent?.glass ?? content.glass
+        glassMesh.visible = glass.enabled
+        glassMesh.material.color.set(glass.tint)
+        glassMesh.material.opacity = glass.opacity
+        glassMesh.material.roughness = glass.roughness
       }
       const issue = cardObjects?.issue() || frameObjects?.issue() || (cardObjects?.pending() || frameObjects?.pending() ? "Cargando modelo 3D…" : "")
       if (issue !== lastIssue) { lastIssue = issue; current.onAssetIssue?.(issue) }

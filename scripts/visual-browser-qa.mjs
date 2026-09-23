@@ -79,6 +79,7 @@ const openStudio = async page => {
   await page.getByRole("heading", { name: "Estudio de marcos 3D" }).waitFor({ timeout: 30000 })
 }
 const rendered = async page => {
+  await page.locator(".tq-cinematic-slot").scrollIntoViewIfNeeded()
   await page.waitForTimeout(180)
   await page.locator('.tq-cinematic-slot[data-visual-ready="true"]').waitFor({ timeout: 30000 })
 }
@@ -247,7 +248,7 @@ try {
   await cardEditor(essentialCard.page, false)
   assert.equal(await essentialCard.page.locator("canvas").count(), 0)
   assert.equal(await essentialCard.page.getByRole("button", { name: "Reproducir inspección", exact: true }).isDisabled(), true)
-  assert.equal(await essentialCard.page.getByTestId("card-scene-poster").locator("img").count(), 2)
+  assert.equal(await essentialCard.page.getByRole("dialog").getByTestId("card-scene-poster").locator("img").count(), 2)
   await essentialCard.context.close()
 
   const fallback = await setup({ essential: true })
@@ -277,6 +278,7 @@ try {
   await models.page.screenshot({ path: `${output}/card-3d-builder-fire.png` })
   await models.page.getByLabel("Importar archivo 3D", { exact: true }).setInputFiles({ name: "complete.glb", mimeType: "model/gltf-binary", buffer: modelBytes })
   await models.page.getByRole("status").filter({ hasText: "Modelo importado · 2 animaciones" }).waitFor()
+  await rendered(models.page)
   await models.page.getByRole("status").filter({ hasText: "Cargando modelo 3D" }).waitFor({ state: "hidden" })
   assert.equal(await models.page.getByRole("status").filter({ hasText: "No se pudo cargar" }).count(), 0)
   assert.ok(modelFetches > 0)

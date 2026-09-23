@@ -19,3 +19,4 @@
 @media(max-width:680px){.tq-timeline-row{height:42px}.tq-studio .tq-timeline-row>button{min-height:40px}.tq-studio .tq-timeline-track button{min-width:32px;min-height:40px;top:-10px}.tq-playhead{height:42px}.tq-studio-actions .tq-studio-primary{padding-inline:12px}}
 
 .tq-studio .tq-property-tabs button{padding:6px;white-space:normal;min-width:0;font-size:10px;line-height:1.4}
+.tq-saved-row{display:flex;gap:4px;align-items:center}.tq-saved-row>button:first-child{flex:1;min-width:0}.tq-saved-row>button:last-child{width:36px;flex-shrink:0}
