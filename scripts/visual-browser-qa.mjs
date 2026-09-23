@@ -99,6 +99,7 @@ const slider = async (page, label, value) => {
 // Small synthetic render proofs can be inspected through the authenticated job
 // log API as well as the ZIP artifact; no deployed user data enters these images.
 const proof = async (page, name) => {
+  await rendered(page)
   const bytes = await page.locator(".tq-cinematic-slot").screenshot({ type: "jpeg", quality: 65, path: `${output}/${name}.jpg` })
   console.log(`TLOQUE_VISUAL_PROOF ${name} ${bytes.toString("base64")}`)
 }
@@ -303,6 +304,7 @@ try {
   await models.page.getByLabel("Efecto 3D", { exact: true }).selectOption("rain")
   await models.page.waitForTimeout(200)
   assert.equal(modelFetches, downloadsBefore, "editing position/weather does not reload GLB or reset GPU")
+  await rendered(models.page)
   await models.page.screenshot({ path: `${output}/card-animated-glb-rain.png` })
   await proof(models.page, "animated-model-rain")
   const objectDownload = models.page.waitForEvent("download")
