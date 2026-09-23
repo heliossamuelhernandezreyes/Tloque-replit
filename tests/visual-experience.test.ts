@@ -110,10 +110,9 @@ test("el carrusel no escribe sobre el transform reservado a Embla", () => {
   assert.doesNotMatch(source, /emblaApi\?\.reInit\(\)/)
 })
 
-test("partículas usan delta real y se pausan cuando la pestaña se oculta", () => {
-  const source = readFileSync("client/src/components/CardParticles.tsx", "utf8")
-  assert.match(source, /now - previousFrame/)
-  assert.doesNotMatch(source, /t \+= 0\.016/)
-  assert.match(source, /removeEventListener\("visibilitychange", onVisibility\)/)
-  assert.match(source, /p\.size \* Math\.max\(0, p\.life\)/)
+test("las tarjetas no montan el motor Canvas2D retirado", () => {
+  const source = readFileSync("client/src/components/CollectibleCard.tsx", "utf8")
+  assert.doesNotMatch(source, /CardParticles|ParallaxCover|<canvas/)
+  const studio = readFileSync("client/src/pages/FrameWorkshop.tsx", "utf8")
+  assert.doesNotMatch(studio, /iframe|LegacyFrameWorkshop/)
 })

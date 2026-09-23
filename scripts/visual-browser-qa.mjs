@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto"
+import { modelFixture } from "../tests/fixtures/animated-model.ts"
+import { inspectGlb } from "../shared/validate-glb.ts"
 import { createRequire } from "node:module"
 import { mkdir, readFile } from "node:fs/promises"
 import assert from "node:assert/strict"
@@ -21,6 +24,9 @@ const frames = [{ id: 1, name: "Atlas astral", target: "both", priceTinta: 0, pk
 let saved = null
 const cards = []
 let savedCard = null
+const modelBytes = modelFixture(), modelHash = createHash("sha256").update(modelBytes).digest("hex")
+const modelSource = `/api/visual/models/${modelHash}.glb`
+let modelFetches = 0
 const user = { id: 9001, email: "fixture@example.test", name: "Visual QA", avatar: "", isAdmin: true, capabilities: { manageCatalog: true, manageFrames: true, manageAudioCatalog: true, manageFinance: true, manageAdmins: true, runDiagnostics: true }, persona: "admin", subscription: { plan: "aesthetic", status: "active", expiresAt: null }, visualEntitlements: { themes: ["singularity", "fluorescent-rose"], expiresAt: null } }
 
 async function setup({ mobile = false, essential = false, admin = true } = {}) {
@@ -36,6 +42,12 @@ async function setup({ mobile = false, essential = false, admin = true } = {}) {
     if (url.hostname !== "127.0.0.1") return route.abort()
     if (!url.pathname.startsWith("/api/")) return route.continue()
     let data = {}
+    if (url.pathname === "/api/visual/models" && route.request().method() === "POST") {
+      try { const metadata = inspectGlb(route.request().postDataBuffer()); return route.fulfill({ status: 201, json: { source: modelSource, ...metadata } }) }
+      catch (error) { return route.fulfill({ status: 400, json: { message: error.message } }) }
+    }
+    if (url.pathname === modelSource) { modelFetches++; return route.fulfill({ contentType: "model/gltf-binary", body: modelBytes }) }
+
     if (url.pathname === "/api/auth/me") data = { ...user, isAdmin: admin, capabilities: admin ? user.capabilities : {} }
     else if (url.pathname === "/api/frames") data = { frames }
     else if (url.pathname === "/api/admin/frames" && route.request().method() === "POST") {
@@ -97,7 +109,7 @@ async function cardEditor(page, create = true) {
       ctx.fillStyle = "#10142e"; ctx.beginPath(); ctx.arc(350, 430, 115, 0, Math.PI * 2); ctx.fill()
       return { back, front: canvas.toDataURL("image/webp", .9) }
     })
-    await page.getByLabel("Fondo (obligatorio)", { exact: true }).setInputFiles({ name: "back.png", mimeType: "image/png", buffer: Buffer.from(assets.back.split(",")[1], "base64") })
+    await page.getByLabel("Fondo (opcional si usas 3D)", { exact: true }).setInputFiles({ name: "back.png", mimeType: "image/png", buffer: Buffer.from(assets.back.split(",")[1], "base64") })
     await page.getByText(/Imagen opaca · recorta/).waitFor()
     await page.getByLabel("Capa frontal (opcional)", { exact: true }).setInputFiles({ name: "front.webp", mimeType: "image/webp", buffer: Buffer.from(assets.front.split(",")[1], "base64") })
     await page.getByText(/Transparencia conservada/).waitFor()
@@ -249,6 +261,75 @@ try {
   await reader.page.waitForTimeout(1500)
   assert.equal(await reader.page.locator(".tq-studio").count(), 0)
   await reader.context.close()
+  console.log("QA: 3D objects, complete GLB clips, glass, weather and model-only cards")
+  const models = await setup()
+  await models.page.goto("http://127.0.0.1:4182/tarjetas")
+  await models.page.getByRole("button", { name: "Nueva tarjeta", exact: true }).click()
+  await models.page.getByPlaceholder("Nombre (ej. Hall)").fill("Escena GLB")
+  await models.page.getByRole("button", { name: "Dirigir escena y animación", exact: true }).click()
+  await rendered(models.page)
+  await models.page.getByRole("button", { name: "Objetos y efectos", exact: true }).click()
+  await models.page.getByRole("button", { name: "Cristal flotante", exact: true }).click()
+  await models.page.getByLabel("Poner vidrio", { exact: true }).check()
+  await models.page.getByLabel("Efecto 3D", { exact: true }).selectOption("fire")
+  await rendered(models.page)
+  assert.equal(await models.page.locator("canvas").count(), 1)
+  await models.page.screenshot({ path: `${output}/card-3d-builder-fire.png` })
+  await models.page.getByLabel("Importar archivo 3D", { exact: true }).setInputFiles({ name: "complete.glb", mimeType: "model/gltf-binary", buffer: modelBytes })
+  await models.page.getByRole("status").filter({ hasText: "Modelo importado · 2 animaciones" }).waitFor()
+  await models.page.getByRole("status").filter({ hasText: "Cargando modelo 3D" }).waitFor({ state: "hidden" })
+  assert.equal(await models.page.getByRole("status").filter({ hasText: "No se pudo cargar" }).count(), 0)
+  assert.ok(modelFetches > 0)
+  assert.equal(await models.page.getByLabel("Animación importada", { exact: true }).locator("option").count(), 4)
+  await models.page.getByLabel("Repetir animación", { exact: true }).uncheck()
+  await slider(models.page, "Tiempo de inspección", 17)
+  const downloadsBefore = modelFetches
+  await slider(models.page, "Posición horizontal", .25)
+  await models.page.getByLabel("Efecto 3D", { exact: true }).selectOption("rain")
+  await models.page.waitForTimeout(200)
+  assert.equal(modelFetches, downloadsBefore, "editing position/weather does not reload GLB or reset GPU")
+  await models.page.screenshot({ path: `${output}/card-animated-glb-rain.png` })
+  const objectDownload = models.page.waitForEvent("download")
+  await models.page.getByRole("button", { name: "Exportar objetos", exact: true }).click()
+  const objectPath = await (await objectDownload).path()
+  const recipe = JSON.parse(await readFile(objectPath, "utf8"))
+  assert.equal(recipe.content.objects.length, 3)
+  assert.equal(recipe.content.glass.enabled, true)
+  await models.page.getByRole("button", { name: "Usar esta dirección", exact: true }).click()
+  await models.page.getByRole("button", { name: "Crear tarjeta", exact: true }).click()
+  await models.page.getByRole("button", { name: "Editar Escena GLB", exact: true }).waitFor()
+  assert.equal(savedCard.fx.layers.back, "")
+  assert.equal(savedCard.fx.scene.duration, 18)
+  assert.equal(savedCard.fx.scene.content.objects[2].clips[0].duration, 18)
+  await models.page.reload()
+  await models.page.getByRole("button", { name: "Editar Escena GLB", exact: true }).click()
+  await models.page.getByRole("button", { name: "Escena GLB", exact: true }).click()
+  await rendered(models.page)
+  await slider(models.page, "Tiempo de inspección", 17)
+  assert.equal(await models.page.getByLabel("Tiempo de inspección", { exact: true }).inputValue(), "17")
+  await models.page.keyboard.press("Escape")
+  await openStudio(models.page)
+  await models.page.getByRole("button", { name: "Objetos y efectos", exact: true }).click()
+  await models.page.getByLabel("Importar archivo 3D", { exact: true }).setInputFiles(objectPath)
+  await models.page.getByRole("status").filter({ hasText: "Objetos y efectos importados" }).waitFor()
+  await models.page.getByLabel("Pieza activa", { exact: true }).selectOption({ index: 2 })
+  await models.page.getByLabel("Colocación 3D", { exact: true }).selectOption("frame")
+  await models.page.getByRole("button", { name: "Guardar versión", exact: true }).click()
+  await models.page.getByRole("status").filter({ hasText: "Versión guardada" }).waitFor()
+  assert.equal(saved.pkg.scene.content.objects[2].placement, "frame")
+  assert.equal(saved.pkg.scene.content.objects[2].source, modelSource)
+  assert.equal(await models.page.getByRole("button", { name: "Abrir taller clásico" }).count(), 0)
+  assert.equal(await models.page.locator("iframe").count(), 0)
+  await models.context.close()
+  const modelMobile = await setup({ mobile: true })
+  await modelMobile.page.goto("http://127.0.0.1:4182/tarjetas")
+  await modelMobile.page.getByRole("button", { name: "Editar Escena GLB", exact: true }).click()
+  await modelMobile.page.getByRole("button", { name: "Dirigir escena y animación", exact: true }).click()
+  await modelMobile.page.getByRole("button", { name: "Objetos y efectos", exact: true }).click()
+  await rendered(modelMobile.page)
+  assert.equal(await modelMobile.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  await modelMobile.page.screenshot({ path: `${output}/card-model-mobile.png` })
+  await modelMobile.context.close()
   assert.deepEqual(errors, [])
   console.log("Visual browser QA passed: WebGL, frame/card inspectors, pause/seek, save/export/import, alpha-preserving image preparation, mobile, essential and admin gate.")
   console.log(`Screenshots: ${output}`)

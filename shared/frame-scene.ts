@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { sceneContentSchema, SCENE_MAX_SECONDS } from "./scene-content"
 import { visualFrame } from "./visual-experience"
 import { easeMotion, type MotionEase } from "./motion-easing"
 
@@ -15,19 +16,20 @@ export const FRAME_CHANNELS = {
 export type FrameChannel = keyof typeof FRAME_CHANNELS
 const finite = (min: number, max: number) => z.number().finite().min(min).max(max)
 const color = z.string().regex(/^#[a-f\d]{6}$/i)
-const point = z.object({ time: finite(0, 12), value: z.number().finite(), ease: z.enum(["linear", "smooth", "cinematic", "ease-in", "ease-out", "hold"]) }).strict()
+const point = z.object({ time: finite(0, SCENE_MAX_SECONDS), value: z.number().finite(), ease: z.enum(["linear", "smooth", "cinematic", "ease-in", "ease-out", "hold"]) }).strict()
 const tracks = Object.fromEntries(Object.entries(FRAME_CHANNELS).map(([key, bounds]) => [key,
   z.array(point.extend({ value: finite(bounds.min, bounds.max) })).min(2).max(16),
 ])) as unknown as { [K in FrameChannel]: z.ZodArray<z.ZodType<{ time: number; value: number; ease: MotionEase }>> }
 
 export const frameSceneSchema = z.object({
   version: z.literal(FRAME_SCENE_VERSION),
+  content: sceneContentSchema.optional(),
   style: z.enum(["astral", "reliquary", "bloom"]),
   geometry: z.object({ width: finite(.06, .2), depth: finite(.04, .22), radius: finite(.05, .3), ornaments: z.number().int().min(4).max(16) }).strict(),
   material: z.object({ color, accent: color, metalness: finite(0, 1), roughness: finite(.12, 1), glow: finite(0, 1.5) }).strict(),
   lighting: z.object({ key: color, rim: color, intensity: finite(.5, 5) }).strict(),
   portal: z.object({ enabled: z.boolean(), color, depth: finite(.2, 1), particles: z.number().int().min(0).max(96), speed: finite(0, 1) }).strict(),
-  animation: z.object({ duration: finite(3, 12), tracks: z.object(tracks).strict() }).strict(),
+  animation: z.object({ duration: finite(3, SCENE_MAX_SECONDS), tracks: z.object(tracks).strict() }).strict(),
 }).strict().superRefine((scene, ctx) => {
   for (const [channel, keys] of Object.entries(scene.animation.tracks)) {
     if (keys[0]?.time !== 0 || keys.at(-1)?.time !== scene.animation.duration || keys.some((key, i) => key.time > scene.animation.duration || i > 0 && key.time <= keys[i - 1].time)) {

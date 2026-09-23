@@ -33,6 +33,7 @@ import { publicOriginForRequest } from "./security";
 import { lookupDictionary, normalizeDictionaryLanguage } from "./dictionary";
 import { translateText, SUPPORTED_LANGUAGES } from "./gutenberg";
 import { registerGutenbergRoutes } from "./gutenberg-routes";
+import { registerVisualUploadRoutes } from "./visualUploads";
 
 const cloudBookDraftSchema = z.object({
   baseRevision: z.number().int().min(1),
@@ -50,6 +51,7 @@ export async function registerRoutes(
 ): Promise<Server> {
 
   registerAudioRoutes(app)
+  registerVisualUploadRoutes(app)
   registerNarrativeRoutes(app)
   registerSpeechRoutes(app)
   registerDirectionAgentRoutes(app)

@@ -69,7 +69,7 @@ export function validateCard(body: any):
   }
   if (body?.fx?.scene != null && !readCardScene(body.fx.scene)) return { ok: false, message: "La escena de la tarjeta no es válida. Revisa su versión, límites y claves de animación." }
   const fx = sanitizeCardFx(body?.fx)
-  if (!fx.layers.back) return { ok: false, message: "La tarjeta necesita al menos el arte de fondo" }
+  if (!fx.layers.back && !fx.scene?.content?.objects?.length) return { ok: false, message: "Añade una imagen de fondo o crea/importa un objeto 3D para la tarjeta." }
   for (const source of Object.values(fx.layers) as string[]) {
     if (source && !isSafeImageSource(source, 400_000)) {
       return { ok: false, message: "El arte debe ser una imagen HTTPS o PNG/JPEG/WebP/GIF de hasta 400 KB" }

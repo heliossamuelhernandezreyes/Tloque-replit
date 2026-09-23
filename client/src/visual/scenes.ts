@@ -13,6 +13,8 @@ import { frameOrnaments } from "./frame-ornaments"
 import { cinematicVertex, portalFragment, singularityFragment } from "./cinematic-shaders"
 import { CARD_LAYERS, evaluateCardLayer, type CardLayer } from "@shared/card-scene-runtime"
 import { cardArtFragment, cardArtVertex } from "./card-art-shaders"
+import { createSceneObjects } from "./scene-objects"
+import { createSceneWeather } from "./scene-weather"
 
 export interface VisualScene {
   update: (time: number, dt: number, aspect: number, pointer: { x: number; y: number }, options: VisualOptions) => void
@@ -22,7 +24,7 @@ export interface VisualScene {
 }
 export const sceneKey = (options: VisualOptions) => {
   const native = readFrameScene(options.frame)
-  return JSON.stringify([options.kind, options.theme, visualColor(options.color), options.images?.slice(0, 3), native ? frameGeometryKey(native) : visualFrame(options.frame, options.color), options.shape, !!options.cardScene])
+  return JSON.stringify([options.kind, options.theme, visualColor(options.color), options.images?.slice(0, 3), native ? frameGeometryKey(native) : visualFrame(options.frame, options.color), options.shape, !!options.cardScene, options.retry])
 }
 
 function roundedPath<T extends Shape | Path>(path: T, width: number, height: number, radius: number): T {
@@ -35,7 +37,7 @@ function roundedPath<T extends Shape | Path>(path: T, width: number, height: num
   path.closePath(); return path
 }
 
-/** One bounded scene per visible slot. No scripts, remote shaders or user geometry. */
+/** One bounded scene per visible slot, with validated models and declarative effects. */
 export function createVisualScene(options: VisualOptions, maxTextureEdge: number, environment?: Texture): VisualScene {
   const scene = new Scene()
   const native = readFrameScene(options.frame)
@@ -63,6 +65,11 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
   let bezelMaterial: MeshPhysicalMaterial | undefined
   let portalMesh: Mesh | undefined
   let nebula: ShaderMaterial | undefined
+  let glassMesh: Mesh<any, MeshPhysicalMaterial> | undefined
+  let cardObjects: ReturnType<typeof createSceneObjects> | undefined
+  let frameObjects: ReturnType<typeof createSceneObjects> | undefined
+  let weather: ReturnType<typeof createSceneWeather> | undefined
+  let lastIssue = ""
   const arches: Mesh<TorusGeometry, MeshStandardMaterial>[] = []
   const artPlanes = new Map<CardLayer, Mesh<PlaneGeometry, ShaderMaterial>>()
   const color = new Color(visualColor(options.color))
@@ -230,6 +237,10 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
     portalMesh = portal
     const glass = new Mesh(windowGeometry, new MeshPhysicalMaterial({ color: 0xc8deff, metalness: .15, roughness: .18, transparent: true, opacity: frame.glass * .3, clearcoat: 1, depthWrite: false }))
     glass.position.z = .09; group.add(glass)
+    glassMesh = glass
+    cardObjects = createSceneObjects(world, group, portalWidth, portalHeight)
+    frameObjects = createSceneObjects(world, group, portalWidth, portalHeight)
+    weather = createSceneWeather(world)
   }
 
   const disposeScene = (target: Scene) => {
@@ -250,6 +261,20 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
       const currentScene = readFrameScene(current.frame)
       const inspection = current.transport?.current.mode === "inspection"
       if (inspection) time = current.transport!.current.time
+      const cardContent = current.cardScene?.content, frameContent = currentScene?.content
+      cardObjects?.update(cardContent, inspection ? time : 0)
+      frameObjects?.update(frameContent, inspection ? time : 0)
+      const content = cardContent ?? frameContent
+      weather?.update(content?.effect, time)
+      if (world && content) (world.background as Color).set(content.background)
+      if (glassMesh && content) {
+        glassMesh.visible = content.glass.enabled
+        glassMesh.material.color.set(content.glass.tint)
+        glassMesh.material.opacity = content.glass.opacity
+        glassMesh.material.roughness = content.glass.roughness
+      }
+      const issue = cardObjects?.issue() || frameObjects?.issue() || (cardObjects?.pending() || frameObjects?.pending() ? "Cargando modelo 3D…" : "")
+      if (issue !== lastIssue) { lastIssue = issue; current.onAssetIssue?.(issue) }
       camera.aspect = aspect
       camera.position.z = options.kind === "portal" || options.kind === "frame" || options.kind === "book" ? Math.max(5.8, 3.8 / aspect) : Math.max(4.8, 4.8 / aspect)
       if (currentScene) camera.position.z = Math.max(7.8, 5.1 / aspect)
@@ -271,6 +296,10 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
       if (current.cardScene) {
         const art = current.cardScene
         artPlanes.forEach((plane, layer) => {
+          // Opaque models render before transparent artwork in Three's pipeline.
+          // Spatial compositions need image depth to preserve front/back occlusion.
+          const spatial = !!(cardContent?.objects.length || frameContent?.objects.length)
+          plane.material.depthTest = spatial; plane.material.depthWrite = spatial
           const pose = evaluateCardLayer(art, layer, time, inspection)
           const z = art.layers[layer].depth * 1.6
           const height = 2 * Math.tan(20 * Math.PI / 180) * (6 - z)
@@ -330,6 +359,6 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
       }
       renderer.render(scene, camera)
     },
-    dispose() { if (disposed) return; disposed = true; timers.forEach(clearTimeout); timers.clear(); disposeScene(scene); if (world) disposeScene(world); ownedTextures.forEach(texture => texture.dispose()); renderTarget?.dispose() },
+    dispose() { if (disposed) return; disposed = true; timers.forEach(clearTimeout); timers.clear(); cardObjects?.dispose(); frameObjects?.dispose(); weather?.dispose(); disposeScene(scene); if (world) disposeScene(world); ownedTextures.forEach(texture => texture.dispose()); renderTarget?.dispose() },
   }
 }
