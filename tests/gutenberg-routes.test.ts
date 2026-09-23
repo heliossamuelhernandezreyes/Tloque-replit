@@ -2,16 +2,19 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import express from "express"
 import { registerGutenbergRoutes } from "../server/gutenberg-routes"
+import { insertBookSchema } from "../shared/schema"
 
 test("Gutenberg HTTP: filtros, estados privados, preview completo, importación y conflictos", async t => {
   const rows: any[] = [
     { id: 10, gutenbergId: 100001, status: "published", title: "Public" },
     { id: 11, gutenbergId: 100002, status: "draft", title: "Private" },
   ]
-  let writes = 0, sourceCalls = 0, race = false
+  let writes = 0, sourceCalls = 0, race = false, sourceDown = false
+  let now = Date.now()
+  t.mock.method(Date, "now", () => now)
   const rawText = "PRÓLOGO\nUna página inicial.\n\nCAPÍTULO I\nUn principio.\n\nCAPÍTULO II\nUn final."
   const sourceBook = (id: number) => ({
-    id, title: "Edición " + id, languages: ["es"], authors: [{ name: "Autor", birth_year: null, death_year: null }],
+    id, title: "Edición " + id, languages: ["es"], authors: [{ name: id === 100005 ? "Autora de nombre compuesto ".repeat(9) : "Autor", birth_year: null, death_year: null }],
     formats: { "text/plain": `https://www.gutenberg.org/files/${id}/${id}.txt` }, subjects: [], download_count: 50, copyright: false,
   })
   const app = express()
@@ -39,6 +42,7 @@ test("Gutenberg HTTP: filtros, estados privados, preview completo, importación 
   const localFetch = globalThis.fetch
   t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
     sourceCalls++
+    if (sourceDown) return new Response("Down", { status: 503 })
     const url = new URL(String(input))
     if (url.hostname === "www.gutenberg.org") return new Response(rawText)
     if (url.searchParams.get("search") === "unavailable") return new Response("Down", { status: 503 })
@@ -60,6 +64,16 @@ test("Gutenberg HTTP: filtros, estados privados, preview completo, importación 
     assert.equal(res.headers.get("cache-control"), "private, no-store")
     res = await request("/api/gutenberg/catalog", true)
     assert.equal((await res.json()).results[1].existingStatus, "draft")
+    now += 120_001; sourceDown = true
+    rows[0].status = "draft"
+    res = await request("/api/gutenberg/catalog")
+    const recoveredPage = await res.json()
+    assert.equal(res.status, 200)
+    assert.equal(recoveredPage.cacheStatus, "stale")
+    assert.equal(recoveredPage.results[0].existingBookId, null, "cached catalogue still checks current publication status")
+    assert.equal(recoveredPage.results[1].existingStatus, undefined, "admin status never leaks through stale results")
+    assert.equal(res.headers.get("cache-control"), "private, no-store")
+    rows[0].status = "published"; sourceDown = false
     const callsBeforeBad = sourceCalls
     assert.equal((await request("/api/gutenberg/catalog?page=-1")).status, 400)
     assert.equal((await request("/api/gutenberg/catalog?topic=invalid")).status, 400)
@@ -88,6 +102,13 @@ test("Gutenberg HTTP: filtros, estados privados, preview completo, importación 
     assert.equal((await request("/api/admin/gutenberg/import", true, { gutenbergId: 100003 })).status, 409)
     assert.equal((await request("/api/admin/gutenberg/import", true, { gutenbergId: 100002 })).status, 409)
     assert.equal(writes, 1)
+    res = await request("/api/gutenberg/preview/100005")
+    assert.ok((await res.json()).author.length > 160, "preview preserves source attribution")
+    res = await request("/api/admin/gutenberg/import", true, { gutenbergId: 100005, status: "draft" })
+    assert.equal(res.status, 201)
+    const longAuthor = (await res.json()).book
+    assert.equal(longAuthor.author.length, 160)
+    assert.equal(insertBookSchema.safeParse(longAuthor).success, true, "import remains editable under the manuscript schema")
     race = true
     assert.equal((await request("/api/admin/gutenberg/import", true, { gutenbergId: 100004 })).status, 409)
   } finally {

@@ -347,3 +347,127 @@ test("la caché expira y nunca retiene errores ni valores que exceden su presupu
   await cache.get("big", async () => "x".repeat(50))
   assert.equal(await cache.get("big", async () => "small"), "small")
 })
+
+test("los enlaces oficiales de descarga resuelven la misma edición, sin admitir proxies", () => {
+  for (const link of [
+    "https://www.gutenberg.org/ebooks/2000.txt.utf-8",
+    "https://www.gutenberg.org/ebooks/2000.txt.utf-8?download=1#top",
+    "https://www.gutenberg.org/cache/epub/2000/pg2000.txt",
+    "https://www.gutenberg.org/files/2000/2000-8.txt",
+  ]) assert.equal(gutenbergIdFromQuery(link), 2000, link)
+  for (const link of [
+    "https://www.gutenberg.org/ebooks/2000.txt.evil",
+    "https://www.gutenberg.org/cache/epub/2000/pg2001.txt",
+    "https://www.gutenberg.org/files/2000/2001.txt",
+    "https://user@gutenberg.org/ebooks/2000.txt.utf-8",
+  ]) assert.equal(gutenbergIdFromQuery(link), null, link)
+})
+
+test("el catálogo admite enlaces modernos de texto y descarga su archivo canónico sin redirecciones", async t => {
+  const book = searchBook(8101, "es", { "text/plain; charset=utf-8": "https://www.gutenberg.org/ebooks/8101.txt.utf-8" })
+  const calls: string[] = []
+  t.mock.method(globalThis, "fetch", async (input: string, init?: RequestInit) => {
+    calls.push(String(input))
+    if (String(input).includes("gutendex.com")) return Response.json({ count: 1, next: null, results: [book] })
+    assert.equal(String(input), "https://www.gutenberg.org/cache/epub/8101/pg8101.txt")
+    assert.equal(init?.redirect, "error")
+    return new Response("Una edición íntegra.")
+  })
+  const page = await browseGutenberg({ query: "modern text links" })
+  assert.equal(page.results.length, 1)
+  assert.equal(await downloadBookText(page.results[0]), "Una edición íntegra.")
+  assert.equal(calls.length, 2)
+})
+
+test("si un archivo desaparece, prueba otra fuente de texto permitida de la misma ficha", async t => {
+  const calls: string[] = []
+  t.mock.method(globalThis, "fetch", async (input: string) => {
+    calls.push(String(input))
+    return calls.length === 1 ? new Response(null, { status: 404 }) : new Response("Texto recuperado.")
+  })
+  const book = searchBook(8102, "es", {
+    "text/plain; charset=utf-8": "https://www.gutenberg.org/files/8102/8102-0.txt",
+    "text/plain": "https://www.gutenberg.org/cache/epub/8102/pg8102.txt",
+    "text/plain; charset=ascii": "https://127.0.0.1/secret",
+  })
+  assert.equal(await downloadBookText(book), "Texto recuperado.")
+  assert.deepEqual(calls, [book.formats["text/plain; charset=utf-8"], book.formats["text/plain"]])
+})
+
+test("un byte dañado no convierte todo un texto UTF-8 en caracteres corruptos", async t => {
+  const bytes = new Uint8Array([...new TextEncoder().encode("Capítulo: corazón, 日本語. "), 0xff, ...new TextEncoder().encode(" Más texto.")])
+  t.mock.method(globalThis, "fetch", async () => new Response(bytes))
+  assert.equal(await downloadBookText(searchBook(8103, "es")), "Capítulo: corazón, 日本語. � Más texto.")
+  assert.equal(await downloadBookText(stubBook("https://www.gutenberg.org/files/8103/8103.txt")), "Capítulo: corazón, 日本語. � Más texto.")
+})
+
+test("respeta una codificación Windows-1252 declarada y rechaza MIME de texto falsos", async t => {
+  t.mock.method(globalThis, "fetch", async () => new Response(new Uint8Array([0x93, 0xe1, 0x94])))
+  assert.equal(await downloadBookText(searchBook(8104, "es", { "text/plain; charset=windows-1252": "https://www.gutenberg.org/files/8104/8104.txt" })), "“á”")
+  await assert.rejects(downloadBookText(searchBook(8105, "es", { "text/plain-malicious": "https://www.gutenberg.org/files/8105/8105.txt" })))
+})
+
+test("detecta capítulos CJK tradicionales con dígitos de ancho completo sin cambiar el texto", () => {
+  const chapters = detectChapters("第１章\n日本語の本文。\n\n第２節\n最後の本文。", "ja")
+  assert.deepEqual(chapters.map(chapter => chapter.title), ["第１章", "第２節"])
+  assert.deepEqual(chapters.map(chapter => chapter.content), ["日本語の本文。", "最後の本文。"])
+})
+
+test("el catálogo recupera solo la misma consulta guardada e informa su antigüedad", async t => {
+  let now = 1_000_000, failing = false, calls = 0
+  t.mock.method(Date, "now", () => now)
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++
+    return failing ? new Response(null, { status: 503 }) : Response.json({ count: 1, next: null, results: [searchBook(8110, "es")] })
+  })
+  const options = { query: "cached outage", lang: "es" }
+  const fresh = await browseGutenberg(options)
+  assert.equal(fresh.cacheStatus, "fresh")
+  assert.equal(fresh.fetchedAt, now)
+  now += 120_001; failing = true
+  const stale = await browseGutenberg(options)
+  assert.equal(stale.cacheStatus, "stale")
+  assert.equal(stale.fetchedAt, fresh.fetchedAt)
+  assert.equal(stale.results[0].id, 8110)
+  await assert.rejects(browseGutenberg({ ...options, lang: "fr" }), /503/)
+  failing = false
+  const refreshed = await browseGutenberg(options)
+  assert.equal(refreshed.cacheStatus, "fresh")
+  assert.equal(refreshed.fetchedAt, now)
+  now += 1_920_001; failing = true
+  await assert.rejects(browseGutenberg(options), /503/)
+  assert.equal(calls, 5)
+})
+
+test("la recuperación no amplía la caducidad ni el presupuesto de la caché", async t => {
+  let now = 0
+  t.mock.method(Date, "now", () => now)
+  const cache = new GutenbergCache<string>({ entries: 2, bytes: 20, pending: 1, ttl: 10, staleTtl: 20 })
+  const unavailable = async (): Promise<string> => { throw Error("offline") }
+  await cache.get("a", async () => "12345") // 14 bytes, including JSON quotes.
+  now = 11
+  assert.equal((await cache.getWithStatus("a", unavailable, () => true)).stale, true)
+  now = 29
+  assert.equal((await cache.getWithStatus("a", unavailable, () => true)).fetchedAt, 0)
+  now = 30
+  await assert.rejects(cache.getWithStatus("a", unavailable, () => true), /offline/)
+  await cache.get("a", async () => "12345")
+  now = 41
+  await cache.get("b", async () => "67890") // The stale entry must also count toward 20 bytes.
+  await assert.rejects(cache.getWithStatus("a", unavailable, () => true), /offline/)
+})
+
+test("compartir una descarga no impone la recuperación a quien requiere datos frescos", async t => {
+  let now = 0
+  t.mock.method(Date, "now", () => now)
+  const cache = new GutenbergCache<string>({ entries: 2, bytes: 100, pending: 1, ttl: 10, staleTtl: 20 })
+  await cache.get("a", async () => "saved")
+  now = 11
+  let reject!: (error: Error) => void
+  const recoverable = cache.getWithStatus("a", () => new Promise<string>((_resolve, fail) => { reject = fail }), () => true)
+  const strict = assert.rejects(cache.get("a", async () => "unused"), /offline/)
+  await Promise.resolve()
+  reject(new Error("offline"))
+  assert.equal((await recoverable).stale, true)
+  await strict
+})

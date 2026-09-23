@@ -40,6 +40,8 @@ export interface GutenbergCatalogPage {
   language: string
   sort: GutenbergSort
   topic: GutenbergTopic
+  cacheStatus?: "fresh" | "stale"
+  fetchedAt?: number
 }
 export interface ProcessedGutenbergBook {
   gutenbergId: number
@@ -76,8 +78,11 @@ export function gutenbergIdFromQuery(query: string): number | null {
     const url = new URL(text)
     if (url.protocol !== "https:" || !["gutenberg.org", "www.gutenberg.org"].includes(url.hostname)
       || url.username || url.password || url.port) return null
-    const match = url.pathname.match(/^\/ebooks\/(\d{1,9})\/?$/)
-    return match ? Number(match[1]) || null : null
+    const edition = url.pathname.match(/^\/ebooks\/(\d{1,9})(?:\/?|\.txt(?:\.utf-8)?)$/)
+    if (edition) return Number(edition[1]) || null
+    const file = url.pathname.match(/^\/cache\/epub\/(\d{1,9})\/pg(\d{1,9})\.txt$/)
+      || url.pathname.match(/^\/files\/(\d{1,9})\/(\d{1,9})(?:-[08])?\.txt$/)
+    return file && file[1] === file[2] ? Number(file[1]) || null : null
   } catch { return null }
 }
 

@@ -105,7 +105,7 @@ export function registerGutenbergRoutes(app: Express, { storage, requireAdmin, i
       if (source.copyright !== false) return res.status(422).json({ message: "Esta edición no está habilitada para importar." })
       const processed = await processGutenbergBook(source, lang)
       const book = await storage.createBook({
-        title: overrideTitle || processed.title.slice(0, 200), author: processed.author,
+        title: overrideTitle || processed.title.slice(0, 200), author: processed.author.slice(0, 160),
         synopsis: overrideSynopsis || processed.synopsis, coverUrl: processed.coverUrl,
         genre: genre || processed.detectedGenre, type: processed.type, status, isClassic: true,
         publicationYear: processed.publicationYear, originalLanguage: processed.originalLanguage,
