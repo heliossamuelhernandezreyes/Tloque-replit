@@ -266,13 +266,18 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
       frameObjects?.update(frameContent, inspection ? time : 0)
       const content = cardContent ?? frameContent
       weather?.update(cardContent?.effect.type !== "none" && cardContent?.effect ? cardContent.effect : frameContent?.effect ?? cardContent?.effect, time)
-      if (world && content) (world.background as Color).set(content.background)
+      if (world) (world.background as Color).set(content?.background ?? "#090c19")
       if (glassMesh && content) {
         const glass = cardContent?.glass.enabled ? cardContent.glass : frameContent?.glass ?? cardContent?.glass ?? content.glass
         glassMesh.visible = glass.enabled
         glassMesh.material.color.set(glass.tint)
         glassMesh.material.opacity = glass.opacity
         glassMesh.material.roughness = glass.roughness
+      } else if (glassMesh) {
+        glassMesh.visible = true
+        glassMesh.material.color.set("#c8deff")
+        glassMesh.material.opacity = visualFrame(current.frame, current.color).glass * .3
+        glassMesh.material.roughness = .18
       }
       const issue = cardObjects?.issue() || frameObjects?.issue() || (cardObjects?.pending() || frameObjects?.pending() ? "Cargando modelo 3D…" : "")
       if (issue !== lastIssue) { lastIssue = issue; current.onAssetIssue?.(issue) }

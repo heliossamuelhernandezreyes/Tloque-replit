@@ -1,5 +1,5 @@
 /** Original synthetic GLB: a skinned tetrahedron, morph target and two complete clips. */
-export function modelFixture(mutate: (doc: any) => void = () => {}) {
+export function modelFixture(mutate: (doc: any) => void = () => {}, textured = false) {
   const blocks: Buffer[] = [], bufferViews: any[] = [], accessors: any[] = []
   const accessor = (array: Float32Array | Uint16Array, type: string, count: number, extra: any = {}) => {
     const bytes = Buffer.from(array.buffer), byteOffset = blocks.reduce((n, b) => n + b.length, 0)
@@ -19,8 +19,14 @@ export function modelFixture(mutate: (doc: any) => void = () => {}) {
   const rotation = accessor(new Float32Array([0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, -1]), "VEC4", 3)
   const morphTime = accessor(new Float32Array([0, 3, 6]), "SCALAR", 3, { min: [0], max: [6] })
   const morphValues = accessor(new Float32Array([0, 1, 0]), "SCALAR", 3)
+  const uv = textured ? accessor(new Float32Array([.5, 1, 0, 0, 1, 0, .5, .5]), "VEC2", 4) : undefined
+  if (textured) {
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==", "base64")
+    bufferViews.push({ buffer: 0, byteOffset: blocks.reduce((n, b) => n + b.length, 0), byteLength: png.length }); blocks.push(png)
+    if (png.length % 4) blocks.push(Buffer.alloc(4 - png.length % 4))
+  }
   const bin = Buffer.concat(blocks)
-  const doc = {
+  const doc: any = {
     asset: { version: "2.0", generator: "Tloque synthetic QA" }, scene: 0, scenes: [{ nodes: [0] }],
     nodes: [{ name: "Root", children: [1, 2] }, { name: "Crystal", mesh: 0, skin: 0 }, { name: "Bone" }],
     buffers: [{ byteLength: bin.length }], bufferViews, accessors,
@@ -31,6 +37,11 @@ export function modelFixture(mutate: (doc: any) => void = () => {}) {
       { name: "Vuelo completo", samplers: [{ input: time, output: translation }, { input: time, output: rotation }], channels: [{ sampler: 0, target: { node: 0, path: "translation" } }, { sampler: 1, target: { node: 2, path: "rotation" } }] },
       { name: "Cristal crece", samplers: [{ input: morphTime, output: morphValues }], channels: [{ sampler: 0, target: { node: 1, path: "weights" } }] },
     ],
+  }
+  if (textured) {
+    doc.images = [{ mimeType: "image/png", bufferView: bufferViews.length - 1 }]; doc.textures = [{ source: 0 }]
+    doc.meshes[0].primitives[0].attributes.TEXCOORD_0 = uv
+    doc.materials[0].pbrMetallicRoughness.baseColorTexture = { index: 0 }
   }
   mutate(doc)
   const json = Buffer.from(JSON.stringify(doc)), padding = (4 - json.length % 4) % 4, body = Buffer.concat([json, Buffer.alloc(padding, 32)])

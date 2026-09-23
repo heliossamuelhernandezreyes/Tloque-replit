@@ -45,7 +45,7 @@ export default function SceneContentEditor({ value, onChange, placement = "scene
   const importFile = async (chosen?: File) => {
     if (!chosen) return
     setNotice("")
-    if (/\.json$/i.test(chosen.name)) {
+    if (/\.json$/i.test(chosen.name) || chosen.type === "application/json") {
       if (chosen.size > 64_000) { setNotice("La receta debe pesar menos de 64 KB."); return }
       try { const input = JSON.parse(await chosen.text()); const parsed = sceneContentSchema.parse(input.content ?? input); change(parsed); setSelected(""); setNotice("Objetos y efectos importados.") }
       catch { setNotice("Selecciona una receta de objetos 3D exportada desde Tloque.") }
