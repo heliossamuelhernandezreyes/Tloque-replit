@@ -1,0 +1,52 @@
+name: Product audit observations
+on:
+  pull_request:
+    paths:
+      - scripts/audit-product-http.mjs
+      - scripts/audit-local-data.mjs
+      - scripts/audit-client-load.mjs
+      - .github/workflows/product-audit.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tloque
+          POSTGRES_PASSWORD: audit_only
+          POSTGRES_DB: tloque_audit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tloque -d tloque_audit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://tloque:audit_only@localhost:5432/tloque_audit
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run build
+      - name: Observe real HTTP authorization and transaction boundaries
+        run: node scripts/audit-product-http.mjs
+      - name: Observe account-local synchronization
+        run: node scripts/audit-local-data.mjs
+      - name: Measure selected static import graphs
+        run: node scripts/audit-client-load.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tloque-product-audit
+          path: .tloque_cache/product-audit/*-results.json
+          retention-days: 30
