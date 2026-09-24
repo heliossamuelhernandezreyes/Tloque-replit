@@ -26,7 +26,7 @@ test("portal: el fondo cubre cada esquina incluso con desplazamiento, rotación,
   for(const aspect of [5/7,1,.6])for(const x of [-1.35,-.6,0,.6,1.35])for(const y of [-1.35,0,1.35])for(const rotation of [-90,-45,0,45,90]){
     const scale=coveredBackgroundScale(x,y,rotation,.25,aspect),r=rotation*Math.PI/180,c=Math.cos(r),s=Math.sin(r)
     for(const vx of [-.5,.5])for(const vy of [-.5,.5]){
-      const px=(vx-x)*aspect,py=vy-y,rx=(c*px+s*py)/aspect/scale,ry=(-s*px+c*py)/scale
+      const px=(vx-x)*aspect,py=vy-y,rx=(c*px-s*py)/aspect/scale,ry=(s*px+c*py)/scale
       assert.ok(Math.abs(rx)<.5+1e-9&&Math.abs(ry)<.5+1e-9,JSON.stringify({aspect,x,y,rotation,rx,ry}))
     }
   }
@@ -65,8 +65,10 @@ class Recorder {
 test("portal GPU: tres capas, oclusión, 360°, pausa, cobertura, límite de partículas y liberación",async()=>{
   const oldLoad=TextureLoader.prototype.load,oldDocument=globalThis.document,loaded:Texture[]=[]
   TextureLoader.prototype.load=function(_url,onLoad){const texture=new Texture({width:700,height:980} as HTMLImageElement);loaded.push(texture);queueMicrotask(()=>onLoad?.(texture));return texture} as typeof oldLoad
-  globalThis.document={createElement:()=>({getContext:()=>({fillRect(){},strokeRect(){},fillText(){},measureText(value:string){return {width:value.length*10}}})})} as unknown as Document
+  const drawnText:string[]=[],baselines:number[]=[]
+  globalThis.document={createElement:()=>({getContext:()=>({font:"",fillRect(){},strokeRect(){},fillText(value:string,_x:number,y:number){drawnText.push(value);baselines.push(y)},measureText(value:string){return {width:[...value].length*(Number(this.font.match(/([\d.]+)px/)?.[1])||19)}}})})} as unknown as Document
   const cardScene=createPortalCardScene();cardScene.portalCard=withPortalWeather(cardScene.portalCard!,"rain")
+  Object.assign(cardScene.portalCard.back,{title:"雪".repeat(64),inscription:"門".repeat(140),signature:"A".repeat(72)})
   const options={kind:"portal" as const,images:["https://x.test/back.png","https://x.test/mid.png","https://x.test/front.png"],cardScene,orientation:{current:{yaw:150,pitch:0,zoom:1}},transport:{current:{time:2,mode:"inspection" as const}}}
   const resource=createVisualScene(options,1024),r=new Recorder()
   try{
@@ -80,6 +82,9 @@ test("portal GPU: tres capas, oclusión, 360°, pausa, cobertura, límite de par
     assert.equal(weather.reduce((n,p)=>n+p.geometry.attributes.position.count,0),360)
     assert.ok(planes[0].material.uniforms.uScale.value>=1)
     assert.equal(outer.scene.children.find(n=>n instanceof Group)!.rotation.y,150*Math.PI/180)
+    assert.equal(drawnText.join("").match(/雪/g)?.length,128,"el título completo llega al color y al relieve")
+    assert.equal(drawnText.join("").match(/門/g)?.length,280,"no se truncan las inscripciones largas sin espacios")
+    assert.ok(Math.max(...baselines)<680,"los tres bloques de texto caben dentro del reverso")
     outer.scene.traverse(n=>{if(n instanceof Mesh){assert.equal(n.material.side,FrontSide,"la ventana no atraviesa el reverso");assert.ok(Array.from(n.geometry.attributes.position.array).every(Number.isFinite))}})
     const position=planes[2].position.clone();resource.update(999,.033,5/7,{x:0,y:0},options)
     assert.deepEqual(planes[2].position,position);assert.equal(weather[0].material.uniforms.uTime.value,2,"el reloj de pared no anima un transporte pausado")

@@ -79,19 +79,22 @@ export function createPortalCardScene(options: VisualOptions,maxTextureEdge: num
     c.strokeStyle=back.ink;c.globalAlpha=.3;c.lineWidth=1
     if(profile){c.beginPath();c.arc(256,height/2,216,0,Math.PI*2);c.stroke()}else c.strokeRect(36,36,440,height-72)
     c.globalAlpha=1
-    const text=(value:string,y:number,size:number,italic=false)=>{
-      c.font=b.font=`${italic?"italic ":""}${size}px Georgia, serif`;c.textAlign=b.textAlign="center"
-      c.fillStyle=back.ink;b.fillStyle=back.treatment==="engraved"?"#242424":"#eeeeee"
-      const words=value.trim().split(/\s+/),lines:string[]=[];let line=""
-      for(const word of words){
-        if(c.measureText(`${line} ${word}`).width>380&&line){lines.push(line);line=""}
-        // Unicode code points, not UTF-16 halves, also wrap long unbroken inscriptions.
-        for(const letter of `${line?" ":""}${word}`){if(c.measureText(line+letter).width>380){lines.push(line);line=""}line+=letter}
+    const text=(value:string,y:number,size:number,italic=false,maxLines=5,maxWidth=380)=>{
+      let lines:string[]=[]
+      // Fit the whole inscription, including unbroken text, instead of truncating it.
+      for(;size>=8;size--){
+        c.font=b.font=`${italic?"italic ":""}${size}px Georgia, serif`;lines=[];let line=""
+        for(const word of value.trim().split(/\s+/)){
+          if(c.measureText(`${line} ${word}`).width>maxWidth&&line){lines.push(line);line=""}
+          for(const letter of `${line?" ":""}${word}`){if(c.measureText(line+letter).width>maxWidth){lines.push(line);line=""}line+=letter}
+        }
+        if(line)lines.push(line)
+        if(lines.length<=maxLines)break
       }
-      if(line)lines.push(line)
-      lines.slice(0,5).forEach((line,i)=>{c.fillText(line,256,y+i*(size+12));b.fillText(line,256,y+i*(size+12))})
+      c.textAlign=b.textAlign="center";c.fillStyle=back.ink;b.fillStyle=back.treatment==="engraved"?"#242424":"#eeeeee"
+      lines.forEach((line,i)=>{c.fillText(line,256,y+i*(size+12));b.fillText(line,256,y+i*(size+12))})
     }
-    text(back.title,height*.26,27);text(back.inscription,height*.46,19,true);text(back.signature,height*.81,15)
+    text(back.title,height*.26,27,false,3);text(back.inscription,height*.46,19,true);text(back.signature,height*(profile?.77:.81),15,false,3,profile?300:380)
     backMap?.dispose();bumpMap?.dispose()
     backMap=new CanvasTexture(canvas);backMap.colorSpace=SRGBColorSpace;bumpMap=new CanvasTexture(bump)
     rear.map=backMap;rear.bumpMap=back.treatment==="printed"?null:bumpMap;rear.bumpScale=.025;rear.needsUpdate=true

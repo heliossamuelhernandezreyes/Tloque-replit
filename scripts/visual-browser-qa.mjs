@@ -356,6 +356,7 @@ try {
   await portal.context.close()
   const portalMobile=await setup({mobile:true})
   await cardEditor(portalMobile.page,false);await rendered(portalMobile.page)
+  console.log(`TLOQUE_VISUAL_PROOF portal-mobile-layout ${(await portalMobile.page.screenshot({type:"jpeg",quality:55})).toString("base64")}`)
   const mobileTurn=portalMobile.page.getByRole("group",{name:/Girar tarjeta 360/})
   const bounds=await mobileTurn.boundingBox(),touch=await portalMobile.context.newCDPSession(portalMobile.page)
   const start={x:bounds.x+45,y:bounds.y+bounds.height/2,id:1}
@@ -367,6 +368,7 @@ try {
   assert.equal(await portalMobile.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
   await portalMobile.page.getByRole("button",{name:"Clima",exact:true}).click()
   await portalMobile.page.screenshot({path:`${output}/portal-mobile-controls.png`})
+  console.log(`TLOQUE_VISUAL_PROOF portal-mobile-controls ${(await portalMobile.page.screenshot({type:"jpeg",quality:55})).toString("base64")}`)
   await portalMobile.context.close()
   const portalEssential=await setup({essential:true})
   await cardEditor(portalEssential.page,false)

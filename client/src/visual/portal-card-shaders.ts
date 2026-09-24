@@ -16,7 +16,8 @@ void main(){
     p.x*=1.-uCurvature*.35*(1.-4.*p.y*p.y);
     p-=uOffset; p.x*=uAspect;
     float c=cos(uRotation),s=sin(uRotation);
-    p=mat2(c,-s,s,c)*p; p.x/=uAspect; p/=uScale;
+    // Inverse of the clockwise image rotation used by the cutout planes.
+    p=mat2(c,s,-s,c)*p; p.x/=uAspect; p/=uScale;
   }
   vec2 uv=(uMapTransform*vec3(p+.5,1.)).xy;
   vec4 art=texture2D(uMap,uv);
