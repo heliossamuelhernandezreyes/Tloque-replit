@@ -22,7 +22,10 @@ function Compositor({ entries, budget, onFailure, onDprChange }: { entries: Visu
     catch { onFailure() }
     finally { generator.dispose(); room.dispose() }
     const previousError = gl.debug.onShaderError
-    gl.debug.onShaderError = () => onFailure()
+    gl.debug.onShaderError = (context, program, vertex, fragment) => {
+      console.warn("Tloque visual: shader no compatible", context.getProgramInfoLog(program), context.getShaderInfoLog(vertex), context.getShaderInfoLog(fragment))
+      onFailure()
+    }
     return () => { gl.debug.onShaderError = previousError; environment.current?.dispose(); environment.current = null }
   }, [gl, invalidate, onFailure])
   useEffect(() => {

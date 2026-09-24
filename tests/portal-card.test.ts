@@ -83,6 +83,7 @@ test("portal GPU: tres capas, oclusión, 360°, pausa, cobertura, límite de par
     outer.scene.traverse(n=>{if(n instanceof Mesh){assert.equal(n.material.side,FrontSide,"la ventana no atraviesa el reverso");assert.ok(Array.from(n.geometry.attributes.position.array).every(Number.isFinite))}})
     const position=planes[2].position.clone();resource.update(999,.033,5/7,{x:0,y:0},options)
     assert.deepEqual(planes[2].position,position);assert.equal(weather[0].material.uniforms.uTime.value,2,"el reloj de pared no anima un transporte pausado")
+    resource.render(r.asRenderer());assert.equal(r.renders.filter(call=>call.target).length,1,"el interior pausado reutiliza su textura sin dibujar otro target")
     const materials=new Set<any>(),geometries=new Set<any>();for(const item of [world,outer])item.scene.traverse(n=>{if(n instanceof Mesh||n instanceof Points){materials.add(n.material);geometries.add(n.geometry)}})
     let materialDisposals=0,geometryDisposals=0,textureDisposals=0
     materials.forEach(m=>m.addEventListener("dispose",()=>materialDisposals++));geometries.forEach(g=>g.addEventListener("dispose",()=>geometryDisposals++));loaded.forEach(t=>t.addEventListener("dispose",()=>textureDisposals++))

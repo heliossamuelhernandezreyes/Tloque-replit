@@ -76,8 +76,8 @@ async function setup({ mobile = false, essential = false, admin = true, strictAs
     return route.fulfill({ json: data })
   })
   const page = await context.newPage()
-  page.on("pageerror", error => errors.push(error.message))
-  page.on("console", message => { if (/THREE.WebGLProgram|Error creating WebGL|INVALID_OPERATION|INVALID_ENUM/.test(message.text())) errors.push(message.text()) })
+  page.on("pageerror", error => {errors.push(error.message);console.error("Browser error:",error.message)})
+  page.on("console", message => { if (/THREE.WebGLProgram|Error creating WebGL|INVALID_OPERATION|INVALID_ENUM|Tloque visual:/.test(message.text())) {errors.push(message.text());console.error("Browser graphics:",message.text())} })
   return { context, page }
 }
 const openStudio = async page => {
@@ -460,8 +460,11 @@ try {
   console.log("Visual browser QA passed: WebGL, frame/card inspectors, pause/seek, save/export/import, alpha-preserving image preparation, mobile, essential and admin gate.")
   console.log(`Screenshots: ${output}`)
 } catch (error) {
+  console.error("Collected browser errors:",errors)
   for (const context of browser.contexts()) for (const [i, page] of context.pages().entries()) {
     await page.screenshot({ path: `${output}/failure-${i}.png` }).catch(() => {})
+    const bytes=await page.screenshot({type:"jpeg",quality:45}).catch(()=>null)
+    if(bytes)console.log(`TLOQUE_VISUAL_PROOF failure-${i} ${bytes.toString("base64")}`)
     console.error((await page.locator("body").innerText().catch(() => "")).slice(-1800))
   }
   throw error

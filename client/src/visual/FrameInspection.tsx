@@ -64,7 +64,7 @@ export function InspectionStage({ pkg, shape = "card", images, cardScene, color,
   const turn = (yaw: number, pitch: number) => { orientation.current = { ...orientation.current, yaw: wrapCardAngle(yaw), pitch: wrapCardAngle(pitch) }; setFront(portalView(orientation.current).front) }
   const onReady = useCallback((value: boolean) => { setReady(value); onReadyChange?.(value) }, [onReadyChange])
   useEffect(() => { if (!ready) controller.pause() }, [ready, controller.pause])
-  return <div className="tq-inspection-stage">
+  return <div className={`tq-inspection-stage ${recipe ? "tq-portal-inspection" : ""}`}>
     <div className="tq-stage-meta"><span>SCENE / 02</span><span data-testid="scene-status">{ready ? "3D EN TIEMPO REAL" : engine.failed ? "VISTA ESENCIAL · GPU NO DISPONIBLE" : engine.enabled ? "PREPARANDO 3D" : "VISTA ESENCIAL"}</span></div>
     <div className={recipe ? "tq-card-turntable" : undefined} tabIndex={recipe ? 0 : undefined} role={recipe ? "group" : undefined} aria-label={recipe ? "Girar tarjeta 360 grados. Arrastra o usa las flechas; Inicio vuelve al frente." : undefined} data-card-face={front ? "front" : "back"}
       onPointerDown={recipe ? e => { if (e.button !== 0) return; drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY }; e.currentTarget.setPointerCapture(e.pointerId) } : undefined}

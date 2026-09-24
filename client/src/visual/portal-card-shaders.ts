@@ -41,10 +41,10 @@ void main(){
     vec2 local=fract(grid)-vec2(.24+hash(cell)*.52,.22+hash(cell+5.)*.56);
     float r=.09+hash(cell+9.)*.14;
     float d=length(local*vec2(1.,.82))/r;
-    float active=step(hash(cell+2.),uAmount*.82);
-    float drop=(1.-smoothstep(.75,1.,d))*active;
+    float wetCell=step(hash(cell+2.),uAmount*.82);
+    float drop=(1.-smoothstep(.75,1.,d))*wetCell;
     distortion=local*drop*.035;
-    droplets=(smoothstep(.6,.83,d)-smoothstep(.83,1.,d))*active*.22;
+    droplets=(smoothstep(.6,.83,d)-smoothstep(.83,1.,d))*wetCell*.22;
   }
   vec3 art=world(uv+distortion);
   if(uEnabled>.5){

@@ -46,6 +46,7 @@ export function createPortalCardScene(options: VisualOptions,maxTextureEdge: num
   const art=new Map<number,Mesh<PlaneGeometry,ShaderMaterial>>()
   let disposed=false,pending=0,lastGeometry="",lastBack="",backgroundMap:Texture|undefined,backMap:Texture|undefined,bumpMap:Texture|undefined
   let apertureWidth=w,apertureHeight=h
+  let worldDirty=true,lastWorldState:unknown[]=[]
 
   function buildShell(recipe:PortalCard) {
     const f=recipe.frame,topology=JSON.stringify([f.width,f.thickness,f.radius,f.bevel])
@@ -113,6 +114,7 @@ export function createPortalCardScene(options: VisualOptions,maxTextureEdge: num
         if(imageAspect>targetAspect){texture.repeat.x=targetAspect/imageAspect;texture.offset.x=(1-texture.repeat.x)/2}else{texture.repeat.y=imageAspect/targetAspect;texture.offset.y=(1-texture.repeat.y)/2}texture.updateMatrix()
         const material=new ShaderMaterial({vertexShader:portalVertex,fragmentShader:portalArtFragment,uniforms:{uMap:{value:texture},uMapTransform:{value:texture.matrix},uOffset:{value:new Vector2()},uScale:{value:1},uRotation:{value:0},uAspect:{value:w/h},uOpacity:{value:1},uBackground:{value:index===0?1:0},uCurvature:{value:0}},transparent:true,depthWrite:false,depthTest:false,toneMapped:false})
         const plane=new Mesh(new PlaneGeometry(1,1),material);plane.renderOrder=index*2;world.add(plane);art.set(index,plane)
+        worldDirty=true
         if(index===0)backgroundMap=texture
         finish()
       }catch{texture.dispose();finish(true)}
@@ -137,6 +139,9 @@ export function createPortalCardScene(options: VisualOptions,maxTextureEdge: num
       const pose=native?evaluateFrameScene(native,frameTime):null
       const orientation=current.orientation?.current??{yaw:pointer.x*16,pitch:pointer.y*12,zoom:1}
       const yaw=orientation.yaw+(pose?.orbit??0),pitch=orientation.pitch+(pose?.tilt??0),view=portalView({yaw,pitch,zoom:1})
+      const worldState=[current.cardScene,current.frame,seconds,view.x,view.y]
+      if(worldState.some((value,i)=>value!==lastWorldState[i]))worldDirty=true
+      lastWorldState=worldState
       root.rotation.set(pitch*Math.PI/180,yaw*Math.PI/180,0)
       root.scale.setScalar(orientation.zoom*(pose?.zoom??1))
       camera.aspect=aspect;camera.position.z=Math.max(6.8,4.7/Math.max(.2,aspect));camera.updateProjectionMatrix()
@@ -148,7 +153,8 @@ export function createPortalCardScene(options: VisualOptions,maxTextureEdge: num
       rim.color.set(native?.lighting.rim??"#b6d7ff")
       const u=mica.uniforms;u.uView.value.set(view.x,view.y);u.uTint.value.set(recipe.mica.tint);u.uEnabled.value=Number(recipe.mica.enabled)
       u.uFinish.value=["clear","satin","foil","holographic"].indexOf(recipe.mica.finish);u.uReflection.value=recipe.mica.reflection;u.uStrength.value=recipe.mica.strength;u.uSurface.value=["dry","drops","fog","frost"].indexOf(recipe.mica.surface);u.uAmount.value=recipe.mica.amount
-      world.background=new Color(recipe.world.background);empty.material.color.set(recipe.world.background);empty.visible=!backgroundMap
+      if(!world.background)world.background=new Color()
+      ;(world.background as Color).set(recipe.world.background);empty.material.color.set(recipe.world.background);empty.visible=!backgroundMap
       const aw=apertureWidth,ah=apertureHeight
       art.forEach((plane,index)=>{
         const layer=CARD_LAYERS[index],track=current.cardScene?.layers[layer],p=current.cardScene?evaluateCardLayer(current.cardScene,layer,seconds,!!inspection):{x:0,y:0,scale:1,rotation:0,opacity:1}
@@ -161,9 +167,10 @@ export function createPortalCardScene(options: VisualOptions,maxTextureEdge: num
       recipe.weather.forEach((zone,i)=>{const points=weather[i],u=points.material.uniforms;points.visible=zone.type!=="none"&&zone.intensity>0;points.position.z=portalWeatherZ(i,zone.depth);u.uTime.value=seconds;u.uType.value=["none","rain","snow","mist","embers","fire","dust","magic"].indexOf(zone.type);u.uSize.value=zone.size*(.7+i*.28+zone.depth*.18);u.uSpeed.value=zone.speed;u.uWind.value=zone.wind;u.uIntensity.value=zone.intensity;u.uDepth.value=i+zone.depth;u.uView.value.set(-view.x*recipe.world.depth,-view.y*recipe.world.depth);u.uDimensions.value.set(aw,ah);u.uColor.value.set(zone.color)})
     },
     render(renderer){
+      if(!worldDirty){renderer.render(scene,camera);return}
       const previousTarget=renderer.getRenderTarget(),wasScissored=renderer.getScissorTest(),alpha=renderer.getClearAlpha()
       renderer.getViewport(viewport);renderer.getScissor(scissor);renderer.getClearColor(clearColor)
-      try{renderer.setRenderTarget(target);renderer.setScissorTest(false);renderer.setClearColor(world.background as Color,1);renderer.clear();renderer.render(world,worldCamera)}
+      try{renderer.setRenderTarget(target);renderer.setScissorTest(false);renderer.setClearColor(world.background as Color,1);renderer.clear();renderer.render(world,worldCamera);worldDirty=false}
       finally{renderer.setRenderTarget(previousTarget);renderer.setViewport(viewport);renderer.setScissor(scissor);renderer.setScissorTest(wasScissored);renderer.setClearColor(clearColor,alpha)}
       renderer.render(scene,camera)
     },
