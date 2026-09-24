@@ -1,15 +1,17 @@
 import { easeMotion, type MotionEase } from "./motion-easing"
 import type { SceneContent } from "./scene-content"
+import type { PortalCard } from "./portal-card"
 
 export const CARD_LAYERS = ["back", "mid", "front"] as const
 export type CardLayer = typeof CARD_LAYERS[number]
-export const CARD_LAYER_LABELS = { back: "Fondo", mid: "Personaje", front: "Primer plano" }
+export const CARD_LAYER_LABELS = { back: "Fondo", mid: "Capa media", front: "Primer plano" }
 export interface CardTransform { x: number; y: number; scale: number; rotation: number; opacity: number }
 export interface CardKey extends CardTransform { time: number; ease: MotionEase }
 export interface CardScene {
   version: "1.0.0"
   duration: number
   content?: SceneContent
+  portalCard?: PortalCard
   finish: { type: "none" | "foil" | "prismatic"; strength: number }
   layers: Record<CardLayer, { transform: CardTransform; depth: number; keys: CardKey[] }>
 }

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, ArrowUpRight, Download, Upload, Undo2, Redo2, Save, Plus, Trash2, Sparkles } from "lucide-react"
 import { useLocation } from "wouter"
 import { useAuth } from "@/hooks/useAuth"
-import { createFrameScene, evaluateFrameScene, FRAME_CHANNELS, frameSceneSchema, packageFrameScene, readFrameScene, sceneFromLegacy, type FrameChannel, type FrameScene, type FrameTarget } from "@shared/frame-scene"
+import { createFrameScene, createPortalFrameScene, evaluateFrameScene, FRAME_CHANNELS, frameSceneSchema, packageFrameScene, readFrameScene, sceneFromLegacy, type FrameChannel, type FrameScene, type FrameTarget } from "@shared/frame-scene"
 import { InspectionControls, InspectionStage, useInspection } from "./FrameInspection"
 import FramePoster from "./FramePoster"
 import "./frame-studio.css"
@@ -12,11 +12,13 @@ import SceneContentEditor from "./SceneContentEditor"
 import { contentDuration } from "@shared/scene-content"
 import { MOTION_EASES, type MotionEase } from "@shared/motion-easing"
 import { applyFrameMotion, FRAME_MOTION_PRESETS } from "@shared/frame-motion-presets"
+import PortalCardControls, { PORTAL_PANELS, type PortalPanel } from "./PortalCardControls"
+import { LayerUpload } from "@/components/LayerUpload"
 
 interface Draft { name: string; price: number; target: FrameTarget; scene: FrameScene }
 interface SavedFrame { id: number; name: string; priceTinta: number; target: FrameTarget; pkg: unknown; visible?: boolean }
 const templates = [{ id: "astral", name: "Atlas astral", note: "Órbitas · cristal · cosmos" }, { id: "reliquary", name: "Relicario solar", note: "Bronce · mecanismo · ámbar" }, { id: "bloom", name: "Flor nocturna", note: "Pétalos · rosa · bioluz" }] as const
-const initialDraft = (): Draft => ({ name: "Atlas astral", price: 0, target: "both", scene: createFrameScene() })
+const initialDraft = (): Draft => ({ name: "Mi primer portal", price: 0, target: "both", scene: createPortalFrameScene() })
 
 function Slider({ label, value, min, max, step = .01, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (value: number) => void }) {
   return <label className="tq-studio-field"><span>{label}<output>{Number(value.toFixed(2))}</output></span><input aria-label={label} type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))}/></label>
@@ -37,7 +39,10 @@ export default function FrameStudio() {
   })
   const [index, setIndex] = useState(0), draft = history[index]
   const [shape, setShape] = useState<"card" | "profile">("card")
-  const [tab, setTab] = useState<"design" | "motion" | "objects">("design")
+  const [tab, setTab] = useState<"design" | "motion" | "objects" | PortalPanel>("design")
+  const [previewImages,setPreviewImages]=useState(["","",""])
+  const backInput=useRef<HTMLInputElement>(null),midInput=useRef<HTMLInputElement>(null),frontInput=useRef<HTMLInputElement>(null)
+  const previewInputs=[backInput,midInput,frontInput]
   const [channel, setChannel] = useState<FrameChannel>("orbit")
   const [notice, setNotice] = useState("")
   const [draftSaved, setDraftSaved] = useState(true)
@@ -58,6 +63,7 @@ export default function FrameStudio() {
   const bounds = FRAME_CHANNELS[channel]
   const time = Math.round(controller.time * 100) / 100
   const pose = evaluateFrameScene(draft.scene, time)
+  const channels=Object.entries(FRAME_CHANNELS).filter(([key])=>!draft.scene.portalCard || ["orbit","tilt","zoom"].includes(key))
   const currentKey = track.find(key => Math.abs(key.time - time) < .005)
 
   const change = (next: Draft) => {
@@ -70,7 +76,7 @@ export default function FrameStudio() {
     if (result.success) change({ ...draft, scene: result.data })
     else setNotice("Ese cambio excede los límites de la escena.")
   }
-  const load = (next: Draft) => { controller.reset(); change(next); setShape(next.target === "profile" ? "profile" : "card") }
+  const load = (next: Draft) => { controller.reset(); change(next); setShape(next.target === "profile" ? "profile" : "card");setTab("design");setChannel("orbit") }
   useEffect(() => {
     try { localStorage.setItem(draftKey, JSON.stringify(draft)); setDraftSaved(true) }
     catch { setDraftSaved(false) }
@@ -115,7 +121,7 @@ export default function FrameStudio() {
     })
   }
 
-  return <div className="tq-studio">
+  return <div className={`tq-studio ${draft.scene.portalCard ? "tq-portal-studio" : ""}`}>
     <header className="tq-studio-header">
       <button onClick={() => navigate("/")} aria-label="Volver al inicio"><ArrowLeft size={18}/></button>
       <div className="tq-studio-brand"><small>TLOQUE / CREATIVE TOOLS</small><h1>Estudio de marcos <span>3D</span></h1></div>
@@ -133,11 +139,12 @@ export default function FrameStudio() {
       <aside className="tq-studio-library">
         <div className="tq-studio-section-title"><span>01 / COLECCIÓN</span><Sparkles size={14}/></div>
         <h2>Un objeto.<br/>Un pequeño universo.</h2>
-        <p>Elige un punto de partida. Construye su identidad en movimiento.</p>
-        <div className="tq-template-list">{templates.map(template => <button key={template.id} className="tq-template" aria-pressed={draft.scene.style === template.id} onClick={() => load({ ...draft, name: template.name, scene: createFrameScene(template.id) })}>
+        <p>Un marco limpio. Materiales, mica, reverso y atmósfera, sin modelar personajes.</p>
+        <button className="tq-studio-primary" onClick={()=>load(initialDraft())}>Nuevo marco portal</button>
+        <details className="tq-sequence-details"><summary>Plantillas anteriores · ornamentos 3D</summary><div className="tq-template-list">{templates.map(template => <button key={template.id} className="tq-template" aria-pressed={!draft.scene.portalCard && draft.scene.style === template.id} onClick={() => load({ ...draft, name: template.name, scene: createFrameScene(template.id) })}>
           <div className="tq-template-art"><FramePoster scene={createFrameScene(template.id)}/></div>
           <span>{template.name}<small>{template.note}</small></span><ArrowUpRight size={14}/>
-        </button>)}</div>
+        </button>)}</div></details>
         <div className="tq-studio-section-title"><span>VERSIONES GUARDADAS</span><span>{gallery?.frames.filter(frame => frame.visible !== false).length ?? 0}</span></div>
         <div className="tq-saved-list">{gallery?.frames.filter(frame => frame.visible !== false).map(frame => <div className="tq-saved-row" key={frame.id}><button onClick={() => {
           load({ name: `${frame.name.slice(0, 52)} · copia`, price: frame.priceTinta, target: frame.target, scene: sceneFromLegacy(frame.pkg) })
@@ -146,23 +153,24 @@ export default function FrameStudio() {
       </aside>
       <section className="tq-studio-center" aria-label="Vista previa y secuencia">
         <div className="tq-studio-stage-title"><div><small>02 / ESCENARIO</small><h2>{draft.name || "Sin título"}</h2></div><div className="tq-segmented"><button aria-pressed={shape === "card"} onClick={() => setShape("card")}>Carta</button><button aria-pressed={shape === "profile"} onClick={() => setShape("profile")}>Perfil</button></div></div>
-        <InspectionStage pkg={pkg} shape={shape} priority={80} controller={controller} onReadyChange={setReady}/>
+        <InspectionStage pkg={pkg} shape={shape} images={draft.scene.portalCard ? previewImages : undefined} priority={80} controller={controller} onReadyChange={setReady}>{draft.scene.portalCard && previewImages.map((src,i)=>src?<img key={i} alt="" src={src} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>:null)}</InspectionStage>
         <InspectionControls controller={controller} duration={draft.scene.animation.duration} disabled={!ready}/>
-        <div className="tq-sequence-header"><span>SECUENCIA DE INSPECCIÓN</span><span>{draft.scene.animation.duration} s · {Object.values(draft.scene.animation.tracks).reduce((n, keys) => n + keys.length, 0)} claves</span></div>
-        <div className="tq-timeline" aria-label="Pistas de animación">{Object.entries(FRAME_CHANNELS).map(([key, metadata]) => <div className="tq-timeline-row" key={key}>
+        <details className="tq-sequence-details" open={tab === "motion" || !draft.scene.portalCard}><summary>Secuencia del marco · animación</summary>
+        <div className="tq-sequence-header"><span>SECUENCIA DE INSPECCIÓN</span><span>{draft.scene.animation.duration} s · {channels.reduce((n,[key])=>n+draft.scene.animation.tracks[key as FrameChannel].length,0)} claves</span></div>
+        <div className="tq-timeline" aria-label="Pistas de animación">{channels.map(([key, metadata]) => <div className="tq-timeline-row" key={key}>
           <button aria-pressed={channel === key} onClick={() => { setChannel(key as FrameChannel); setTab("motion") }}>{metadata.label}</button>
           <div className="tq-timeline-track"><div className="tq-playhead" style={{ left: `${controller.time / draft.scene.animation.duration * 100}%` }}/>{draft.scene.animation.tracks[key as FrameChannel].map(point => <button key={point.time} style={{ left: `${point.time / draft.scene.animation.duration * 100}%` }} aria-label={`${metadata.label}, ${point.time} segundos`} title={`${point.time} s · ${point.value}`} onClick={() => { controller.seek(point.time); setChannel(key as FrameChannel); setTab("motion") }}><span/></button>)}</div>
-        </div>)}</div>
+        </div>)}</div></details>
         <div className="tq-studio-footnote"><span>{draftSaved ? "Borrador guardado en este dispositivo" : "No se pudo guardar el borrador local; exporta una copia"}</span><span>Mismo motor en editor y galería</span></div>
       </section>
       <aside className="tq-studio-properties">
         <div className="tq-studio-section-title"><span>03 / DIRECCIÓN DE ARTE</span></div>
-        <div className="tq-segmented tq-property-tabs"><button aria-pressed={tab === "design"} onClick={() => setTab("design")}>Diseño</button><button aria-pressed={tab === "motion"} onClick={() => setTab("motion")}>Animación</button><button aria-pressed={tab === "objects"} onClick={() => setTab("objects")}>Objetos y efectos</button></div>
-        {tab === "objects" ? <SceneContentEditor value={draft.scene.content} placement="frame" onBusyChange={setImporting} onChange={content => edit(s => { s.content = content; const duration = Math.max(s.animation.duration, Math.ceil(contentDuration(content))); if (duration > s.animation.duration) { const ratio = duration / s.animation.duration; Object.values(s.animation.tracks).forEach(keys => keys.forEach((key, i) => { key.time = i === keys.length - 1 ? duration : key.time * ratio })); s.animation.duration = duration } })}/> : tab === "design" ? <>
+        <div className="tq-portal-tabs"><button aria-pressed={tab === "design"} onClick={() => setTab("design")}>{draft.scene.portalCard ? "Marco" : "Diseño"}</button>{draft.scene.portalCard && Object.entries(PORTAL_PANELS).filter(([id])=>id!=="frame").map(([id,label])=><button key={id} aria-pressed={tab===id} onClick={()=>setTab(id as PortalPanel)}>{label}</button>)}<button aria-pressed={tab === "motion"} onClick={() => setTab("motion")}>Animación</button>{!draft.scene.portalCard && <button aria-pressed={tab === "objects"} onClick={() => setTab("objects")}>Objetos y efectos</button>}</div>
+        {draft.scene.portalCard && tab in PORTAL_PANELS ? <PortalCardControls panel={tab as PortalPanel} value={draft.scene.portalCard} onChange={portalCard=>edit(s=>{s.portalCard=portalCard})}/> : tab === "objects" ? <SceneContentEditor value={draft.scene.content} placement="frame" onBusyChange={setImporting} onChange={content => edit(s => { s.content = content; const duration = Math.max(s.animation.duration, Math.ceil(contentDuration(content))); if (duration > s.animation.duration) { const ratio = duration / s.animation.duration; Object.values(s.animation.tracks).forEach(keys => keys.forEach((key, i) => { key.time = i === keys.length - 1 ? duration : key.time * ratio })); s.animation.duration = duration } })}/> : tab === "design" ? <>
           <section><h3>Identidad</h3><label className="tq-studio-field">Nombre<input maxLength={60} value={draft.name} onChange={e => change({ ...draft, name: e.target.value })}/></label>
             <div className="tq-two-fields"><label className="tq-studio-field">Disponible para<select value={draft.target} onChange={e => change({ ...draft, target: e.target.value as FrameTarget })}><option value="both">Carta y perfil</option><option value="card">Cartas</option><option value="profile">Perfil</option></select></label><label className="tq-studio-field">Precio · Tinta<input type="number" min={0} max={1000} value={draft.price} onChange={e => change({ ...draft, price: Math.max(0, Math.min(1000, Math.round(Number(e.target.value) || 0))) })}/></label></div>
           </section>
-          <section><h3>Materia & luz</h3><div className="tq-two-fields"><ColorField label="Metal" value={draft.scene.material.color} onChange={value => edit(s => { s.material.color = value })}/><ColorField label="Cristal" value={draft.scene.material.accent} onChange={value => edit(s => { s.material.accent = value })}/></div>
+          {draft.scene.portalCard ? <><PortalCardControls panel="frame" value={draft.scene.portalCard} onChange={portalCard=>edit(s=>{s.portalCard=portalCard})}/><details className="tq-sequence-details"><summary>Probar con tus imágenes</summary><p>Solo para esta vista previa. El marco guarda el acabado; las imágenes se guardan al crear la tarjeta.</p>{["Fondo de prueba","Capa media de prueba","Primer plano de prueba"].map((label,i)=><LayerUpload key={label} label={label} url={previewImages[i]} gc={{color:"#d6e2b6",glow:"#d6e2b6"}} inputRef={previewInputs[i]} onUpload={url=>setPreviewImages(current=>{const next=[...current];next[i]=url;return next})}/>)}</details><section><h3>Iluminación de estudio</h3><ColorField label="Luz principal" value={draft.scene.lighting.key} onChange={v=>edit(s=>{s.lighting.key=v})}/><ColorField label="Contraluz" value={draft.scene.lighting.rim} onChange={v=>edit(s=>{s.lighting.rim=v})}/><Slider label="Intensidad de luz" value={draft.scene.lighting.intensity} min={.5} max={5} step={.1} onChange={v=>edit(s=>{s.lighting.intensity=v})}/></section></> : <><section><h3>Materia & luz</h3><div className="tq-two-fields"><ColorField label="Metal" value={draft.scene.material.color} onChange={value => edit(s => { s.material.color = value })}/><ColorField label="Cristal" value={draft.scene.material.accent} onChange={value => edit(s => { s.material.accent = value })}/></div>
             <Slider label="Metalizado" value={draft.scene.material.metalness} min={0} max={1} onChange={v => edit(s => { s.material.metalness = v })}/>
             <Slider label="Rugosidad" value={draft.scene.material.roughness} min={.12} max={1} onChange={v => edit(s => { s.material.roughness = v })}/>
             <Slider label="Emisión del cristal" value={draft.scene.material.glow} min={0} max={1.5} onChange={v => edit(s => { s.material.glow = v })}/>
@@ -170,10 +178,10 @@ export default function FrameStudio() {
             <Slider label="Intensidad de luz" value={draft.scene.lighting.intensity} min={.5} max={5} step={.1} onChange={v => edit(s => { s.lighting.intensity = v })}/>
           </section>
           <section><h3>Arquitectura</h3><Slider label="Grosor del marco" value={draft.scene.geometry.width} min={.06} max={.2} onChange={v => edit(s => { s.geometry.width = v })}/><Slider label="Profundidad del bisel" value={draft.scene.geometry.depth} min={.04} max={.22} onChange={v => edit(s => { s.geometry.depth = v })}/><Slider label="Curva de esquina" value={draft.scene.geometry.radius} min={.05} max={.3} onChange={v => edit(s => { s.geometry.radius = v })}/><Slider label="Ornamentos" value={draft.scene.geometry.ornaments} min={4} max={16} step={1} onChange={v => edit(s => { s.geometry.ornaments = v })}/></section>
-          <section><h3>El mundo interior</h3><label className="tq-studio-check"><input type="checkbox" checked={draft.scene.portal.enabled} onChange={e => edit(s => { s.portal.enabled = e.target.checked })}/>Portal espacial</label><ColorField label="Atmósfera" value={draft.scene.portal.color} onChange={v => edit(s => { s.portal.color = v })}/><Slider label="Paralaje" value={draft.scene.portal.depth} min={.2} max={1} onChange={v => edit(s => { s.portal.depth = v })}/><Slider label="Partículas" value={draft.scene.portal.particles} min={0} max={96} step={1} onChange={v => edit(s => { s.portal.particles = v })}/><Slider label="Flujo del portal" value={draft.scene.portal.speed} min={0} max={1} onChange={v => edit(s => { s.portal.speed = v })}/><p>Las imágenes de la carta equipada se incorporan al portal. El paralaje entre figuras requiere capas separadas.</p></section>
+          <section><h3>El mundo interior</h3><label className="tq-studio-check"><input type="checkbox" checked={draft.scene.portal.enabled} onChange={e => edit(s => { s.portal.enabled = e.target.checked })}/>Portal espacial</label><ColorField label="Atmósfera" value={draft.scene.portal.color} onChange={v => edit(s => { s.portal.color = v })}/><Slider label="Paralaje" value={draft.scene.portal.depth} min={.2} max={1} onChange={v => edit(s => { s.portal.depth = v })}/><Slider label="Partículas" value={draft.scene.portal.particles} min={0} max={96} step={1} onChange={v => edit(s => { s.portal.particles = v })}/><Slider label="Flujo del portal" value={draft.scene.portal.speed} min={0} max={1} onChange={v => edit(s => { s.portal.speed = v })}/><p>Las imágenes de la carta equipada se incorporan al portal. El paralaje entre figuras requiere capas separadas.</p></section></>}
         </> : <>
           <section><h3>Coreografía</h3><p>Selecciona una clave en la pista o sitúa el tiempo y cambia su valor. La galería reproduce esta misma secuencia.</p><Slider label="Duración · segundos" value={draft.scene.animation.duration} min={3} max={Math.max(120, draft.scene.animation.duration)} step={1} onChange={v => { controller.reset(); edit(s => { const ratio = v / s.animation.duration; for (const keys of Object.values(s.animation.tracks)) keys.forEach((key, i) => { key.time = i === keys.length - 1 ? v : key.time * ratio }); s.animation.duration = v }) }}/>
-            <label className="tq-studio-field">Pista<select aria-label="Pista" value={channel} onChange={e => setChannel(e.target.value as FrameChannel)}>{Object.entries(FRAME_CHANNELS).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}</select></label>
+            <label className="tq-studio-field">Pista<select aria-label="Pista" value={channel} onChange={e => setChannel(e.target.value as FrameChannel)}>{channels.map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}</select></label>
             <div className="tq-key-card"><small>{currentKey ? "CLAVE SELECCIONADA" : "NUEVA CLAVE"}</small><strong>{time.toFixed(2)} <span>segundos</span></strong><Slider label={bounds.label} value={pose[channel]} min={bounds.min} max={bounds.max} step={bounds.step} onChange={setKey}/>
               {currentKey && <label className="tq-studio-field">Llegada a esta clave<select aria-label="Curva de llegada del marco" value={currentKey.ease} onChange={e => edit(s => { s.animation.tracks[channel].find(key => key.time === currentKey.time)!.ease = e.target.value as MotionEase })}>{Object.entries(MOTION_EASES).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}
               <button disabled={!currentKey || currentKey.time === 0 || currentKey.time === draft.scene.animation.duration} onClick={() => edit(s => { s.animation.tracks[channel] = s.animation.tracks[channel].filter(key => key.time !== currentKey?.time) })}><Trash2 size={14}/>Eliminar clave</button>

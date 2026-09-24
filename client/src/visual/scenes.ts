@@ -15,6 +15,7 @@ import { CARD_LAYERS, evaluateCardLayer, type CardLayer } from "@shared/card-sce
 import { cardArtFragment, cardArtVertex } from "./card-art-shaders"
 import { createSceneObjects } from "./scene-objects"
 import { createSceneWeather } from "./scene-weather"
+import { createPortalCardScene } from "./portal-card-scene"
 
 export interface VisualScene {
   update: (time: number, dt: number, aspect: number, pointer: { x: number; y: number }, options: VisualOptions) => void
@@ -24,6 +25,7 @@ export interface VisualScene {
 }
 export const sceneKey = (options: VisualOptions) => {
   const native = readFrameScene(options.frame)
+  if (options.cardScene?.portalCard || native?.portalCard && !options.cardScene?.content?.objects.length) return JSON.stringify(["portal-card-v1", options.kind, options.images?.slice(0, 3), options.shape, options.retry])
   return JSON.stringify([options.kind, options.theme, visualColor(options.color), options.images?.slice(0, 3), native ? frameGeometryKey(native) : visualFrame(options.frame, options.color), options.shape, !!options.cardScene, options.retry])
 }
 
@@ -39,6 +41,7 @@ function roundedPath<T extends Shape | Path>(path: T, width: number, height: num
 
 /** One bounded scene per visible slot, with validated models and declarative effects. */
 export function createVisualScene(options: VisualOptions, maxTextureEdge: number, environment?: Texture): VisualScene {
+  if (options.cardScene?.portalCard || readFrameScene(options.frame)?.portalCard && !options.cardScene?.content?.objects.length) return createPortalCardScene(options, maxTextureEdge, environment)
   const scene = new Scene()
   const native = readFrameScene(options.frame)
   scene.environment = environment ?? null

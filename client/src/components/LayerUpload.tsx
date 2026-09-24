@@ -94,7 +94,10 @@ function LayerUpload({
       )}
 
       <div className="flex gap-2">
-        <motion.div
+        <motion.button
+          type="button"
+          aria-label={`Elegir imagen: ${label}`}
+          disabled={busy}
           whileTap={{ scale: 0.97 }}
           onClick={() => !busy && inputRef.current?.click()}
           className="relative flex-1 cursor-pointer rounded-xl overflow-hidden flex items-center gap-3"
@@ -109,7 +112,7 @@ function LayerUpload({
             <p className="text-xs font-sans mx-auto" style={{ color: gc.color }}>Optimizando…</p>
           ) : url ? (
             <>
-              <img loading="lazy" src={url}
+              <img loading="lazy" src={url} alt=""
                 className="w-10 object-cover rounded-lg shrink-0" style={{ height: compact ? 32 : 60 }} />
               <p className="text-xs text-zinc-500 font-sans">Toca para cambiar</p>
               <div className="ml-auto"><Check className="w-3 h-3" style={{ color: gc.color }} /></div>
@@ -120,7 +123,7 @@ function LayerUpload({
               <p className="text-xs text-zinc-600 font-sans">{t("galleryOrFiles")}</p>
             </>
           )}
-        </motion.div>
+        </motion.button>
 
         <motion.button
           whileTap={{ scale: 0.95 }}

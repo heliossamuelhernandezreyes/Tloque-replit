@@ -7,6 +7,10 @@ export default function FramePoster({ scene, shape = "card", className = "", chi
 }) {
   const id = useId().replace(/:/g, "")
   const profile = shape === "profile", height = profile ? 3.3 : 4.5
+  if (scene.portalCard) {
+    const {frame,world,mica}=scene.portalCard
+    return <div data-frame-renderer="portal-card-poster" className={`tq-frame-poster ${className}`} style={{position:asOverlay?"absolute":"relative",inset:asOverlay?0:undefined,width:"100%",height:asOverlay?"100%":undefined,aspectRatio:asOverlay?undefined:profile?"1":"5 / 7",boxSizing:"border-box",borderStyle:"solid",borderWidth:`${frame.width*55}px`,borderColor:frame.color,borderRadius:profile?"50%":`${frame.radius*65}px`,background:asOverlay?"transparent":world.background,overflow:"hidden",boxShadow:`inset 0 0 0 1px #ffffff40,0 0 ${frame.glow*15}px ${frame.lightColor}55`,pointerEvents:"none"}}>{children}{!asOverlay && mica.enabled && <div className="tq-portal-poster-mica"/>}</div>
+  }
   const { color, accent } = scene.material
   return <div className={`tq-frame-poster ${className}`} data-frame-renderer="scene-v2-poster" style={{ position: asOverlay ? "absolute" : "relative", inset: asOverlay ? 0 : undefined, width: "100%", height: asOverlay ? "100%" : undefined, aspectRatio: asOverlay ? undefined : `3.3 / ${height}`, pointerEvents: "none" }}>
     {!asOverlay && <div style={{ position: "absolute", inset: profile ? "18%" : "16.7% 17.9%", overflow: "hidden", borderRadius: profile ? "50%" : "5%", background: scene.portal.enabled ? `radial-gradient(ellipse at 30% 20%, ${scene.portal.color}, #080b16 90%)` : "#080b16" }}>{children}</div>}

@@ -36,9 +36,9 @@ interface Props {
   onTap?:       () => void // si se pasa, gana sobre el visor
 }
 
-function StaticCardArt({ coverFx, cardScene, frameOverlay, accentColor }: { title: string; coverUrl: string; coverFx: any; cardScene?: CardScene; accentColor: string; accentGlow: string; className: string; frameOverlay: ReactNode }) {
+function StaticCardArt({ coverFx, cardScene, frame, frameOverlay, accentColor }: { title: string; coverUrl: string; coverFx: any; cardScene?: CardScene; frame?: unknown; accentColor: string; accentGlow: string; className: string; frameOverlay: ReactNode }) {
   const scene = cardScene ?? cardSceneFromFx(coverFx)
-  return <div className="relative h-full"><CardScenePoster fill scene={scene} images={[coverFx?.layers?.back, coverFx?.layers?.mid, coverFx?.layers?.front]} color={accentColor}/>{frameOverlay}</div>
+  return <div className="relative h-full"><CardScenePoster fill scene={scene} images={[coverFx?.layers?.back, coverFx?.layers?.mid, coverFx?.layers?.front]} frame={scene.portalCard ? frame : undefined} color={accentColor}/>{frameOverlay}</div>
 }
 
 // Tarjeta coleccionable de Tloque. Viva (parallax 3D + clima por capa)
@@ -57,6 +57,7 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
   // Marco de la galería (si el autor eligió uno). Si no, el anillo de rareza.
   const { byId } = useFrames()
   const galleryFrame = byId(card.fx?.frameId)
+  const authoredScene=readCardScene(card.fx?.scene)??undefined
 
   // Cualquier tarjeta, en cualquier pantalla: se toca y se abre en el visor.
   const viewer = useCardViewer()
@@ -130,7 +131,8 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
             title={card.name}
             coverUrl={backArt}
             coverFx={card.fx}
-            cardScene={readCardScene(card.fx?.scene) ?? undefined}
+            cardScene={authoredScene}
+            frame={galleryFrame?.pkg}
             accentColor={accentColor}
             accentGlow={accentGlow}
             className="!rounded-[22px] h-full"
@@ -155,7 +157,7 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
                 )}
 
                 {/* El marco: el de la galería si lo eligieron; si no, el anillo de rareza */}
-                {galleryFrame ? (
+                {!authoredScene?.portalCard && (galleryFrame ? (
                   <FrameRenderer preset={galleryFrame.pkg} shape="card" asOverlay
                     nameText={card.name} />
                 ) : (
@@ -177,7 +179,7 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
                       />
                     )}
                   </div>
-                )}
+                ))}
 
                 <div className="absolute inset-x-0 bottom-0 h-[38%]"
                   style={{ background: "linear-gradient(to top, rgba(6,6,10,0.92), transparent)" }} />
