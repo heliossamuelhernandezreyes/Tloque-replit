@@ -10,6 +10,8 @@ import "./portal-card.css"
 import { resolvePortalCard } from "@shared/portal-card-recipe"
 
 export function useInspection(duration: number) {
+  const stage = useRef<HTMLDivElement>(null)
+  const reveal = useCallback(() => { requestAnimationFrame(() => stage.current?.scrollIntoView({ block: "nearest" })) }, [])
   const transport = useRef<SceneTransport>({ time: 0, mode: "idle" })
   const [time, setTime] = useState(0), [playing, setPlaying] = useState(false)
   const pause = useCallback(() => { setTime(transport.current.time); setPlaying(false) }, [])
@@ -38,7 +40,7 @@ export function useInspection(duration: number) {
     return () => { cancelAnimationFrame(raf); document.removeEventListener("visibilitychange", visibility) }
   }, [playing, duration, pause])
   useEffect(() => { if (transport.current.time > duration) seek(duration) }, [duration, seek])
-  return { transport, time, playing, play, pause, seek, reset }
+  return { transport, time, playing, play, pause, seek, reset, stage, reveal }
 }
 export type InspectionController = ReturnType<typeof useInspection>
 
@@ -64,7 +66,7 @@ export function InspectionStage({ pkg, shape = "card", images, cardScene, color,
   const turn = (yaw: number, pitch: number) => { orientation.current = { ...orientation.current, yaw: wrapCardAngle(yaw), pitch: wrapCardAngle(pitch) }; setFront(portalView(orientation.current).front) }
   const onReady = useCallback((value: boolean) => { setReady(value); onReadyChange?.(value) }, [onReadyChange])
   useEffect(() => { if (!ready) controller.pause() }, [ready, controller.pause])
-  return <div className={`tq-inspection-stage ${recipe ? "tq-portal-inspection" : ""}`}>
+  return <div ref={controller.stage} className={`tq-inspection-stage ${recipe ? "tq-portal-inspection" : ""}`}>
     <div className="tq-stage-meta"><span>SCENE / 02</span><span data-testid="scene-status">{ready ? "3D EN TIEMPO REAL" : engine.failed ? "VISTA ESENCIAL · GPU NO DISPONIBLE" : engine.enabled ? "PREPARANDO 3D" : "VISTA ESENCIAL"}</span></div>
     <div className={recipe ? "tq-card-turntable" : undefined} tabIndex={recipe ? 0 : undefined} role={recipe ? "group" : undefined} aria-label={recipe ? "Girar tarjeta 360 grados. Arrastra o usa las flechas; Inicio vuelve al frente." : undefined} data-card-face={front ? "front" : "back"}
       onPointerDown={recipe ? e => { if (e.button !== 0) return; drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY }; e.currentTarget.setPointerCapture(e.pointerId) } : undefined}

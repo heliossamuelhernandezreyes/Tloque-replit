@@ -216,6 +216,7 @@ try {
   await slider(director.page, "Posición X de capa", .12)
   await director.page.getByRole("button", { name: "Revelación", exact: false }).click()
   await director.page.getByLabel("Acabado de tarjeta", { exact: true }).selectOption("prismatic")
+  await rendered(director.page)
   await director.page.getByRole("button", { name: "Reproducir inspección", exact: true }).click()
   await director.page.waitForFunction(() => Number(document.querySelector('[aria-label="Tiempo de inspección"]').value) > .3)
   await director.page.getByRole("button", { name: "Pausar inspección", exact: true }).click()
