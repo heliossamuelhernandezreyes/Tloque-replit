@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { createSceneContent, EFFECTS, sceneContentSchema, SCENE_MAX_SECONDS } from "./scene-content"
 import { CARD_LAYERS, CARD_REST, type CardLayer, type CardScene } from "./card-scene-runtime"
+import { createPortalCard, portalCardSchema } from "./portal-card"
 export * from "./card-scene-runtime"
 
 const finite = (min: number, max: number) => z.number().finite().min(min).max(max)
@@ -8,10 +9,11 @@ const transform = z.object({ x: finite(-.6, .6), y: finite(-.6, .6), scale: fini
 const key = transform.extend({ time: finite(0, SCENE_MAX_SECONDS), ease: z.enum(["smooth", "cinematic", "ease-in", "ease-out", "linear", "hold"]) }).strict()
 const layer = z.object({ transform, depth: finite(0, 1), keys: z.array(key).min(2).max(16) }).strict()
 export const cardSceneSchema = z.object({
-  version: z.literal("1.0.0"), duration: finite(3, SCENE_MAX_SECONDS), content: sceneContentSchema.optional(),
+  version: z.literal("1.0.0"), duration: finite(3, SCENE_MAX_SECONDS), content: sceneContentSchema.optional(), portalCard: portalCardSchema.optional(),
   finish: z.object({ type: z.enum(["none", "foil", "prismatic"]), strength: finite(0, .6) }).strict(),
   layers: z.object({ back: layer, mid: layer, front: layer }).strict(),
 }).strict().superRefine((scene, ctx) => {
+  if (scene.portalCard && scene.content?.objects.length) ctx.addIssue({ code:z.ZodIssueCode.custom,path:["content","objects"],message:"El portal de imágenes y los objetos 3D usan modos distintos. Conserva la escena anterior o crea una tarjeta portal nueva." })
   for (const name of CARD_LAYERS) {
     const keys = scene.layers[name].keys
     if (keys[0].time !== 0 || keys.at(-1)!.time !== scene.duration || keys.some((k, i) => k.time > scene.duration || i > 0 && k.time <= keys[i - 1].time)) {
@@ -58,6 +60,9 @@ export function createCardScene(): CardScene {
     keys: [0, 8].map(time => ({ ...CARD_REST, time, ease: "cinematic" as const })),
   }])) as CardScene["layers"]
   return { version: "1.0.0", duration: 8, finish: { type: "none", strength: .22 }, layers }
+}
+export function createPortalCardScene(): CardScene {
+  return { ...createCardScene(), portalCard: createPortalCard() }
 }
 export function applyCardMotion(scene: CardScene, preset: CardMotionPreset): CardScene {
   const next = structuredClone(scene)

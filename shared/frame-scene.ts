@@ -2,6 +2,7 @@ import { z } from "zod"
 import { sceneContentSchema, SCENE_MAX_SECONDS } from "./scene-content"
 import { visualFrame } from "./visual-experience"
 import { easeMotion, type MotionEase } from "./motion-easing"
+import { createPortalCard, portalCardSchema } from "./portal-card"
 
 /** Portable art direction, never executable code or arbitrary GPU programs. */
 export const FRAME_SCENE_VERSION = "2.0.0"
@@ -24,13 +25,15 @@ const tracks = Object.fromEntries(Object.entries(FRAME_CHANNELS).map(([key, boun
 export const frameSceneSchema = z.object({
   version: z.literal(FRAME_SCENE_VERSION),
   content: sceneContentSchema.optional(),
+  portalCard: portalCardSchema.optional(),
   style: z.enum(["astral", "reliquary", "bloom"]),
-  geometry: z.object({ width: finite(.06, .2), depth: finite(.04, .22), radius: finite(.05, .3), ornaments: z.number().int().min(4).max(16) }).strict(),
+  geometry: z.object({ width: finite(.06, .2), depth: finite(.04, .22), radius: finite(.05, .3), ornaments: z.number().int().min(0).max(16) }).strict(),
   material: z.object({ color, accent: color, metalness: finite(0, 1), roughness: finite(.12, 1), glow: finite(0, 1.5) }).strict(),
   lighting: z.object({ key: color, rim: color, intensity: finite(.5, 5) }).strict(),
   portal: z.object({ enabled: z.boolean(), color, depth: finite(.2, 1), particles: z.number().int().min(0).max(96), speed: finite(0, 1) }).strict(),
   animation: z.object({ duration: finite(3, SCENE_MAX_SECONDS), tracks: z.object(tracks).strict() }).strict(),
 }).strict().superRefine((scene, ctx) => {
+  if (scene.portalCard && scene.content?.objects.length) ctx.addIssue({code:z.ZodIssueCode.custom,path:["content","objects"],message:"Los marcos portal no contienen objetos 3D. Usa el modo de escena anterior para importarlos."})
   for (const [channel, keys] of Object.entries(scene.animation.tracks)) {
     if (keys[0]?.time !== 0 || keys.at(-1)?.time !== scene.animation.duration || keys.some((key, i) => key.time > scene.animation.duration || i > 0 && key.time <= keys[i - 1].time)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["animation", "tracks", channel], message: "Las claves deben estar ordenadas, empezar en 0 y terminar en la duración." })
@@ -86,29 +89,37 @@ export function createFrameScene(style: FrameScene["style"] = "astral"): FrameSc
     } },
   }
 }
+export function createPortalFrameScene(): FrameScene {
+  const scene = createFrameScene()
+  scene.portalCard = createPortalCard(); scene.geometry.ornaments = 0; scene.portal.particles = 0
+  for (const [channel, keys] of Object.entries(scene.animation.tracks)) keys.forEach(key => { key.value = channel === "zoom" || channel === "aperture" ? 1 : 0 })
+  return scene
+}
 
 /** Creates a NEW version. Legacy originals are never rewritten or silently replaced. */
 export function sceneFromLegacy(pkg: unknown): FrameScene {
   const native = readFrameScene(pkg)
   if (native) return structuredClone(native)
-  const scene = createFrameScene()
+  const scene = createPortalFrameScene()
   const legacy = visualFrame(pkg)
   scene.material.color = legacy.color
   scene.material.metalness = legacy.metalness
   scene.material.roughness = legacy.roughness
   scene.geometry.width = Math.max(.06, Math.min(.2, legacy.thickness))
   scene.geometry.radius = Math.max(.05, Math.min(.3, legacy.radius))
+  Object.assign(scene.portalCard!.frame, { color: legacy.color, metalness: legacy.metalness, roughness: legacy.roughness, width: scene.geometry.width, radius: scene.geometry.radius })
   return scene
 }
 
 export function packageFrameScene(scene: FrameScene, name: string, target: FrameTarget) {
   const canonical = frameSceneSchema.parse(scene)
+  const premium = canonical.portalCard?.frame
   return {
     schemaVersion: FRAME_SCENE_VERSION, renderer: "tloque-scene-v2", scene: canonical,
     // A poster-compatible subset keeps old clients readable; v2 consumers use scene.
     runtimePreset: { schemaVersion: FRAME_SCENE_VERSION, target, name: name.slice(0, 60), appearance: {
-      material: { baseColor: canonical.material.color, metalness: canonical.material.metalness, roughness: canonical.material.roughness },
-      geometry: { thickness: { top: canonical.geometry.width * 500 }, corners: { tl: canonical.geometry.radius * 500 } },
+      material: { baseColor: premium?.color ?? canonical.material.color, metalness: premium?.metalness ?? canonical.material.metalness, roughness: premium?.roughness ?? canonical.material.roughness },
+      geometry: { thickness: { top: (premium?.width ?? canonical.geometry.width) * 500 }, corners: { tl: (premium?.radius ?? canonical.geometry.radius) * 500 } },
     } },
   }
 }

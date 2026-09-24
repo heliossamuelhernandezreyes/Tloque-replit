@@ -11,7 +11,7 @@ import FrameRenderer from "@/components/FrameRenderer"
 import { useFrames } from "@/hooks/useFrames"
 import { useLocation } from "wouter"
 import { useAuth } from "@/hooks/useAuth"
-import { cardSceneFromFx, createCardScene, type CardScene } from "@shared/card-scene"
+import { cardSceneFromFx, createPortalCardScene, type CardScene } from "@shared/card-scene"
 const CardDirector = lazy(() => import("@/visual/CardDirector"))
 
 interface Card {
@@ -31,7 +31,7 @@ const EMPTY = {
   layers: { back: "", mid: "", front: "" },
   rarity: "silver" as Rarity,
   frameId: null as number | null,
-  scene: createCardScene() as CardScene | null,
+  scene: createPortalCardScene() as CardScene | null,
   layerFx: {
     back:  { effect: "none", intensity: 0.5 },
     mid:   { effect: "none", intensity: 0.5 },
@@ -287,7 +287,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
           )}
 
           {/* Capas del arte */}
-          <LayerUpload label="Fondo (opcional si usas 3D)" url={form.layers.back} gc={gc}
+          <LayerUpload label="Fondo de la tarjeta" url={form.layers.back} gc={gc}
             onUpload={u => setLayer("back", u)} inputRef={backRef} compact />
           <LayerUpload label="Capa media (opcional)" url={form.layers.mid} gc={gc}
             onUpload={u => setLayer("mid", u)} inputRef={midRef}
@@ -299,9 +299,9 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
           <div className="rounded-xl border border-amber-200/20 bg-gradient-to-br from-amber-200/5 to-indigo-300/5 p-4 !my-5">
             <p className="text-[10px] tracking-[.15em] text-amber-200/60">CARD DIRECTOR / 3D</p>
             <h3 className="text-lg font-display text-zinc-100 mt-1">De ilustración a escena viva.</h3>
-            <p className="text-xs text-zinc-400 leading-relaxed my-2">Importa modelos y animaciones, crea objetos con formas y añade vidrio, llamas o lluvia. Puedes empezar sin una imagen de fondo.</p>
-            <button onClick={() => setDirecting(true)} className="min-h-11 w-full rounded-lg bg-amber-100/10 border border-amber-200/25 text-amber-100 text-xs flex items-center justify-center gap-2 disabled:opacity-35"><Clapperboard size={17}/>Dirigir escena y animación</button>
-            <p className="text-[10px] text-zinc-500 mt-2">{form.scene ? `Dirección activa · ${form.scene.duration} segundos · ${form.scene.finish.type === "none" ? "arte original" : form.scene.finish.type}` : "Abre el taller y elige Objetos y efectos para empezar con 3D."}</p>
+            <p className="text-xs text-zinc-400 leading-relaxed my-2">Pon tu fondo y hasta dos capas recortadas. Diseña el marco, añade una mica y sitúa lluvia, nieve o luz entre las imágenes. Gira la tarjeta y personaliza su reverso.</p>
+            <button onClick={() => setDirecting(true)} className="min-h-11 w-full rounded-lg bg-amber-100/10 border border-amber-200/25 text-amber-100 text-xs flex items-center justify-center gap-2 disabled:opacity-35"><Clapperboard size={17}/>Diseñar tarjeta, marco y efectos</button>
+            <p className="text-[10px] text-zinc-500 mt-2">{form.scene?.portalCard ? `Portal 360° · ${form.scene.duration} segundos · ${form.layers.back ? "fondo listo" : "añade un fondo para guardar"}` : "Escena anterior · objetos y animaciones 3D conservados"}</p>
           </div>
 
           {/* Rareza — material del marco */}
@@ -318,7 +318,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
               <div className="flex gap-2 overflow-x-auto pb-1"
                 style={{ scrollbarWidth: "none" }}>
                 {/* Sin marco: usa el anillo de rareza */}
-                <button onClick={() => setForm(f => ({ ...f, frameId: null }))}
+                <button aria-label="Sin marco equipado" onClick={() => setForm(f => ({ ...f, frameId: null }))}
                   className="flex-shrink-0 rounded-lg flex flex-col items-center justify-center gap-1"
                   style={{
                     width: 54, height: 68,
@@ -327,7 +327,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
                   }}>
                   <span className="text-[13px]">◇</span>
                   <span className="text-[7px] font-sans" style={{ color: form.frameId === null ? gc.color : "rgba(255,255,255,0.4)" }}>
-                    {t("rarityOnly")}
+                    {form.scene?.portalCard ? "Mi marco" : t("rarityOnly")}
                   </span>
                 </button>
                 {myFrames.map(fr => (
@@ -419,7 +419,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
         </div>
       )}
       {directing && <Suspense fallback={<p role="status" className="text-xs text-zinc-400 py-4">Preparando dirección 3D…</p>}>
-        <CardDirector value={form.scene} images={[form.layers.back, form.layers.mid, form.layers.front]} frame={byId(form.frameId)?.pkg} color={MATERIALS[form.rarity]?.base || gc.color} name={form.name} draftKey={directionDraftKey} onApply={scene => setForm(f => ({ ...f, scene }))} onClose={() => setDirecting(false)}/>
+        <CardDirector value={form.scene} images={[form.layers.back, form.layers.mid, form.layers.front]} frame={byId(form.frameId)?.pkg} color={MATERIALS[form.rarity]?.base || gc.color} name={form.name} draftKey={directionDraftKey} onApply={(scene,images) => setForm(f => ({ ...f, scene, layers:{back:images[0]||"",mid:images[1]||"",front:images[2]||""} }))} onClose={() => setDirecting(false)}/>
       </Suspense>}
     </div>
   )

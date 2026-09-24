@@ -64,7 +64,8 @@ test("convertir un clásico o editar una copia v2 no muta el original", () => {
   assert.equal(JSON.stringify(legacy), original)
   const pkg = packageFrameScene(scene, "a", "both"), copy = sceneFromLegacy(pkg)
   copy.animation.tracks.orbit[1].value = 10
-  assert.equal(readFrameScene(pkg)!.animation.tracks.orbit[1].value, -24)
+  assert.equal(readFrameScene(pkg)!.animation.tracks.orbit[1].value, 0, "las copias clásicas empiezan como portales limpios y quietos")
+  assert.equal(readFrameScene(pkg)!.portalCard!.frame.color, "#112233")
 })
 
 test("materiales y playhead se actualizan sin reconstruir GPU; topología sí invalida", () => {

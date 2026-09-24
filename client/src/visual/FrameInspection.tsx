@@ -5,6 +5,9 @@ import type { CardScene } from "@shared/card-scene-runtime"
 import VisualSlot, { useVisualEngine } from "./VisualEngine"
 import FrameRenderer from "@/components/FrameRenderer"
 import "./frame-studio.css"
+import { portalView, wrapCardAngle, type CardOrientation } from "@shared/portal-card"
+import "./portal-card.css"
+import { resolvePortalCard } from "@shared/portal-card-recipe"
 
 export function useInspection(duration: number) {
   const transport = useRef<SceneTransport>({ time: 0, mode: "idle" })
@@ -54,14 +57,26 @@ export function InspectionStage({ pkg, shape = "card", images, cardScene, color,
   const engine = useVisualEngine()
   const [ready, setReady] = useState(false)
   const [issue, setIssue] = useState(""), [retry, setRetry] = useState(0)
+  const recipe = cardScene?.portalCard ? resolvePortalCard(cardScene.portalCard,pkg) : readFrameScene(pkg)?.portalCard
+  const orientation = useRef<CardOrientation>({ yaw: 0, pitch: 0, zoom: 1 })
+  const drag = useRef<{ id: number; x: number; y: number } | null>(null)
+  const [front, setFront] = useState(true), [zoom, setZoom] = useState(1)
+  const turn = (yaw: number, pitch: number) => { orientation.current = { ...orientation.current, yaw: wrapCardAngle(yaw), pitch: wrapCardAngle(pitch) }; setFront(portalView(orientation.current).front) }
   const onReady = useCallback((value: boolean) => { setReady(value); onReadyChange?.(value) }, [onReadyChange])
   useEffect(() => { if (!ready) controller.pause() }, [ready, controller.pause])
   return <div className="tq-inspection-stage">
     <div className="tq-stage-meta"><span>SCENE / 02</span><span data-testid="scene-status">{ready ? "3D EN TIEMPO REAL" : engine.failed ? "VISTA ESENCIAL · GPU NO DISPONIBLE" : engine.enabled ? "PREPARANDO 3D" : "VISTA ESENCIAL"}</span></div>
-    <VisualSlot priority={priority} options={{ kind: cardScene || images?.some(Boolean) ? "portal" : "frame", frame: pkg, shape, images, cardScene, color, transport: controller.transport, retry, onAssetIssue: setIssue }} interactive label={cardScene ? "Escena de la tarjeta" : "Escena del marco"} onReadyChange={onReady} className="tq-cinematic-slot">
-      <div className="tq-stage-poster">{cardScene ? children : <FrameRenderer preset={pkg} shape={shape}>{children}</FrameRenderer>}</div>
+    <div className={recipe ? "tq-card-turntable" : undefined} tabIndex={recipe ? 0 : undefined} role={recipe ? "group" : undefined} aria-label={recipe ? "Girar tarjeta 360 grados. Arrastra o usa las flechas; Inicio vuelve al frente." : undefined} data-card-face={front ? "front" : "back"}
+      onPointerDown={recipe ? e => { if (e.button !== 0) return; drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY }; e.currentTarget.setPointerCapture(e.pointerId) } : undefined}
+      onPointerMove={recipe ? e => { const previous = drag.current; if (!previous || previous.id !== e.pointerId) return; turn(orientation.current.yaw + (e.clientX - previous.x) * .75, orientation.current.pitch - (e.clientY - previous.y) * .6); drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY } } : undefined}
+      onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }} onLostPointerCapture={() => { drag.current = null }}
+      onKeyDown={recipe ? e => { const step=e.shiftKey?45:15; if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home"].includes(e.key)) return; e.preventDefault(); turn(e.key === "Home" ? 0 : orientation.current.yaw+(e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0), e.key === "Home" ? 0 : orientation.current.pitch+(e.key === "ArrowDown" ? step : e.key === "ArrowUp" ? -step : 0)) } : undefined}>
+    <VisualSlot priority={priority} options={{ kind: cardScene || images?.some(Boolean) ? "portal" : "frame", frame: pkg, shape, images, cardScene, color, transport: controller.transport, orientation: recipe ? orientation : undefined, retry, onAssetIssue: setIssue }} interactive={!recipe} label={cardScene ? "Escena de la tarjeta" : "Escena del marco"} onReadyChange={onReady} className="tq-cinematic-slot">
+      <div className="tq-stage-poster">{recipe && !front ? <div className="tq-portal-back-poster" style={{ background: recipe.back.color, color: recipe.back.ink, borderColor: recipe.frame.color }}><strong>{recipe.back.title}</strong><p>{recipe.back.inscription}</p><small>{recipe.back.signature}</small></div> : cardScene ? children : <FrameRenderer preset={pkg} shape={shape}>{children}</FrameRenderer>}</div>
     </VisualSlot>
-    <div className="tq-stage-hint">{ready ? "Mueve el puntero o desliza sobre el marco para explorar" : "La vista esencial conserva el diseño sin animaciones 3D"}</div>
+    </div>
+    {recipe && <div className="tq-turn-controls"><button type="button" aria-pressed={front} onClick={() => turn(0, 0)}>Frente</button><button type="button" aria-pressed={!front} onClick={() => turn(180, 0)}>Reverso</button><label>Zoom<input type="range" aria-label="Zoom de inspección" min={.8} max={1.15} step={.01} value={zoom} onChange={e => { const value=Number(e.target.value); setZoom(value); orientation.current.zoom=value }}/></label></div>}
+    <div className="tq-stage-hint">{ready ? recipe ? "Arrastra para girar 360° · flechas para inclinar · Inicio para centrar" : "Mueve el puntero o desliza sobre el marco para explorar" : "La vista esencial conserva el diseño sin animaciones 3D"}</div>
     {issue && <p className="tq-asset-status" role="status">{issue}{issue.startsWith("No se pudo") && <button type="button" onClick={() => { setIssue(""); setRetry(n => n + 1) }}>Reintentar vista</button>}</p>}
   </div>
 }

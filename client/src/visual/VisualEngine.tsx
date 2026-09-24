@@ -7,6 +7,7 @@ import { allowedOrbTheme, selectVisualEntries, visualBudget, type OrbTheme, type
 import "./visual-experience.css"
 import type { SceneTransport } from "@shared/frame-scene"
 import type { CardScene } from "@shared/card-scene-runtime"
+import type { CardOrientation } from "@shared/portal-card"
 
 export interface VisualOptions {
   kind: "orb" | "portal" | "frame" | "reveal" | "book"
@@ -20,6 +21,7 @@ export interface VisualOptions {
   cardScene?: CardScene
   shape?: "card" | "profile"
   transport?: { current: SceneTransport }
+  orientation?: { current: CardOrientation }
   retry?: number
   onAssetIssue?: (message: string) => void
 }
