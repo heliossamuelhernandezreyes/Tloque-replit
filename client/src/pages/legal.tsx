@@ -1,4 +1,5 @@
 import { ArrowLeft } from "lucide-react"
+import { ACCOUNT_DELETION_NOTICE } from "@shared/account-retention"
 
 type Props = { kind: "privacy" | "terms" }
 
@@ -10,7 +11,7 @@ export default function LegalPage({ kind }: Props) {
         <a href="/" className="inline-flex items-center gap-2 text-sm text-white/55 hover:text-white">
           <ArrowLeft className="h-4 w-4" /> Volver a Tloque
         </a>
-        <p className="mt-10 text-[10px] uppercase tracking-[.24em] text-violet-200/45">Versión beta · 27 de agosto de 2026</p>
+        <p className="mt-10 text-[10px] uppercase tracking-[.24em] text-violet-200/45">Versión beta · 25 de septiembre de 2026</p>
         <h1 className="mt-3 font-serif text-3xl text-white">{privacy ? "Privacidad" : "Términos de uso"}</h1>
         {privacy ? <Privacy /> : <Terms />}
       </article>
@@ -34,7 +35,8 @@ function Privacy() {
       <p>El Director Artificial y la generación de audiolibros son opcionales. Solo cuando los solicitas, el fragmento necesario del manuscrito y sus indicaciones pueden enviarse al proveedor configurado, como Groq o un worker de voz que puede utilizar ElevenLabs. La reproducción musical local no requiere enviar el texto durante la lectura.</p>
     </Section>
     <Section title="Control y conservación">
-      <p>Puedes exportar tus datos desde Configuración. Al eliminar la cuenta, las obras dejan de ser públicas y se borran o seudonimizan los datos personales. Se conservan asientos económicos sin información identificable cuando son necesarios para integridad contable, prevención de fraude o cumplimiento.</p>
+      <p>Puedes exportar tus datos desde Configuración, incluidas tus obras, versiones y proyectos creativos.</p>
+      <p>{ACCOUNT_DELETION_NOTICE}</p>
       <p>Las copias offline permanecen en tu dispositivo hasta que las retires, borres los datos del navegador o elimines la cuenta desde ese dispositivo.</p>
     </Section>
     <Section title="Principios">

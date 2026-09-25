@@ -13,7 +13,7 @@ incluye la investigación de herramientas y los límites de esta arquitectura.
 
 ## Requisitos
 
-- Node.js 20.19 o posterior.
+- Node.js 24 (la versión fijada en `.nvmrc`).
 - PostgreSQL accesible mediante `DATABASE_URL`.
 - Credenciales OAuth de Google para iniciar sesión.
 
@@ -37,7 +37,7 @@ npm run db:migrate
 ```
 
 El migrador puede reconstruir PostgreSQL vacío desde `0000`, aplica en orden
-las migraciones hasta `0016`, verifica checksums, restricciones e índices y
+las migraciones hasta `0023`, verifica checksums, restricciones e índices y
 valida la estructura antes del commit. `0012` agrega revisiones del manuscrito,
 `0013` introduce respaldo de Tinta y liquidaciones, `0014` fija los contratos
 SQL que no expresa Drizzle, `0015` protege las claves de reclamación y `0016`
@@ -55,9 +55,12 @@ npm run check:bundle # presupuesto del shell inicial ya construido
 npm start       # ejecuta dist/index.cjs
 ```
 
-En Replit, Run ejecuta `npm run replit` para servir la versión compilada. Tras
+En Replit, Run ejecuta `npm run replit` para aplicar migraciones y servir la versión compilada. Tras
 un pull que cambie dependencias, ejecutar `npm ci` antes de volver a pulsar Run.
 `npm run dev` sigue disponible para desarrollo con recarga de módulos.
+
+La [entrega de fiabilidad de septiembre](docs/RELIABILITY-2026-09.md) documenta
+la actualización desde versiones anteriores, sus verificaciones y límites.
 
 ## Configuración de producción
 

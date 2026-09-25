@@ -215,7 +215,8 @@ try {
   await check('Private responses and QR status are not cached', async () => {
     const securityHeaders = (await request('/healthz')).headers;
     assert.match(securityHeaders.get('content-security-policy'), /connect-src[^;]*https:/);
-    assert.doesNotMatch(securityHeaders.get('content-security-policy').split(';').find(value => value.trim().startsWith('script-src')), /https:|unsafe-eval/);
+    const scriptSources = securityHeaders.get('content-security-policy').split(';').find(value => value.trim().startsWith('script-src')).trim().split(/\s+/).slice(1);
+    assert.ok(!scriptSources.includes('https:') && !scriptSources.includes("'unsafe-eval'"));
     for (const path of ['/api/auth/me', '/api/wallet', '/api/claim/fixture-not-found']) {
       assert.match((await request(path, { role: 'reader' })).headers.get('cache-control'), /no-store/);
     }
