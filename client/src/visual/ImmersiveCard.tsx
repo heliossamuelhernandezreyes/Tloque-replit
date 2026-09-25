@@ -8,7 +8,7 @@ import CardScenePoster from "./CardScenePoster"
 export default function ImmersiveCard({ card, accentColor, priority = 100, onReadyChange }: { card: CardData; accentColor: string; priority?: number; onReadyChange?: (ready: boolean) => void }) {
   const { byId } = useFrames()
   if (!card.owned) return <CollectibleCard card={card} accentColor={accentColor} accentGlow={accentColor} zoomable={false} />
-  const frame = byId(card.fx?.frameId)
+  const frame = card.snapshotVersion ? { pkg: card.frameSnapshot } : byId(card.fx?.frameId)
   const material = collectionMaterialFor(card.rarity, card.inGachaPool, card.fx?.rarity || "silver")
   const layers = card.fx?.layers
   const images = [layers?.back, layers?.mid, layers?.front].map(url => typeof url === "string" ? url : "")

@@ -4,6 +4,18 @@ import { tintaBackingForDebit } from "../server/economy"
 
 process.env.DATABASE_URL ||= "postgresql://test:test@127.0.0.1:5432/tloque_test"
 
+test("liquidaciones inciertas conservan un reintento acotado y excluyen un worker vivo", async () => {
+  const { canClaimPayout } = await import("../server/payouts")
+  const now = Date.now(), row = { status: "requested", processedAt: null, updatedAt: new Date(now) }
+  assert.equal(canClaimPayout(row, now), true)
+  const processing = { ...row, status: "processing", processedAt: new Date(now - 10_000) }
+  assert.equal(canClaimPayout(processing, now), false)
+  assert.equal(canClaimPayout({ ...processing, updatedAt: new Date(now - 130_000) }, now), true)
+  assert.equal(canClaimPayout({ ...processing, status: "processing_unknown" }, now), true)
+  assert.equal(canClaimPayout({ ...processing, status: "processing_unknown", processedAt: new Date(now - 24 * 60 * 60_000) }, now), false)
+  for (const status of ["transferred", "rejected", "failed", "reversed", "attention"]) assert.equal(canClaimPayout({ ...processing, status }, now), false)
+})
+
 test("la Tinta nunca atribuye más efectivo que el disponible o su valor nominal", () => {
   assert.equal(tintaBackingForDebit(4_900, 5), 1_000)
   assert.equal(tintaBackingForDebit(730, 5), 730)

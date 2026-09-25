@@ -12,6 +12,14 @@ export function createAccountStore(storeName: string) {
     return { id, store }
   }
   return {
+    async entries(): Promise<Record<string, unknown>> {
+      if (!accountContext.id) return {}
+      const { id, store } = current()
+      const entries: Record<string, unknown> = {}
+      await store.iterate((value, key) => { entries[key] = value })
+      accountContext.assertCurrent(id)
+      return entries
+    },
     async getItem<T>(key: string): Promise<T | null> {
       if (!accountContext.id) return null
       const { id, store } = current()

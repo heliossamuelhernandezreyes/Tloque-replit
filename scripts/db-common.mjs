@@ -2,7 +2,7 @@ import pg from "pg"
 
 const { Pool } = pg
 
-export const RELEASE_ID = "tloque-replit-2026-08-27-production-hardening"
+export const RELEASE_ID = "tloque-replit-2026-09-25-reliability"
 
 export const BASE_TABLES = [
   "users",
@@ -30,6 +30,8 @@ export const BASE_COLUMNS = {
 }
 
 export const EXPECTED_TABLES = [
+  "ai_requests",
+  "visual_uploads",
   "adaptive_score_layers",
   "adaptive_scores",
   "advanced_direction_projects",
@@ -56,6 +58,10 @@ export const EXPECTED_TABLES = [
 ]
 
 export const EXPECTED_INDEXES = [
+  "ai_requests_recovery_idx",
+  "audiobook_jobs_recovery_idx",
+  "books_author_client_draft_idx",
+  "visual_uploads_status_created_idx",
   "audio_assets_status_kind_idx",
   "chapter_audio_book_idx",
   "audio_favorites_user_idx",

@@ -21,6 +21,28 @@ function page(local = new MemoryStorage()) {
   return { context, local, session, storage: context.storage() }
 }
 
+test("arranque offline recupera sólo la cuenta marcada, bloquea la API y exige verificar al reconectar", async () => {
+  const first = page()
+  first.context.activate(7)
+  first.storage.setItem("novareads_saved", "downloaded book")
+  const cold = page(first.local)
+  assert.equal(cold.context.id, null)
+  assert.equal(cold.context.enterOffline(), true)
+  assert.equal(cold.storage.getItem("novareads_saved"), "downloaded book")
+  let calls = 0
+  const transport = async () => { calls++; return new Response("{}") }
+  await assert.rejects(cold.context.request("/api/books", {}, transport), AccountChangedError)
+  assert.equal(calls, 0)
+  cold.context.activate(7)
+  await cold.context.request("/api/books", {}, transport)
+  assert.equal(calls, 1)
+  page(first.local).context.activate(8)
+  assert.equal(cold.storage.getItem("novareads_saved"), null)
+  assert.equal(cold.context.enterOffline(), false)
+  const missing = page()
+  assert.equal(missing.context.enterOffline(), false)
+})
+
 test("otra cuenta no hereda progreso, biblioteca ni borradores; lo antiguo permanece sin asignar", () => {
   const a = page()
   a.local.setItem("novareads_drafts", "unassigned historical draft")
@@ -93,6 +115,8 @@ test("cerrar sesión pausa la cola de red, conserva escritura local y permite re
   const a = page()
   a.context.activate(1)
   a.context.pauseRequests()
+  // An in-flight session refresh must not reopen requests during logout.
+  a.context.activate(1)
   a.storage.setItem("draft", "latest text")
   await assert.rejects(() => a.context.request("/api/sync/state"), AccountChangedError)
   a.context.resumeRequests()

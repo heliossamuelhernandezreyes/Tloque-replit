@@ -11,6 +11,7 @@ export class AccountContext {
   private owner: string | null = null
   private locked = false
   private requestsPaused = false
+  private offline = false
   private tracksMarker = false
   private abort = new AbortController()
   constructor(
@@ -47,6 +48,17 @@ export class AccountContext {
       this.local().setItem(ACCOUNT_MARKER, this.owner)
       this.tracksMarker = true
     } catch { this.tracksMarker = false } // Quota/storage failures do not prevent online use.
+    if (this.offline) this.resumeRequests()
+  }
+  enterOffline(): boolean {
+    const marker = this.marker()
+    if (this.locked || !marker || !/^[1-9][0-9]*$/.test(marker) || !Number.isSafeInteger(Number(marker))) return false
+    if (this.owner !== null && this.owner !== marker) { this.lock(); return false }
+    this.owner = marker
+    this.tracksMarker = true
+    this.pauseRequests()
+    this.offline = true
+    return true
   }
   checkMarker(): void {
     if (this.locked || this.owner === null || !this.tracksMarker) return
@@ -61,12 +73,14 @@ export class AccountContext {
     this.changed()
   }
   pauseRequests(): void {
+    this.offline = false
     this.requestsPaused = true
     this.abort.abort()
   }
   resumeRequests(): void {
     this.checkMarker()
     if (this.locked) return
+    this.offline = false
     this.abort = new AbortController()
     this.requestsPaused = false
   }

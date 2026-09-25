@@ -52,7 +52,7 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
     ? "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'"
     : "script-src 'self' 'wasm-unsafe-eval'"
   const connectPolicy = isProduction
-    ? "connect-src 'self' blob:"
+    ? "connect-src 'self' blob: https:"
     : "connect-src 'self' blob: ws: wss: https:"
   const frameAncestors = isProduction
       ? "frame-ancestors 'none'"

@@ -30,9 +30,11 @@ type Dependencies = {
 }
 
 function sendError(res: Response, error: unknown) {
+  // Only fixed, public messages bypass the global internal-error sanitizer.
+  res.locals.publicErrorMessage = true
   if (error instanceof GutenbergSourceError || error instanceof GutenbergBusyError) {
     res.setHeader("Retry-After", "10")
-    return res.status(503).json({ message: error.message, code: "GUTENBERG_UNAVAILABLE" })
+    return res.status(503).json({ message: "Gutenberg no está disponible temporalmente. Inténtalo de nuevo.", code: "GUTENBERG_UNAVAILABLE" })
   }
   console.error("Gutenberg:", error instanceof Error ? error.message : "Error")
   return res.status(500).json({ message: "No se pudo procesar el libro. Inténtalo de nuevo.", code: "GUTENBERG_ERROR" })
@@ -109,6 +111,7 @@ export function registerGutenbergRoutes(app: Express, { storage, requireAdmin, i
         synopsis: overrideSynopsis || processed.synopsis, coverUrl: processed.coverUrl,
         genre: genre || processed.detectedGenre, type: processed.type, status, isClassic: true,
         publicationYear: processed.publicationYear, originalLanguage: processed.originalLanguage,
+        sourceMetadata: { provider: "gutenberg", sourceUrl: processed.sourceUrl, translators: processed.translators, languages: processed.languages, importedAt: new Date().toISOString() },
         gutenbergId, chapters: processed.chapters, content: "", isSaved: false, isAuthored: false,
       })
       return res.status(201).json({ book, stats: { chapters: processed.chapters.length, wordCount: processed.wordCount, genre: processed.detectedGenre } })

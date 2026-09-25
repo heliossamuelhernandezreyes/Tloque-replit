@@ -15,6 +15,8 @@ import LoginScreen from "@/components/LoginScreen"
 import { useAuth } from "@/hooks/useAuth"
 import { pullAndMerge } from "@/lib/sync"
 import type { AdminCapability } from "@shared/admin-permissions"
+import { accountContext } from "@/lib/account-context"
+import OfflineLibrary from "@/components/OfflineLibrary"
 
 const NotFound = lazy(() => import("@/pages/not-found"))
 const Home = lazy(() => import("@/pages/home"))
@@ -128,6 +130,8 @@ function RouteFallback() {
 }
 
 function AuthUnavailable({ onRetry }: { onRetry: () => void }) {
+  const [offline, setOffline] = useState(false)
+  if (offline) return <OfflineLibrary onRetry={onRetry} />
   return (
     <main className="fixed inset-0 bg-black flex items-center justify-center px-6 text-white">
       <section className="max-w-sm text-center" role="alert">
@@ -143,6 +147,7 @@ function AuthUnavailable({ onRetry }: { onRetry: () => void }) {
         >
           Reintentar
         </button>
+        {accountContext.marker() && <button type="button" className="mt-4 block min-h-11 w-full text-sm underline" onClick={() => { if (accountContext.enterOffline()) setOffline(true) }}>Abrir mis descargas sin conexión</button>}
       </section>
     </main>
   )

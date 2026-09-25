@@ -26,7 +26,9 @@ import { debitTinta } from "./economy";
 import { registerPayoutRoutes } from "./payouts";
 import { isProtectedClaimKey, protectClaimKey, revealClaimKey, verifyClaimKey } from "./claimKeys";
 import { lockPayment, reconcilePayment, recordPaymentIncident, registerPaymentIncidentRoutes } from "./paymentIncidents";
-import { eq, and, inArray, desc, sql } from "drizzle-orm";
+import { eq, and, inArray, desc, sql, getTableColumns } from "drizzle-orm";
+import { narrativeProjects, experienceProfiles, speechProjects, speechProfiles, advancedDirectionProjects, directionAgentRuns, audiobookJobs, aiRequests, visualUploads, voiceProfiles } from "@shared/schema"
+import { ACCOUNT_DELETION_NOTICE } from "@shared/account-retention"
 import { isSafeHttpsUrl, isSafeImageSource } from "@shared/media";
 import { PAPER_PLANS, PAPER_RATES } from "@shared/paper";
 import { publicOriginForRequest } from "./security";
@@ -67,7 +69,7 @@ export async function registerRoutes(
     const safe: any = {}
     for (const key of AUTHOR_BOOK_FIELDS) if (input[key] !== undefined) safe[key] = input[key]
     safe.author = user?.name || input.author
-    if (safe.status !== "published" && safe.status !== "draft") safe.status = "draft"
+    if (safe.status !== undefined && safe.status !== "published" && safe.status !== "draft") safe.status = "draft"
     return safe
   }
 
@@ -107,6 +109,21 @@ export async function registerRoutes(
     for (const row of unlocked) allowed.add(row.bookId)
     for (const row of cards) if (row.bookId != null) allowed.add(row.bookId)
     return allowed
+  }
+
+  // Withdrawal is separate from moderation. A purchaser may read the last
+  // public edition, never a subsequent private draft. Batch the revision read
+  // so restoring a library does not issue one query per withdrawn book.
+  async function readableEditions(req: any, catalog: any[], entitled?: Set<number>): Promise<any[]> {
+    const allowed = entitled ?? await entitledBookIds(req, catalog)
+    const withdrawn = catalog.filter(book => !canViewBook(req, book) && book.status !== "review" && allowed.has(book.id))
+    const editions = withdrawn.length ? await db.selectDistinctOn([bookRevisions.bookId], {
+      bookId: bookRevisions.bookId, snapshot: bookRevisions.snapshot,
+    }).from(bookRevisions).where(and(inArray(bookRevisions.bookId, withdrawn.map(book => book.id)),
+      sql`${bookRevisions.snapshot}->>'status' = 'published'`))
+      .orderBy(bookRevisions.bookId, desc(bookRevisions.revision)) : []
+    const snapshots = new Map(editions.map(edition => [edition.bookId, edition.snapshot]))
+    return catalog.flatMap(book => canViewBook(req, book) ? [book] : snapshots.has(book.id) ? [{ ...snapshots.get(book.id), withdrawn: true }] : [])
   }
 
   const PROFILE_FRAMES_BASE = new Set(["", "silver", "purple", "crimson", "azure", "emerald"])
@@ -151,7 +168,11 @@ export async function registerRoutes(
   // ── GET /api/books ────────────────────────────────────
   app.get(api.books.list.path, async (req, res) => {
     try {
-      const catalog = await storage.getBooks();
+      const before = Number(req.query.before)
+      const limit = Math.min(100, Math.max(1, Math.floor(Number(req.query.limit) || 50)))
+      const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : undefined
+      const catalog = await storage.getBooks({ before: Number.isSafeInteger(before) && before > 0 ? before : undefined, limit, search });
+      if (catalog.length === limit) res.setHeader("X-Next-Cursor", String(catalog.at(-1)!.id))
       const entitled = await entitledBookIds(req, catalog)
       res.json(catalog.map(book => withoutPremiumArt(book, entitled.has(book.id))));
     } catch (err) {
@@ -174,13 +195,11 @@ export async function registerRoutes(
   // ── GET /api/books/:id ────────────────────────────────
   app.get(api.books.get.path, async (req, res) => {
     try {
-      const book = await storage.getBook(Number(req.params.id));
-      if (!book) return res.status(404).json({ message: "Book not found" });
+      const currentBook = await storage.getBook(Number(req.params.id));
+      if (!currentBook) return res.status(404).json({ message: "Book not found" });
 
-      // Libros no publicados (ocultos/en revisión): solo admin o su autor
-      if (!canViewBook(req, book)) {
-        return res.status(404).json({ message: "Book not found" });
-      }
+      const [book] = await readableEditions(req, [currentBook])
+      if (!book) return res.status(404).json({ message: "Book not found" });
 
       // Enriquecer con la foto y marco del autor (para la tarjeta de la sinopsis)
       let authorAvatar = "", authorFrame = ""
@@ -205,6 +224,23 @@ export async function registerRoutes(
   });
 
   // ── POST /api/books ───────────────────────────────────
+  app.post("/api/books/drafts", rateLimit(60_000, 12), async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión para respaldar el borrador" })
+    const draftId = z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/).safeParse(req.body?.draftId)
+    const parsed = api.books.create.input.safeParse({ ...req.body?.data, status: "draft", author: (req.user as any).name })
+    if (!draftId.success || !parsed.success) return res.status(400).json({ message: "Borrador inválido" })
+    const authorId = (req.user as any).id as number
+    const book = await db.transaction(async tx => {
+      await tx.execute(sql`select pg_advisory_xact_lock(72003, ${authorId})`)
+      const [existing] = await tx.select().from(books).where(and(eq(books.authorId, authorId), eq(books.clientDraftId, draftId.data)))
+      if (existing) return existing
+      const [created] = await tx.insert(books).values({ ...authorBookInput(parsed.data, req.user), authorId, status: "draft", isAuthored: true, clientDraftId: draftId.data }).returning()
+      await tx.insert(bookRevisions).values({ bookId: created.id, revision: created.revision, snapshot: created as unknown as Record<string, unknown>, changeType: "create", createdBy: authorId })
+      return created
+    })
+    res.status(201).json(book)
+  })
+
   // Asocia el libro al usuario autenticado si hay sesión activa
   app.post(api.books.create.path, rateLimit(60_000, 6), async (req, res) => {
     try {
@@ -387,11 +423,12 @@ export async function registerRoutes(
       const book = await storage.getBook(id)
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
       if (!canEditBook(req, book)) return res.status(403).json({ message: "No tienes permiso para ver el historial" })
-      const revisions = await db.select().from(bookRevisions)
-        .where(eq(bookRevisions.bookId, id))
+      const before = Number(req.query.before)
+      const revisions = await db.select({ id: bookRevisions.id, revision: bookRevisions.revision, changeType: bookRevisions.changeType, createdAt: bookRevisions.createdAt, createdBy: bookRevisions.createdBy }).from(bookRevisions)
+        .where(and(eq(bookRevisions.bookId, id), Number.isSafeInteger(before) && before > 0 ? sql`${bookRevisions.revision} < ${before}` : undefined))
         .orderBy(desc(bookRevisions.revision))
         .limit(50)
-      res.json({ currentRevision: book.revision, revisions })
+      res.json({ currentRevision: book.revision, revisions, nextBefore: revisions.length === 50 ? revisions.at(-1)!.revision : null })
     } catch {
       res.status(500).json({ message: "No se pudo cargar el historial" })
     }
@@ -621,9 +658,15 @@ export async function registerRoutes(
 
   // ── ADMIN: LISTAR TODOS LOS LIBROS (incluye ocultos/borradores) ──
   // Para que el admin pueda ver y auditar los libros "en revisión"
-  app.get("/api/admin/books/all", requireAdmin, async (_req, res) => {
+  app.get("/api/admin/books/all", requireAdmin, async (req, res) => {
     try {
-      const all = await db.select().from(books)
+      const before = Number(req.query.before)
+      const { content: _content, chapters: _chapters, ...columns } = getTableColumns(books)
+      const all = await db.select({ ...columns, chapterCount: sql<number>`jsonb_array_length(${books.chapters})` }).from(books)
+        .where(and(Number.isSafeInteger(before) && before > 0 ? sql`${books.id} < ${before}` : undefined,
+          req.query.status === "review" ? eq(books.status, "review") : undefined))
+        .orderBy(desc(books.id)).limit(50)
+      if (all.length === 50) res.setHeader("X-Next-Cursor", String(all.at(-1)!.id))
       res.json(all)
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
@@ -748,7 +791,7 @@ export async function registerRoutes(
     try {
       const authorName = decodeURIComponent(req.params.name)
       // Buscar libros publicados de este autor
-      const authorBooks = await storage.getBooks()
+      const authorBooks = await storage.getBooks({ author: authorName, limit: 100 })
       const filteredRaw = authorBooks.filter(b =>
         b.author?.toLowerCase() === authorName.toLowerCase()
       )
@@ -817,8 +860,7 @@ export async function registerRoutes(
       const progresses = await db.select().from(readingProgress)
         .where(eq(readingProgress.bookId, String(bookId)))
       const readers = progresses.length
-      const finishers = progresses.filter(p =>
-        totalChapters > 0 && p.maxChapter >= Math.max(1, totalChapters - 1)).length
+      const finishers = progresses.filter(p => p.completed).length
 
       // El corazón pondera sobre todo la RETENCIÓN: quien termina de leer pesa
       // más que un apoyo. Terminar=4, apoyar=3, empezar=1. La lectura manda.
@@ -882,7 +924,13 @@ export async function registerRoutes(
         ? req.body.bio.trim().slice(0, 500)
         : undefined
 
-      const updates: any = { socialLinks: clean, updatedAt: new Date() }
+      const updates: any = { updatedAt: new Date() }
+      if (req.body?.socialLinks !== undefined) {
+        if (!req.body.socialLinks || typeof req.body.socialLinks !== "object" || Array.isArray(req.body.socialLinks)) {
+          return res.status(400).json({ message: "Enlaces sociales inválidos" })
+        }
+        updates.socialLinks = clean
+      }
       if (bio !== undefined) updates.bio = bio
 
       // Marco del avatar (id corto)
@@ -1028,8 +1076,9 @@ export async function registerRoutes(
       if (!Number.isInteger(numericBookId) || numericBookId <= 0 || numericBookId > 2_147_483_647) {
         return res.status(400).json({ message: "Libro inválido" })
       }
-      const book = await storage.getBook(numericBookId)
-      if (!book || !canViewBook(req, book)) return res.status(404).json({ message: "Libro no encontrado" })
+      const currentBook = await storage.getBook(numericBookId)
+      const [book] = await readableEditions(req, currentBook ? [currentBook] : [])
+      if (!book) return res.status(404).json({ message: "Libro no encontrado" })
       const rawChapter = Number(req.body?.chapter)
       const rawMaxChapter = Number(req.body?.maxChapter)
       if (!Number.isInteger(rawChapter) || !Number.isInteger(rawMaxChapter)
@@ -1045,20 +1094,11 @@ export async function registerRoutes(
       const chapter = rawChapter
       const maxChapter = rawMaxChapter
 
-      const [existing] = await db.select().from(readingProgress)
-        .where(and(eq(readingProgress.userId, userId), eq(readingProgress.bookId, bookId)))
-
-      if (existing) {
-        await db.update(readingProgress)
-          .set({
-            chapter,                                          // capítulo actual (puede ir atrás)
-            maxChapter: Math.max(Math.min(existing.maxChapter, lastChapter), maxChapter),
-            updatedAt: new Date(),
-          })
-          .where(and(eq(readingProgress.userId, userId), eq(readingProgress.bookId, bookId)))
-      } else {
-        await db.insert(readingProgress).values({ userId, bookId, chapter, maxChapter })
-      }
+      const completed = req.body?.completed === true && chapter === lastChapter
+      await db.insert(readingProgress).values({ userId, bookId, chapter, maxChapter, completed }).onConflictDoUpdate({
+        target: [readingProgress.userId, readingProgress.bookId],
+        set: { chapter, maxChapter: sql`greatest(least(${readingProgress.maxChapter}, ${lastChapter}), ${maxChapter})`, completed: sql`${readingProgress.completed} OR ${completed}`, updatedAt: new Date() },
+      })
       res.json({ ok: true })
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
@@ -1078,8 +1118,8 @@ export async function registerRoutes(
       const ids  = rows.map(r => r.bookId)
       const list = await db.select().from(books).where(inArray(books.id, ids))
       const entitled = await entitledBookIds(req, list)
-      // Solo restaurar los que siguen publicados
-      res.json({ books: list.filter(b => b.status === "published").map(book =>
+      const readable = await readableEditions(req, list, entitled)
+      res.json({ books: readable.map(book =>
         withoutPremiumArt(book, entitled.has(book.id))) })
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
@@ -1096,7 +1136,7 @@ export async function registerRoutes(
 
       const book = await storage.getBook(bookId)
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
-      if (!canViewBook(req, book)) return res.status(404).json({ message: "Libro no encontrado" })
+      if (!(await readableEditions(req, [book])).length) return res.status(404).json({ message: "Libro no encontrado" })
 
       const [existing] = await db.select().from(savedBooks)
         .where(and(eq(savedBooks.userId, userId), eq(savedBooks.bookId, bookId)))
@@ -1538,12 +1578,29 @@ export async function registerRoutes(
         db.select().from(walletLedger).where(eq(walletLedger.userId, userId)).orderBy(desc(walletLedger.createdAt)),
         db.select().from(paperUsageEvents).where(eq(paperUsageEvents.userId, userId)).orderBy(desc(paperUsageEvents.createdAt)),
       ])
+      const ownBookIds = workRows.map(work => work.id)
+      const byOwnBook = async (table: any) => ownBookIds.length ? db.select().from(table).where(inArray(table.bookId, ownBookIds)) : []
+      const [drafts, revisions, narrative, experience, speech, speechReady, direction, runs, jobs, requests, uploads, voices] = await Promise.all([
+        db.select().from(bookDrafts).where(eq(bookDrafts.authorId, userId)),
+        byOwnBook(bookRevisions), byOwnBook(narrativeProjects), byOwnBook(experienceProfiles),
+        byOwnBook(speechProjects), byOwnBook(speechProfiles), byOwnBook(advancedDirectionProjects),
+        db.select().from(directionAgentRuns).where(eq(directionAgentRuns.userId, userId)),
+        db.select().from(audiobookJobs).where(eq(audiobookJobs.userId, userId)),
+        db.select().from(aiRequests).where(eq(aiRequests.userId, userId)),
+        db.select().from(visualUploads).where(eq(visualUploads.userId, userId)),
+        db.select({ id: voiceProfiles.id, label: voiceProfiles.label, description: voiceProfiles.description,
+          language: voiceProfiles.language, role: voiceProfiles.role, license: voiceProfiles.license,
+          sourceUrl: voiceProfiles.sourceUrl, status: voiceProfiles.status, createdAt: voiceProfiles.createdAt,
+        }).from(voiceProfiles).where(eq(voiceProfiles.createdBy, userId)),
+      ])
       res.json({
-        schema: "tloque-account-export@1", exportedAt: new Date().toISOString(),
+        schema: "tloque-account-export@2", exportedAt: new Date().toISOString(),
         account: accountRows[0] || null,
         reading: { state: stateRows[0] || null, progress: progressRows, savedBooks: savedRows },
         activity: { comments: commentRows },
-        authorship: { works: workRows, cards: authoredCardRows },
+        authorship: { works: workRows, cards: authoredCardRows, drafts, revisions, narrative, experience, speech, speechReady, direction, uploads, voices },
+        generation: { runs, jobs: jobs.map(({ claimToken: _token, ...job }) => job), requests },
+        retention: { deletion: ACCOUNT_DELETION_NOTICE },
         collection: { cards: collectedCardRows, frames: ownedFrameRows },
         print: { tokens: tokenRows, copies: copyRows },
         economy: { ledger: ledgerRows, paperUsage: usageRows },
@@ -1554,7 +1611,8 @@ export async function registerRoutes(
   })
 
   // Eliminación verificable: retira obras del catálogo y seudonimiza la cuenta.
-  // Los asientos económicos se conservan por integridad contable, sin PII.
+  // Los asientos económicos, créditos editoriales y ediciones adquiridas se
+  // conservan. La interfaz distingue esta retención del borrado del perfil.
   app.delete("/api/account", rateLimit(60 * 60_000, 3), async (req, res) => {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
@@ -1584,6 +1642,7 @@ export async function registerRoutes(
         await tx.delete(savedBooks).where(eq(savedBooks.userId, userId))
         await tx.delete(readingProgress).where(eq(readingProgress.userId, userId))
         await tx.delete(userState).where(eq(userState.userId, userId))
+        await tx.delete(notifications).where(eq(notifications.userId, userId))
         await tx.update(comments).set({ userName: "Cuenta eliminada", userAvatar: "" }).where(eq(comments.userId, userId))
         await tx.update(users).set({
           googleId: `deleted:${userId}:${tombstone}`,
@@ -1750,11 +1809,10 @@ export async function registerRoutes(
 
       let totalHearts = 0, totalSupports = 0, totalReaders = 0
       const perBook = allBooks.map(b => {
-        const total = Array.isArray(b.chapters) ? b.chapters.length : 1
         const sup = allSupports.filter(s => s.bookId === b.id).length
         const prog = allProgress.filter(p => p.bookId === String(b.id))
         const readers = prog.length
-        const finishers = prog.filter(p => total > 0 && p.maxChapter >= Math.max(1, total - 1)).length
+        const finishers = prog.filter(p => p.completed).length
         const hearts = finishers * 4 + sup * 3 + Math.max(0, readers - finishers)
         totalHearts += hearts; totalSupports += sup; totalReaders += readers
         return { bookId: b.id, title: b.title, hearts, supports: sup, readers, finishers }
@@ -2092,10 +2150,11 @@ export async function registerRoutes(
       const book = await storage.getBook(bookId)
       if (!book || !canViewBook(req, book)) return res.status(404).json({ message: "Libro no encontrado" })
       const cards = await db.select().from(bookCards)
-        .where(eq(bookCards.bookId, bookId))
+        .where(and(eq(bookCards.bookId, bookId), eq(bookCards.archived, false)))
         .orderBy(bookCards.position, bookCards.id)
 
       let ownedIds = new Set<number>()
+      const editions = new Map<number, Record<string, unknown>>()
       if (req.isAuthenticated() && cards.length > 0) {
         const userId = (req.user as any).id
         const [unlocked] = await db.select().from(unlockedBooks)
@@ -2115,8 +2174,9 @@ export async function registerRoutes(
         const mine = await db.select().from(userCards)
           .where(and(eq(userCards.userId, userId), inArray(userCards.cardId, cards.map(c => c.id))))
         ownedIds = new Set(mine.map(m => m.cardId))
+        for (const m of mine) if (m.snapshot) editions.set(m.cardId, m.snapshot)
       }
-      res.json({ cards: cards.map(c => ({ ...c, owned: ownedIds.has(c.id) })) })
+      res.json({ cards: cards.map(c => ({ ...(editions.get(c.id) || c), owned: ownedIds.has(c.id) })) })
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
     }
@@ -2138,7 +2198,7 @@ export async function registerRoutes(
       const unlockedBookIds = unlocked.map(u => u.bookId)
       if (unlockedBookIds.length > 0) {
         const supportCards = await db.select().from(bookCards)
-          .where(and(inArray(bookCards.bookId, unlockedBookIds), eq(bookCards.unlock, "support")))
+          .where(and(inArray(bookCards.bookId, unlockedBookIds), eq(bookCards.unlock, "support"), eq(bookCards.archived, false)))
         if (supportCards.length) {
           await db.insert(userCards)
             .values(supportCards.map(card => ({ userId, cardId: card.id, source: "support" })))
@@ -2150,9 +2210,11 @@ export async function registerRoutes(
       const owned = await db.select().from(userCards).where(eq(userCards.userId, userId))
       if (owned.length === 0) return res.json({ groups: [], total: 0 })
       const ownedCardIds = owned.map(o => o.cardId)
+      const editions = new Map(owned.filter(o => o.snapshot).map(o => [o.cardId, o.snapshot!]))
       const cards = (await db.select().from(bookCards)
         .where(inArray(bookCards.id, ownedCardIds))
         .orderBy(bookCards.bookId, bookCards.position, bookCards.id))
+        .map(card => (editions.get(card.id) || card) as typeof card)
         .filter(card => card.bookId != null)
 
       // Agrupar por obra (con título)
@@ -2205,6 +2267,8 @@ export async function registerRoutes(
       }
       const purchase = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)
+        const [currentCard] = await tx.select().from(bookCards).where(eq(bookCards.id, cardId)).for("share")
+        if (!currentCard || currentCard.archived || currentCard.priceTinta !== cost || currentCard.unlock !== "tinta") return { state: "changed" as const }
         const [already] = await tx.select().from(userCards)
           .where(and(eq(userCards.userId, userId), eq(userCards.cardId, cardId)))
         if (already) return { state: "owned" as const }
@@ -2238,6 +2302,7 @@ export async function registerRoutes(
         return { state: "paid" as const }
       })
       if (purchase.state === "owned") return res.status(409).json({ message: "Ya está en tu colección" })
+      if (purchase.state === "changed") return res.status(409).json({ message: "La tarjeta cambió o fue retirada. Actualiza el catálogo" })
       if (purchase.state === "funds") {
         const balance = await walletBalance(userId, "tinta")
         return res.status(402).json({ message: "tinta_insuficiente", needed: cost, balance })
@@ -2268,7 +2333,7 @@ export async function registerRoutes(
       }
       const card = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(72001, ${bookId})`)
-        const existing = await tx.select().from(bookCards).where(eq(bookCards.bookId, bookId))
+        const existing = await tx.select().from(bookCards).where(and(eq(bookCards.bookId, bookId), eq(bookCards.archived, false)))
         if (existing.length >= MAX_CARDS_PER_BOOK) return null
         const [created] = await tx.insert(bookCards)
           .values({ bookId, authorId: book.authorId, ...v.card, position: existing.length }).returning()
@@ -2314,7 +2379,7 @@ export async function registerRoutes(
     }
   })
 
-  // Borrar tarjeta (solo el autor) — retira también las copias en colecciones
+  // Retirar del catálogo conserva las ediciones adquiridas y su trazabilidad.
   app.delete("/api/cards/:id", rateLimit(60_000, 12), async (req, res) => {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
@@ -2334,11 +2399,7 @@ export async function registerRoutes(
         }
       }
       await db.transaction(async (tx) => {
-        await tx.delete(userCards).where(eq(userCards.cardId, cardId))
-        // El historial del sorteo se conserva, pero deja de referenciar una
-        // carta que el autor decidió retirar.
-        await tx.update(gachaDraws).set({ cardId: null }).where(eq(gachaDraws.cardId, cardId))
-        await tx.delete(bookCards).where(eq(bookCards.id, cardId))
+        await tx.update(bookCards).set({ archived: true, inGachaPool: false }).where(eq(bookCards.id, cardId))
       })
       res.json({ ok: true })
     } catch (err: any) {
@@ -2354,7 +2415,7 @@ export async function registerRoutes(
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
       const userId = (req.user as any).id
       const loose = await db.select().from(bookCards)
-        .where(and(sql`${bookCards.bookId} IS NULL`, eq(bookCards.authorId, userId)))
+        .where(and(sql`${bookCards.bookId} IS NULL`, eq(bookCards.authorId, userId), eq(bookCards.archived, false)))
         .orderBy(desc(bookCards.createdAt))
       res.json({ cards: loose })
     } catch (err: any) {
@@ -2375,7 +2436,7 @@ export async function registerRoutes(
       const card = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(72002, ${userId})`)
         const existing = await tx.select().from(bookCards)
-          .where(and(sql`${bookCards.bookId} IS NULL`, eq(bookCards.authorId, userId)))
+          .where(and(sql`${bookCards.bookId} IS NULL`, eq(bookCards.authorId, userId), eq(bookCards.archived, false)))
         if (existing.length >= MAX_LOOSE_CARDS) return null
         const [created] = await tx.insert(bookCards)
           .values({ bookId: null, authorId: userId, ...v.card, position: existing.length }).returning()
@@ -2411,8 +2472,8 @@ export async function registerRoutes(
       const updated = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(72001, ${bookId})`)
         const [fresh] = await tx.select().from(bookCards).where(eq(bookCards.id, cardId))
-        if (!fresh || fresh.bookId != null) return { state: "assigned" as const, card: null }
-        const inBook = await tx.select().from(bookCards).where(eq(bookCards.bookId, bookId))
+        if (!fresh || fresh.archived || fresh.bookId != null) return { state: "assigned" as const, card: null }
+        const inBook = await tx.select().from(bookCards).where(and(eq(bookCards.bookId, bookId), eq(bookCards.archived, false)))
         if (inBook.length >= MAX_CARDS_PER_BOOK) return { state: "limit" as const, card: null }
         const [assigned] = await tx.update(bookCards)
           .set({ bookId, position: inBook.length })

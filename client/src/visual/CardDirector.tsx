@@ -1,7 +1,7 @@
 import { accountStorage as localStorage } from "@/lib/account-context"
 import { useEffect, useRef, useState } from "react"
 import { Check, Download, Upload, Undo2, Redo2, Plus, Trash2 } from "lucide-react"
-import { applyCardMotion, CARD_LAYERS, CARD_LAYER_LABELS, CARD_MOTION_PRESETS, CARD_REST, cardSceneSchema, createPortalCardScene, evaluateCardOffset, readCardScene, resizeCardDuration, setCardKey, type CardLayer, type CardMotionPreset, type CardScene, type CardTransform } from "@shared/card-scene"
+import { applyCardMotion, CARD_LAYERS, CARD_LAYER_LABELS, CARD_MOTION_PRESETS, CARD_REST, createPortalCardScene, evaluateCardOffset, resizeCardDuration, setCardKey, type CardLayer, type CardMotionPreset, type CardScene, type CardTransform } from "@shared/card-scene"
 import { MOTION_EASES, type MotionEase } from "@shared/motion-easing"
 import { InspectionControls, InspectionStage, useInspection } from "./FrameInspection"
 import CardScenePoster from "./CardScenePoster"
@@ -15,6 +15,10 @@ import PortalCardControls, { PORTAL_PANELS, type PortalPanel } from "./PortalCar
 import { LayerUpload } from "@/components/LayerUpload"
 import { resolvePortalCard } from "@shared/portal-card-recipe"
 import { readFrameScene } from "@shared/frame-scene"
+import { createAccountStore } from "@/lib/account-store"
+import { CARD_DIRECTION_MAX_BYTES, cardDirectionSchema, readCardDirection, type CardDirectionDocument } from "@shared/card-direction"
+
+const directionDrafts = createAccountStore("card_directions")
 
 const controls: Record<keyof CardTransform, { label: string; min: number; max: number; step: number }> = {
   x: { label: "Posición X", min: -.6, max: .6, step: .005 }, y: { label: "Posición Y", min: -.6, max: .6, step: .005 },
@@ -24,35 +28,49 @@ const controls: Record<keyof CardTransform, { label: string; min: number; max: n
 export default function CardDirector({ value, images: initialImages, frame, color, name, draftKey, onApply, onClose }: {
   value?: CardScene | null; images: string[]; frame?: unknown; color: string; name: string; draftKey: string; onApply: (scene: CardScene, images: string[]) => void; onClose: () => void
 }) {
-  const [history, setHistory] = useState<CardScene[]>(() => [structuredClone(value ?? createPortalCardScene())])
-  const [images, setImages] = useState(initialImages)
+  const [history, setHistory] = useState<CardDirectionDocument[]>(() => [cardDirectionSchema.parse({ type: "tloque-card-direction", version: 2, scene: structuredClone(value ?? createPortalCardScene()), images: [0,1,2].map(i => initialImages[i] || "") })])
   const backInput=useRef<HTMLInputElement>(null),midInput=useRef<HTMLInputElement>(null),frontInput=useRef<HTMLInputElement>(null)
   const imageInputs=[backInput,midInput,frontInput]
-  const [index, setIndex] = useState(0), scene = history[index]
+  const [index, setIndex] = useState(0), { scene, images } = history[index]
   const [layer, setLayer] = useState<CardLayer>("mid")
   const [tab, setTab] = useState<"composition" | "motion" | "objects" | PortalPanel>("composition")
   const [importing, setImporting] = useState(false)
   const [ready, setReady] = useState(false), [notice, setNotice] = useState("")
-  const [savedDraft, setSavedDraft] = useState<CardScene | null>(() => {
-    try { return readCardScene(JSON.parse(localStorage.getItem(draftKey) || "null")) } catch { return null }
-  })
+  const [savedDraft, setSavedDraft] = useState<CardDirectionDocument | null>(null)
+  const draftWrites = useRef<Promise<unknown>>(Promise.resolve())
+  useEffect(() => {
+    let active = true
+    void directionDrafts.getItem(draftKey).then(saved => {
+      let candidate = readCardDirection(saved, initialImages)
+      if (!candidate) { try { candidate = readCardDirection(JSON.parse(localStorage.getItem(draftKey) || "null"), initialImages) } catch { /* legacy */ } }
+      if (active) setSavedDraft(candidate)
+    }).catch(() => { if (active) setNotice("No se pudo abrir el borrador local. Puedes importar tu copia JSON.") })
+    return () => { active = false }
+  }, [draftKey])
   const file = useRef<HTMLInputElement>(null)
   const controller = useInspection(scene.duration)
   const time = Math.round(controller.time * 1000) / 1000
   const keys = scene.layers[layer].keys, selected = keys.find(key => Math.abs(key.time - time) < .005)
-  const change = (next: CardScene) => {
-    const list = [...history.slice(0, index + 1), cardSceneSchema.parse(next)].slice(-60)
+  const change = (next: CardScene, nextImages = images) => {
+    const document = cardDirectionSchema.parse({ type: "tloque-card-direction", version: 2, scene: next, images: nextImages })
+    const list = [...history.slice(0, index + 1), document].slice(-60)
     setHistory(list); setIndex(list.length - 1)
+  }
+  const setImages = (update: (current: string[]) => string[]) => change(scene, update(images))
+  const persistDraft = () => {
+    const document = history[index]
+    const write = draftWrites.current.catch(() => undefined).then(() => directionDrafts.setItem(draftKey, document))
+    draftWrites.current = write
+    return write
   }
   const edit = (fn: (draft: CardScene) => void) => { const next = structuredClone(scene); fn(next); change(next) }
   useEffect(() => {
     if (history.length === 1) return
     const timer = setTimeout(() => {
-      try { localStorage.setItem(draftKey, JSON.stringify(scene)) }
-      catch { setNotice("No se pudo guardar el borrador en este dispositivo. Exporta la dirección como JSON.") }
+      void persistDraft().catch(() => setNotice("No se pudo guardar el borrador en este dispositivo. Exporta la tarjeta como JSON."))
     }, 300)
     return () => clearTimeout(timer)
-  }, [scene, draftKey, history.length])
+  }, [scene, images, draftKey, history.length])
   const offset = () => evaluateCardOffset(scene, layer, time)
   const putKey = (patch: Partial<CardTransform> = {}) => {
     if (!selected && keys.length >= 16) { setNotice("Límite de 16 claves por capa. Elimina una clave intermedia."); return }
@@ -60,21 +78,22 @@ export default function CardDirector({ value, images: initialImages, frame, colo
     change(setCardKey(scene, layer, { ...offset(), ...patch, time: selected?.time ?? time, ease: selected?.ease ?? "cinematic" }))
   }
   const exportScene = () => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify({ type: "tloque-card-direction", scene }, null, 2)], { type: "application/json" }))
+    const url = URL.createObjectURL(new Blob([JSON.stringify(history[index], null, 2)], { type: "application/json" }))
     const link = document.createElement("a"); link.href = url; link.download = "tloque-card-direction.json"; link.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
   const importScene = async (file?: File) => {
     if (!file) return
-    if (file.size > 64_000) { setNotice("La dirección supera 64 KB. Importa solo la receta, sin imágenes."); return }
+    if (file.size > CARD_DIRECTION_MAX_BYTES) { setNotice("La tarjeta supera 12 MB. Reduce las imágenes antes de importar."); return }
     try {
-      const input = JSON.parse(await file.text()), next = readCardScene(input.scene ?? input)
+      const input = JSON.parse(await file.text()), next = readCardDirection(input, images)
       if (!next) throw new Error("Receta no válida. Usa una dirección de tarjeta de Tloque 1.0.0.")
-      controller.reset(); change(next); setNotice("Dirección importada. El arte y el marco no han cambiado.")
+      controller.reset(); change(next.scene, next.images); setNotice(input.version === 2 ? "Tarjeta importada con sus imágenes y animación. Aplica y guarda para conservarla en tu colección." : "Receta anterior importada. Conserva tus imágenes actuales.")
     } catch (error) { setNotice(error instanceof Error ? error.message : "Archivo no válido") }
   }
-  const close = () => {
-    if ((JSON.stringify(scene) !== JSON.stringify(value ?? createPortalCardScene()) || JSON.stringify(images) !== JSON.stringify(initialImages)) && !window.confirm("Hay cambios sin aplicar. ¿Cerrar? El borrador local conserva la receta, pero no las imágenes que acabas de subir.")) return
+  const close = async () => {
+    if ((JSON.stringify(scene) !== JSON.stringify(value ?? createPortalCardScene()) || JSON.stringify(images) !== JSON.stringify(initialImages)) && !window.confirm("Hay cambios sin aplicar. ¿Guardar una copia local y cerrar?")) return
+    try { await persistDraft() } catch { setNotice("No se pudo guardar la copia. Exporta el JSON antes de cerrar."); return }
     onClose()
   }
   const animated = tab === "motion", values = animated ? offset() : scene.layers[layer].transform
@@ -87,12 +106,15 @@ export default function CardDirector({ value, images: initialImages, frame, colo
           <button aria-label="Rehacer dirección" disabled={index === history.length - 1} onClick={() => { controller.pause(); setIndex(index + 1) }}><Redo2 size={16}/></button>
           <button aria-label="Importar dirección" onClick={() => file.current?.click()}><Upload size={16}/></button>
           <button aria-label="Exportar dirección" onClick={exportScene}><Download size={16}/></button>
-          <button className="tq-studio-primary" disabled={importing} onClick={() => { onApply(scene,images); onClose() }}><Check size={16}/>Usar esta dirección</button>
+          <button className="tq-studio-primary" disabled={importing} onClick={async () => {
+            try { await persistDraft(); onApply(scene, images); onClose() }
+            catch { setNotice("No se pudo guardar la copia local. Exporta el JSON antes de cerrar.") }
+          }}><Check size={16}/>Usar esta dirección</button>
           <input ref={file} hidden type="file" accept=".json,application/json" onChange={e => { void importScene(e.target.files?.[0]); e.target.value = "" }}/>
         </div>
       </header>
       {notice && <div className="tq-studio-notice" role="status">{notice}<button aria-label="Cerrar aviso de dirección" onClick={() => setNotice("")}>×</button></div>}
-      {savedDraft && <div className="tq-studio-notice"><span>Hay un borrador de dirección en este dispositivo.</span><button onClick={() => { controller.reset(); change(savedDraft); setSavedDraft(null) }}>Recuperar borrador</button><button aria-label="Ignorar borrador" onClick={() => setSavedDraft(null)}>×</button></div>}
+      {savedDraft && <div className="tq-studio-notice"><span>Hay un borrador de dirección en este dispositivo.</span><button onClick={() => { controller.reset(); change(savedDraft.scene, savedDraft.images); setSavedDraft(null) }}>Recuperar borrador</button><button aria-label="Ignorar borrador" onClick={() => setSavedDraft(null)}>×</button></div>}
       <main className="tq-card-director-grid">
         <section className="tq-studio-center" data-visual-clip>
           <div className="tq-studio-stage-title"><div><small>01 / COMPOSICIÓN EN VIVO</small><h2>{name || "Tu próxima tarjeta"}</h2></div><span className="tq-card-layer-count">{images.filter(Boolean).length} / 3 capas</span></div>
@@ -135,7 +157,7 @@ export default function CardDirector({ value, images: initialImages, frame, colo
           </section>}
           {!scene.portalCard && <section><h3>Acabado de superficie</h3><label className="tq-studio-field">Material óptico<select aria-label="Acabado de tarjeta" value={scene.finish.type} onChange={e => edit(s => { s.finish.type = e.target.value as CardScene["finish"]["type"] })}><option value="none">Arte original</option><option value="foil">Foil satinado</option><option value="prismatic">Prisma iridiscente</option></select></label><label className="tq-studio-field"><span>Intensidad del acabado<output>{scene.finish.strength.toFixed(2)}</output></span><input aria-label="Intensidad del acabado" type="range" min={0} max={.6} step={.01} value={scene.finish.strength} onChange={e => edit(s => { s.finish.strength = Number(e.target.value) })}/></label><p>Responde al ángulo, respeta los píxeles transparentes y no cambia la rareza ni los derechos del marco.</p></section>}
           <details><summary>Preparar arte para el portal</summary><p>Usa un lienzo 5:7 (por ejemplo, 900 × 1260). Exporta fondo, capa media y primer plano con las mismas dimensiones. Las dos últimas necesitan transparencia PNG o WebP.</p><p>El nuevo portal recorta y amplía el fondo automáticamente para cubrir la ventana. Un fondo completo y sin transparencias da el mejor resultado; no se puede recuperar el escenario oculto en una imagen plana.</p><a href="https://www.photopea.com/" target="_blank" rel="noopener noreferrer">Abrir Photopea · editor de capas externo ↗</a><p>Se abre solo al tocar el enlace; Tloque no envía tu arte ni ejecuta su API.</p></details>
-          <p>Usa esta dirección y después guarda la tarjeta. El JSON contiene la receta y las referencias a los modelos guardados.</p></>}
+          <p>Usa esta dirección y después guarda la tarjeta. El JSON conserva las tres imágenes y la animación. Las imágenes enlazadas y los modelos importados necesitan que sus direcciones sigan disponibles.</p></>}
           <details className="tq-portal-upgrade"><summary>Compatibilidad con escenas anteriores</summary><p>El portal usa imágenes, no personajes 3D. Las escenas anteriores conservan su editor de objetos. Cambiar de modo no borra su receta; puedes deshacer.</p>{scene.portalCard?<button onClick={()=>{edit(s=>{delete s.portalCard});setTab("objects")}}>Abrir modo anterior</button>:<button disabled={!!scene.content?.objects.length} onClick={()=>{edit(s=>{s.portalCard=createPortalCard()});setTab("composition")}}>Convertir a tarjeta portal</button>}{!!scene.content?.objects.length && !scene.portalCard && <p>Esta escena contiene objetos 3D. Conserva ese modo o empieza una tarjeta nueva para usar el portal de imágenes.</p>}</details>
         </aside>
       </main>

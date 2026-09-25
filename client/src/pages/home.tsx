@@ -153,7 +153,7 @@ function OwnBookCard({ book }: { book: any }) {
 }
 
 export default function Home() {
-  const { data: apiBooks, isLoading } = useBooks()
+  const { data: apiBooks, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useBooks()
   const { activeGenre, lobbyFilter, cfg, isFiltered } = useGenre()
   const { t } = useSettings()
   const [, setLocation] = useLocation()
@@ -603,6 +603,7 @@ export default function Home() {
           </>
         )}
 
+        {hasNextPage && <div className="px-6 py-6 text-center"><button className="min-h-11 rounded-full border border-white/20 px-6 py-2 text-sm text-white" disabled={isFetchingNextPage} onClick={() => { void fetchNextPage() }}>{isFetchingNextPage ? "Cargando…" : "Explorar más libros"}</button></div>}
       </div>
     </Layout>
   )

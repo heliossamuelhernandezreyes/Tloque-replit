@@ -1,0 +1,2 @@
+// One explicit account-deletion disclosure for UI and portable exports.
+export const ACCOUNT_DELETION_NOTICE = "Se eliminan los datos de tu perfil, progreso, guardados, notificaciones y copias de recuperación. Se cierra el acceso a la cuenta. Tus obras, manuscritos, versiones y proyectos creativos se conservan fuera del catálogo para mantener la integridad editorial; las ediciones adquiridas siguen disponibles para sus lectores. Se conservan créditos editoriales, colecciones y registros económicos. Los comentarios conservan su texto con el nombre Cuenta eliminada."

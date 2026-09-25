@@ -9,6 +9,7 @@ export interface PrintBook {
   coverUrl?: string; backCoverUrl?: string; originalLanguage?: string
   publicationYear?: number | null; isClassic?: boolean; content?: string
   chapters?: { title: string; content: string }[]
+  sourceMetadata?: Record<string, unknown> | null
 }
 export interface PdfCopy { folio: string; key: string }
 export interface EditionSettings {
@@ -87,7 +88,7 @@ export interface FontMetrics {
   prepare?(op: TextOp): void
   extents?(text: string, pt: number, style?: FontStyle): { ascent: number; descent: number }
 }
-export interface PrintLabels { contents: string; edition: string; end: string; copy: string; key: string; claim: string; rights: string }
+export interface PrintLabels { contents: string; edition: string; end: string; copy: string; key: string; claim: string; rights: string; translation?: string; source?: string }
 export function printLabels(language = "es"): PrintLabels {
   const rows: Record<string, string[]> = {
     es: ["Contenido", "Edición impresa · Tloque", "Fin", "Ejemplar", "Clave", "Activa tu ejemplar digital con este código.", "Consulta la licencia y los créditos de esta edición en Tloque."],
@@ -99,7 +100,22 @@ export function printLabels(language = "es"): PrintLabels {
     ru: ["Содержание", "Печатное издание · Tloque", "Конец", "Экземпляр", "Ключ", "Активируйте цифровой экземпляр с помощью этого кода.", "Лицензия и сведения об этом издании доступны в Tloque."],
   }
   const [contents, edition, end, copy, key, claim, rights] = rows[language.split("-")[0]] || rows.en
-  return { contents, edition, end, copy, key, claim, rights }
+  const creditLabels: Record<string, [string, string]> = {
+    es: ["Traducción", "Fuente"], en: ["Translation", "Source"], fr: ["Traduction", "Source"],
+    de: ["Übersetzung", "Quelle"], it: ["Traduzione", "Fonte"], pt: ["Tradução", "Fonte"], ru: ["Перевод", "Источник"],
+  }
+  const [translation, source] = creditLabels[language.split("-")[0]] || creditLabels.en
+  return { contents, edition, end, copy, key, claim, rights, translation, source }
+}
+export function printSourceCredits(book: PrintBook, labels: PrintLabels): string[] {
+  const metadata = book.sourceMetadata
+  if (metadata?.provider !== "gutenberg") return []
+  const translators = Array.isArray(metadata.translators) ? metadata.translators.filter((name): name is string => typeof name === "string" && !!name.trim()) : []
+  return [
+    ...(translators.length ? [`${labels.translation || "Translation"}: ${translators.join(" · ")}`] : []),
+    `${labels.source || "Source"}: Project Gutenberg`,
+    ...(typeof metadata.sourceUrl === "string" ? [metadata.sourceUrl] : []),
+  ]
 }
 export interface SheetSide { signature: number; sheet: number; side: "front" | "back"; left: number; right: number }
 export function imposeBooklet(count: number, signature: number): { sides: SheetSide[]; paddedPages: number; blanks: number; signatures: number } {

@@ -14,6 +14,16 @@ const book: PrintBook = { title: "La memoria del río", author: "Lucía Márquez
 const compose = (patch = {}, value = book) => composeEdition(value, editionSettings(patch), metrics, labels)
 const compact = (text: string) => text.normalize("NFC").replace(/\s/g, "")
 
+test("persisted Gutenberg translation credits appear in the printed edition", () => {
+  const layout = compose({}, { ...book, sourceMetadata: { provider: "gutenberg", translators: ["Pedro Pedraza y Páez"], sourceUrl: "https://www.gutenberg.org/ebooks/61851" } })
+  const credits = layout.pages.filter(page => page.kind === "legal").flatMap(page => page.ops)
+    .filter((op): op is TextOp => op.kind === "text").map(op => op.text).join(" ")
+  assert.match(credits, /Traducción: Pedro Pedraza y Páez/)
+  assert.match(credits, /Project Gutenberg/)
+  assert.match(credits, /ebooks\/61851/)
+  assert.ok(!layout.issues.some(issue => issue.severity === "error"))
+})
+
 test("print composition preserves manuscript characters and resolves chapter references", () => {
   const layout = compose()
   assert.ok(layout.pages.length > 15); assert.equal(layout.pages.length % 2, 0)

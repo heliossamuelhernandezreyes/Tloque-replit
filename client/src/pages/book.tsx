@@ -451,6 +451,10 @@ export default function BookPage() {
           </div>
 
           {/* meta */}
+          {book.sourceMetadata?.provider === "gutenberg" && <div className="text-xs leading-6 text-zinc-400">
+            {Array.isArray(book.sourceMetadata.translators) && book.sourceMetadata.translators.length > 0 && <p>Traducción: {book.sourceMetadata.translators.filter((name: unknown) => typeof name === "string").join(" · ")}</p>}
+            {book.gutenbergId && <a href={`https://www.gutenberg.org/ebooks/${book.gutenbergId}`} target="_blank" rel="noopener noreferrer" className="underline">Edición y procedencia en Project Gutenberg ↗</a>}
+          </div>}
           {(chapterCount > 0 || timeRead) && (
             <div className="flex items-center gap-4">
               {!isClassic && numericId !== null && (book as any).authorId && (

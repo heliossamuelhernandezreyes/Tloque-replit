@@ -93,6 +93,7 @@ export const books = pgTable("books", {
 
   gutenbergId:     integer("gutenberg_id"),                      // ID en Project Gutenberg — evita duplicados
   spotifyLink:     text("spotify_link").default(""),
+  sourceMetadata:  jsonb("source_metadata").$type<Record<string, unknown>>().default({}),
   backCoverUrl:    text("back_cover_url").default(""),    // contraportada — para tokens de impresión física
   // Vestido PREMIUM de la obra: se muestra a quienes la apoyaron (token)
   premiumCoverUrl: text("premium_cover_url").default(""),
@@ -104,6 +105,7 @@ export const books = pgTable("books", {
   // Revisión canónica del manuscrito. Toda escritura del libro la incrementa
   // y el cliente debe enviar expectedRevision para evitar last-write-wins.
   revision:        integer("revision").default(1).notNull(),
+  clientDraftId:   text("client_draft_id"),
   createdAt:       timestamp("created_at").defaultNow().notNull(),
   updatedAt:       timestamp("updated_at").defaultNow().notNull(),
 })
@@ -128,7 +130,7 @@ export const insertBookSchema = createInsertSchema(books, {
     .default(""),
   publicationYear: z.number().int().min(-4_000).max(new Date().getUTCFullYear() + 1).nullable().optional(),
   coverFx: coverFxSchema.optional().default({ mode: "simple", layers: { back: "", mid: "", front: "" } }),
-}).omit({ id: true, createdAt: true, updatedAt: true })
+}).omit({ id: true, createdAt: true, updatedAt: true, clientDraftId: true })
 
 export type Book              = typeof books.$inferSelect
 export type InsertBook        = z.input<typeof insertBookSchema>
@@ -220,6 +222,7 @@ export const readingProgress = pgTable("reading_progress", {
   bookId:     text("book_id").notNull(),                  // id del libro (texto, flexible)
   chapter:    integer("chapter").default(0).notNull(),    // capítulo actual
   maxChapter: integer("max_chapter").default(0).notNull(),// capítulo más lejano alcanzado
+  completed:  boolean("completed").default(false).notNull(),
   updatedAt:  timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
   uniqUserBook: unique("uniq_user_book").on(t.userId, t.bookId),
@@ -497,6 +500,18 @@ export const paperUsageEvents = pgTable("paper_usage_events", {
 
 export type PaperUsageEvent = typeof paperUsageEvents.$inferSelect
 
+export const aiRequests = pgTable("ai_requests", {
+  id: serial("id").primaryKey(),
+  requestKey: text("request_key").notNull().unique(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  inputHash: text("input_hash").notNull(),
+  status: text("status").notNull().default("processing"),
+  reservedPaper: integer("reserved_paper").notNull(),
+  result: jsonb("result").$type<Record<string, unknown>>(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
+
 // ── TARJETAS COLECCIONABLES (sin azar: ley de diseño) ───────
 // El autor crea hasta 6 tarjetas por obra (personajes, escenas).
 // Se obtienen APOYANDO la obra (unlock "support") o comprándolas
@@ -511,6 +526,7 @@ export const bookCards = pgTable("book_cards", {
   // No se elige: se merece. Ver shared/gacha.ts
   rarity:      text("rarity").default("common").notNull(),
   inGachaPool: boolean("in_gacha_pool").default(false).notNull(),
+  archived:    boolean("archived").default(false).notNull(),
   name:        text("name").notNull(),
   subtitle:    text("subtitle").notNull().default(""),
   description: text("description").notNull().default(""),
@@ -524,7 +540,8 @@ export const bookCards = pgTable("book_cards", {
 export const userCards = pgTable("user_cards", {
   id:        serial("id").primaryKey(),
   userId:    integer("user_id").references(() => users.id).notNull(),
-  cardId:    integer("card_id").references(() => bookCards.id, { onDelete: "cascade" }).notNull(),
+  cardId:    integer("card_id").references(() => bookCards.id).notNull(),
+  snapshot:  jsonb("snapshot").$type<Record<string, unknown>>(),
   source:    text("source").notNull().default("support"),     // "support" | "tinta"
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => ({
@@ -533,6 +550,15 @@ export const userCards = pgTable("user_cards", {
 
 export type BookCard = typeof bookCards.$inferSelect
 export type UserCard = typeof userCards.$inferSelect
+
+export const visualUploads = pgTable("visual_uploads", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  hash: text("hash").notNull(),
+  bytes: integer("bytes").notNull(),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, t => ({ ownerHash: unique("visual_uploads_owner_hash_unique").on(t.userId, t.hash) }))
 
 // ── FONOTECA OFICIAL ─────────────────────────────────────
 // Los administradores publican activos con procedencia y licencia. Los
@@ -798,6 +824,8 @@ export const audiobookJobs = pgTable("audiobook_jobs", {
   reservedPaper: integer("reserved_paper").notNull(),
   expectedCharacters: integer("expected_characters").notNull(),
   actualCharacters: integer("actual_characters").notNull().default(0),
+  claimToken: text("claim_token"),
+  leaseExpiresAt: timestamp("lease_expires_at"),
   provider: text("provider").notNull().default("elevenlabs"),
   errorCode: text("error_code").notNull().default(""),
   createdAt: timestamp("created_at").defaultNow().notNull(),

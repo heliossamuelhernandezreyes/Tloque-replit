@@ -124,11 +124,13 @@ export class HybridMusicEngine {
       && (!needsWorklet || Boolean(AudioContextClass && "audioWorklet" in AudioContextClass.prototype))
     if (resolvedCue.sourceType !== "stream" && resolvedCue.sourceType !== "adaptive" && !canUseRequestedEngine) {
       if (resolvedCue.url) {
-        await this.play({ ...resolvedCue, sourceType: "stream" })
+        // Stay within this queue entry: enqueueing play() here would wait on
+        // the very promise currently executing and permanently block playback.
+        resolvedCue = { ...resolvedCue, sourceType: "stream" }
+      } else {
+        this.listener("error", resolvedCue)
         return
       }
-      this.listener("error", resolvedCue)
-      return
     }
 
     const next: Engine = resolvedCue.sourceType === "procedural"

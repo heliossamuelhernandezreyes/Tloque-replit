@@ -23,6 +23,8 @@ export interface CardData {
   owned:       boolean
   rarity?:     string
   inGachaPool?: boolean
+  snapshotVersion?: number
+  frameSnapshot?: unknown
 }
 
 interface Props {
@@ -56,7 +58,7 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
 
   // Marco de la galería (si el autor eligió uno). Si no, el anillo de rareza.
   const { byId } = useFrames()
-  const galleryFrame = byId(card.fx?.frameId)
+  const galleryFrame = card.snapshotVersion ? { pkg: card.frameSnapshot } : byId(card.fx?.frameId)
   const authoredScene=readCardScene(card.fx?.scene)??undefined
 
   // Cualquier tarjeta, en cualquier pantalla: se toca y se abre en el visor.

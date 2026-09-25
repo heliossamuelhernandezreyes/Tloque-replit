@@ -303,6 +303,7 @@ export default function Editor() {
   const autoSaveTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const durableSaveQueue = useRef<Promise<void>>(Promise.resolve())
   const cloudDraftRevision = useRef(0)
+  const createdDrafts = useRef(new Map<number, { id: number; revision: number }>())
 
   const [activeChapter, setActiveChapter] = useState(0)
   const [metaOpen,      setMetaOpen]      = useState(true)
@@ -502,6 +503,25 @@ export default function Editor() {
   }
 
   async function saveCloudDraft(currentForm: EditableBook): Promise<void> {
+    if (!isServerBookId(currentForm.id) && currentForm.id && currentForm.title.trim()) {
+      const localId = currentForm.id
+      let canonical = createdDrafts.current.get(localId)
+      if (!canonical) {
+        const response = await fetch("/api/books/drafts", {
+          method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+          body: JSON.stringify({ draftId: String(localId), data: currentForm }),
+        })
+        if (!response.ok) throw new Error("La copia local está guardada; no se pudo respaldar en la nube")
+        canonical = await response.json()
+        if (!canonical || !Number.isInteger(canonical.id)) throw new Error("Respuesta de borrador inválida")
+        createdDrafts.current.set(localId, canonical)
+      }
+      const mapped = { ...currentForm, id: canonical.id, revision: canonical.revision }
+      await saveDurableEditorDraft(canonical.id, mapped)
+      setForm(current => current.id === localId ? { ...current, id: canonical!.id, revision: canonical!.revision } : current)
+      saveAll(STORAGE_DRAFTS, loadAll(STORAGE_DRAFTS).filter((draft: any) => draft.id !== localId))
+      currentForm = mapped
+    }
     if (!isServerBookId(currentForm.id) || !Number.isInteger(currentForm.revision)) return
     const response = await fetch(`/api/books/${currentForm.id}/draft`, {
       method: "PUT",
@@ -545,9 +565,9 @@ export default function Editor() {
       const durableSave = durableSaveQueue.current
         .catch(() => undefined)
         .then(() => saveDurableEditorDraft(currentForm.id!, currentForm))
+        .then(() => saveCloudDraft(currentForm))
       durableSaveQueue.current = durableSave
       void durableSave.then(async () => {
-        await saveCloudDraft(currentForm)
         setSaveStatus("saved")
         if (!isAuto) toast({ title: "Copia de recuperación guardada ✓" })
         setTimeout(() => setSaveStatus("idle"), 2500)
@@ -574,9 +594,9 @@ export default function Editor() {
       const durableSave = durableSaveQueue.current
         .catch(() => undefined)
         .then(() => saveDurableEditorDraft(id, book))
+        .then(() => saveCloudDraft(book))
       durableSaveQueue.current = durableSave
       void durableSave.then(async () => {
-        await saveCloudDraft(book)
         setSaveStatus("saved")
         if (!isAuto) toast({ title: "Borrador guardado ✓" })
         setTimeout(() => setSaveStatus("idle"), 2500)
@@ -667,7 +687,10 @@ export default function Editor() {
     }
 
     try {
-      const localId      = (form as any).id
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+      await durableSaveQueue.current.catch(() => undefined)
+      const created = form.id ? createdDrafts.current.get(form.id) : undefined
+      const localId = created?.id ?? form.id
       const serverPayload = {
         title:        form.title,
         // Si es edición de servidor (admin/clásico), preservar autor original
@@ -702,7 +725,7 @@ export default function Editor() {
         serverBook = await updateBook.mutateAsync({
           id: localId,
           ...serverPayload,
-          expectedRevision: Number(form.revision),
+          expectedRevision: Number(created?.revision ?? form.revision),
         })
         serverId = localId
       } else {

@@ -8,6 +8,9 @@ import { useEffect, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { clearLocalAccountData } from "@/lib/privacy"
 import VisualPreferences from "@/visual/VisualPreferences"
+import { createAccountStore } from "@/lib/account-store"
+import { accountStorage } from "@/lib/account-context"
+import { ACCOUNT_DELETION_NOTICE } from "@shared/account-retention"
 
 interface Props {
   open:    boolean
@@ -152,6 +155,11 @@ export default function ConfigPanel({ open, onClose }: Props) {
       const response = await fetch("/api/account/export", { credentials: "include" })
       if (!response.ok) throw new Error("export_failed")
       const data = await response.json()
+      data.localRecovery = {
+        editorDrafts: await createAccountStore("editor_drafts_v1").entries(),
+        cardDirections: await createAccountStore("card_directions").entries(),
+        preferences: Object.fromEntries(accountStorage.keys().map(key => [key, accountStorage.getItem(key)])),
+      }
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
       const url = URL.createObjectURL(blob)
       const link = document.createElement("a")
@@ -170,7 +178,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
   async function deleteAccount() {
     if (deleting) return
     const confirmation = window.prompt(
-      "Tus obras dejarán de ser públicas y tus datos personales se eliminarán. Escribe ELIMINAR para continuar.",
+      ACCOUNT_DELETION_NOTICE + " Exporta antes tu trabajo. Escribe ELIMINAR para continuar.",
     )
     if (confirmation !== "ELIMINAR") return
     setDeleting(true)
@@ -627,6 +635,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
                   </motion.button>
                   <p className="text-[10px] text-zinc-700 font-sans leading-relaxed">
                     {t("dataExportNote")}
+                    <br />{ACCOUNT_DELETION_NOTICE}
                   </p>
                 </div>
               </Section>

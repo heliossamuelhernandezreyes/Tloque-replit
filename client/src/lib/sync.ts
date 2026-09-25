@@ -71,13 +71,14 @@ export function pushStreak(days: number, lastDate: string) {
   }).catch(() => {})
 }
 
-export function pushProgress(bookId: string | number, chapter: number, maxChapter: number) {
+export function pushProgress(bookId: string | number, chapter: number, maxChapter: number, completed = false) {
   try { localStorage.setItem(`reading_updated_${bookId}`, String(Date.now())) } catch {}
+  if (completed) localStorage.setItem(`reading_completed_${bookId}`, "true")
   fetch("/api/sync/progress", {
     method:      "PUT",
     headers:     { "Content-Type": "application/json" },
     credentials: "include",
-    body:        JSON.stringify({ bookId: String(bookId), chapter, maxChapter }),
+    body:        JSON.stringify({ bookId: String(bookId), chapter, maxChapter, completed: completed || localStorage.getItem(`reading_completed_${bookId}`) === "true" }),
   }).catch(() => {})
 }
 
@@ -98,7 +99,7 @@ export async function pullAndMerge(): Promise<void> {
 
   let data: {
     streak: { days: number; lastDate: string } | null
-    progress: { bookId: string; chapter: number; maxChapter: number; updatedAt?: string }[]
+    progress: { bookId: string; chapter: number; maxChapter: number; completed?: boolean; updatedAt?: string }[]
   }
   try {
     const res = await fetch("/api/sync/state", { credentials: "include" })
@@ -139,9 +140,9 @@ export async function pullAndMerge(): Promise<void> {
 
   // ── Progreso por libro ──
   try {
-    const serverMap = new Map<string, { chapter: number; maxChapter: number; updatedAt?: string }>()
+    const serverMap = new Map<string, { chapter: number; maxChapter: number; completed?: boolean; updatedAt?: string }>()
     for (const p of data.progress || []) {
-      serverMap.set(String(p.bookId), { chapter: p.chapter, maxChapter: p.maxChapter, updatedAt: p.updatedAt })
+      serverMap.set(String(p.bookId), { chapter: p.chapter, maxChapter: p.maxChapter, completed: p.completed, updatedAt: p.updatedAt })
     }
 
     // Recolectar el progreso local de todas las claves reading_*
@@ -149,12 +150,13 @@ export async function pullAndMerge(): Promise<void> {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i)
       if (!k) continue
-      const m = k.match(/^reading_(?:max)?chapter_(.+)$/)
+      const m = k.match(/^reading_(?:(?:max)?chapter|completed)_(.+)$/)
       if (m) localBookIds.add(m[1])
     }
 
     // Para cada libro del servidor: si va más adelante, actualizar lo local
     for (const [bookId, sp] of serverMap) {
+      if (sp.completed) localStorage.setItem(`reading_completed_${bookId}`, "true")
       const localChapter = Number(localStorage.getItem(`reading_chapter_${bookId}`)    || "0")
       const localMax     = Number(localStorage.getItem(`reading_maxchapter_${bookId}`) || "0")
       const localUpdated = Number(localStorage.getItem(`reading_updated_${bookId}`) || "0")
@@ -175,7 +177,7 @@ export async function pullAndMerge(): Promise<void> {
     for (const bookId of localBookIds) {
       const c = Number(localStorage.getItem(`reading_chapter_${bookId}`)    || "0")
       const m = Number(localStorage.getItem(`reading_maxchapter_${bookId}`) || "0")
-      if (c > 0 || m > 0) pushProgress(bookId, c, m)
+      if (c > 0 || m > 0 || localStorage.getItem(`reading_completed_${bookId}`) === "true") pushProgress(bookId, c, m)
     }
   } catch { /* ignorar */ }
 

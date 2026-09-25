@@ -19,8 +19,11 @@ const client = new pg.Client({ connectionString: url.href });
 await client.connect();
 const secret = randomBytes(32).toString('hex'), claimSecret = randomBytes(32).toString('hex');
 const webhookSecret = randomBytes(32).toString('hex');
+const workerToken = randomBytes(32).toString('hex');
 const processes = [], checks = [], users = {}, cookies = {};
 const sessions = new Map(), disputes = new Map();
+const transfers = new Map();
+let transferStarted = () => {}, transferGate = Promise.resolve();
 let providerCalls = 0, dropNextCheckout = false, providerFailure = false;
 const fixture = createServer(async (req, res) => {
   try {
@@ -38,6 +41,14 @@ const fixture = createServer(async (req, res) => {
       }
       if (dropNextCheckout) { dropNextCheckout = false; req.socket.destroy(); return; }
       res.end(JSON.stringify({ id: saved.id, url: saved.url }));
+    } else if (req.method === 'GET' && req.url.startsWith('/v1/accounts/')) {
+      res.end(JSON.stringify({ id: req.url.split('/').at(-1), country: 'MX', default_currency: 'mxn', details_submitted: true, payouts_enabled: true, capabilities: { transfers: 'active' }, requirements: { currently_due: [] } }));
+    } else if (req.method === 'POST' && req.url === '/v1/transfers') {
+      const key = req.headers['idempotency-key']; assert.ok(key);
+      transferStarted(); await transferGate;
+      if (!transfers.has(key)) transfers.set(key, { id: 'tr_fixture' + transfers.size, body });
+      assert.equal(transfers.get(key).body, body);
+      res.end(JSON.stringify({ id: transfers.get(key).id }));
     } else if (req.method === 'GET' && req.url.startsWith('/v1/disputes/')) {
       const dispute = disputes.get(req.url.split('/').at(-1));
       if (providerFailure || !dispute) { res.writeHead(503); res.end('{}'); return; }
@@ -122,7 +133,7 @@ async function claim(copy, role = 'reader', instance = 0) {
 try {
   assert.equal(Number((await client.query('select count(*) from users')).rows[0].count), 0);
   await client.query('create table if not exists user_sessions(sid varchar primary key, sess json not null, expire timestamp(6) not null)');
-  for (const role of ['buyer', 'second', 'refund', 'partial', 'disputed', 'seller', 'supporter', 'reader', 'author', 'finance', 'beta', 'history']) {
+  for (const role of ['buyer', 'second', 'refund', 'partial', 'disputed', 'seller', 'supporter', 'reader', 'author', 'finance', 'beta', 'history', 'collector', 'payoutAuthor']) {
     const { rows: [user] } = await client.query('insert into users(google_id,email,name) values($1,$2,$3) returning id,email',
       ['payments-' + role, role + '@payments.example.test', 'Payments ' + role]);
     users[role] = user;
@@ -144,6 +155,7 @@ try {
         DATABASE_URL: url.href, APP_URL: 'https://payments.example.test', SESSION_SECRET: secret,
         ADMIN_EMAIL: 'founder@payments.example.test',
         CLAIM_KEY_SECRET: claimSecret, STRIPE_WEBHOOK_SECRET: webhookSecret, STRIPE_SECRET_KEY: 'sk_test_fixture',
+        AUDIOBOOK_WORKER_TOKEN: workerToken,
         STRIPE_CONNECT_WEBHOOK_SECRET: 'whsec_fixture', STRIPE_CONNECT_ENABLED: instance < 2 ? 'true' : 'false',
         MONETIZATION_ENABLED: 'true', PAYOUTS_READY: 'true', PAYMENTS_BETA_MODE: 'true',
         GOOGLE_CLIENT_ID: 'fixture', GOOGLE_CLIENT_SECRET: 'fixture', TLOQUE_QA_STRIPE_URL: fixtureUrl },
@@ -160,6 +172,60 @@ try {
     }
     assert.ok(healthy, 'Server did not start: ' + output);
   }
+
+  await check('Concurrent payout approval and rejection cannot release money in flight', async () => {
+    const authorId = users.payoutAuthor.id;
+    await client.query("insert into author_payout_accounts(user_id,provider_account_id) values($1,'acct_fixturepayout')", [authorId]);
+    const { rows: [order] } = await client.query("insert into token_orders(user_id,book_id,kind,amount_cents,status,provider) values($1,$2,'support',1000,'paid','stripe') returning id", [users.collector.id, book.id]);
+    const { rows: [payout] } = await client.query("insert into author_payouts(author_user_id,amount_cents) values($1,1000) returning id", [authorId]);
+    await client.query("insert into author_earnings(author_user_id,order_id,book_id,gross_cents,author_cents,platform_cents,status,payout_eligible,payout_id) values($1,$2,$3,1000,1000,0,'reserved',true,$4)", [authorId, order.id, book.id, payout.id]);
+    const started = new Promise(resolve => { transferStarted = resolve; });
+    let release; transferGate = new Promise(resolve => { release = resolve; });
+    const approval = request(`/api/admin/payouts/${payout.id}/approve`, { role: 'finance', method: 'POST' });
+    try {
+      await Promise.race([started, approval.then(result => { throw new Error('Approval ended before provider transfer: ' + JSON.stringify(result)); }), delay(10_000).then(() => { throw new Error('Transfer did not start'); })]);
+      const competing = await Promise.all(['reject', 'approve'].map(action => request(`/api/admin/payouts/${payout.id}/${action}`, { role: 'finance', instance: 1, method: 'POST' })));
+      assert.ok(competing.every(result => result.status === 409), JSON.stringify(competing));
+      assert.equal((await client.query('select status from author_earnings where order_id=$1', [order.id])).rows[0].status, 'reserved');
+    } finally { release(); }
+    assert.equal((await approval).status, 200);
+    assert.equal(transfers.size, 1);
+    const { rows: [earning] } = await client.query('select status,payout_id from author_earnings where order_id=$1', [order.id]);
+    assert.equal(earning.status, 'paid_out'); assert.equal(earning.payout_id, payout.id);
+    const { rows: [old] } = await client.query("insert into author_payouts(author_user_id,amount_cents,status,processed_at,updated_at) values($1,1000,'processing_unknown',now()-interval '25 hours',now()-interval '25 hours') returning id", [authorId]);
+    assert.equal((await request(`/api/admin/payouts/${old.id}/approve`, { role: 'finance', method: 'POST' })).status, 409);
+    assert.equal((await request(`/api/admin/payouts/${old.id}/reject`, { role: 'finance', method: 'POST' })).status, 409);
+    assert.equal(transfers.size, 1);
+  });
+
+  await check('Purchased card art, frame and book survive edits and withdrawal', async () => {
+    const created = await request('/api/books', { role: 'author', method: 'POST', body: { title: 'Preserved edition', author: 'Fixture', status: 'published', chapters: [{ title: 'Only chapter', content: 'Public edition text' }] } });
+    assert.equal(created.status, 201, JSON.stringify(created.data));
+    const work = created.data;
+    const { rows: [frame] } = await client.query("insert into frames(name,pkg) values('Frame fixture',$1) returning id", [JSON.stringify({ label: 'Original frame' })]);
+    const card = await request(`/api/books/${work.id}/cards`, { role: 'author', method: 'POST', body: { name: 'Original art', unlock: 'tinta', priceTinta: 5, fx: { layers: { back: 'https://example.test/original.png', mid: '', front: '' }, frameId: frame.id } } });
+    assert.equal(card.status, 201, JSON.stringify(card.data));
+    await client.query("insert into wallet_ledger(user_id,currency,delta,reason) values($1,'tinta',20,'fixture')", [users.collector.id]);
+    const purchase = await request(`/api/cards/${card.data.id}/buy`, { role: 'collector', method: 'POST' });
+    assert.equal(purchase.status, 201, JSON.stringify(purchase.data));
+    await client.query("update book_cards set name='Later art',fx='{}'::jsonb where id=$1", [card.data.id]);
+    await client.query("update frames set pkg='{}'::jsonb where id=$1", [frame.id]);
+    assert.equal((await request(`/api/cards/${card.data.id}`, { role: 'author', method: 'DELETE' })).status, 200);
+    const collection = await request('/api/cards/collection', { role: 'collector' });
+    const acquired = collection.data.groups.flatMap(group => group.cards).find(item => item.id === card.data.id);
+    assert.equal(acquired.name, 'Original art'); assert.equal(acquired.frameSnapshot.label, 'Original frame');
+    assert.equal(acquired.fx.layers.back, 'https://example.test/original.png');
+    await assert.rejects(client.query('delete from book_cards where id=$1', [card.data.id]), error => error.code === '23503');
+    const changed = await request(`/api/books/${work.id}`, { role: 'author', method: 'PUT', body: { title: 'Private edit', status: 'draft', expectedRevision: work.revision, chapters: [{ title: 'Private', content: 'DO NOT EXPOSE' }] } });
+    assert.equal(changed.status, 200, JSON.stringify(changed.data));
+    const preserved = await request(`/api/books/${work.id}`, { role: 'collector' });
+    assert.equal(preserved.status, 200); assert.equal(preserved.data.chapters[0].content, 'Public edition text');
+    assert.equal((await request(`/api/sync/library/${work.id}`, { role: 'collector', method: 'PUT' })).status, 200);
+    const restored = await request('/api/sync/library', { role: 'collector' });
+    assert.equal(restored.data.books.find(item => item.id === work.id).chapters[0].content, 'Public edition text');
+    assert.equal((await request('/api/sync/progress', { role: 'collector', method: 'PUT', body: { bookId: work.id, chapter: 0, maxChapter: 0, completed: true } })).status, 200);
+    assert.equal((await request(`/api/books/${work.id}`, { role: 'reader' })).status, 404);
+  });
 
   await check('Tinta purchase retries across two servers issue one token and one debit', async () => {
     await paidWallet('buyer');
@@ -325,6 +391,55 @@ try {
       assert.ok(!(await request('/api/tokens/unlocked', { role: 'history' })).data.bookIds.includes(book.id));
     }
     assert.equal((await client.query("select count(*) from wallet_ledger where ref_type='wallet_order_adjustment' and ref_id=$1", [order.id])).rows[0].count, '1');
+  });
+  await check('AI reservation serializes concurrent requests, replays results and refunds expired work once', async () => {
+    const { reserveAiRequest, finishAiRequest, recoverExpiredAiRequests } = await import('../server/aiRequests.ts');
+    const userId = users.collector.id;
+    await client.query("insert into wallet_ledger(user_id,currency,delta,reason) values($1,'papel',20,'fixture')", [userId]);
+    const requestKey = key();
+    const results = await Promise.allSettled([1, 2].map(() => reserveAiRequest(userId, requestKey, 'hash-fixture', 8)));
+    assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+    const reservation = results.find(result => result.status === 'fulfilled').value;
+    assert.equal((await client.query("select sum(delta)::int as balance from wallet_ledger where user_id=$1 and currency='papel'", [userId])).rows[0].balance, 12);
+    await finishAiRequest(reservation.id, { provider: 'fixture', inputUnits: 1000, outputUnits: 1000, paperCharged: 2, metadata: {} }, { project: { fixture: true }, paperCharged: 2 });
+    assert.equal((await reserveAiRequest(userId, requestKey, 'hash-fixture', 8)).result.paperCharged, 2);
+    assert.equal((await client.query("select sum(delta)::int as balance from wallet_ledger where user_id=$1 and currency='papel'", [userId])).rows[0].balance, 18);
+    const expired = await reserveAiRequest(userId, key(), 'expired-fixture', 8);
+    await client.query("update ai_requests set expires_at=now()-interval '1 second' where id=$1", [expired.id]);
+    await Promise.all([recoverExpiredAiRequests(), recoverExpiredAiRequests()]);
+    assert.equal((await client.query("select sum(delta)::int as balance from wallet_ledger where user_id=$1 and currency='papel'", [userId])).rows[0].balance, 18);
+    await assert.rejects(finishAiRequest(expired.id, { provider: 'fixture', inputUnits: 1, outputUnits: 1, paperCharged: 1, metadata: {} }, {}));
+  });
+  await check('Expired audiobook workers release Papel exactly once; model quota is cumulative', async () => {
+    const { recoverExpiredAudiobookJobs } = await import('../server/speech.ts');
+    const { reserveVisualUpload, MODEL_ACCOUNT_QUOTA } = await import('../server/visualUploads.ts');
+    const userId = users.collector.id, hash = 'a'.repeat(64), claimToken = key();
+    const { rows: [job] } = await client.query(`insert into audiobook_jobs(request_key,cache_key,user_id,book_id,chapter_index,speech_profile_revision,content_hash,model_id,status,estimated_paper,reserved_paper,expected_characters,claim_token,lease_expires_at)
+      values($1,$2,$3,$4,0,1,$2,'fixture','processing',4,4,4000,$5,now()-interval '1 second') returning id`, [key(), hash, userId, book.id, claimToken]);
+    await Promise.all([recoverExpiredAudiobookJobs(), recoverExpiredAudiobookJobs()]);
+    assert.equal((await client.query("select count(*) from wallet_ledger where ref_type='audiobook_job' and ref_id=$1 and reason='refund_ai'", [job.id])).rows[0].count, '1');
+    assert.equal((await client.query('select status from audiobook_jobs where id=$1', [job.id])).rows[0].status, 'failed');
+    const workerHeaders = { Authorization: 'Bearer ' + workerToken };
+    assert.equal((await request(`/api/internal/audiobook/jobs/${job.id}/complete`, { role: null, method: 'POST', headers: workerHeaders,
+      body: { claimToken, storageKey: 'audiobooks/fixture/late.mp3', mimeType: 'audio/mpeg', durationSeconds: 20, actualCharacters: 4000 } })).status, 409);
+    const activeToken = key(), activeHash = 'b'.repeat(64);
+    const { rows: [active] } = await client.query(`insert into audiobook_jobs(request_key,cache_key,user_id,book_id,chapter_index,speech_profile_revision,content_hash,model_id,status,estimated_paper,reserved_paper,expected_characters,claim_token,lease_expires_at,started_at)
+      values($1,$2,$3,$4,0,1,$2,'fixture','processing',4,4,4000,$5,now()+interval '1 minute',now()) returning id`, [key(), activeHash, userId, book.id, activeToken]);
+    const heartbeat = token => request(`/api/internal/audiobook/jobs/${active.id}/heartbeat`, { role: null, method: 'POST', headers: workerHeaders, body: { claimToken: token } });
+    assert.equal((await heartbeat(key())).status, 409);
+    const extended = await heartbeat(activeToken);
+    assert.equal(extended.status, 200, JSON.stringify(extended.data));
+    assert.ok(Date.parse(extended.data.leaseExpiresAt) > Date.now() + 240_000);
+    await client.query("update audiobook_jobs set lease_expires_at=now()-interval '1 second' where id=$1", [active.id]);
+    assert.equal((await heartbeat(activeToken)).status, 409);
+    await recoverExpiredAudiobookJobs();
+    assert.equal((await client.query("select count(*) from wallet_ledger where ref_type='audiobook_job' and ref_id=$1 and reason='refund_ai'", [active.id])).rows[0].count, '1');
+    const bytes = MODEL_ACCOUNT_QUOTA / 10;
+    const reservations = await Promise.all(Array.from({ length: 12 }, (_, i) => reserveVisualUpload(userId, String(i).padStart(64, '0'), bytes)));
+    assert.equal(reservations.filter(Boolean).length, 10);
+    const { rows: [first] } = await client.query('select hash from visual_uploads where user_id=$1 limit 1', [userId]);
+    assert.equal(await reserveVisualUpload(userId, first.hash, bytes), true);
+    await (await import('../server/db.ts')).pool.end();
   });
   console.log(`Payment gate passed: ${checks.length} scenario groups; ${providerCalls} local provider calls; no live payments.`);
 } finally {
