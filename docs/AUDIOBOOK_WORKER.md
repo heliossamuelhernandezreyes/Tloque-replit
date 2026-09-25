@@ -17,6 +17,8 @@ Authorization: Bearer $AUDIOBOOK_WORKER_TOKEN
 
    - Responde `204` si no hay trabajo.
    - Si hay trabajo, entrega `job`, `profile`, `voices` y `modelId`.
+   - `job.claimToken` identifica esta asignación; `job.leaseExpiresAt` indica
+     cuándo vence. Conserva ambos. Una asignación dura cinco minutos.
    - `profile.segments` contiene el texto exacto, la voz, la interpretación,
      el ritmo y las pausas. El worker no debe corregir ni reescribir el texto.
    - `voices` resuelve cada `voiceProfileId` al identificador privado del
@@ -26,6 +28,13 @@ Authorization: Bearer $AUDIOBOOK_WORKER_TOKEN
    en orden e inserta los silencios `pauseBeforeMs`, `pauseAfterMs` y
    `paragraphPauseMs`. No agrega efectos, golpes, ambientes ni música.
 
+   Mientras trabaja, llama cada minuto a
+   `POST /api/internal/audiobook/jobs/:id/heartbeat` con
+   `{ "claimToken": "<job.claimToken>" }`. Un `200` devuelve el nuevo
+   `leaseExpiresAt`. Un `409` exige detener ese trabajo: perdió la asignación
+   y no debe confirmar ni volver a cobrar. Los heartbeats no prolongan una
+   generación más allá de dos horas desde su inicio.
+
 3. Sube un solo archivo a almacenamiento de objetos con una clave única que no
    sea pública.
 
@@ -33,6 +42,7 @@ Authorization: Bearer $AUDIOBOOK_WORKER_TOKEN
 
 ```json
 {
+  "claimToken": "<job.claimToken>",
   "storageKey": "audiobooks/sha256/capitulo.mp3",
   "mimeType": "audio/mpeg",
   "durationSeconds": 742,
@@ -47,11 +57,20 @@ adicional que aumente el cargo respecto de la reserva previa.
 5. Ante cualquier fallo llama `POST /api/internal/audiobook/jobs/:id/fail`:
 
 ```json
-{ "errorCode": "ELEVENLABS_TIMEOUT" }
+{ "claimToken": "<job.claimToken>", "errorCode": "ELEVENLABS_TIMEOUT" }
 ```
 
-El servidor devuelve automáticamente el Papel reservado. Repetir `complete` o
-`fail` es seguro por el estado del trabajo.
+El servidor devuelve automáticamente el Papel reservado una sola vez. Repetir
+`complete` con el mismo token es idempotente; un fallo repetido o un resultado
+tardío devuelve `409` sin modificar el saldo. Al arrancar y cada minuto, el
+servidor recupera trabajos cuyo lease venció y colas de más de 24 horas. No
+reenvía automáticamente una síntesis incierta al proveedor. La recuperación
+se procesa en lotes de hasta 100 trabajos por pasada.
+
+Los workers anteriores deben adoptar `claimToken` y heartbeat antes de activar
+generación. Los trabajos antiguos en proceso sin lease se consideran vencidos
+al migrar y se reembolsan. Los objetos subidos por un worker cuyo lease venció
+deben limpiarse después de verificar que ninguna entrada de caché los usa.
 
 ## Límites operativos
 

@@ -10,6 +10,7 @@ import { clearLocalAccountData } from "@/lib/privacy"
 import VisualPreferences from "@/visual/VisualPreferences"
 import { createAccountStore } from "@/lib/account-store"
 import { accountStorage } from "@/lib/account-context"
+import { ACCOUNT_DELETION_NOTICE } from "@shared/account-retention"
 
 interface Props {
   open:    boolean
@@ -177,7 +178,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
   async function deleteAccount() {
     if (deleting) return
     const confirmation = window.prompt(
-      "Se eliminarán tu perfil, borradores privados y actividad personal. Tus obras saldrán del catálogo. Las ediciones ya adquiridas, sus créditos editoriales y registros económicos se conservan para los lectores y la trazabilidad. Exporta antes tu trabajo. Escribe ELIMINAR para continuar.",
+      ACCOUNT_DELETION_NOTICE + " Exporta antes tu trabajo. Escribe ELIMINAR para continuar.",
     )
     if (confirmation !== "ELIMINAR") return
     setDeleting(true)
@@ -634,6 +635,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
                   </motion.button>
                   <p className="text-[10px] text-zinc-700 font-sans leading-relaxed">
                     {t("dataExportNote")}
+                    <br />{ACCOUNT_DELETION_NOTICE}
                   </p>
                 </div>
               </Section>

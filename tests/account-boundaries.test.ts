@@ -115,6 +115,8 @@ test("cerrar sesión pausa la cola de red, conserva escritura local y permite re
   const a = page()
   a.context.activate(1)
   a.context.pauseRequests()
+  // An in-flight session refresh must not reopen requests during logout.
+  a.context.activate(1)
   a.storage.setItem("draft", "latest text")
   await assert.rejects(() => a.context.request("/api/sync/state"), AccountChangedError)
   a.context.resumeRequests()

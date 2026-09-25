@@ -27,7 +27,8 @@ import { registerPayoutRoutes } from "./payouts";
 import { isProtectedClaimKey, protectClaimKey, revealClaimKey, verifyClaimKey } from "./claimKeys";
 import { lockPayment, reconcilePayment, recordPaymentIncident, registerPaymentIncidentRoutes } from "./paymentIncidents";
 import { eq, and, inArray, desc, sql, getTableColumns } from "drizzle-orm";
-import { narrativeProjects, experienceProfiles, speechProjects, speechProfiles, advancedDirectionProjects, directionAgentRuns, audiobookJobs, aiRequests, visualUploads } from "@shared/schema"
+import { narrativeProjects, experienceProfiles, speechProjects, speechProfiles, advancedDirectionProjects, directionAgentRuns, audiobookJobs, aiRequests, visualUploads, voiceProfiles } from "@shared/schema"
+import { ACCOUNT_DELETION_NOTICE } from "@shared/account-retention"
 import { isSafeHttpsUrl, isSafeImageSource } from "@shared/media";
 import { PAPER_PLANS, PAPER_RATES } from "@shared/paper";
 import { publicOriginForRequest } from "./security";
@@ -110,6 +111,21 @@ export async function registerRoutes(
     return allowed
   }
 
+  // Withdrawal is separate from moderation. A purchaser may read the last
+  // public edition, never a subsequent private draft. Batch the revision read
+  // so restoring a library does not issue one query per withdrawn book.
+  async function readableEditions(req: any, catalog: any[], entitled?: Set<number>): Promise<any[]> {
+    const allowed = entitled ?? await entitledBookIds(req, catalog)
+    const withdrawn = catalog.filter(book => !canViewBook(req, book) && book.status !== "review" && allowed.has(book.id))
+    const editions = withdrawn.length ? await db.selectDistinctOn([bookRevisions.bookId], {
+      bookId: bookRevisions.bookId, snapshot: bookRevisions.snapshot,
+    }).from(bookRevisions).where(and(inArray(bookRevisions.bookId, withdrawn.map(book => book.id)),
+      sql`${bookRevisions.snapshot}->>'status' = 'published'`))
+      .orderBy(bookRevisions.bookId, desc(bookRevisions.revision)) : []
+    const snapshots = new Map(editions.map(edition => [edition.bookId, edition.snapshot]))
+    return catalog.flatMap(book => canViewBook(req, book) ? [book] : snapshots.has(book.id) ? [{ ...snapshots.get(book.id), withdrawn: true }] : [])
+  }
+
   const PROFILE_FRAMES_BASE = new Set(["", "silver", "purple", "crimson", "azure", "emerald"])
   const PROFILE_FRAMES_ALL = new Set([...PROFILE_FRAMES_BASE, "metallic", "cosmic", "oldgold"])
 
@@ -153,8 +169,9 @@ export async function registerRoutes(
   app.get(api.books.list.path, async (req, res) => {
     try {
       const before = Number(req.query.before)
-      const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50))
-      const catalog = await storage.getBooks({ before: Number.isSafeInteger(before) && before > 0 ? before : undefined, limit });
+      const limit = Math.min(100, Math.max(1, Math.floor(Number(req.query.limit) || 50)))
+      const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : undefined
+      const catalog = await storage.getBooks({ before: Number.isSafeInteger(before) && before > 0 ? before : undefined, limit, search });
       if (catalog.length === limit) res.setHeader("X-Next-Cursor", String(catalog.at(-1)!.id))
       const entitled = await entitledBookIds(req, catalog)
       res.json(catalog.map(book => withoutPremiumArt(book, entitled.has(book.id))));
@@ -178,22 +195,11 @@ export async function registerRoutes(
   // ── GET /api/books/:id ────────────────────────────────
   app.get(api.books.get.path, async (req, res) => {
     try {
-      let book = await storage.getBook(Number(req.params.id));
-      if (!book) return res.status(404).json({ message: "Book not found" });
+      const currentBook = await storage.getBook(Number(req.params.id));
+      if (!currentBook) return res.status(404).json({ message: "Book not found" });
 
-      // Libros no publicados (ocultos/en revisión): solo admin o su autor
-      if (!canViewBook(req, book)) {
-        if (book.status === "review") return res.status(404).json({ message: "Book not found" });
-        const entitled = await entitledBookIds(req, [book])
-        if (!entitled.has(book.id)) return res.status(404).json({ message: "Book not found" });
-        // Withdrawal preserves the last public edition. Never expose subsequent
-        // private drafts (or an unpublished work) through a purchase entitlement.
-        const [edition] = await db.select({ snapshot: bookRevisions.snapshot }).from(bookRevisions)
-          .where(and(eq(bookRevisions.bookId, book.id), sql`${bookRevisions.snapshot}->>'status' = 'published'`))
-          .orderBy(desc(bookRevisions.revision)).limit(1)
-        if (!edition) return res.status(404).json({ message: "Book not found" });
-        book = edition.snapshot as unknown as typeof book
-      }
+      const [book] = await readableEditions(req, [currentBook])
+      if (!book) return res.status(404).json({ message: "Book not found" });
 
       // Enriquecer con la foto y marco del autor (para la tarjeta de la sinopsis)
       let authorAvatar = "", authorFrame = ""
@@ -1070,8 +1076,9 @@ export async function registerRoutes(
       if (!Number.isInteger(numericBookId) || numericBookId <= 0 || numericBookId > 2_147_483_647) {
         return res.status(400).json({ message: "Libro inválido" })
       }
-      const book = await storage.getBook(numericBookId)
-      if (!book || !canViewBook(req, book)) return res.status(404).json({ message: "Libro no encontrado" })
+      const currentBook = await storage.getBook(numericBookId)
+      const [book] = await readableEditions(req, currentBook ? [currentBook] : [])
+      if (!book) return res.status(404).json({ message: "Libro no encontrado" })
       const rawChapter = Number(req.body?.chapter)
       const rawMaxChapter = Number(req.body?.maxChapter)
       if (!Number.isInteger(rawChapter) || !Number.isInteger(rawMaxChapter)
@@ -1111,8 +1118,8 @@ export async function registerRoutes(
       const ids  = rows.map(r => r.bookId)
       const list = await db.select().from(books).where(inArray(books.id, ids))
       const entitled = await entitledBookIds(req, list)
-      // Solo restaurar los que siguen publicados
-      res.json({ books: list.filter(b => b.status === "published").map(book =>
+      const readable = await readableEditions(req, list, entitled)
+      res.json({ books: readable.map(book =>
         withoutPremiumArt(book, entitled.has(book.id))) })
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
@@ -1129,7 +1136,7 @@ export async function registerRoutes(
 
       const book = await storage.getBook(bookId)
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
-      if (!canViewBook(req, book)) return res.status(404).json({ message: "Libro no encontrado" })
+      if (!(await readableEditions(req, [book])).length) return res.status(404).json({ message: "Libro no encontrado" })
 
       const [existing] = await db.select().from(savedBooks)
         .where(and(eq(savedBooks.userId, userId), eq(savedBooks.bookId, bookId)))
@@ -1573,7 +1580,7 @@ export async function registerRoutes(
       ])
       const ownBookIds = workRows.map(work => work.id)
       const byOwnBook = async (table: any) => ownBookIds.length ? db.select().from(table).where(inArray(table.bookId, ownBookIds)) : []
-      const [drafts, revisions, narrative, experience, speech, speechReady, direction, runs, jobs, requests, uploads] = await Promise.all([
+      const [drafts, revisions, narrative, experience, speech, speechReady, direction, runs, jobs, requests, uploads, voices] = await Promise.all([
         db.select().from(bookDrafts).where(eq(bookDrafts.authorId, userId)),
         byOwnBook(bookRevisions), byOwnBook(narrativeProjects), byOwnBook(experienceProfiles),
         byOwnBook(speechProjects), byOwnBook(speechProfiles), byOwnBook(advancedDirectionProjects),
@@ -1581,15 +1588,19 @@ export async function registerRoutes(
         db.select().from(audiobookJobs).where(eq(audiobookJobs.userId, userId)),
         db.select().from(aiRequests).where(eq(aiRequests.userId, userId)),
         db.select().from(visualUploads).where(eq(visualUploads.userId, userId)),
+        db.select({ id: voiceProfiles.id, label: voiceProfiles.label, description: voiceProfiles.description,
+          language: voiceProfiles.language, role: voiceProfiles.role, license: voiceProfiles.license,
+          sourceUrl: voiceProfiles.sourceUrl, status: voiceProfiles.status, createdAt: voiceProfiles.createdAt,
+        }).from(voiceProfiles).where(eq(voiceProfiles.createdBy, userId)),
       ])
       res.json({
         schema: "tloque-account-export@2", exportedAt: new Date().toISOString(),
         account: accountRows[0] || null,
         reading: { state: stateRows[0] || null, progress: progressRows, savedBooks: savedRows },
         activity: { comments: commentRows },
-        authorship: { works: workRows, cards: authoredCardRows, drafts, revisions, narrative, experience, speech, speechReady, direction, uploads },
+        authorship: { works: workRows, cards: authoredCardRows, drafts, revisions, narrative, experience, speech, speechReady, direction, uploads, voices },
         generation: { runs, jobs: jobs.map(({ claimToken: _token, ...job }) => job), requests },
-        retention: { deletion: "Se borran perfil, borradores privados y actividad personal. Las ediciones adquiridas, sus créditos editoriales y los registros económicos se conservan para los lectores y la trazabilidad." },
+        retention: { deletion: ACCOUNT_DELETION_NOTICE },
         collection: { cards: collectedCardRows, frames: ownedFrameRows },
         print: { tokens: tokenRows, copies: copyRows },
         economy: { ledger: ledgerRows, paperUsage: usageRows },

@@ -1,4 +1,4 @@
-import { editionSettings, pageSize, PT_MM, type EditionLayout, type EditionSettings, type FontMetrics, type FontStyle, type PdfCopy, type PrintBook, type PrintLabels, type PrintPage, type TextOp } from "./model"
+import { editionSettings, pageSize, printSourceCredits, PT_MM, type EditionLayout, type EditionSettings, type FontMetrics, type FontStyle, type PdfCopy, type PrintBook, type PrintLabels, type PrintPage, type TextOp } from "./model"
 import { emptyPrintResources, graphemes, validatePrintResources, type PrintResources } from "./resources"
 
 const clean = (s: string) => String(s || "").replace(/\r\n?/g, "\n").normalize("NFC")
@@ -42,8 +42,10 @@ export function composeEdition(book: PrintBook, input: EditionSettings, metrics:
   if (length > 6_000_000 || source.length > 500) { layout.issues.push({ code: "tooLong", severity: "error", scope: "interior" }); return layout }
   if (!source.some(c => c.content?.trim()) && !resources.illustrations.length) { layout.issues.push({ code: "missingText", severity: "error", scope: "interior" }); return layout }
   const missing = new Set<string>(), checked = new Set<string>()
+  const credits = printSourceCredits(book, labels)
   const values: [string, FontStyle][] = [[book.title, "normal"], [book.title, "bold"], [book.author, "normal"], [book.author, "italic"],
     ...Object.values(labels).map(v => [v, "normal"] as [string, FontStyle]), [labels.end, "italic"],
+    ...credits.map(v => [v, "normal"] as [string, FontStyle]),
     ...(copy ? [[copy.folio, "bold"], [copy.key, "normal"]] as [string, FontStyle][] : []),
     ...source.flatMap(c => [[c.title, "normal"], [c.title, "bold"], [c.content, "normal"]] as [string, FontStyle][]),
     ...resources.illustrations.map(i => [i.caption, "normal"] as [string, FontStyle])]
@@ -123,6 +125,15 @@ export function composeEdition(book: PrintBook, input: EditionSettings, metrics:
   y = block(book.title, top + 18, 12, "bold", "legal")
   y = block(book.author, y + 3, 10, "normal", "legal")
   if (book.publicationYear) y = block(String(book.publicationYear), y + 4, 9, "normal", "legal")
+  for (const credit of credits) {
+    y += 4
+    for (const row of wrapText(clean(credit), tw, metrics, 9)) {
+      if (y + lineHeight(row.text, 9, "normal") > bottomY) page("legal")
+      text(row.text, width / 2, y, 9, "normal", "legal", true)
+      y += lineHeight(row.text, 9, "normal")
+    }
+  }
+  if (y + (copy ? 100 : 40) > bottomY) page("legal")
   y = block(labels.edition, y + 9, 9, "normal", "legal")
   y = block(labels.rights, y + 4, 9, "normal", "legal")
   if (copy) {

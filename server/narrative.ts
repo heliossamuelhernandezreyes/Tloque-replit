@@ -259,10 +259,18 @@ export function registerNarrativeRoutes(app: Express) {
 
     let reservationId: number | undefined
     try {
+      const book = await loadBook(bookId)
+      if (!book) return res.status(404).json({ message: "Libro no encontrado" })
+      if (!canEditBook(book, req.user)) return res.status(403).json({ message: "Solo el autor puede dirigir este capítulo" })
+      const content = chapterContent(book, chapterIndex)
+      if (content === null) return res.status(400).json({ message: "El capítulo no existe" })
+      if (content.trim().length < 80) return res.status(400).json({ message: "Escribe un poco más antes de usar Oráculo" })
+      const inputHash = contentHash(JSON.stringify({ bookId, chapterIndex, content }))
       const [prior] = await db.select().from(paperUsageEvents)
         .where(eq(paperUsageEvents.requestKey, parsed.data.requestKey))
       if (prior) {
-        if (prior.userId !== userId || prior.metadata?.bookId !== bookId || prior.metadata?.chapterIndex !== chapterIndex) return res.status(409).json({ message: "La solicitud ya fue utilizada" })
+        if (prior.userId !== userId || prior.metadata?.bookId !== bookId || prior.metadata?.chapterIndex !== chapterIndex
+          || (prior.metadata?.inputHash && prior.metadata.inputHash !== inputHash)) return res.status(409).json({ message: "La solicitud ya fue utilizada" })
         const savedProject = (prior.metadata as any)?.project
         if (savedProject) return res.json({
           project: narrativeProjectSchema.parse(savedProject),
@@ -270,13 +278,6 @@ export function registerNarrativeRoutes(app: Express) {
           replayed: true,
         })
       }
-
-      const book = await loadBook(bookId)
-      if (!book) return res.status(404).json({ message: "Libro no encontrado" })
-      if (!canEditBook(book, req.user)) return res.status(403).json({ message: "Solo el autor puede dirigir este capítulo" })
-      const content = chapterContent(book, chapterIndex)
-      if (content === null) return res.status(400).json({ message: "El capítulo no existe" })
-      if (content.trim().length < 80) return res.status(400).json({ message: "Escribe un poco más antes de usar Oráculo" })
 
       const [current] = await db.select().from(narrativeProjects).where(and(
         eq(narrativeProjects.bookId, bookId),
@@ -287,7 +288,6 @@ export function registerNarrativeRoutes(app: Express) {
       // UTF-8 bytes conservatively bound input tokens, including the catalog
       // and system prompt. The provider is bounded to 4,000 output tokens.
       const estimatedPaper = paperChargeFor("oracle", Buffer.byteLength(content) + Buffer.byteLength(oracleMasterPrompt(paragraphCountFor(content), scores)) + 512, 4_000)
-      const inputHash = contentHash(JSON.stringify({ bookId, chapterIndex, content }))
       const reserved = await reserveAiRequest(userId, parsed.data.requestKey, inputHash, estimatedPaper)
       if (reserved.result) return res.json({ ...reserved.result, replayed: true })
       reservationId = reserved.id
@@ -309,6 +309,7 @@ export function registerNarrativeRoutes(app: Express) {
           outputUnits: outputTokens,
           paperCharged: charged,
           metadata: {
+            inputHash,
             bookId,
             chapterIndex,
             model: result.model,

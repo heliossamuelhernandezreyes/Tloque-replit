@@ -17,19 +17,19 @@ export class BookConflictError extends Error {
   }
 }
 
-export function useBooks() {
+export function useBooks(search = "") {
   const query = useInfiniteQuery({
-    queryKey: [api.books.list.path, "pages"],
+    queryKey: [api.books.list.path, "pages", search],
     initialPageParam: "",
     getNextPageParam: (page: { books: any[]; next: string }) => page.next || undefined,
     queryFn: async ({ pageParam }) => {
       try {
-        const res = await fetch(`${api.books.list.path}?limit=50${pageParam ? `&before=${encodeURIComponent(pageParam)}` : ""}`, { credentials: "include" });
+        const res = await fetch(`${api.books.list.path}?limit=50${search ? `&search=${encodeURIComponent(search)}` : ""}${pageParam ? `&before=${encodeURIComponent(pageParam)}` : ""}`, { credentials: "include" });
         if (!res.ok) throw new Error("Failed to fetch books");
         const data = await res.json();
 
         // Cache for offline
-        try { if (!pageParam) await store.setItem("books_list", data) }
+        try { if (!pageParam && !search) await store.setItem("books_list", data) }
         catch (error) { if (error instanceof AccountChangedError) throw error }
         return { books: data as any[], next: res.headers.get("X-Next-Cursor") || "" };
       } catch (error) {

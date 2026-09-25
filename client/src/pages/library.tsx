@@ -36,13 +36,14 @@ export default function Library() {
   const { user, logout, can } = useAuth()
   const { t, settings } = useSettings()
   const isAdminActive = can("manageCatalog") && (settings?.adminMode ?? true)
-  const { data: serverBooks, refetch: refetchBooks } = useBooks()
   const { data: myServerBooks, refetch: refetchMyBooks } = useMyBooks()
 
   const [, setLocation] = useLocation()
   const searchQuery = useMemo(() => {
     return new URLSearchParams(window.location.search).get("search")?.toLowerCase().trim() || ""
   }, [location])
+  const { data: serverBooks, refetch: refetchBooks, hasNextPage, fetchNextPage, isFetchingNextPage } = useBooks(searchQuery)
+  const moreBooks = hasNextPage && <div className="py-4 text-center"><button className="min-h-11 rounded-full border border-white/20 px-6 py-2 text-sm text-white" disabled={isFetchingNextPage} onClick={() => { void fetchNextPage() }}>{isFetchingNextPage ? "Cargando…" : "Cargar más libros"}</button></div>
 
   const [drafts,        setDrafts]        = useState<any[]>([])
   const [published,     setPublished]     = useState<any[]>([])
@@ -223,6 +224,7 @@ export default function Library() {
               </div>
             </>
           )}
+          {moreBooks}
         </div>
       </Layout>
     )
@@ -511,6 +513,7 @@ export default function Library() {
               )}
             </motion.div>
           </AnimatePresence>
+          {activeTab === "catalog" && moreBooks}
         </div>
 
       </div>

@@ -94,6 +94,32 @@ try {
   await aReloadedAgain
   assert.deepEqual(remaining, { library: "library B", draft: { text: "draft B" } })
   checks.push("deleting one account's copies preserves the other account and unassigned historical data")
+  await b.evaluate(async () => {
+    const { accountStorage } = await import("/src/lib/account-context.ts")
+    const { saveOfflineContent } = await import("/src/lib/offline.ts")
+    accountStorage.setItem("novareads_saved", JSON.stringify([{ id: 81, title: "Descarga de B", author: "Autor de prueba" }]))
+    await saveOfflineContent(81, { content: "Texto conservado sin conexión. <script>window.offlineLeak=true</script>" })
+  })
+  const apiRequests = []
+  await context.route("**/api/**", route => { apiRequests.push(new URL(route.request().url()).pathname); return route.abort() })
+  const offline = await context.newPage()
+  offline.on("pageerror", error => errors.push(error.message))
+  await offline.goto("http://127.0.0.1:4186/")
+  await offline.getByRole("button", { name: "Abrir mis descargas sin conexión", exact: true }).click()
+  await offline.getByRole("button", { name: /Descarga de B/ }).click()
+  await offline.getByText("Texto conservado sin conexión.", { exact: false }).waitFor()
+  assert.equal(await offline.evaluate(() => window.offlineLeak), undefined)
+  await offline.getByRole("button", { name: "Marcar lectura como terminada", exact: true }).click()
+  const progress = await offline.evaluate(async () => {
+    const { accountContext, accountStorage } = await import("/src/lib/account-context.ts")
+    let blocked = false
+    try { await accountContext.request("/api/admin/payouts") } catch { blocked = true }
+    return { id: accountContext.id, completed: accountStorage.getItem("reading_completed_81"), updated: Number(accountStorage.getItem("reading_updated_81")), blocked }
+  })
+  assert.equal(progress.id, "502"); assert.equal(progress.completed, "true"); assert.ok(progress.updated > 0); assert.equal(progress.blocked, true)
+  assert.ok(apiRequests.every(path => path === "/api/auth/me"), JSON.stringify(apiRequests))
+  await offline.screenshot({ path: resolve(output, "cold-offline-reader.png") })
+  checks.push("a cold app with unavailable authentication reads only its own IndexedDB download, escapes text and records completion without API authority")
   assert.deepEqual(errors, [])
   for (const check of checks) console.log("PASS " + check)
 } finally {

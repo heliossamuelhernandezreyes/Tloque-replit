@@ -49,7 +49,7 @@ export default function OfflineLibrary({ onRetry }: { onRetry: () => void }) {
           <span>{chapter + 1} / {chapters.length}</span>
           <button className="min-h-11 disabled:opacity-30" disabled={chapter === chapters.length - 1} onClick={() => turn(chapter + 1)}>Siguiente</button>
         </nav>
-        {chapter === chapters.length - 1 && <button className="mt-8 min-h-11 underline" onClick={event => { accountStorage.setItem(`reading_completed_${book.id}`, "true"); event.currentTarget.textContent = "Lectura terminada ✓" }}>Marcar lectura como terminada</button>}
+        {chapter === chapters.length - 1 && <button className="mt-8 min-h-11 underline" onClick={event => { accountStorage.setItem(`reading_completed_${book.id}`, "true"); turn(chapter); event.currentTarget.textContent = "Lectura terminada ✓" }}>Marcar lectura como terminada</button>}
       </> : <>
         <h1 className="mb-6 font-serif text-3xl">Tus libros descargados</h1>
         {loading ? <p role="status">Abriendo descargas…</p> : !available.length ? <p>No hay libros descargados en esta cuenta y dispositivo. Reconecta para guardar uno.</p> : <ul className="space-y-3">{available.map(item => <li key={item.id}><button className="w-full rounded-2xl border border-white/15 p-5 text-left" onClick={() => { setBook(item); setChapter(Math.max(0, Math.min(Number(accountStorage.getItem(`reading_chapter_${item.id}`) || "0"), Math.max(0, (item.chapters?.length || 1) - 1)))) }}><strong className="block">{item.title}</strong><span className="text-sm text-zinc-400">{item.author}</span></button></li>)}</ul>}

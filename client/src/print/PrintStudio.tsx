@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import * as Dialog from "@radix-ui/react-dialog"
 import { ArrowLeft, ArrowRight, BookOpen, Check, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, Layers3, Loader2, Printer, RotateCcw, SlidersHorizontal, TriangleAlert, X, ZoomIn } from "lucide-react"
 import { useSettings } from "@/context/SettingsContext"
-import { DEFAULT_EDITION, editionSettings, imposeBooklet, pageSize, printLabels, useTemplate, type EditionLayout, type EditionSettings, type PdfCopy, type PrintBook, type PrintDestination, type PrintIssue } from "./model"
+import { DEFAULT_EDITION, editionSettings, imposeBooklet, pageSize, printLabels, printSourceCredits, useTemplate, type EditionLayout, type EditionSettings, type PdfCopy, type PrintBook, type PrintDestination, type PrintIssue } from "./model"
 import { issueText, printText } from "./strings"
 import type { CoverLayout, PrintImage } from "./cover"
 import type { ExportKind, WorkerRequest, WorkerResponse } from "./print.worker"
@@ -99,7 +99,7 @@ export default function PrintStudio({ book, copy, destination, onClose }: { book
   const report = () => {
     if (!result || busy) return
     const l = result.interior, c = result.cover
-    const lines = ["TLOQUE · " + t("title"), book.title, book.author, "", t("format") + ": " + t(settings.destination),
+    const lines = ["TLOQUE · " + t("title"), book.title, book.author, ...printSourceCredits(book, printLabels(language)), "", t("format") + ": " + t(settings.destination),
       t("trim") + ": " + l.width + " × " + l.height + " mm", l.pages.length + " " + t("pages") + " · " + l.wordCount + " " + t("words"),
       t("typeHint") + " · " + settings.bodyPt + " pt · " + t("leading") + ": " + settings.leading,
       t("margins") + ": " + (["inner", "outer", "top", "bottom"] as const).map(k => t(k) + " " + settings[k]).join("; "),

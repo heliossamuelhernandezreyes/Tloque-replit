@@ -153,6 +153,18 @@ try {
     assert.equal((await request('/api/admin/frames', { role: 'finance', method: 'POST', body: {} })).status, 403);
     assert.equal((await request('/api/admin/frames', { role: 'visual', method: 'POST', body: {} })).status, 400);
   });
+  await check('Catalogue cursors and server search reach older books without sending manuscripts', async () => {
+    const { rows: [needle] } = await client.query("insert into books(title,author,status,content) values('Needle older edition','Pagination fixture','published','Private heavy payload') returning id");
+    await client.query("insert into books(title,author,status,content) select 'Page fixture ' || n,'Pagination fixture','published',repeat('body ',1000) from generate_series(1,120) n");
+    const first = await request('/api/books?limit=50', { role: 'reader' });
+    assert.equal(first.data.length, 50); assert.ok(first.data.every(item => !('content' in item) && !('chapters' in item)));
+    const second = await request('/api/books?limit=50&before=' + first.headers.get('X-Next-Cursor'), { role: 'reader' });
+    assert.equal(second.data.length, 50);
+    assert.ok(second.data.every(item => item.id < Math.min(...first.data.map(book => book.id))));
+    const result = await request('/api/books?search=Needle%20older', { role: 'reader' });
+    assert.deepEqual(result.data.map(book => book.id), [needle.id]);
+    assert.equal((await request('/api/books?limit=1.5', { role: 'reader' })).data.length, 1);
+  });
   await check('Private manuscripts remain scoped to owner or catalog capability', async () => {
     for (const role of ['reader', 'visual', 'audio', 'finance', 'access']) {
       assert.equal((await request('/api/books/' + book.id, { role })).status, 404);
@@ -201,6 +213,9 @@ try {
     assert.equal(saved.data.revision, 2);
   });
   await check('Private responses and QR status are not cached', async () => {
+    const securityHeaders = (await request('/healthz')).headers;
+    assert.match(securityHeaders.get('content-security-policy'), /connect-src[^;]*https:/);
+    assert.doesNotMatch(securityHeaders.get('content-security-policy').split(';').find(value => value.trim().startsWith('script-src')), /https:|unsafe-eval/);
     for (const path of ['/api/auth/me', '/api/wallet', '/api/claim/fixture-not-found']) {
       assert.match((await request(path, { role: 'reader' })).headers.get('cache-control'), /no-store/);
     }
