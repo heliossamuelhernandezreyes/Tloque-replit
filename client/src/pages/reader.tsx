@@ -932,6 +932,11 @@ export default function Reader() {
                 style={{ color: gc.color + "77" }}>
                 {t("finish")}
               </p>
+              <button className="mb-4 rounded-full border border-current px-4 py-2 text-sm" onClick={event => {
+                if (numericBookId !== null) pushProgress(numericBookId, activeChapter, activeChapter, true)
+                event.currentTarget.textContent = "Lectura terminada ✓"
+                event.currentTarget.disabled = true
+              }}>Marcar lectura como terminada</button>
 
               <p className="text-sm font-sans leading-relaxed mb-1"
                 style={{ color: textColor + "70" }}>

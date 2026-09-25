@@ -110,6 +110,36 @@ try {
       assert.equal(me.data.capabilities[role === 'access' ? 'manageFinance' : 'manageAdmins'], false);
     }
   });
+  await check('Partial book/profile updates preserve omitted fields and chapter completion is explicit', async () => {
+    const created = await request('/api/books', { role: 'author', method: 'POST', body: { title: 'Single chapter', author: 'Fixture', status: 'published', content: 'Complete story' } });
+    assert.equal(created.status, 201, JSON.stringify(created.data));
+    const updated = await request(`/api/books/${created.data.id}`, { role: 'author', method: 'PUT', body: { title: 'Renamed chapter', expectedRevision: created.data.revision } });
+    assert.equal(updated.status, 200, JSON.stringify(updated.data)); assert.equal(updated.data.status, 'published');
+    await client.query('update users set social_links=$1 where id=$2', [JSON.stringify({ website: 'https://example.test/author' }), users.author.id]);
+    assert.equal((await request('/api/profile', { role: 'author', method: 'PATCH', body: { bio: 'Only bio changes' } })).status, 200);
+    assert.equal((await client.query('select social_links from users where id=$1', [users.author.id])).rows[0].social_links.website, 'https://example.test/author');
+    const progress = { bookId: String(created.data.id), chapter: 0, maxChapter: 0 };
+    assert.equal((await request('/api/sync/progress', { role: 'author', method: 'PUT', body: progress })).status, 200);
+    assert.equal((await request(`/api/books/${created.data.id}/hearts`, { role: 'author' })).data.finishers, 0);
+    assert.equal((await request('/api/sync/progress', { role: 'author', method: 'PUT', body: { ...progress, completed: true } })).status, 200);
+    assert.equal((await request(`/api/books/${created.data.id}/hearts`, { role: 'author' })).data.finishers, 1);
+  });
+  await check('New cloud drafts are private and concurrent retries create exactly one work', async () => {
+    const body = { draftId: 'new-draft-fixture', data: { title: 'Private cloud draft', author: 'Fixture', content: 'Recoverable private work' } };
+    const replies = await Promise.all([0, 1].map(instance => request('/api/books/drafts', { role: 'author', instance, method: 'POST', body })));
+    assert.ok(replies.every(result => result.status === 201), JSON.stringify(replies));
+    assert.equal(replies[0].data.id, replies[1].data.id); assert.equal(replies[0].data.status, 'draft');
+    const id = replies[0].data.id;
+    assert.equal((await request(`/api/books/${id}`, { role: 'reader' })).status, 404);
+    const revisions = await request(`/api/books/${id}/revisions`, { role: 'author' });
+    assert.equal(revisions.status, 200); assert.equal(revisions.data.revisions.length, 1);
+    assert.ok(!('snapshot' in revisions.data.revisions[0]));
+    const exported = await request('/api/account/export', { role: 'author' });
+    assert.equal(exported.status, 200); assert.equal(exported.data.schema, 'tloque-account-export@2');
+    assert.ok(exported.data.authorship.revisions.some(item => item.bookId === id && item.snapshot.content === 'Recoverable private work'));
+    const catalog = await request('/api/books?limit=1', { role: 'author' });
+    assert.ok(catalog.data.length <= 1); assert.ok(catalog.data.every(item => !('content' in item) && !('chapters' in item)));
+  });
   await check('Role matrix rejects access to other administrative areas', async () => {
     const areas = {
       catalog: '/api/admin/books/all', audio: '/api/admin/audio/assets',

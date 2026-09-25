@@ -6,8 +6,9 @@ import { createHash } from "node:crypto"
 import type { AddressInfo } from "node:net"
 import type { Client } from "@replit/object-storage"
 import { createLazyAudioStorage } from "../server/audioStorage"
-import { registerVisualUploadRoutes } from "../server/visualUploads"
 import { modelFixture } from "./fixtures/animated-model"
+process.env.DATABASE_URL ||= "postgresql://test:test@127.0.0.1:5432/tloque_test"
+const { registerVisualUploadRoutes } = await import("../server/visualUploads")
 
 test("modelos: exige sesión, valida antes de guardar y recupera exactamente el GLB persistido", async () => {
   const assets = new Map<string, Buffer>(); let writes = 0, broken = false
@@ -17,7 +18,7 @@ test("modelos: exige sesión, valida antes de guardar y recupera exactamente el 
     downloadAsStream: (key: string) => { if (!assets.has(key)) { const s = new Readable({ read() { this.destroy(new Error("missing")) } }); return s }; return Readable.from(assets.get(key)!) },
   } as unknown as Client
   const app = express()
-  registerVisualUploadRoutes(app, { storage: createLazyAudioStorage(() => fake), authenticate: (req, res, next) => req.get("X-Fixture-User") ? next() : void res.status(401).end() })
+  registerVisualUploadRoutes(app, { storage: createLazyAudioStorage(() => fake), reserve: async () => true, finish: async () => {}, authenticate: (req, res, next) => req.get("X-Fixture-User") ? next() : void res.status(401).end() })
   const server = app.listen(0, "127.0.0.1"); await new Promise<void>(resolve => server.once("listening", resolve))
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   const bytes = modelFixture(), headers = { "Content-Type": "model/gltf-binary", "X-Fixture-User": "author" }

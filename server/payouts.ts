@@ -16,6 +16,15 @@ import { hasOpenPaymentIncidents } from "./paymentIncidents"
 
 const ACTIVE_PAYOUT_STATES = ["requested", "processing", "processing_unknown"]
 
+// Stripe may forget idempotency keys after 24 h. Older uncertain transfers
+// require reconciliation, never a new blind transfer. A live worker has 2 min.
+export function canClaimPayout(row: { status: string; processedAt: Date | null; updatedAt: Date }, now = Date.now()): boolean {
+  if (row.status === "requested") return true
+  if (!["processing", "processing_unknown"].includes(row.status) || !row.processedAt) return false
+  if (now - row.processedAt.getTime() >= 23 * 60 * 60_000) return false
+  return row.status === "processing_unknown" || now - row.updatedAt.getTime() >= 120_000
+}
+
 export function payoutSystemEnabled(): boolean {
   return Boolean(
     process.env.STRIPE_SECRET_KEY
@@ -72,7 +81,7 @@ async function stripeConnectRequest<T>(
   if (!response.ok) {
     throw new StripeConnectError(
       String(payload?.error?.message || "Stripe rechazó la operación"),
-      response.status < 500 && response.status !== 429,
+      response.status < 500 && ![409, 429].includes(response.status),
       String(payload?.error?.code || payload?.error?.type || "stripe_rejected"),
     )
   }
@@ -191,19 +200,24 @@ async function storeAccountSnapshot(userId: number, account: StripeAccount) {
   return snapshot
 }
 
-async function releaseReservedEarnings(payoutId: number, status: "failed" | "rejected" | "reversed", failureCode: string, adminUserId?: number) {
-  await db.transaction(async tx => {
+async function releaseReservedEarnings(payoutId: number, status: "failed" | "rejected" | "reversed", failureCode: string, adminUserId?: number, claim?: Date) {
+  return db.transaction(async tx => {
+    await tx.execute(sql`select pg_advisory_xact_lock(73001, ${payoutId})`)
+    const [current] = await tx.select().from(authorPayouts).where(eq(authorPayouts.id, payoutId))
+    const expected = status === "rejected" ? ["requested"] : status === "reversed" ? ["transferred", "attention"] : ["processing"]
+    if (!current || !expected.includes(current.status) || (claim && current.updatedAt.getTime() !== claim.getTime())) return false
     await tx.update(authorPayouts).set({
       status,
       failureCode: failureCode.slice(0, 200),
-      adminUserId: adminUserId || null,
+      adminUserId: adminUserId ?? current.adminUserId,
       processedAt: new Date(),
       updatedAt: new Date(),
     }).where(eq(authorPayouts.id, payoutId))
     await tx.update(authorEarnings).set({ status: "accrued", payoutId: null }).where(and(
       eq(authorEarnings.payoutId, payoutId),
-      eq(authorEarnings.status, "reserved"),
+      inArray(authorEarnings.status, status === "reversed" ? ["reserved", "paid_out"] : ["reserved"]),
     ))
+    return true
   })
 }
 
@@ -347,12 +361,19 @@ export function registerPayoutRoutes(app: Express) {
 
     let payout: any
     let account: any
+    const claim = new Date()
+    let claimed = false
+    let wasUncertain = false
     try {
       const prepared = await db.transaction(async tx => {
         await tx.execute(sql`select pg_advisory_xact_lock(73001, ${payoutId})`)
         if (await hasOpenPaymentIncidents(tx)) return { blockedByIncident: true as const }
         const [row] = await tx.select().from(authorPayouts).where(eq(authorPayouts.id, payoutId))
-        if (!row || !["requested", "processing", "processing_unknown"].includes(row.status)) return null
+        if (!row || !canClaimPayout(row, claim.getTime())) return null
+        wasUncertain = row.status !== "requested"
+        await tx.update(authorPayouts).set({
+          status: "processing", adminUserId, processedAt: row.processedAt || claim, failureCode: "", updatedAt: claim,
+        }).where(eq(authorPayouts.id, payoutId))
         const [connected] = await tx.select().from(authorPayoutAccounts)
           .where(eq(authorPayoutAccounts.userId, row.authorUserId))
         if (!connected) return { payout: row, account: null }
@@ -362,30 +383,26 @@ export function registerPayoutRoutes(app: Express) {
         if (reserved.reduce((sum, earning) => sum + earning.authorCents, 0) !== row.amountCents) {
           return { payout: row, account: connected, invalidLedger: true }
         }
-        await tx.update(authorPayouts).set({
-          status: "processing", adminUserId, processedAt: new Date(), failureCode: "", updatedAt: new Date(),
-        }).where(eq(authorPayouts.id, payoutId))
         return { payout: row, account: connected, invalidLedger: false }
       })
       if (prepared && "blockedByIncident" in prepared) {
         return res.status(409).json({ message: "Hay un reembolso o contracargo pendiente de conciliación" })
       }
-      if (!prepared) return res.status(409).json({ message: "La liquidación ya fue procesada o no existe" })
+      if (!prepared) return res.status(409).json({ message: "La liquidación no está disponible: está en proceso, terminada o requiere conciliación" })
+      claimed = true
       payout = prepared.payout
       account = prepared.account
       if (prepared.invalidLedger) {
-        await releaseReservedEarnings(payoutId, "failed", "ledger_mismatch", adminUserId)
-        return res.status(409).json({ message: "La liquidación no coincide con las ganancias reservadas" })
+        throw new StripeConnectError("La liquidación no coincide con las ganancias reservadas", true, "ledger_mismatch")
       }
       if (!account) {
-        await releaseReservedEarnings(payoutId, "failed", "missing_account", adminUserId)
-        return res.status(409).json({ message: "El autor no tiene una cuenta de liquidación" })
+        throw new StripeConnectError("El autor no tiene una cuenta de liquidación", true, "missing_account")
       }
       const stripeAccount = await retrieveStripeAccount(account.providerAccountId)
       await storeAccountSnapshot(payout.authorUserId, stripeAccount)
       if (!payoutAccountReady(stripeAccount)) {
-        await db.update(authorPayouts).set({ status: "requested", failureCode: "account_not_ready", updatedAt: new Date() })
-          .where(eq(authorPayouts.id, payoutId))
+        await db.update(authorPayouts).set({ status: wasUncertain ? "processing_unknown" : "requested", processedAt: wasUncertain ? payout.processedAt : null, failureCode: "account_not_ready", updatedAt: new Date() })
+          .where(and(eq(authorPayouts.id, payoutId), eq(authorPayouts.status, "processing"), eq(authorPayouts.updatedAt, claim)))
         return res.status(409).json({ message: "La cuenta Stripe del autor no está lista" })
       }
       const transferRef = await createStripeTransfer({
@@ -396,9 +413,11 @@ export function registerPayoutRoutes(app: Express) {
         accountId: account.providerAccountId,
       })
       await db.transaction(async tx => {
-        await tx.update(authorPayouts).set({
+        await tx.execute(sql`select pg_advisory_xact_lock(73001, ${payoutId})`)
+        const saved = await tx.update(authorPayouts).set({
           status: "transferred", providerRef: transferRef, completedAt: new Date(), updatedAt: new Date(),
-        }).where(eq(authorPayouts.id, payoutId))
+        }).where(and(eq(authorPayouts.id, payoutId), eq(authorPayouts.status, "processing"), eq(authorPayouts.updatedAt, claim))).returning({ id: authorPayouts.id })
+        if (!saved.length) throw new Error("Payout claim changed; reconciliation required")
         await tx.update(authorEarnings).set({ status: "paid_out" }).where(and(
           eq(authorEarnings.payoutId, payoutId), eq(authorEarnings.status, "reserved"),
         ))
@@ -406,15 +425,16 @@ export function registerPayoutRoutes(app: Express) {
       res.json({ ok: true, payoutId, status: "transferred" })
     } catch (error: any) {
       const stripeError = error instanceof StripeConnectError ? error : null
-      if (stripeError?.definitive) {
-        await releaseReservedEarnings(payoutId, "failed", stripeError.code, adminUserId).catch(() => undefined)
-      } else {
+      const canRelease = claimed && !wasUncertain && stripeError?.definitive
+      if (canRelease) {
+        await releaseReservedEarnings(payoutId, "failed", stripeError.code, adminUserId, claim).catch(() => undefined)
+      } else if (claimed) {
         await db.update(authorPayouts).set({
           status: "processing_unknown", failureCode: stripeError?.code || "unknown", updatedAt: new Date(),
-        }).where(eq(authorPayouts.id, payoutId)).catch(() => undefined)
+        }).where(and(eq(authorPayouts.id, payoutId), eq(authorPayouts.status, "processing"), eq(authorPayouts.updatedAt, claim))).catch(() => undefined)
       }
       res.status(502).json({
-        message: stripeError?.definitive
+        message: canRelease
           ? "Stripe rechazó la transferencia; las ganancias fueron liberadas"
           : "El resultado de Stripe es incierto; se conservaron reservadas para reintentar con la misma clave",
       })
@@ -424,10 +444,10 @@ export function registerPayoutRoutes(app: Express) {
   app.post("/api/admin/payouts/:id/reject", requireAdmin, rateLimit(60_000, 10), async (req, res) => {
     const payoutId = Number(req.params.id)
     if (!Number.isSafeInteger(payoutId) || payoutId <= 0) return res.status(400).json({ message: "Liquidación inválida" })
-    const [payout] = await db.select().from(authorPayouts).where(eq(authorPayouts.id, payoutId))
-    if (!payout || payout.status !== "requested") return res.status(409).json({ message: "La liquidación ya fue procesada o no existe" })
     const reason = String(req.body?.reason || "admin_rejected").trim().slice(0, 200) || "admin_rejected"
-    await releaseReservedEarnings(payoutId, "rejected", reason, (req.user as any).id)
+    if (!await releaseReservedEarnings(payoutId, "rejected", reason, (req.user as any).id)) {
+      return res.status(409).json({ message: "La liquidación ya fue procesada o no existe" })
+    }
     res.json({ ok: true })
   })
 
@@ -464,10 +484,8 @@ export function registerPayoutRoutes(app: Express) {
           }).where(and(eq(authorPayouts.providerRef, transferId), eq(authorPayouts.status, "transferred")))
         } else if (transferId && amount > 0 && amountReversed >= amount) {
           const [payout] = await db.select().from(authorPayouts).where(eq(authorPayouts.providerRef, transferId))
-          if (payout && payout.status === "transferred") {
+          if (payout) {
             await releaseReservedEarnings(payout.id, "reversed", "stripe_transfer_reversed")
-            await db.update(authorEarnings).set({ status: "accrued", payoutId: null })
-              .where(and(eq(authorEarnings.payoutId, payout.id), eq(authorEarnings.status, "paid_out")))
           }
         }
       }

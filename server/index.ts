@@ -9,6 +9,8 @@ import { registerNativeSamplePackRoutes } from "./nativeSamplePackRoutes"
 import { randomUUID } from "crypto"
 import { pool } from "./db"
 import { assertClaimKeyConfiguration } from "./claimKeys"
+import { recoverExpiredAudiobookJobs } from "./speech"
+import { recoverExpiredAiRequests } from "./aiRequests"
 
 assertClaimKeyConfiguration()
 
@@ -107,6 +109,13 @@ app.get("/readyz", async (_req, res) => {
   // identidad, manifest y procedencia exactos.
   registerNativeSamplePackRoutes(app)
   await registerRoutes(httpServer, app)
+  const recoverWork = async () => {
+    if (shuttingDown) return
+    try { await recoverExpiredAudiobookJobs(); await recoverExpiredAiRequests() }
+    catch { log("No se pudo recuperar el trabajo vencido; se reintentará", "recovery") }
+  }
+  void recoverWork()
+  setInterval(() => { void recoverWork() }, 60_000).unref()
 
   // Una ruta API inexistente nunca debe caer al index.html con estado 200.
   // Además de confundir al cliente, ese fallback ocultaba errores de versión.

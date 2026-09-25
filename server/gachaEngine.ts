@@ -91,7 +91,7 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
       select c.rarity, count(distinct c.book_id) as obras
       from book_cards c
       join books b on b.id = c.book_id
-      where c.in_gacha_pool = true
+      where c.in_gacha_pool = true and c.archived = false
         and b.status = 'published'
         and c.book_id is not null
         ${excluded.length ? sql`and coalesce(b.genre, '') <> all(${excluded})` : sql``}
@@ -184,7 +184,11 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
     }
     const cardId = Number(cartas?.rows?.[0]?.id)
 
-    const [card] = await tx.select().from(bookCards).where(eq(bookCards.id, cardId))
+    const [card] = await tx.select().from(bookCards).where(eq(bookCards.id, cardId)).for("share")
+    if (!card || card.archived || !card.inGachaPool) {
+      await refundTintaDebit(tx, { userId, debitId: charged.id })
+      return { ok: false as const, code: 404 as const, message: "La tarjeta fue retirada; no se cobró el intento" }
+    }
     const [book] = await tx.select().from(books).where(eq(books.id, bookId))
     const authorId = book?.authorId ?? null
 

@@ -71,13 +71,14 @@ export function pushStreak(days: number, lastDate: string) {
   }).catch(() => {})
 }
 
-export function pushProgress(bookId: string | number, chapter: number, maxChapter: number) {
+export function pushProgress(bookId: string | number, chapter: number, maxChapter: number, completed = false) {
   try { localStorage.setItem(`reading_updated_${bookId}`, String(Date.now())) } catch {}
+  if (completed) localStorage.setItem(`reading_completed_${bookId}`, "true")
   fetch("/api/sync/progress", {
     method:      "PUT",
     headers:     { "Content-Type": "application/json" },
     credentials: "include",
-    body:        JSON.stringify({ bookId: String(bookId), chapter, maxChapter }),
+    body:        JSON.stringify({ bookId: String(bookId), chapter, maxChapter, completed: completed || localStorage.getItem(`reading_completed_${bookId}`) === "true" }),
   }).catch(() => {})
 }
 

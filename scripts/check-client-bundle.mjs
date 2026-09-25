@@ -40,6 +40,16 @@ function visit(key) {
 }
 visit(appEntry)
 for (const [key, chunk] of Object.entries(manifest)) if (chunk.isEntry) visit(key)
+let initialBytes = 0, initialGzip = 0
+for (const file of new Set([...seen].map(key => manifest[key].file))) {
+  const content = await readFile(path.resolve("dist/public", file))
+  initialBytes += content.byteLength
+  initialGzip += gzipSync(content, { level: 9 }).byteLength
+}
+if (initialBytes > 850_000 || initialGzip > 280_000) {
+  throw new Error(`El grafo de arranque excede 850 KB / 280 KB gzip: ${initialBytes} B / ${initialGzip} B gzip`)
+}
+console.log(`Grafo estático completo (${seen.size} módulos): ${initialBytes} B / ${initialGzip} B gzip`)
 const visualChunks = files.filter(name => /^(visual-3d|VisualSurface)-.*\.js$/.test(name))
 if (visualChunks.length !== 2) throw new Error("Se esperaban el renderizador y sus escenas como dos bloques diferidos")
 let visualGzip = 0

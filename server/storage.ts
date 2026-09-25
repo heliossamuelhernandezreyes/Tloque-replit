@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { isDeepStrictEqual } from "node:util"
 import { books, bookRevisions, comments, type CreateBookRequest, type UpdateBookRequest, type BookResponse, type Comment } from "@shared/schema";
 import { eq, and, desc, getTableColumns, inArray, sql } from "drizzle-orm";
 
@@ -18,7 +19,7 @@ type BookUpdateOptions = {
 }
 
 export interface IStorage {
-  getBooks(): Promise<any[]>;
+  getBooks(options?: { before?: number; limit?: number; author?: string }): Promise<any[]>;
   getBooksByAuthor(authorId: number): Promise<any[]>;
   getBook(id: number): Promise<BookResponse | undefined>;
   findBookByGutenbergId(gutenbergId: number): Promise<BookResponse | undefined>;
@@ -29,7 +30,7 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async getBooks(): Promise<any[]> {
+  async getBooks(options: { before?: number; limit?: number; author?: string } = {}): Promise<any[]> {
     // El catálogo es una vista ligera: mandar el texto y todos los capítulos
     // de cada obra hacía crecer el primer arranque con toda la biblioteca.
     // El contenido completo se obtiene únicamente al abrir /api/books/:id.
@@ -40,7 +41,10 @@ export class DatabaseStorage implements IStorage {
         when jsonb_typeof(${books.chapters}) = 'array' then jsonb_array_length(${books.chapters})
         when length(${books.content}) > 0 then 1 else 0 end`,
       openingLine: sql<string>`left(coalesce(nullif(${books.chapters}->0->>'content', ''), ${books.content}, ''), 320)`,
-    }).from(books).where(eq(books.status, "published"))
+    }).from(books).where(and(eq(books.status, "published"),
+      options.before ? sql`${books.id} < ${options.before}` : undefined,
+      options.author ? sql`lower(${books.author}) = lower(${options.author})` : undefined,
+    )).orderBy(desc(books.id)).limit(Math.min(100, Math.max(1, options.limit || 50)))
   }
 
   async getBooksByAuthor(authorId: number): Promise<any[]> {
@@ -101,6 +105,8 @@ export class DatabaseStorage implements IStorage {
       const condition = options.expectedRevision === undefined
         ? eq(books.id, id)
         : and(eq(books.id, id), eq(books.revision, options.expectedRevision))
+      const [currentBook] = await tx.select().from(books).where(condition).for("update")
+      if (currentBook && Object.entries(safeUpdates).every(([key, value]) => value === undefined || isDeepStrictEqual((currentBook as any)[key], value))) return currentBook
       const [updated] = await tx.update(books)
         .set({
           ...safeUpdates,

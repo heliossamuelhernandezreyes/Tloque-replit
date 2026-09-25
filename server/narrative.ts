@@ -32,9 +32,11 @@ import { db } from "./db"
 import { hasCapability } from "./auth"
 import { rateLimit } from "./rateLimit"
 import { hasActiveSubscription } from "./subscription"
+import { AiRequestError, reserveAiRequest, finishAiRequest, failAiRequest } from "./aiRequests"
 import {
   directChapterWithOracle,
   oracleConfig,
+  oracleMasterPrompt,
   type OracleScoreSummary,
 } from "./oracle"
 
@@ -255,11 +257,12 @@ export function registerNarrativeRoutes(app: Express) {
     if (!hasActiveSubscription(req.user as any, "oracle")) return res.status(403).json({ message: "Oráculo requiere una suscripción Estética o Audio activa" })
     if (!oracleConfig()) return res.status(503).json({ message: "Oráculo aún no está configurado" })
 
+    let reservationId: number | undefined
     try {
       const [prior] = await db.select().from(paperUsageEvents)
         .where(eq(paperUsageEvents.requestKey, parsed.data.requestKey))
       if (prior) {
-        if (prior.userId !== userId) return res.status(409).json({ message: "La solicitud ya fue utilizada" })
+        if (prior.userId !== userId || prior.metadata?.bookId !== bookId || prior.metadata?.chapterIndex !== chapterIndex) return res.status(409).json({ message: "La solicitud ya fue utilizada" })
         const savedProject = (prior.metadata as any)?.project
         if (savedProject) return res.json({
           project: narrativeProjectSchema.parse(savedProject),
@@ -280,30 +283,27 @@ export function registerNarrativeRoutes(app: Express) {
         eq(narrativeProjects.chapterIndex, chapterIndex),
       ))
       const estimatedInput = Math.ceil(content.length / 4)
-      const estimatedPaper = paperChargeFor("oracle", estimatedInput, 4_000)
-      if (await paperBalance(userId) < estimatedPaper) {
-        return res.status(402).json({ message: `Necesitas aproximadamente ${estimatedPaper} de Papel para analizar este capítulo` })
-      }
+      const scores = await oracleCatalog()
+      // UTF-8 bytes conservatively bound input tokens, including the catalog
+      // and system prompt. The provider is bounded to 4,000 output tokens.
+      const estimatedPaper = paperChargeFor("oracle", Buffer.byteLength(content) + Buffer.byteLength(oracleMasterPrompt(paragraphCountFor(content), scores)) + 512, 4_000)
+      const inputHash = contentHash(JSON.stringify({ bookId, chapterIndex, content }))
+      const reserved = await reserveAiRequest(userId, parsed.data.requestKey, inputHash, estimatedPaper)
+      if (reserved.result) return res.json({ ...reserved.result, replayed: true })
+      reservationId = reserved.id
 
       const result = await directChapterWithOracle({
         bookId,
         chapterIndex,
         revision: Math.max(1, current?.revision ?? 1),
         content,
-        scores: await oracleCatalog(),
+        scores,
       })
       const inputTokens = result.usage.inputTokens || estimatedInput
       const outputTokens = result.usage.outputTokens || Math.ceil(JSON.stringify(result.project).length / 4)
       const charged = paperChargeFor("oracle", inputTokens, outputTokens)
 
-      await db.transaction(async tx => {
-        await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)
-        const available = await paperBalance(userId, tx as any)
-        if (available < charged) throw new Error("PAPER_BALANCE_CHANGED")
-        const [usage] = await tx.insert(paperUsageEvents).values({
-          userId,
-          requestKey: parsed.data.requestKey,
-          feature: "oracle",
+      await finishAiRequest(reserved.id, {
           provider: result.provider,
           inputUnits: inputTokens,
           outputUnits: outputTokens,
@@ -314,24 +314,16 @@ export function registerNarrativeRoutes(app: Express) {
             model: result.model,
             project: result.project,
           },
-        }).returning()
-        if (charged > 0) await tx.insert(walletLedger).values({
-          userId,
-          currency: "papel",
-          delta: -charged,
-          reason: "spend_ai",
-          refType: "paper_usage",
-          refId: usage.id,
-        })
-      })
+        }, { project: result.project, paperCharged: charged })
       res.json({ project: result.project, paperCharged: charged, replayed: false })
     } catch (error) {
-      if (error instanceof Error && error.message === "PAPER_BALANCE_CHANGED") {
-        return res.status(409).json({ message: "Tu saldo de Papel cambió; vuelve a intentarlo" })
+      if (reservationId) await failAiRequest(reservationId).catch(() => undefined)
+      if (error instanceof AiRequestError) {
+        return res.status(error.status).json({ code: error.code, message: error.status === 402 ? "No tienes Papel suficiente para reservar este análisis" : "Esta solicitud ya está en curso, terminó o expiró. Actualiza antes de intentarlo de nuevo." })
       }
       console.error("Oracle narrative direction failed:", error)
-      const message = error instanceof Error ? error.message : "Oráculo no pudo analizar el capítulo"
-      res.status(502).json({ message })
+      res.locals.publicErrorMessage = true
+      res.status(502).json({ message: "Oráculo no pudo completar el análisis. El Papel reservado se devolverá automáticamente.", code: "ORACLE_UNAVAILABLE" })
     }
   })
 

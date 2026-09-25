@@ -115,9 +115,14 @@ export default function Library() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch("/api/admin/books/all", { credentials: "include" })
-        if (!res.ok) return
-        const all = await res.json()
+        const all: any[] = []
+        let cursor = ""
+        do {
+          const res = await fetch(`/api/admin/books/all?status=review${cursor ? `&before=${cursor}` : ""}`, { credentials: "include" })
+          if (!res.ok) return
+          all.push(...await res.json())
+          cursor = res.headers.get("X-Next-Cursor") || ""
+        } while (cursor && !cancelled)
         if (!cancelled) setReviewBooks(all.filter((b: any) => b.status === "review"))
       } catch { /* sin conexión */ }
     })()
@@ -390,7 +395,7 @@ export default function Library() {
             >
               <tab.icon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               {tab.label}
-              {tab.count > 0 && (
+              {(tab.count ?? 0) > 0 && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full"
                   style={{
                     background: tab.key === "catalog"

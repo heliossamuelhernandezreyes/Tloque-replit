@@ -1,5 +1,5 @@
 import { accountFetch as fetch } from "@/lib/account-context"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type BookInput, type BookUpdateInput } from "@shared/routes";
 import { createAccountStore } from "@/lib/account-store";
 import { AccountChangedError } from "@/lib/account-context"
@@ -18,26 +18,29 @@ export class BookConflictError extends Error {
 }
 
 export function useBooks() {
-  return useQuery({
-    queryKey: [api.books.list.path],
-    queryFn: async () => {
+  const query = useInfiniteQuery({
+    queryKey: [api.books.list.path, "pages"],
+    initialPageParam: "",
+    getNextPageParam: (page: { books: any[]; next: string }) => page.next || undefined,
+    queryFn: async ({ pageParam }) => {
       try {
-        const res = await fetch(api.books.list.path, { credentials: "include" });
+        const res = await fetch(`${api.books.list.path}?limit=50${pageParam ? `&before=${encodeURIComponent(pageParam)}` : ""}`, { credentials: "include" });
         if (!res.ok) throw new Error("Failed to fetch books");
         const data = await res.json();
 
         // Cache for offline
-        try { await store.setItem("books_list", data) }
+        try { if (!pageParam) await store.setItem("books_list", data) }
         catch (error) { if (error instanceof AccountChangedError) throw error }
-        return data; // Trusting standard response without strict parse to avoid breakages on missing fields
+        return { books: data as any[], next: res.headers.get("X-Next-Cursor") || "" };
       } catch (error) {
         console.warn("Network fetch failed, attempting offline cache for list...");
         const cached = await store.getItem("books_list");
-        if (cached) return cached as any[];
+        if (cached && !pageParam) return { books: cached as any[], next: "" };
         throw error;
       }
     },
   });
+  return { ...query, data: query.data?.pages.flatMap(page => page.books) }
 }
 
 export function useMyBooks() {
