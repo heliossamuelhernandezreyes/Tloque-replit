@@ -2,12 +2,12 @@ import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/acc
 import { useState } from "react"
 import { motion } from "framer-motion"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Printer, Eye, EyeOff, Heart, Store, BadgeCheck, CircleDashed, UserCheck, Droplets, CreditCard } from "lucide-react"
+import { Loader2, Printer, Heart, Store, BadgeCheck, CircleDashed, UserCheck, Droplets, CreditCard } from "lucide-react"
 import WalletPanel from "@/components/WalletPanel"
 import { useSettings } from "@/context/SettingsContext"
 
 interface Copy {
-  id: number; folio: string; claimKey: string
+  id: number; folio: string; canPrint: boolean
   digitalClaimed: boolean
   claimedByOwner: boolean
 }
@@ -27,7 +27,6 @@ interface Props {
 export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloading, onPrintCopy, premiumUnlocked }: Props) {
   const { t } = useSettings()
   const queryClient = useQueryClient()
-  const [showKeys, setShowKeys] = useState(false)
   const [payMenu, setPayMenu] = useState<"support" | "sale" | null>(null)
   const [showWallet, setShowWallet] = useState(false)
 
@@ -114,14 +113,15 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
 
   const preparePrint = useMutation({
     mutationFn: async (copyId: number) => {
-      const response = await fetch(`/api/tokens/mine?bookId=${bookId}`, { credentials: "include", cache: "no-store" })
-      if (!response.ok) throw new Error("No se pudo verificar el permiso de impresión. Reintenta cuando tengas conexión.")
-      const fresh: { tokens: TokenWithCopies[] } = await response.json()
-      queryClient.setQueryData(["/api/tokens/mine", bookId], fresh)
-      const token = fresh.tokens.find(item => item.copies.some(copy => copy.id === copyId))
-      const copy = token?.copies.find(item => item.id === copyId)
-      if (token?.licenseStatus !== "active" || !copy?.claimKey) throw new Error("El permiso de impresión está suspendido o reembolsado.")
-      onPrintCopy({ folio: copy.folio, key: copy.claimKey })
+      const response = await fetch(`/api/print-copies/${copyId}/prepare`, { method: "POST", credentials: "include", cache: "no-store", headers: { "Content-Type": "application/json" }, body: "{}" })
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.message || "No se pudo verificar el permiso de impresión. Reintenta cuando tengas conexión.")
+      }
+      const prepared: { bookId: number; copy: { folio: string; key: string } } = await response.json()
+      if (prepared.bookId !== bookId || !prepared.copy?.folio || !prepared.copy?.key) throw new Error("No se pudo preparar el ejemplar.")
+      onPrintCopy(prepared.copy)
+
     },
   })
 
@@ -243,12 +243,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
             <p className="text-[10px] font-sans" style={{ color: "rgba(255,255,255,0.45)" }}>
               {allCopies.length} · {t("tokensTitle").toLowerCase()}
             </p>
-            <button onClick={() => setShowKeys(v => !v)}
-              className="flex items-center gap-1 text-[10px] font-sans"
-              style={{ color: "rgba(255,255,255,0.5)" }}>
-              {showKeys ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-              {t("tokenKeyShow")}
-            </button>
+
           </div>
           {preparePrint.isError && <p role="alert" className="px-1 text-xs text-amber-200">{preparePrint.error.message}</p>}
           {allCopies.map(({ copy, kind, licenseStatus }) => {
@@ -272,11 +267,10 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
                     </p>
                     <p className="text-[9px] font-sans" style={{ color: "rgba(255,255,255,0.4)" }}>
                       {licenseStatus === "revoked" ? "Permiso reembolsado" : licenseStatus === "suspended" ? "Permiso suspendido: pago en revisión" : isMineClaim ? t("tokenYourCopy") : isFree ? t("tokenFreeCopy") : t("tokenClaimedCopy")}
-                      {showKeys && <span className="font-mono ml-2" style={{ color: "rgba(201,168,87,0.8)" }}>{copy.claimKey}</span>}
                     </p>
                   </div>
                   <button
-                    disabled={isDownloading || preparePrint.isPending || licenseStatus !== "active" || !copy.claimKey}
+                    disabled={isDownloading || preparePrint.isPending || licenseStatus !== "active" || !copy.canPrint}
                     onClick={() => preparePrint.mutate(copy.id)}
                     aria-label={t("tokenPdfBtn") + " " + copy.folio}
                     className="flex items-center gap-1 text-[10px] font-sans px-2.5 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-40"

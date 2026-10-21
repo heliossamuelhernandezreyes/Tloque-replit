@@ -1,6 +1,8 @@
 import { jsPDF } from "jspdf"
 import qrcode from "qrcode-generator"
-import { PT_MM, imposeBooklet, type EditionLayout, type FontMetrics, type PrintPage } from "./model"
+import { PT_MM, type EditionLayout, type FontMetrics, type GlyphPath, type PrintPage } from "./model"
+import { glyphBounds } from "./inkBounds"
+import { physicalSides, printerProfile, selectPrintSides, type PrintSelection, type PrinterProfile } from "./homeJob"
 
 export type PrintFonts = Record<"normal" | "bold" | "italic", string>
 export function pdfDocument(width: number, height: number, fonts: PrintFonts) {
@@ -52,8 +54,7 @@ export function drawPage(doc: jsPDF, page: PrintPage, dx = 0, dy = 0) {
         for (const item of op.ink) {
           if (item.kind === "image") doc.addImage(item.data, item.data.startsWith("data:image/png") ? "PNG" : "JPEG", item.x + dx, item.y + dy, item.width, item.height)
           else {
-            doc.path(item.path.commands.map(c => ({ op: c.op, c: c.c.map((v, i) => i % 2 ? item.y + dy - v * item.scale : item.x + dx + v * item.scale) })))
-            doc.fill()
+            drawGlyph(doc, item.path, item.x + dx, item.y + dy, item.scale)
           }
         }
       } else if (op.words) op.words.forEach(w => doc.text(w.text, w.x + dx, op.y + dy))
@@ -64,27 +65,51 @@ export function drawPage(doc: jsPDF, page: PrintPage, dx = 0, dy = 0) {
     else drawQr(doc, op.value, op.x + dx, op.y + dy, op.size)
   }
 }
+const glyphForms = new WeakMap<jsPDF, Map<GlyphPath, string>>()
+// One vector Form per glyph, shared across every occurrence and font size.
+// Keep the raw PDF coordinate adapter here; independent rendered QA checks it.
+function drawGlyph(doc: jsPDF, path: GlyphPath, x: number, y: number, scale: number) {
+  let forms = glyphForms.get(doc)
+  if (!forms) { forms = new Map(); glyphForms.set(doc, forms) }
+  let key = forms.get(path)
+  if (!key) {
+    key = "glyph-" + forms.size
+    const b = glyphBounds(path)
+    doc.beginFormObject(b.minX - 1, b.minY - 1, b.maxX - b.minX + 2, b.maxY - b.minY + 2, doc.unitMatrix)
+    const raw = doc.internal as typeof doc.internal & { write(value: string): void }
+    for (const command of path.commands) raw.write(command.c.map(v => String(Math.round(v * 1e6) / 1e6)).join(" ") + " " + command.op)
+    raw.write("f")
+    doc.endFormObject(key); forms.set(path, key)
+  }
+  doc.doFormObject(key, doc.Matrix(scale / PT_MM, 0, 0, scale / PT_MM, x / PT_MM, (doc.internal.pageSize.getHeight() - y) / PT_MM))
+}
 // Isolate jsPDF's version-specific page dictionary adapter; PDF QA verifies it.
 export function setPageBoxes(doc: jsPDF, width: number, height: number, inset = 0) {
   const context = doc.getCurrentPageInfo().pageContext as unknown as Record<string, unknown>
   context.trimBox = { bottomLeftX: inset / PT_MM, bottomLeftY: inset / PT_MM, topRightX: (width - inset) / PT_MM, topRightY: (height - inset) / PT_MM }
   context.bleedBox = { bottomLeftX: 0, bottomLeftY: 0, topRightX: width / PT_MM, topRightY: height / PT_MM }
 }
-export function renderInterior(layout: EditionLayout, fonts: PrintFonts, title: string, imposed = false): ArrayBuffer {
+export function renderInterior(layout: EditionLayout, fonts: PrintFonts, title: string, imposed = false, selection: PrintSelection = {}, inputProfile?: PrinterProfile): ArrayBuffer {
   if (!layout.pages.length || layout.issues.some(i => i.scope === "interior" && i.severity === "error")) throw new Error("Invalid interior")
   const w = layout.width, h = layout.height
   const doc = pdfDocument(imposed ? w * 2 : w, h, fonts)
+  const profile = printerProfile(inputProfile), sides = selectPrintSides(physicalSides(layout, imposed), selection, profile)
+  const isPass = selection.pass === "front" || selection.pass === "back"
+  if (isPass) doc.viewerPreferences({ Duplex: "Simplex" })
   doc.setProperties({ title, creator: "Tloque · Edition Studio", subject: imposed ? "Booklet signatures / Cuadernillos" : "Book interior / Interior", keywords: "Tloque, print edition" })
-  if (imposed) {
-    const plan = imposeBooklet(layout.pages.length, layout.settings.signature)
-    plan.sides.forEach((side, i) => {
-      if (i) doc.addPage()
-      for (const [number, x] of [[side.left, 0], [side.right, w]]) if (layout.pages[number - 1]) drawPage(doc, layout.pages[number - 1], x)
-      setPageBoxes(doc, w * 2, h)
-    })
-  } else {
-    layout.pages.forEach((page, i) => { if (i) doc.addPage(); drawPage(doc, page); setPageBoxes(doc, w, h) })
-    layout.chapters.forEach(ch => doc.outline.add(null, ch.title, { pageNumber: ch.page }))
-  }
+  sides.forEach((side, i) => {
+    if (i) doc.addPage()
+    doc.saveGraphicsState()
+    if (side.side === "back") {
+      // Translate in physical paper coordinates, before concatenating the
+      // rotation, so "move right" keeps its meaning when backs are rotated.
+      doc.setCurrentTransformationMatrix(doc.Matrix(1, 0, 0, 1, profile.offsetX / PT_MM, -profile.offsetY / PT_MM))
+      // Never rotate the automatic-duplex file: its driver owns that flip.
+      if (isPass && profile.rotateBacks) doc.setCurrentTransformationMatrix(doc.Matrix(-1, 0, 0, -1, (imposed ? w * 2 : w) / PT_MM, h / PT_MM))
+    }
+    side.pages.forEach((number, panel) => { if (layout.pages[number - 1]) drawPage(doc, layout.pages[number - 1], imposed ? panel * w : 0) })
+    doc.restoreGraphicsState(); setPageBoxes(doc, imposed ? w * 2 : w, h)
+  })
+  if (!imposed && !isPass && !selection.sheet && !selection.lastSheet) layout.chapters.forEach(ch => doc.outline.add(null, ch.title, { pageNumber: ch.page }))
   return doc.output("arraybuffer")
 }

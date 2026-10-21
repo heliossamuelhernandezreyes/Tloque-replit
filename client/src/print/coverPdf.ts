@@ -45,3 +45,31 @@ export function renderCoverKit(cover: CoverLayout, fonts: PrintFonts, title: str
   doc.setFontSize(7); doc.text(labels.glue, x + pw + 4, y + ph / 2, { angle: 90 })
   return doc.output("arraybuffer")
 }
+
+export function renderHomeCover(cover: CoverLayout, fonts: PrintFonts, title: string, paper: "letter" | "a4", labels: { cut: string; fold: string; glue: string }): ArrayBuffer {
+  if (cover.binding === "bound") return renderCoverKit(cover, fonts, title, paper, labels)
+  if (cover.issues.some(i => i.severity === "error")) throw new Error("Invalid cover")
+  const pw = paper === "letter" ? 215.9 : 210, ph = paper === "letter" ? 279.4 : 297
+  const loose = cover.binding === "loose", w = loose ? pw : ph, h = loose ? ph : pw
+  const doc = pdfDocument(w, h, fonts)
+  doc.viewerPreferences({ Duplex: "Simplex", PrintScaling: "None" })
+  doc.setProperties({ title: title + " · Home cover", creator: "Tloque · Edition Studio", subject: loose ? "Two single-sided full-size cover sheets" : "Single-sided folded booklet cover, no block spine" })
+  const panel = (x: number, width: number, sourceX: number) => {
+    doc.saveGraphicsState(); doc.rect(x, 0, width, h, null); doc.clip(); doc.discardPath()
+    cover.ops.forEach(op => drawCoverOp(doc, op, x - sourceX, -cover.bleed)); doc.restoreGraphicsState()
+  }
+  if (loose) {
+    panel(0, pw, cover.bleed + cover.trimWidth)
+    setPageBoxes(doc, w, h); doc.addPage()
+    panel(0, pw, cover.bleed)
+  } else {
+    if (Math.abs(cover.trimWidth * 2 - w) > .01 || Math.abs(cover.trimHeight - h) > .01) throw new Error("Invalid folded cover")
+    // Ordinary printers leave white edges. A folded cover deliberately uses
+    // that inset instead of pretending that borderless printing is available.
+    doc.saveGraphicsState(); doc.rect(10, 10, w - 20, h - 20, null); doc.clip(); doc.discardPath()
+    cover.ops.forEach(op => drawCoverOp(doc, op, -cover.bleed, -cover.bleed)); doc.restoreGraphicsState()
+    doc.setDrawColor(160); doc.setLineWidth(.15); doc.setLineDashPattern([2, 2], 0)
+    doc.line(w / 2, 3, w / 2, 8); doc.line(w / 2, h - 8, w / 2, h - 3)
+  }
+  setPageBoxes(doc, w, h); return doc.output("arraybuffer")
+}

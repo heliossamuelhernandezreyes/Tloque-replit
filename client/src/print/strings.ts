@@ -78,10 +78,12 @@ export const printText = (language: string) => (key: Key) => (language.startsWit
 export function issueText(language: string, issue: PrintIssue): string {
   const spanish = language.startsWith("es")
   const messages: Record<PrintIssue["code"], [string, string]> = {
+    bindingLimit: ["Este folleto supera 32 páginas. Elige varios cuadernillos o reduce su extensión; no cambiamos su encuadernación automáticamente.", "This stapled booklet exceeds 32 pages. Choose multiple signatures or reduce its length; binding is never changed automatically."],
+    verseWrap: ["Un verso no cabe en un renglón y necesita ajuste. Se conservaron sus espacios; revisa el formato o la línea antes de imprimir.", "A verse line exceeds the available width. Its spaces were preserved; review the format or line before printing."],
     artworkResolution: ["Un dibujo interior queda por debajo de 300 ppp. Usa una imagen mayor o reduce su tamaño de impresión. Resolución:", "An interior drawing is below 300 ppi. Use a larger image or reduce its print size. Resolution:"],
     artworkPosition: ["Una ilustración apunta a un capítulo o párrafo que ya no existe. Quita la ilustración y vuelve a colocarla.", "An illustration references a chapter or paragraph that no longer exists. Remove and place it again."],
     outlinedText: ["Los caracteres adicionales se conservan como trazos y dibujos. Esos renglones no serán texto seleccionable en el PDF.", "Additional characters are preserved as outlines and drawings. Those lines will not be selectable text in the PDF."],
-    layoutOverflow: ["Un título, crédito o entrada del índice rebasa el espacio de la página. Revisa el texto o el formato antes de imprimir.", "A title, credit or contents entry exceeds its page area. Review the text or format before printing."],
+    layoutOverflow: ["Un elemento de texto o su dibujo rebasa el papel o el espacio de la página. Revisa el texto, la fuente o el formato antes de imprimir.", "Text or its glyph artwork exceeds the paper or page area. Review the text, font or format before printing."],
     missingText: ["Falta el texto completo del libro.", "The complete book text is missing."],
     tooLong: ["Esta edición supera 6 millones de caracteres o 1800 páginas. Divídela en volúmenes.", "This edition exceeds 6 million characters or 1800 pages. Split it into volumes."],
     missingGlyph: ["Falta la forma de un carácter. En Diseño → Caracteres e ilustraciones, añade una fuente que lo contenga o asígnale un dibujo.", "A character shape is missing. In Design → Characters and illustrations, add a font containing it or assign a drawing."],

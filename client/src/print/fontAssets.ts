@@ -6,8 +6,17 @@ import type { PrintFonts } from "./pdfRuntime"
 
 export const fontUrls = { normal: regular, bold, italic }
 let loaded: Promise<PrintFonts> | undefined
+async function fontResponse(source: string): Promise<Response> {
+  if ("caches" in globalThis) {
+    try {
+      const cached = await (await caches.open("tloque-print-v2")).match(source, { ignoreVary: true })
+      if (cached) return cached
+    } catch { /* online loading still works if storage is unavailable */ }
+  }
+  return fetch(source, { signal: AbortSignal.timeout(20000) })
+}
 export async function loadFallbackFont(): Promise<string> {
-  const response = await fetch(fallback, { signal: AbortSignal.timeout(20000) })
+  const response = await fontResponse(fallback)
   if (!response.ok) throw new Error("fonts")
   return bytesBase64(new Uint8Array(await response.arrayBuffer()))
 }
@@ -18,7 +27,7 @@ export function bytesBase64(bytes: Uint8Array): string {
 }
 export function loadPrintFonts(): Promise<PrintFonts> {
   if (!loaded) loaded = Promise.all(Object.entries(fontUrls).map(async ([style, url]) => {
-    const response = await fetch(url, { signal: AbortSignal.timeout(20000) })
+    const response = await fontResponse(url)
     if (!response.ok) throw new Error("fonts")
     const bytes = new Uint8Array(await response.arrayBuffer())
     if (bytes.length < 1000 || bytes.length > 2_000_000) throw new Error("fonts")

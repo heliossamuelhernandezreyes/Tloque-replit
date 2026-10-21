@@ -1,11 +1,12 @@
 // Geometry in millimetres; type sizes in PostScript points.
 export const PT_MM = 25.4 / 72
-export const PRINT_VERSION = 1
+export const PRINT_VERSION = 2
 export type PrintDestination = "press" | "home" | "booklet"
 export type PrintTemplate = "classic" | "contemporary" | "large"
 export type FontStyle = "normal" | "bold" | "italic"
 export interface PrintBook {
   id?: string | number; title: string; author: string; synopsis?: string
+  revision?: number
   coverUrl?: string; backCoverUrl?: string; originalLanguage?: string
   publicationYear?: number | null; isClassic?: boolean; content?: string
   chapters?: { title: string; content: string }[]
@@ -19,12 +20,14 @@ export interface EditionSettings {
   recto: boolean; toc: boolean; headers: boolean; justify: boolean
   textMode: "paragraphs" | "reflow" | "verse"; signature: 4 | 8 | 16 | 32
   spineMm: number; bleedMm: number; coverArt: boolean; backCoverArt: boolean
+  binding: "bound" | "saddle" | "loose"; economyCover: boolean
 }
 export const DEFAULT_EDITION: EditionSettings = {
   version: 1, destination: "press", trim: "a5", paper: "letter", template: "classic",
   bodyPt: 11, leading: 1.42, inner: 21, outer: 16, top: 19, bottom: 21,
   recto: true, toc: true, headers: true, justify: true, textMode: "paragraphs",
   signature: 16, spineMm: 0, bleedMm: 3.175, coverArt: true, backCoverArt: true,
+  binding: "bound", economyCover: false,
 }
 const pick = <T extends string | number>(v: unknown, options: readonly T[], fallback: T): T => options.includes(v as T) ? v as T : fallback
 const bounded = (v: unknown, lo: number, hi: number, fallback: number) => typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
@@ -43,6 +46,8 @@ export function editionSettings(value?: Partial<EditionSettings> | null): Editio
     signature: pick(v.signature, [4, 8, 16, 32], d.signature), spineMm: bounded(v.spineMm, 0, 70, 0),
     bleedMm: bounded(v.bleedMm, 3, 6, d.bleedMm), coverArt: typeof v.coverArt === "boolean" ? v.coverArt : d.coverArt,
     backCoverArt: typeof v.backCoverArt === "boolean" ? v.backCoverArt : d.backCoverArt,
+    binding: v.destination === "home" ? "loose" : pick(v.binding, ["bound", "saddle"], d.binding),
+    economyCover: typeof v.economyCover === "boolean" ? v.economyCover : v.destination === "home" || v.destination === "booklet",
   }
 }
 export function useTemplate(settings: EditionSettings, template: PrintTemplate): EditionSettings {
@@ -56,7 +61,7 @@ export function pageSize(s: EditionSettings): { width: number; height: number } 
   return s.trim === "trade" ? { width: 152.4, height: 228.6 } : s.trim === "digest" ? { width: 139.7, height: 215.9 } : { width: 148, height: 210 }
 }
 export interface PrintIssue {
-  code: "missingText" | "tooLong" | "missingGlyph" | "unsupportedScript" | "gutter" | "coverMissing" | "coverResolution" | "spineRequired" | "colorProfile" | "longWord" | "coverOverflow" | "layoutOverflow" | "artworkResolution" | "artworkPosition" | "outlinedText"
+  code: "missingText" | "tooLong" | "missingGlyph" | "unsupportedScript" | "gutter" | "coverMissing" | "coverResolution" | "spineRequired" | "colorProfile" | "longWord" | "coverOverflow" | "layoutOverflow" | "artworkResolution" | "artworkPosition" | "outlinedText" | "bindingLimit" | "verseWrap"
   severity: "error" | "warning" | "info"; scope: "interior" | "cover"; detail?: string; page?: number
 }
 export interface TextOp {

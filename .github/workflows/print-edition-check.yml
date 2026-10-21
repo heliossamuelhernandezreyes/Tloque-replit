@@ -21,6 +21,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Validate print planning, composition and copy preparation
+        run: npm run check && node --import tsx --test tests/print-*.test.ts tests/claim-keys.test.ts
       - name: Build the production app and module worker
         run: npm run build && npm run check:bundle
       - name: Install browser tooling (QA only)
@@ -36,9 +38,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y poppler-utils
       - name: Exercise the built studio and download physical editions
-        run: npm run test:print:browser
+        run: npm run test:print:browser && npm run test:print:home
       - name: Inspect actual PDFs and render proofs
-        run: python scripts/check-print-pdfs.py
+        run: python scripts/check-print-pdfs.py && python scripts/check-home-print-pdfs.py
       - name: Reviewable fixture previews in text-only environments
         run: |
           python - <<'PY'
@@ -55,5 +57,7 @@ jobs:
         if: always()
         with:
           name: physical-edition-proofs
-          path: .tloque_cache/print-qa/
+          path: |
+            .tloque_cache/print-qa/
+            .tloque_cache/print-home-qa/
           retention-days: 7

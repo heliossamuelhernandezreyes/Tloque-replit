@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
+import { runInNewContext } from "node:vm"
 
 const read = (path: string) => readFileSync(path, "utf8")
 
@@ -48,10 +49,17 @@ test("el cache no conserva aliases mutables de manifests", () => {
   assert.match(source, /OFFLINE_MODULE_PREFIX/)
 })
 
-test("service worker conserva la fonoteca descargada entre despliegues", () => {
-  const source = read("client/public/sw.js")
-  assert.match(source, /AUDIO_CACHE = "tloque-audio-v2"/)
-  assert.match(source, /new Set\(\[SHELL_CACHE, RUNTIME_CACHE, AUDIO_CACHE\]\)/)
+test("service worker conserva la fonoteca y la impresión descargadas entre despliegues", async () => {
+  const listeners: Record<string, (event: { waitUntil(promise: Promise<unknown>): void }) => void> = {}
+  const deleted: string[] = []
+  let activation: Promise<unknown> | undefined
+  runInNewContext(read("client/public/sw.js"), {
+    self: { addEventListener: (name: string, callback: typeof listeners[string]) => { listeners[name] = callback }, clients: { claim: async () => {} } },
+    caches: { keys: async () => ["tloque-shell-v1", "tloque-static-v1", "tloque-audio-v2", "tloque-print-v2", "obsolete-cache"], delete: async (name: string) => { deleted.push(name) } },
+  })
+  listeners.activate({ waitUntil: promise => { activation = promise } })
+  await activation
+  assert.deepEqual(deleted, ["obsolete-cache"])
 })
 
 test("entrega de objetos soporta caché condicional y peticiones Range", () => {

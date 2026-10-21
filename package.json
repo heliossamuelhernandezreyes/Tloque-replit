@@ -23,7 +23,8 @@
     "test:print:browser": "node --import tsx scripts/print-browser-qa.mjs",
     "db:push": "drizzle-kit push",
     "db:migrate": "node scripts/migrate.mjs --apply",
-    "db:preflight": "node scripts/preflight.mjs"
+    "db:preflight": "node scripts/preflight.mjs",
+    "test:print:home": "node --import tsx scripts/print-home-browser-qa.mjs"
   },
   "engines": {
     "node": "24.x"
