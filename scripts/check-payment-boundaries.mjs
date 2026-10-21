@@ -114,13 +114,31 @@ async function balance(role) { return (await request('/api/wallet', { role })).d
 async function copies(role, tokenId) {
   const response = await request('/api/tokens/mine?bookId=' + book.id, { role });
   assert.equal(response.status, 200);
+  assert.match(response.headers.get('cache-control'), /no-store/);
+  for (const token of response.data.tokens) for (const copy of token.copies) {
+    assert.ok(!('claimKey' in copy) && !('claimKeyHash' in copy), 'Listings must never expose activation secrets');
+  }
   return response.data.tokens.find(token => token.id === tokenId);
+}
+async function prepare(copy, role, instance = 0) {
+  return request(`/api/print-copies/${copy.id}/prepare`, { role, instance, method: 'POST' });
 }
 async function paidToken(role, kind = 'sale') {
   const purchase = await buyToken(role, { kind }); assert.equal(purchase.status, 201, JSON.stringify(purchase.data));
   const order = await complete('token_orders', purchase.data.orderId);
   const { rows: [paid] } = await client.query('select token_id from token_orders where id=$1', [order.id]);
-  return { ...order, tokenId: paid.token_id, token: await copies(role, paid.token_id) };
+  const token = await copies(role, paid.token_id);
+  // Obtain each fixture's QR as an explicit owner print action before later
+  // refund/claim scenarios. General copy listings no longer carry secrets.
+  for (const copy of token.copies) {
+    const prepared = await prepare(copy, role);
+    assert.equal(prepared.status, 200, JSON.stringify(prepared.data));
+    assert.equal(prepared.data.copy.folio, copy.folio);
+    assert.match(prepared.headers.get('cache-control'), /no-store/);
+    copy.claimKey = prepared.data.copy.key;
+    assert.ok(copy.claimKey);
+  }
+  return { ...order, tokenId: paid.token_id, token };
 }
 async function paidWallet(role) {
   const purchase = await buyWallet(role); assert.equal(purchase.status, 201, JSON.stringify(purchase.data));
@@ -316,6 +334,32 @@ try {
     })).status, 200);
     await webhook({ ...event, id: id('evt_') }); assert.equal(await balance('disputed'), 12);
   });
+  await check('Preparing a selected copy requires its owner and never charges or issues another copy', async () => {
+    const order = await paidToken('seller'), copy = order.token.copies[0];
+    const snapshot = async () => (await client.query(`select
+      (select count(*) from print_copies) as copies,
+      (select count(*) from book_tokens) as tokens,
+      (select count(*) from token_orders) as orders,
+      (select count(*) from wallet_ledger) as ledger`)).rows[0];
+    const before = await snapshot();
+    const replies = await Promise.all([prepare(copy, 'seller'), prepare(copy, 'seller', 1)]);
+    for (const response of replies) {
+      assert.equal(response.status, 200);
+      assert.equal(response.data.copy.key, copy.claimKey);
+      assert.equal(response.data.bookId, book.id);
+      assert.deepEqual(Object.keys(response.data.copy).sort(), ['folio', 'key']);
+      assert.match(response.headers.get('cache-control'), /no-store/);
+    }
+    for (const [role, status] of [[null, 401], ['buyer', 404]]) {
+      const denied = await prepare(copy, role);
+      assert.equal(denied.status, status);
+      assert.ok(!JSON.stringify(denied.data).includes(copy.claimKey));
+      assert.match(denied.headers.get('cache-control'), /no-store/);
+    }
+    assert.equal((await prepare({ id: 'invalid' }, 'seller')).status, 400);
+    assert.equal((await prepare({ id: 2147483648 }, 'seller')).status, 400);
+    assert.deepEqual(await snapshot(), before);
+  });
   await check('Refund suspends new QR claims and printing without exposing the internal key', async () => {
     const order = await paidToken('seller');
     const copy = order.token.copies[0];
@@ -324,7 +368,8 @@ try {
     const info = await request('/api/claim/' + copy.folio, { role: null });
     assert.equal(info.data.status, 'unavailable'); assert.match(info.headers.get('cache-control'), /no-store/);
     const token = await copies('seller', order.tokenId);
-    assert.equal(token.licenseStatus, 'revoked'); assert.equal(token.copies[0].claimKey, '');
+    assert.equal(token.licenseStatus, 'revoked'); assert.equal(token.copies[0].canPrint, false);
+    assert.equal((await prepare(copy, 'seller')).status, 409);
     assert.equal((await request(`/api/author/editions/${copy.id}`, { role: 'seller', method: 'PATCH', body: { status: 'sold' } })).status, 409);
     assert.equal((await client.query('select status,payout_eligible from author_earnings where order_id=$1', [order.id])).rows[0].payout_eligible, false);
   });
@@ -355,7 +400,8 @@ try {
     const { rows: [order] } = await client.query('select * from token_orders where id=$1', [purchase.data.orderId]);
     assert.equal(order.status, 'refunded');
     const token = await copies('seller', order.token_id);
-    assert.equal(token.licenseStatus, 'revoked'); assert.equal(token.copies[0].claimKey, '');
+    assert.equal(token.licenseStatus, 'revoked'); assert.equal(token.copies[0].canPrint, false);
+    assert.equal((await prepare(token.copies[0], 'seller')).status, 409);
     assert.equal((await request('/api/claim/' + token.copies[0].folio, { role: null })).data.status, 'unavailable');
   });
   await check('Winning a token dispute reactivates the same licence and its QR', async () => {
@@ -364,10 +410,12 @@ try {
     disputes.set(disputeId, current);
     const event = { id: id('evt_'), type: 'charge.dispute.created', data: { object: { ...current } } };
     await webhook(event); assert.equal((await claim(copy)).status, 409);
+    assert.equal((await prepare(copy, 'seller')).status, 409);
     current.status = 'won';
     await webhook({ ...event, id: id('evt_'), type: 'charge.dispute.closed' });
     const token = await copies('seller', order.tokenId);
-    assert.equal(token.licenseStatus, 'active'); assert.equal(token.copies[0].claimKey, copy.claimKey);
+    assert.equal(token.licenseStatus, 'active'); assert.equal(token.copies[0].canPrint, true);
+    assert.equal((await prepare(copy, 'seller')).data.copy.key, copy.claimKey);
     assert.equal((await claim(copy)).status, 200);
   });
   await check('Historical reconciliation repairs prior incidents and can be replayed without double adjustment', async () => {
