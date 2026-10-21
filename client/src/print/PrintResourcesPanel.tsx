@@ -6,6 +6,8 @@ import { manuscriptParagraphs } from "./compose"
 import { validatePrintResources, validSymbolToken, type PrintResources } from "./resources"
 import type { EditionSettings, PrintBook } from "./model"
 import { printText } from "./strings"
+import { manuscriptFingerprint } from "./project"
+import { homeText } from "./homeStrings"
 
 export default function PrintResourcesPanel({ book, settings, resources, language, loading, onChange, onLoading }: {
   book: PrintBook; settings: EditionSettings; resources: PrintResources; language: string; loading: boolean; onChange: (r: PrintResources) => void; onLoading: (loading: boolean) => void
@@ -28,7 +30,8 @@ export default function PrintResourcesPanel({ book, settings, resources, languag
       } else if (kind === "project") {
         if (file.size > 70_000_000) throw new Error("resources")
         const project = JSON.parse(await file.text())
-        if (project.book !== String(book.id ?? book.title) || project.textMode !== settings.textMode) { setError(t("resourceMismatch")); return }
+        if (!project.fingerprint) { setError(homeText(language)("projectLegacy")); return }
+        if (project.book !== String(book.id ?? book.title) || project.textMode !== settings.textMode || project.fingerprint !== await manuscriptFingerprint(book)) { setError(homeText(language)("projectMismatch")); return }
         const loaded = validatePrintResources(project.resources)
         // Decode imported artwork before enabling export and verify its actual
         // dimensions. Resource JSON cannot invent aspect ratios or resolution.
@@ -51,6 +54,11 @@ export default function PrintResourcesPanel({ book, settings, resources, languag
   const fileField = (label: string, accept: string, kind: "font" | "symbol" | "illustration" | "project", disabled = false) =>
     <label className="print-field print-upload"><span><Upload size={13} />{label}</span><input aria-label={label} type="file" accept={accept} disabled={loading || disabled} onChange={e => void upload(e.currentTarget, kind)} /></label>
   const remove = (type: "fonts" | "symbols" | "illustrations", id: string) => apply({ ...resources, [type]: resources[type].filter(item => item.id !== id) })
+  const save = async () => {
+    onLoading(true); setError("")
+    try { downloadFile(JSON.stringify({ version: 2, book: String(book.id ?? book.title), fingerprint: await manuscriptFingerprint(book), textMode: settings.textMode, resources }), printFilename(book.title, "print-resources", "json"), "application/json") }
+    catch { setError(t("resourceError")) } finally { onLoading(false) }
+  }
   return <details className="print-details print-resources"><summary>{t("resources")}</summary>
     <p className="print-note">{t("resourcesHint")}</p>
     <div className="print-section-title">{t("extraFonts")}</div><p className="print-note">{t("fontUploadHint")}</p>
@@ -71,7 +79,7 @@ export default function PrintResourcesPanel({ book, settings, resources, languag
     {error && <p className="print-note" role="alert">{error}</p>}
     {loading && <p className="print-note" role="status">{t("loadingResource")}</p>}
     <p className="print-note">{t("keepResources")}</p>
-    <button className="print-secondary" disabled={loading} onClick={() => downloadFile(JSON.stringify({ book: String(book.id ?? book.title), textMode: settings.textMode, resources }), printFilename(book.title, "print-resources", "json"), "application/json")}><Download />{t("saveResources")}</button>
+    <button className="print-secondary" disabled={loading} onClick={() => void save()}><Download />{t("saveResources")}</button>
     {fileField(t("loadResources"), ".json", "project")}
   </details>
 }

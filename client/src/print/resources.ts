@@ -9,6 +9,13 @@ export const graphemes = (text: string): string[] => Array.from(new Intl.Segment
 export const validSymbolToken = (token: string) => token.length <= 64 && !/[\s\p{Cc}\p{Cs}]/u.test(token) && !/^\p{Cf}+$/u.test(token)
   && (graphemes(token).length === 1 || /^\[\[[\p{L}\p{N}_-]{1,40}\]\]$/u.test(token))
 
+export function assertPrintImage(value: unknown): asserts value is PrintImage {
+  const i = value as PrintImage
+  if (!i || typeof i.data !== "string" || !/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/.test(i.data)
+    || i.data.length > 18_000_000 || !Number.isSafeInteger(i.width) || !Number.isSafeInteger(i.height)
+    || i.width < 1 || i.height < 1 || i.width * i.height > 32_000_000) throw new Error("resources")
+}
+
 // Imported resources and worker messages get the same limits as file pickers.
 // Never persist font bytes, artwork, manuscripts or copy keys in localStorage.
 export function validatePrintResources(value: unknown): PrintResources {
@@ -19,9 +26,7 @@ export function validatePrintResources(value: unknown): PrintResources {
   const ids = new Set<string>(), tokens = new Set<string>()
   const id = (v: { id: string }) => { if (!v || typeof v.id !== "string" || !v.id || v.id.length > 100 || ids.has(v.id)) throw new Error("resources"); ids.add(v.id) }
   const image = (i: PrintImage) => {
-    if (!i || typeof i.data !== "string" || !/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/.test(i.data)
-      || i.data.length > 18_000_000 || !Number.isSafeInteger(i.width) || !Number.isSafeInteger(i.height)
-      || i.width < 1 || i.height < 1 || i.width * i.height > 32_000_000) throw new Error("resources")
+    assertPrintImage(i)
     bytes += i.data.length
   }
   r.fonts.forEach(f => {

@@ -86,7 +86,7 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
   }
   if (req.path.startsWith("/api/auth") || req.path.startsWith("/api/wallet")
       || req.path.startsWith("/api/audiobook") || req.path.startsWith("/api/audiobooks")
-      || req.path.startsWith("/api/tokens") || req.path.startsWith("/api/account")
+      || req.path.startsWith("/api/tokens") || req.path.startsWith("/api/print-copies") || req.path.startsWith("/api/account")
       || req.path.startsWith("/api/payouts")) {
     res.setHeader("Cache-Control", "no-store")
   }

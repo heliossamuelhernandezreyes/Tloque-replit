@@ -1,16 +1,19 @@
 import { PT_MM, type EditionLayout, type FontMetrics, type PageOp, type PdfCopy, type PrintBook, type PrintIssue, type TextOp } from "./model"
 import { wrapText } from "./compose"
 import { graphemes } from "./resources"
+import { inkOutside } from "./inkBounds"
 
 export interface PrintImage { data: string; width: number; height: number }
 export type CoverOp = PageOp | { kind: "rect"; x: number; y: number; width: number; height: number; gray: number }
-export interface CoverLayout { width: number; height: number; trimWidth: number; trimHeight: number; spine: number; bleed: number; ops: CoverOp[]; issues: PrintIssue[]; ppi: number | null }
+export interface CoverLayout { width: number; height: number; trimWidth: number; trimHeight: number; spine: number; bleed: number; binding: EditionLayout["settings"]["binding"]; ops: CoverOp[]; issues: PrintIssue[]; ppi: number | null }
 export function composeCover(book: PrintBook, interior: EditionLayout, metrics: FontMetrics, art: PrintImage | null, copy?: PdfCopy, origin = "https://tloque.app", backArt: PrintImage | null = null): CoverLayout {
-  const { width: w, height: h, settings: s } = interior, b = s.bleedMm, spine = s.spineMm
+  const { width: w, height: h, settings: s } = interior, b = s.bleedMm, spine = s.binding === "bound" ? s.spineMm : 0
   const width = w * 2 + spine + b * 2, height = h + b * 2, frontX = b + w + spine
-  const cover: CoverLayout = { width, height, trimWidth: w, trimHeight: h, spine, bleed: b, ops: [], issues: [], ppi: null }
-  cover.ops.push({ kind: "rect", x: 0, y: 0, width, height, gray: 20 })
-  if (spine <= 0) cover.issues.push({ code: "spineRequired", severity: "error", scope: "cover" })
+  const cover: CoverLayout = { width, height, trimWidth: w, trimHeight: h, spine, bleed: b, binding: s.binding, ops: [], issues: [], ppi: null }
+  cover.ops.push({ kind: "rect", x: 0, y: 0, width, height, gray: s.economyCover || s.binding === "loose" ? 255 : 20 })
+  if (s.binding === "loose" && !s.economyCover) for (const x of [b, frontX]) cover.ops.push({ kind: "rect", x: x + 10, y: b + 10, width: w - 20, height: h - 20, gray: 20 })
+  if (spine <= 0 && s.binding === "bound") cover.issues.push({ code: "spineRequired", severity: "error", scope: "cover" })
+  const color = (gray: number) => s.economyCover ? 255 - gray : gray
   cover.issues.push({ code: "colorProfile", severity: "info", scope: "cover" })
   const writeBlock = (value: string, x: number, start: number, maxWidth: number, maxHeight: number, pt: number, minPt: number, font: TextOp["font"], gray = 245) => {
     if ((metrics.segments || graphemes)(value.normalize("NFC")).some(c => !/^\s+$/u.test(c) && !metrics.hasGlyph(c, font))) {
@@ -29,8 +32,9 @@ export function composeCover(book: PrintBook, interior: EditionLayout, metrics: 
     const direction = metrics.direction?.(value) || "ltr"
     let y = start
     rows.forEach(row => {
-      const op: TextOp = { kind: "text", text: row.text, x: direction === "rtl" ? x + maxWidth - row.width : x, y, width: row.width, pt: size, font, role: "title", gray, direction }
+      const op: TextOp = { kind: "text", text: row.text, x: direction === "rtl" ? x + maxWidth - row.width : x, y, width: row.width, pt: size, font, role: "title", gray: color(gray), direction }
       metrics.prepare?.(op); cover.ops.push(op)
+      if (inkOutside(op, width, height)) cover.issues.push({ code: "coverOverflow", severity: "error", scope: "cover" })
       for (const ink of op.ink || []) if (ink.kind === "image" && ink.sourceWidth) {
         const ppi = Math.floor(ink.sourceWidth / ink.width * 25.4)
         cover.ppi = cover.ppi === null ? ppi : Math.min(cover.ppi, ppi)
@@ -42,7 +46,8 @@ export function composeCover(book: PrintBook, interior: EditionLayout, metrics: 
   }
   const safe = 15
   const addArtwork = (image: PrintImage, x: number) => {
-    const scale = Math.min(w / image.width, h / image.height)
+    const inset = s.binding === "loose" ? 10 : 0
+    const scale = Math.min((w - 2 * inset) / image.width, (h - 2 * inset) / image.height)
     const aw = image.width * scale, ah = image.height * scale
     cover.ops.push({ kind: "image", data: image.data, x: x + (w - aw) / 2, y: b + (h - ah) / 2, width: aw, height: ah })
     const ppi = Math.floor(25.4 / scale)
@@ -66,7 +71,7 @@ export function composeCover(book: PrintBook, interior: EditionLayout, metrics: 
   if (cover.ppi !== null && cover.ppi < 300) cover.issues.push({ code: "coverResolution", severity: "warning", scope: "cover", detail: String(cover.ppi) })
 
   if (copy) {
-    if (illustratedBack) cover.ops.push({ kind: "rect", x: b + safe - 3, y: b + h - 53, width: w - safe * 2 + 6, height: 43, gray: 20 })
+    if (illustratedBack) cover.ops.push({ kind: "rect", x: b + safe - 3, y: b + h - 53, width: w - safe * 2 + 6, height: 43, gray: s.economyCover ? 255 : 20 })
     cover.ops.push({ kind: "qr", value: origin + "/claim/" + encodeURIComponent(copy.folio), x: b + safe, y: b + h - 50, size: 29 })
     writeBlock(copy.folio, b + safe, b + h - 14, w - safe * 2, 8, 8, 8, "normal", 230)
   } else if (!illustratedBack) writeBlock("TLOQUE", b + safe, b + h - 18, w - safe * 2, 10, 9, 9, "normal", 185)

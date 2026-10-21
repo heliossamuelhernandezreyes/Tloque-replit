@@ -1,21 +1,29 @@
 import { editionSettings, pageSize, printSourceCredits, PT_MM, type EditionLayout, type EditionSettings, type FontMetrics, type FontStyle, type PdfCopy, type PrintBook, type PrintLabels, type PrintPage, type TextOp } from "./model"
 import { emptyPrintResources, graphemes, validatePrintResources, type PrintResources } from "./resources"
+import { inkOutside } from "./inkBounds"
 
 const clean = (s: string) => String(s || "").replace(/\r\n?/g, "\n").normalize("NFC")
 export function manuscriptParagraphs(content: string, mode: EditionSettings["textMode"]): string[] {
   const text = clean(content)
   if (mode === "reflow") return text.split(/\n\s*\n/).map(s => s.replace(/\n/g, " ").trim()).filter(Boolean)
-  if (mode === "verse") return text.split("\n").map(s => s.replace(/\t/g, "    ").trimEnd())
+  if (mode === "verse") return text.split("\n").map(s => s.replace(/\t/g, "    "))
   return text.split("\n").map(s => s.trim()).filter(Boolean)
 }
 
 // Bounded word spacing, never stretched letters. Split overlong words without
 // inserting or deleting characters, and flag their first occurrence for review.
-export function wrapText(text: string, width: number, metrics: FontMetrics, pt: number, font: FontStyle = "normal", indent = 0, direction?: "ltr" | "rtl"): { text: string; width: number; indent: number; broken: boolean }[] {
+export function wrapText(text: string, width: number, metrics: FontMetrics, pt: number, font: FontStyle = "normal", indent = 0, direction?: "ltr" | "rtl", preserveSpaces = false): { text: string; width: number; indent: number; broken: boolean }[] {
   const result: { text: string; width: number; indent: number; broken: boolean }[] = []
   let line = "", lineWidth = 0, offset = indent, broken = false
   const measure = (s: string) => metrics.width(s, pt, font, direction)
   const flush = () => { if (line) result.push({ text: line, width: lineWidth, indent: offset, broken }); line = ""; lineWidth = 0; offset = 0; broken = false }
+  if (preserveSpaces) {
+    for (const unit of (metrics.segments || graphemes)(text)) {
+      if (line && measure(line + unit) > width - offset) { broken = true; flush() }
+      line += unit; lineWidth = measure(line)
+    }
+    flush(); return result
+  }
   for (const word of text.split(/[^\S\u00a0\u202f]+/u).filter(Boolean)) {
     const w = measure(word)
     if (line && measure(line + " " + word) > width - offset) flush()
@@ -190,17 +198,18 @@ export function composeEdition(book: PrintBook, input: EditionSettings, metrics:
       if (!paragraph.trim()) { y += lh * .6; return }
       layout.wordCount += paragraph.trim().split(/\s+/u).length
       const scene = /^\s*(?:\*\s*){3,}$/.test(paragraph) || /^\s*(?:·\s*){3,}$/.test(paragraph)
-      const indent = settings.textMode === "verse" ? Math.min(12, (paragraph.match(/^ */)?.[0].length || 0) * 1.2)
+      const indent = settings.textMode === "verse" ? 0
         : pi && settings.template === "classic" ? bodyPt * PT_MM : 0
       const direction = metrics.direction?.(paragraph) || "ltr"
-      const rows = wrapText(paragraph, tw, metrics, bodyPt, "normal", scene ? 0 : indent, direction)
+      const rows = wrapText(paragraph, tw, metrics, bodyPt, "normal", scene ? 0 : indent, direction, settings.textMode === "verse")
       const tall = rows.reduce((h, row) => Math.max(h, metrics.extents?.(row.text, bodyPt)?.ascent || 0), bodyPt * PT_MM)
       const rowHeight = rows.reduce((h, row) => Math.max(h, lineHeight(row.text, bodyPt, "normal")), lh)
       if (top + tall + rowHeight * (Math.min(3, rows.length) - 1) > bottomY) {
         layout.issues.push({ code: "layoutOverflow", severity: "error", scope: "interior", page: layout.pages.length }); return
       }
       y += Math.max(0, tall - bodyPt * PT_MM)
-      if (rows.some(row => row.broken) && !layout.issues.some(i => i.code === "longWord")) layout.issues.push({ code: "longWord", severity: "warning", scope: "interior", page: layout.pages.length })
+      const wrapIssue = settings.textMode === "verse" ? "verseWrap" : "longWord"
+      if (rows.some(row => row.broken) && !layout.issues.some(i => i.code === wrapIssue)) layout.issues.push({ code: wrapIssue, severity: "warning", scope: "interior", page: layout.pages.length })
       let offset = 0
       while (offset < rows.length) {
         let room = Math.max(0, Math.floor((bottomY - y) / rowHeight) + 1)
@@ -255,7 +264,7 @@ export function composeEdition(book: PrintBook, input: EditionSettings, metrics:
       }
     }
     if (p.ops.some(op => op.kind === "text" && (
-      op.x < -.01 || op.x + op.width > width + .01 || op.y - (metrics.extents?.(op.text, op.pt, op.font).ascent ?? op.pt * PT_MM * .75) < 0
+      inkOutside(op, width, height) || op.x < -.01 || op.x + op.width > width + .01 || op.y - (metrics.extents?.(op.text, op.pt, op.font).ascent ?? op.pt * PT_MM * .75) < 0
       || op.y + (metrics.extents?.(op.text, op.pt, op.font).descent ?? op.pt * PT_MM * .25) > height
       || (["legal", "toc", "heading"].includes(op.role) && op.y > bottomY)
     )) && !layout.issues.some(i => i.code === "layoutOverflow" && i.page === index + 1)) {
@@ -264,5 +273,6 @@ export function composeEdition(book: PrintBook, input: EditionSettings, metrics:
   })
   const gutterMin = layout.pages.length > 700 ? 22.3 : layout.pages.length > 500 ? 19.1 : layout.pages.length > 300 ? 15.9 : 12.7
   if (inner < gutterMin) layout.issues.push({ code: "gutter", severity: "warning", scope: "interior", detail: String(gutterMin) })
+  if (settings.destination === "booklet" && settings.binding === "saddle" && layout.pages.length > 32) layout.issues.push({ code: "bindingLimit", severity: "error", scope: "interior" })
   return layout
 }

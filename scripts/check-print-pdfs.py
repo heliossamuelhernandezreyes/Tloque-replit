@@ -110,8 +110,13 @@ unicode_booklet = inspect("unicode-booklet", 279.4, 215.9, "/DuplexFlipShortEdge
 unicode_kit = inspect("unicode-cover-kit", 215.9, 279.4, "/Simplex")
 unicode_page = unicode_interior.pages[2]
 unicode_ops = ContentStream(unicode_page.get_contents(), unicode_interior).operations
-assert sum(operator == b"Do" for _, operator in unicode_ops) == 3, "One illustration and two inline drawings"
-assert sum(operator == b"f" for _, operator in unicode_ops) > 50, "Extended text must contain actual vector outlines"
+objects = unicode_page["/Resources"]["/XObject"]
+drawn_objects = [objects[args[0]].get_object() for args, operator in unicode_ops if operator == b"Do"]
+assert sum(obj["/Subtype"] == "/Image" for obj in drawn_objects) == 3, "One illustration and two inline drawings"
+assert sum(obj["/Subtype"] == "/Form" for obj in drawn_objects) > 50, "Extended text uses reusable vector glyph forms"
+for obj in drawn_objects:
+    if obj["/Subtype"] == "/Form":
+        assert any(operator == b"f" for _, operator in ContentStream(obj, unicode_interior).operations), "Glyph form has no painted outline"
 assert all(image.image.size == (1500, 750) for image in unicode_page.images)
 assert len(unicode_kit.pages) == 2
 assert "[[sello]]" not in "".join(p.extract_text() for p in unicode_interior.pages)

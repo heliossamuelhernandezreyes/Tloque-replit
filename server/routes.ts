@@ -1,3 +1,4 @@
+import { preparePrintCopy, printCopySummary, PrintPreparationError } from "./printPreparation"
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage, BookRevisionConflictError, type BookChangeType } from "./storage";
@@ -1979,40 +1980,43 @@ export async function registerRoutes(
       const copies = tokenIds.length
         ? await db.select().from(printCopies).where(inArray(printCopies.tokenId, tokenIds))
         : []
-      const activeIds = new Set(tokens.filter(token => token.licenseStatus === "active").map(token => token.id))
-      const safeCopies = await Promise.all(copies.map(async copy => {
-        if (!activeIds.has(copy.tokenId)) return { copy, plainClaimKey: "" }
-        const plainClaimKey = revealClaimKey(copy.claimKey)
-        if (!isProtectedClaimKey(copy.claimKey) || !copy.claimKeyHash) {
-          const protectedClaimKey = protectClaimKey(plainClaimKey)
-          await db.update(printCopies).set({
-            claimKey: protectedClaimKey.ciphertext,
-            claimKeyHash: protectedClaimKey.digest,
-          }).where(and(eq(printCopies.id, copy.id), eq(printCopies.claimKey, copy.claimKey)))
-        }
-        return { copy, plainClaimKey }
-      }))
-      const safeCopiesByToken = new Map<number, typeof safeCopies>()
-      for (const item of safeCopies) {
-        const group = safeCopiesByToken.get(item.copy.tokenId) || []
-        group.push(item)
-        safeCopiesByToken.set(item.copy.tokenId, group)
+      const copiesByToken = new Map<number, typeof copies>()
+      for (const copy of copies) {
+        const group = copiesByToken.get(copy.tokenId) || []
+        group.push(copy); copiesByToken.set(copy.tokenId, group)
       }
       const out = tokens.map(token => ({
         ...token,
-        copies: (safeCopiesByToken.get(token.id) || []).map(({ copy, plainClaimKey }) => {
-          const { claimKey: _claimKey, claimKeyHash: _claimKeyHash, claimedByUserId, ...safeCopy } = copy
-          return {
-            ...safeCopy,
-            claimKey: plainClaimKey,
-            digitalClaimed: claimedByUserId != null,
-            claimedByOwner: claimedByUserId === userId,
-          }
-        }),
+        copies: (copiesByToken.get(token.id) || []).map(copy => printCopySummary(copy, userId, token.licenseStatus === "active")),
       }))
       res.json({ tokens: out })
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
+    }
+  })
+
+  // Obtain only the selected copy's secret at the moment printing is requested.
+  // Retries preserve its folio and key; no new copy, purchase or debit is issued.
+  app.post("/api/print-copies/:copyId/prepare", rateLimit(60_000, 20), async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
+    const userId = (req.user as any).id as number
+    try {
+      const result = await db.transaction(async tx => {
+        await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)
+        return preparePrintCopy(userId, Number(req.params.copyId), {
+          copy: async id => (await tx.select().from(printCopies).where(eq(printCopies.id, id)))[0],
+          token: async id => (await tx.select().from(bookTokens).where(eq(bookTokens.id, id)))[0],
+          protect: async (copy, key) => {
+            await tx.update(printCopies).set({ claimKey: key.ciphertext, claimKeyHash: key.digest })
+              .where(and(eq(printCopies.id, copy.id), eq(printCopies.claimKey, copy.claimKey)))
+          },
+        })
+      })
+      res.setHeader("Cache-Control", "no-store")
+      res.json(result)
+    } catch (error) {
+      if (error instanceof PrintPreparationError) return res.status(error.status).json({ message: error.message })
+      res.status(500).json({ message: "No se pudo preparar el permiso de impresión" })
     }
   })
 

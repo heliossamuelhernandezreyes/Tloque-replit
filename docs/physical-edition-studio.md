@@ -96,3 +96,53 @@ python -m pip install pypdf==6.10.0 Pillow==11.3.0
 npm run test:print:browser
 python scripts/check-print-pdfs.py
 ```
+
+## Impresión doméstica V2
+
+El taller conserva la paginación y añade un plan de hojas físicas. **En casa** produce carta/A4 para anillar o reunir. **Cuadernillos** permite un folleto grapado de un solo grupo, hasta 32 páginas interiores, o varios cuadernillos para encuadernar. Un folleto que supera ese límite queda bloqueado: el acabado nunca cambia automáticamente. La selección de hojas no cambia las páginas lógicas ni emite otro folio.
+
+En **Revisión**, elegir doble cara automática o manual. La automática exporta caras intercaladas y conserva el giro largo para hojas completas o corto para cuadernillos apaisados. La manual descarga dos archivos a una cara: frentes y reversos. Se puede elegir un cuadernillo, una hoja física o la primera muestra. Una cara vacía sigue incluida para mantener la correspondencia de la pila. Para un atasco, volver a descargar la hoja elegida con el mismo ejemplar.
+
+### Probar la impresora
+
+La prueba A/B usa dos hojas y una regla de 100 mm. En modo automático es un archivo a doble cara. En manual se imprimen los frentes A/B y después sus reversos; se reintroduce el papel según el fabricante. La misma letra debe quedar en ambas caras de cada hoja, con ARRIBA en el mismo extremo. Si se intercambian letras, invertir el orden de los reversos; si quedan de cabeza, girar los reversos 180 grados y repetir la prueba. El giro adicional se aplica solo a pasadas manuales, pues en automático lo realiza el controlador.
+
+Las cruces se comparan a contraluz. Se puede desplazar la tinta del reverso hasta 5 mm por eje; el mismo desplazamiento se aplica a la prueba y al interior. No se altera la cubierta. La confirmación de la prueba se invalida al cambiar el perfil de impresora; al cambiar el papel o la orientación debe repetirse. Las pasadas manuales requieren confirmar la prueba en la sesión actual.
+
+Los PDF impuestos se imprimen al 100 %, una página del PDF por cara. No activar otra vez Folleto ni dos páginas por hoja. Los archivos de pasadas, cubierta y pruebas manuales llevan preferencia Simplex; la preferencia es una ayuda y no reemplaza revisar el controlador.
+
+### Cubierta y montaje
+
+- Hojas completas: dos hojas a una cara, portada y contraportada, sin inventar un lomo. Reunir en orden, perforar por el margen interior y anillar, o usar una carpeta que sujete las hojas.
+- Folleto: una cubierta plegada apaisada, sin lomo de bloque, con margen de impresora. Anidar el único grupo de hojas, añadir cubierta por fuera, doblar y grapar el pliegue. El grosor admitido debe probarse con la grapadora y el papel elegidos.
+- Varios cuadernillos: doblar cada grupo por separado, reunirlos en orden y coser sus pliegues para formar el bloque. Unir el bloque a la cubierta con guardas. El kit de dos paneles y pestaña sigue requiriendo medir el lomo real. La pestaña une la cubierta, no las páginas.
+
+La cubierta tipográfica de bajo consumo usa blanco y texto oscuro; las imágenes conservan sus colores. Los interiores y las cubiertas no dependen de que la impresora pueda imprimir sin bordes.
+
+### Edición recuperable y fidelidad
+
+**Guardar edición** conserva diseño, interpretación de saltos, fuentes, símbolos, ilustraciones, contraportada y las imágenes de cubierta cargadas. El archivo tiene versión de motor y SHA-256 del manuscrito, sus créditos y revisión. No contiene el manuscrito, credenciales del ejemplar ni su clave de activación. Al cargar, se verifica la revisión y se decodifican los recursos; un cambio de párrafos o créditos exige recolocar los recursos en la obra actual. El lomo recuperado requiere confirmar otra vez la cubierta. En el guardado local ordinario el lomo sigue a cero.
+
+**Guardar recursos** también identifica la revisión. Los archivos antiguos sin huella del manuscrito no se aplican silenciosamente: se pide recolocar y guardar de nuevo. La interpretación de prosa/verso es propia de cada obra y deja de heredarse del último libro abierto.
+
+Verso conserva sangrías y espacios internos; las tabulaciones se expanden a cuatro espacios. Una línea más ancha que el marco genera aviso de ajuste editorial. La revisión de tinta comprueba también los salientes de los glifos personalizados, aunque su ancho de avance quepa en la página.
+
+Los contornos se reutilizan mediante Form XObjects vectoriales: un mismo glifo no se vuelve a guardar entero en cada aparición. Su forma sigue siendo vectorial y los renglones extendidos siguen sin texto seleccionable. Las muestras de rendimiento se comparan con el mismo manuscrito y no se presentan como medidas de un teléfono.
+
+La ficha incorpora huella del manuscrito, versión de motor, opciones de impresora, instrucciones de montaje y SHA-256 de los PDF descargados en la composición actual. Los cambios de composición vacían esa lista para evitar atribuir archivos antiguos a una paginación nueva. Cancelar una preparación termina el worker y permite reintentar sin alterar compras o copias.
+
+### Motor sin conexión
+
+La compilación genera `print-assets.json` con los nombres inmutables del shell, ficha de libro, taller, worker y fuentes. Al abrir el taller se guardan y verifican esos recursos en la caché específica de impresión. Solo se anuncia disponibilidad cuando el service worker declara soporte de impresión V2 y están todos los recursos de esa versión. Una instalación parcial no se presenta como preparada; una actualización del motor necesita sus propios recursos.
+
+Se incluyen las peticiones con destino worker y las fuentes cargadas por fetch. Las API, permisos y claves permanecen fuera de la caché. La etiqueta indica disponibilidad del motor; hace falta disponer también del manuscrito. Los ejemplares con licencia validan su permiso con conexión al abrirse; sus PDF ya autorizados pueden conservarse para imprimir después.
+
+### Preparación de un ejemplar con licencia
+
+`GET /api/tokens/mine` devuelve folios y estados sin claves ni hashes. El botón de PDF solicita `POST /api/print-copies/:copyId/prepare`: comprueba usuario propietario y licencia activa bajo el mismo bloqueo transaccional del propietario, revela únicamente la clave seleccionada y devuelve un resultado `no-store`. Si un registro es antiguo, se protege en esa operación. No se emiten nuevas copias ni cobros y los reintentos conservan el mismo folio. La clave vive en la sesión del taller y en el interior autorizado; queda fuera del proyecto, ficha y cubierta exterior.
+
+### Verificación V2
+
+Las pruebas `print-home.test.ts` y `print-preparation.test.ts` cubren pasadas y reversos vacíos, orden e identidad de hojas, límites del folleto, verso, tinta de glifos, reutilización vectorial, cubierta sin lomo, edición por revisión y autorización de la copia.
+
+`npm run test:print:home` prueba la aplicación compilada con fixtures: calibra, descarga pasadas y reimpresiones, guarda/recupera una edición, rechaza una revisión cambiada, descarga cubiertas y una copia autorizada, abre de nuevo el taller con la red desconectada y descarga un PDF. `python scripts/check-home-print-pdfs.py` inspecciona independientemente esas salidas con pypdf/Poppler. Estas pruebas se ejecutan en CI junto a la verificación existente. La interfaz se revisa en escritorio y ventana móvil; la impresora, controlador Android y encuadernación reales aún requieren ensayo físico.
