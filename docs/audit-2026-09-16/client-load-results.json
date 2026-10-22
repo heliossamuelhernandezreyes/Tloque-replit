@@ -1,0 +1,85 @@
+{
+  "method": "Cumulative static JS imports/exports and entry CSS; selected dynamic roots only; per-file gzip level 9.",
+  "limitations": "Excludes unselected dynamic imports, Vite dynamic preloads, fonts, images, audio, HTML and API. Not measured network traffic, RAM or installed size.",
+  "results": [
+    {
+      "name": "entry",
+      "fileCount": 3,
+      "rawBytes": 353894,
+      "gzipBytes": 101341,
+      "files": [
+        "assets/index-C4BP4BvU.js",
+        "assets/index-CbGkMuPn.css",
+        "assets/react-ClnD5otP.js"
+      ]
+    },
+    {
+      "name": "app",
+      "fileCount": 7,
+      "rawBytes": 862177,
+      "gzipBytes": 269151,
+      "files": [
+        "assets/App-CnTjq0sH.js",
+        "assets/index-C4BP4BvU.js",
+        "assets/index-CbGkMuPn.css",
+        "assets/motion-B3lMGuVu.js",
+        "assets/query-DW7eQNXn.js",
+        "assets/react-ClnD5otP.js",
+        "assets/ui-BVnVKIUv.js"
+      ]
+    },
+    {
+      "name": "home",
+      "fileCount": 15,
+      "rawBytes": 1010448,
+      "gzipBytes": 307490,
+      "files": [
+        "assets/App-CnTjq0sH.js",
+        "assets/book-card-BExTj5t3.js",
+        "assets/covers-DIvCBhbe.js",
+        "assets/home-C0jcaQfo.js",
+        "assets/index-C4BP4BvU.js",
+        "assets/index-CbGkMuPn.css",
+        "assets/layout-B3JiaqBs.js",
+        "assets/library-CbRRhugW.js",
+        "assets/media-wSJcNiyJ.js",
+        "assets/motion-B3lMGuVu.js",
+        "assets/query-DW7eQNXn.js",
+        "assets/react-ClnD5otP.js",
+        "assets/types-1dYVS3oR.js",
+        "assets/ui-BVnVKIUv.js",
+        "assets/use-books-CsSSZn_i.js"
+      ]
+    },
+    {
+      "name": "home_music_3d",
+      "fileCount": 22,
+      "rawBytes": 2118750,
+      "gzipBytes": 615621,
+      "files": [
+        "assets/App-CnTjq0sH.js",
+        "assets/AudioResourceCache-Dh4yBANB.js",
+        "assets/HybridMusicEngine-DBWc1Z4N.js",
+        "assets/OrchestralSynthPlan-DMjN33BN.js",
+        "assets/SamplerAdapter-Chc6UruF.js",
+        "assets/audio-Dkp5cVCI.js",
+        "assets/book-card-BExTj5t3.js",
+        "assets/covers-DIvCBhbe.js",
+        "assets/home-C0jcaQfo.js",
+        "assets/index-C4BP4BvU.js",
+        "assets/index-CbGkMuPn.css",
+        "assets/layout-B3JiaqBs.js",
+        "assets/library-CbRRhugW.js",
+        "assets/media-wSJcNiyJ.js",
+        "assets/motion-B3lMGuVu.js",
+        "assets/native-acoustic-source-9O7UYFtP.js",
+        "assets/query-DW7eQNXn.js",
+        "assets/react-ClnD5otP.js",
+        "assets/types-1dYVS3oR.js",
+        "assets/ui-BVnVKIUv.js",
+        "assets/use-books-CsSSZn_i.js",
+        "assets/visual-3d-Bnp05alS.js"
+      ]
+    }
+  ]
+}

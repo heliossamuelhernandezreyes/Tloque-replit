@@ -1,0 +1,170 @@
+{
+  "auditedCommit": "0e88f6c7f5b8d82f6d46e467ca953557704eb869",
+  "workflowRun": "https://github.com/heliossamuelhernandezreyes/Tloque-replit/actions/runs/35119000091",
+  "runtime": "Node.js 20 / PostgreSQL 16 / NODE_ENV=production",
+  "counts": {
+    "pass": 18,
+    "findings": 6
+  },
+  "results": [
+    {
+      "actual": 401,
+      "expected": 401,
+      "id": "anonymous_wallet",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 403,
+      "expected": 403,
+      "id": "reader_admin",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 403,
+      "expected": 403,
+      "id": "author_admin_frames",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 403,
+      "expected": 403,
+      "id": "reader_payout_admin",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 404,
+      "expected": 404,
+      "id": "reader_draft",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 200,
+      "expected": 200,
+      "id": "author_own_draft",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 403,
+      "expected": 403,
+      "id": "reader_edit_other",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 403,
+      "expected": 403,
+      "id": "reader_edit_copy",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 403,
+      "expected": 403,
+      "id": "reader_audio_install",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 403,
+      "expected": 403,
+      "id": "reader_get_other_revision",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 403,
+      "expected": 403,
+      "id": "csrf_cross_origin",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 400,
+      "expected": 400,
+      "id": "unsigned_webhook",
+      "verdict": "PASS"
+    },
+    {
+      "actual": "",
+      "expected": "",
+      "id": "premium_art_hidden",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 0,
+      "expected": 0,
+      "id": "tokens_owner_scope",
+      "verdict": "PASS"
+    },
+    {
+      "actual": [],
+      "expected": [],
+      "id": "public_qr_secret_redaction",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 403,
+      "expected": 403,
+      "id": "incorrect_claim_key",
+      "verdict": "PASS"
+    },
+    {
+      "actual": [
+        200,
+        409
+      ],
+      "expected": [
+        200,
+        409
+      ],
+      "id": "claim_concurrency",
+      "verdict": "PASS"
+    },
+    {
+      "actual": null,
+      "expected": "no-store",
+      "id": "claim_status_no_store",
+      "verdict": "FINDING"
+    },
+    {
+      "actual": 200,
+      "detail": "A revokes the admin; B checks after advancing Date.now by six minutes. Product source is unchanged.",
+      "expected": 403,
+      "id": "admin_revocation_after_ttl",
+      "verdict": "FINDING"
+    },
+    {
+      "actual": 200,
+      "detail": "Signed fixture refund was recorded; unclaimed copy must have an explicit refund/revocation policy.",
+      "expected": "blocked",
+      "id": "unclaimed_copy_after_full_refund",
+      "verdict": "FINDING"
+    },
+    {
+      "actual": {
+        "balance": 25,
+        "purchaseStatus": 201
+      },
+      "detail": "A fully refunded top-up must not remain available to spend as cash-backed Tinta.",
+      "expected": "blocked",
+      "id": "wallet_refund_spending",
+      "verdict": "FINDING"
+    },
+    {
+      "actual": {
+        "first": 4,
+        "retry": 5
+      },
+      "expected": "same token",
+      "id": "sale_retry_idempotency",
+      "verdict": "FINDING"
+    },
+    {
+      "actual": 409,
+      "expected": 409,
+      "id": "revision_conflict",
+      "verdict": "PASS"
+    },
+    {
+      "actual": 200,
+      "expected": "precondition rejected",
+      "id": "revision_required",
+      "verdict": "FINDING"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "auditedCommit": "0e88f6c7f5b8d82f6d46e467ca953557704eb869",
+  "startedAt": "2026-09-16",
+  "closedAt": "2026-09-17",
+  "productSourceChanged": false,
+  "localRuntime": {
+    "node": "24.19.0",
+    "npm": "11.9.0"
+  },
+  "localChecks": {
+    "npm test": {
+      "pass": 592,
+      "fail": 0
+    },
+    "npm run check": "PASS",
+    "npm run build": "PASS",
+    "npm run check:bundle": "PASS",
+    "npm run test:audio:render": {
+      "pass": 19,
+      "fail": 0
+    }
+  },
+  "httpAudit": {
+    "nodeMajor": 20,
+    "postgresMajor": 16,
+    "mode": "production",
+    "instances": 2,
+    "observations": 24,
+    "pass": 18,
+    "findings": 6,
+    "run": "https://github.com/heliossamuelhernandezreyes/Tloque-replit/actions/runs/35119000091"
+  },
+  "accountIsolation": {
+    "adapter": "In-memory storage and fake fetch; real bundled sync.ts",
+    "findings": 1,
+    "writesToNextAccount": 3
+  },
+  "ci": {
+    "coreAndVisual": {
+      "result": "success",
+      "run": "https://github.com/heliossamuelhernandezreyes/Tloque-replit/actions/runs/35119000012",
+      "apiFixture": true
+    },
+    "print": {
+      "result": "success",
+      "pdfs": 7,
+      "run": "https://github.com/heliossamuelhernandezreyes/Tloque-replit/actions/runs/35118999874"
+    }
+  },
+  "notes": [
+    "A successful observational workflow does not mean all controls passed.",
+    "No real charges, user records, paid voice calls or Replit Agent used.",
+    "No full live OAuth/Stripe round trip, physical GPU measurements or physical print proof.",
+    "Static route inventory is not full dynamic coverage of all routes.",
+    "Interactive browser localhost access was blocked; existing CI proofs were inspected."
+  ]
+}
