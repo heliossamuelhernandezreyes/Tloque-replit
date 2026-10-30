@@ -19,10 +19,11 @@ page.setDefaultTimeout(20_000)
 const errors = [], submissions = []
 let publicationReady = true
 page.on("pageerror", error => errors.push(error.message))
+const fixtureHtml = await vite.transformIndexHtml("/legal-fixture", '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><div id="root"></div>')
 await context.route("**/*", route => {
   const url = new URL(route.request().url())
   if (url.hostname !== "127.0.0.1") return route.abort()
-  if (url.pathname === "/legal-fixture") return route.fulfill({ contentType: "text/html", body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><div id="root"></div>' })
+  if (url.pathname === "/legal-fixture") return route.fulfill({ contentType: "text/html", body: fixtureHtml })
   if (url.pathname === "/api/legal/documents") return route.fulfill({ json: { hash: "a".repeat(64), publicationReady,
     documents: legalDocuments({ name: "Operador simulado", address: "Domicilio simulado para QA", privacyEmail: "contacto@fixture.mx", phone: "8180000000" }) } })
   if (url.pathname === "/api/privacy/requests") {
