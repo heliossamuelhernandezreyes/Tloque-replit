@@ -267,7 +267,7 @@ try {
     const restored = await request('/api/sync/library', { role: 'reader' });
     const bookmark = restored.data.books.find(item => item.id === work.id);
     assert.equal(bookmark.offlineAvailable, false); assert.equal(bookmark.content, undefined);
-    const card = await request(`/api/books/${work.id}/cards`, { role: 'author', method: 'POST', body: { name: 'Pending art', unlock: 'tinta', priceTinta: 5 } });
+    const card = await request(`/api/books/${work.id}/cards`, { role: 'author', method: 'POST', body: { name: 'Pending art', unlock: 'tinta', priceTinta: 5, fx: { layers: { back: 'https://example.test/pending.png', mid: '', front: '' } } } });
     assert.equal(card.status, 201, JSON.stringify(card.data));
     const before = await client.query('select count(*)::integer as count from wallet_ledger where user_id=$1', [users.collector.id]);
     const purchase = await request(`/api/cards/${card.data.id}/buy`, { role: 'collector', method: 'POST' });

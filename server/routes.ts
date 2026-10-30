@@ -41,11 +41,12 @@ import { registerLegalRoutes, LegalRequirementError, hasBookRight, rightsForBook
 import { grantAuthorizedSupportCards } from "./collectibleRights"
 import { gachaLegalReady } from "./legalConfig"
 import { legalAcceptances } from "@shared/schema"
+import { patchSchema } from "@shared/patch-schema"
 
 const cloudBookDraftSchema = z.object({
   baseRevision: z.number().int().min(1),
   expectedDraftRevision: z.number().int().min(0).optional(),
-  data: api.books.create.input.partial(),
+  data: patchSchema(api.books.create.input),
 }).strict()
 
 const restoreBookRevisionSchema = z.object({

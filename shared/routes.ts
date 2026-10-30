@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { patchSchema } from './patch-schema';
 import { insertBookSchema, books } from './schema';
 import { publicationAcceptanceSchema } from './legal';
 
@@ -44,7 +45,7 @@ export const api = {
     update: {
       method: 'PUT' as const,
       path: '/api/books/:id' as const,
-      input: insertBookSchema.partial().extend({
+      input: patchSchema(insertBookSchema).extend({
         expectedRevision: z.number().int().min(1),
         legalAcceptance: publicationAcceptanceSchema.optional(),
       }),
