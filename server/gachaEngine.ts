@@ -10,6 +10,7 @@ import {
 } from "@shared/gacha"
 import { randomBytes } from "node:crypto"
 import { debitTinta, refundTintaDebit } from "./economy"
+import { gachaLegalReady } from "./legalConfig"
 
 // Un candado global para el pozo: dos lectores no pueden cobrarle
 // al mismo tiempo. Serializa las tiradas — a cambio, el dinero nunca miente.
@@ -46,6 +47,7 @@ export interface DrawPayload {
  * o pasa entero, o no pasa nada. El pozo nunca queda inconsistente.
  */
 export async function drawTicket(userId: number): Promise<DrawOutcome> {
+  if (!gachaLegalReady()) return { ok: false, code: 503, message: "El sorteo sigue pendiente de habilitación jurídica y del procesador de pagos." }
   return await db.transaction(async (tx) => {
     // ── Candados: primero el usuario, luego el pozo (orden fijo = sin abrazos mortales)
     await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)

@@ -3,6 +3,7 @@
 // accidental de Stripe nunca debe convertirse en moneda o tokens gratis.
 import { createHmac, timingSafeEqual } from "crypto"
 import { isSafeHttpsUrl } from "@shared/media"
+import { commercialLegalReady } from "./legalConfig"
 
 // ── Precios y economía de Tinta 🪙 ───────────────────────────
 // 1 Tinta = $2.00 MXN (10 🪙 ≈ 1 USD). Cuento: 5 🪙 · Libro: 10 🪙.
@@ -17,8 +18,11 @@ export const TINTA_PACKS = [
   { id: "archivo",  tinta: 120, cents: 19_900, label: "Archivo",  recommended: false },
 ] as const
 
-// ¿La obra es cuento (un solo capítulo) o libro?
+// La categoría editorial manda; una novela de un capítulo sigue siendo libro.
 export function isStory(book: any): boolean {
+  if (book?.type === "story") return true
+  if (book?.type === "book" || book?.type === "saga") return false
+  // Compatibility only for old fixtures/records without an editorial category.
   const n = Array.isArray(book?.chapters) ? book.chapters.length : 1
   return n <= 1
 }
@@ -60,7 +64,8 @@ export function stripeEnabled(): boolean {
   // entregará la compra. Esto también protege los Repls de desarrollo que son
   // accesibles públicamente y podrían contener una clave de prueba o real.
   return Boolean(
-    process.env.STRIPE_SECRET_KEY
+    commercialLegalReady()
+    && process.env.STRIPE_SECRET_KEY
     && process.env.STRIPE_WEBHOOK_SECRET
     && process.env.STRIPE_CONNECT_WEBHOOK_SECRET
     && process.env.STRIPE_CONNECT_ENABLED === "true"

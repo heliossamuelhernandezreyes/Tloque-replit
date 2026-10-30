@@ -70,7 +70,6 @@ function GutenbergExplorer({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState("")
   const [synopsis, setSynopsis] = useState("")
   const [genre, setGenre] = useState("")
-  const [destination, setDestination] = useState<"draft" | "published">("draft")
   const [saving, setSaving] = useState<"private" | "catalog" | null>(null)
   const [saveError, setSaveError] = useState("")
   const previewRequest = useRef<AbortController | null>(null)
@@ -150,7 +149,7 @@ function GutenbergExplorer({ onClose }: { onClose: () => void }) {
       const data = await readJson<{ book: { id: number; status: string } }>("/api/admin/gutenberg/import", undefined, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ gutenbergId: selected.gutenbergId, genre, overrideTitle: title.trim(),
-          overrideSynopsis: synopsis.trim(), lang: settings.language, status: destination }),
+          overrideSynopsis: synopsis.trim(), lang: settings.language, status: "draft" }),
       })
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["/api/books"] }),
@@ -272,11 +271,9 @@ function GutenbergExplorer({ onClose }: { onClose: () => void }) {
           </div></details>}
           <p className="text-[11px] leading-relaxed text-zinc-500">{t("gutenbergRightsNotice")}</p>
           {saveError && <p role="alert" className="rounded-xl border border-amber-200/20 p-3 text-sm text-amber-100">{saveError}</p>}
-          {isAdmin && <label className="block space-y-1 text-xs text-zinc-400">{copy.importAs}<select aria-label={copy.importAs} className={field} value={destination} onChange={event => setDestination(event.target.value as "draft" | "published")} disabled={!!saving}>
-            <option value="draft" className="bg-zinc-900">{copy.draft}</option><option value="published" className="bg-zinc-900">{copy.publish}</option>
-          </select></label>}
+          {isAdmin && <p className="text-xs leading-relaxed text-zinc-400">Se importará como borrador. Antes de publicar, revisa la edición, traducción y derechos territoriales y confirma sus permisos en el editor.</p>}
           <div className="grid gap-3 pb-3 sm:grid-cols-2"><button className={button} onClick={() => void savePrivate()} disabled={!!saving}>{saving === "private" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}{t("saveBook")}</button>
-            {isAdmin && <button className={button + " border-transparent"} style={accent} onClick={() => void importEdition()} disabled={!!saving}>{saving === "catalog" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{destination === "draft" ? copy.draft : copy.publish}</button>}
+            {isAdmin && <button className={button + " border-transparent"} style={accent} onClick={() => void importEdition()} disabled={!!saving}>{saving === "catalog" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{copy.draft}</button>}
           </div>
         </div>}
       </div>

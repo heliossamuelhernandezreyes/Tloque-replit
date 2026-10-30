@@ -24,6 +24,7 @@ export interface AuthUser {
     manageFinance: boolean
     manageAdmins: boolean
     runDiagnostics: boolean
+    managePrivacy: boolean
   }
   subscription: {
     plan: string

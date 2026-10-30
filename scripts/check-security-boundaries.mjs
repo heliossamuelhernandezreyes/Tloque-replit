@@ -1,3 +1,4 @@
+import { LEGAL_FIXTURE_ENV, legalFixtureAcceptance } from './fixtures/legal-config.mjs';
 // Integration gate against a disposable local PostgreSQL database only.
 // Real Passport sessions and two unmodified compiled application processes;
 // synthetic users, no OAuth/Stripe calls or production credentials.
@@ -77,7 +78,7 @@ try {
   for (let instance = 0; instance < 2; instance++) {
     const child = spawn(process.execPath, ['dist/index.cjs'], {
       env: {
-        PATH: process.env.PATH, NODE_ENV: 'production', PORT: String(5192 + instance),
+        ...LEGAL_FIXTURE_ENV, PATH: process.env.PATH, NODE_ENV: 'production', PORT: String(5192 + instance),
         DATABASE_URL: url.href, APP_URL: 'https://security.example.test',
         ADMIN_EMAIL: users.founder.email, SESSION_SECRET: secret,
         CLAIM_KEY_SECRET: randomBytes(32).toString('hex'),
@@ -98,6 +99,7 @@ try {
     assert.ok(healthy, 'Server did not start: ' + output);
   }
 
+  const legalAcceptance = legalFixtureAcceptance((await request('/api/legal/documents')).data);
   await check('Passport identities and explicit capabilities', async () => {
     const capabilities = {
       catalog: 'manageCatalog', visual: 'manageFrames', audio: 'manageAudioCatalog',
@@ -111,9 +113,9 @@ try {
     }
   });
   await check('Partial book/profile updates preserve omitted fields and chapter completion is explicit', async () => {
-    const created = await request('/api/books', { role: 'author', method: 'POST', body: { title: 'Single chapter', author: 'Fixture', status: 'published', content: 'Complete story' } });
+    const created = await request('/api/books', { role: 'author', method: 'POST', body: { title: 'Single chapter', author: 'Fixture', status: 'published', legalAcceptance, content: 'Complete story' } });
     assert.equal(created.status, 201, JSON.stringify(created.data));
-    const updated = await request(`/api/books/${created.data.id}`, { role: 'author', method: 'PUT', body: { title: 'Renamed chapter', expectedRevision: created.data.revision } });
+    const updated = await request(`/api/books/${created.data.id}`, { role: 'author', method: 'PUT', body: { title: 'Renamed chapter', legalAcceptance, expectedRevision: created.data.revision } });
     assert.equal(updated.status, 200, JSON.stringify(updated.data)); assert.equal(updated.data.status, 'published');
     await client.query('update users set social_links=$1 where id=$2', [JSON.stringify({ website: 'https://example.test/author' }), users.author.id]);
     assert.equal((await request('/api/profile', { role: 'author', method: 'PATCH', body: { bio: 'Only bio changes' } })).status, 200);

@@ -1,3 +1,4 @@
+import { LEGAL_FIXTURE_ENV, legalFixtureAcceptance } from './fixtures/legal-config.mjs';
 // Real compiled servers + Passport + PostgreSQL; only Stripe's HTTPS transport
 // is replaced by a deterministic local provider. Never connects to live Stripe.
 import assert from 'node:assert/strict';
@@ -169,7 +170,7 @@ try {
     JSON.stringify([{ title: 'One', content: 'One' }, { title: 'Two', content: 'Two' }])]));
   for (let instance = 0; instance < 3; instance++) {
     const child = spawn(process.execPath, ['--import', resolve('scripts/fixtures/stripe-preload.mjs'), 'dist/index.cjs'], {
-      env: { PATH: process.env.PATH, CI: 'true', NODE_ENV: 'production', PORT: String(5292 + instance),
+      env: { ...LEGAL_FIXTURE_ENV, PATH: process.env.PATH, CI: 'true', NODE_ENV: 'production', PORT: String(5292 + instance),
         DATABASE_URL: url.href, APP_URL: 'https://payments.example.test', SESSION_SECRET: secret,
         ADMIN_EMAIL: 'founder@payments.example.test',
         CLAIM_KEY_SECRET: claimSecret, STRIPE_WEBHOOK_SECRET: webhookSecret, STRIPE_SECRET_KEY: 'sk_test_fixture',
@@ -190,6 +191,11 @@ try {
     }
     assert.ok(healthy, 'Server did not start: ' + output);
   }
+
+  const legalAcceptance = legalFixtureAcceptance((await request('/api/legal/documents')).data);
+  const fixtureBook = (await request('/api/books/' + book.id, { role: 'author' })).data;
+  const authorizedBook = await request('/api/books/' + book.id, { role: 'author', method: 'PUT', body: { expectedRevision: fixtureBook.revision, legalAcceptance } });
+  assert.equal(authorizedBook.status, 200, JSON.stringify(authorizedBook.data));
 
   await check('Concurrent payout approval and rejection cannot release money in flight', async () => {
     const authorId = users.payoutAuthor.id;
@@ -217,7 +223,7 @@ try {
   });
 
   await check('Purchased card art, frame and book survive edits and withdrawal', async () => {
-    const created = await request('/api/books', { role: 'author', method: 'POST', body: { title: 'Preserved edition', author: 'Fixture', status: 'published', chapters: [{ title: 'Only chapter', content: 'Public edition text' }] } });
+    const created = await request('/api/books', { role: 'author', method: 'POST', body: { title: 'Preserved edition', author: 'Fixture', status: 'published', legalAcceptance, chapters: [{ title: 'Only chapter', content: 'Public edition text' }] } });
     assert.equal(created.status, 201, JSON.stringify(created.data));
     const work = created.data;
     const { rows: [frame] } = await client.query("insert into frames(name,pkg) values('Frame fixture',$1) returning id", [JSON.stringify({ label: 'Original frame' })]);

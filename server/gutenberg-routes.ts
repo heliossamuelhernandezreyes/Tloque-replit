@@ -19,7 +19,7 @@ export const gutenbergImportSchema = z.object({
   overrideTitle: z.string().trim().max(200).optional().default(""),
   overrideSynopsis: z.string().trim().max(8_000).optional().default(""),
   lang: z.string().trim().toLowerCase().max(12).optional().default("es"),
-  status: z.enum(["draft", "published"]).default("published"),
+  status: z.enum(["draft", "published"]).default("draft"),
 }).strict()
 
 type Dependencies = {
@@ -99,6 +99,7 @@ export function registerGutenbergRoutes(app: Express, { storage, requireAdmin, i
     const parsed = gutenbergImportSchema.safeParse(req.body)
     if (!parsed.success) return res.status(400).json({ message: "Datos de importación inválidos" })
     const { gutenbergId, genre, overrideTitle, overrideSynopsis, lang, status } = parsed.data
+    if (status === "published") return res.status(428).json({ code: "LEGAL_ACCEPTANCE_REQUIRED", message: "Importa como borrador. Revisa los derechos territoriales de la edición y traducción y confirma los permisos desde el editor antes de publicarla." })
     try {
       const existing = await storage.findBookByGutenbergId(gutenbergId)
       if (existing) return res.status(409).json({ message: "Este libro ya está importado", existingBookId: existing.id, existingStatus: existing.status })

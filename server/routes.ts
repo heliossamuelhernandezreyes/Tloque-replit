@@ -37,6 +37,9 @@ import { lookupDictionary, normalizeDictionaryLanguage } from "./dictionary";
 import { translateText, SUPPORTED_LANGUAGES } from "./gutenberg";
 import { registerGutenbergRoutes } from "./gutenberg-routes";
 import { registerVisualUploadRoutes } from "./visualUploads";
+import { registerLegalRoutes, LegalRequirementError, hasBookRight } from "./legal"
+import { gachaLegalReady } from "./legalConfig"
+import { legalAcceptances } from "@shared/schema"
 
 const cloudBookDraftSchema = z.object({
   baseRevision: z.number().int().min(1),
@@ -53,6 +56,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  registerLegalRoutes(app)
   registerAudioRoutes(app)
   registerVisualUploadRoutes(app)
   registerNarrativeRoutes(app)
@@ -249,7 +253,7 @@ export async function registerRoutes(
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Inicia sesión para publicar" });
       }
-      const input = api.books.create.input.parse(req.body);
+      const { legalAcceptance, ...input } = api.books.create.input.parse(req.body);
 
       // El autor es SIEMPRE quien está en la sesión (no se acepta del body)
       const authorId = (req.user as any)?.id ?? null;
@@ -257,9 +261,10 @@ export async function registerRoutes(
       const book = await storage.createBook({
         ...authorBookInput(input, req.user),
         authorId,
-      });
+      }, { changedBy: authorId, legalAcceptance });
       res.status(201).json(book);
     } catch (err) {
+      if (err instanceof LegalRequirementError) return res.status(err.status).json({ message: err.message, code: err.code })
       if (err instanceof z.ZodError) {
         return res.status(400).json({
           message: err.errors[0].message,
@@ -297,7 +302,7 @@ export async function registerRoutes(
       }
 
       const input = api.books.update.input.parse(req.body)
-      const { expectedRevision, ...requestedUpdates } = input
+      const { expectedRevision, legalAcceptance, ...requestedUpdates } = input
       const updates = userIsAdmin ? requestedUpdates : authorBookInput(requestedUpdates, req.user)
       // Un autor puede corregir una obra moderada, pero no levantar su propia
       // revisión. Sólo el flujo administrativo de visibilidad puede hacerlo.
@@ -309,6 +314,7 @@ export async function registerRoutes(
         expectedRevision,
         changedBy: req.isAuthenticated() ? (req.user as any).id : null,
         changeType,
+        legalAcceptance,
       });
       // Al confirmar una revisión canónica, el borrador cloud anterior deja de
       // ser necesario. El cliente conserva su copia local hasta recibir éxito.
@@ -320,6 +326,7 @@ export async function registerRoutes(
       }
       res.json(updated);
     } catch (err) {
+      if (err instanceof LegalRequirementError) return res.status(err.status).json({ message: err.message, code: err.code })
       if (err instanceof BookRevisionConflictError) {
         return res.status(409).json({
           message: "El manuscrito cambió en otra sesión. Conservamos tu borrador para que puedas compararlo.",
@@ -463,6 +470,7 @@ export async function registerRoutes(
       await db.delete(bookDrafts).where(eq(bookDrafts.bookId, id))
       res.json(restored)
     } catch (err) {
+      if (err instanceof LegalRequirementError) return res.status(err.status).json({ message: err.message, code: err.code })
       if (err instanceof BookRevisionConflictError) {
         return res.status(409).json({ message: err.message, currentRevision: err.currentRevision })
       }
@@ -692,10 +700,12 @@ export async function registerRoutes(
       const updated = await storage.updateBook(id, { status } as any, {
         changedBy: (req.user as any).id,
         changeType: status === "published" ? "publish" : "unpublish",
+        legalAcceptance: req.body?.legalAcceptance,
       })
       res.json(updated)
     } catch (err: any) {
       console.error("Visibility error:", err)
+      if (err instanceof LegalRequirementError) return res.status(err.status).json({ message: err.message, code: err.code })
       res.status(500).json({ message: err.message || "Error cambiando visibilidad" })
     }
   })
@@ -1331,6 +1341,9 @@ export async function registerRoutes(
         const check = await validateAcquire(userId, bookId, kind, tx)
         if (check.error) return { reply: { code: check.code, body: { message: check.error } } }
         const book = check.book!
+        if (!await hasBookRight(book.id, book.revision, kind === "sale" ? "commercialPrint" : "personalPrint", tx)) {
+          return { reply: { code: 428, body: { code: "PRINT_RIGHTS_REQUIRED", message: "El titular debe autorizar esta modalidad de impresión para la versión publicada." } } }
+        }
         const price = priceFor(kind as "support" | "sale", book)
         const provider = payWith === "tinta" ? "tinta" : stripeEnabled() ? "stripe" : "beta"
         if (provider === "beta" && !betaPaymentsEnabled()) {
@@ -1594,6 +1607,8 @@ export async function registerRoutes(
           sourceUrl: voiceProfiles.sourceUrl, status: voiceProfiles.status, createdAt: voiceProfiles.createdAt,
         }).from(voiceProfiles).where(eq(voiceProfiles.createdBy, userId)),
       ])
+      const publicationReceipts = await db.select().from(legalAcceptances)
+        .where(eq(legalAcceptances.userId, userId)).orderBy(desc(legalAcceptances.id))
       res.json({
         schema: "tloque-account-export@2", exportedAt: new Date().toISOString(),
         account: accountRows[0] || null,
@@ -1602,6 +1617,7 @@ export async function registerRoutes(
         authorship: { works: workRows, cards: authoredCardRows, drafts, revisions, narrative, experience, speech, speechReady, direction, uploads, voices },
         generation: { runs, jobs: jobs.map(({ claimToken: _token, ...job }) => job), requests },
         retention: { deletion: ACCOUNT_DELETION_NOTICE },
+        legal: { publicationReceipts },
         collection: { cards: collectedCardRows, frames: ownedFrameRows },
         print: { tokens: tokenRows, copies: copyRows },
         economy: { ledger: ledgerRows, paperUsage: usageRows },
@@ -2621,7 +2637,7 @@ export async function registerRoutes(
   app.get("/api/gacha/status", async (req, res) => {
     try {
       const [cfg] = await db.select().from(gachaConfig).where(eq(gachaConfig.id, 1))
-      const enabled = !!cfg?.enabled
+      const enabled = !!cfg?.enabled && gachaLegalReady()
       const pool = cfg?.poolBalance ?? 0
 
       // Cuántas obras hay por rareza (stock real, sin mentir)
@@ -2720,6 +2736,7 @@ export async function registerRoutes(
   app.post("/api/admin/gacha/toggle", requireAdmin, rateLimit(60_000, 20), async (req, res) => {
     try {
       const enabled = req.body?.enabled === true
+      if (enabled && !gachaLegalReady()) return res.status(503).json({ message: "El sorteo requiere completar su habilitación jurídica y la aceptación del procesador de pagos." })
       await db.insert(gachaConfig).values({ id: 1, enabled })
         .onConflictDoUpdate({
           target: gachaConfig.id,
@@ -2907,6 +2924,7 @@ export async function registerRoutes(
       const action = String(req.body?.action || "setup")
 
       if (action === "setup") {
+        if (!gachaLegalReady()) return res.status(503).json({ message: "Completa primero la habilitación jurídica y del procesador; la beta no la sustituye." })
         // 1–2. Encender el sorteo y sembrar el pozo, aunque la fila inicial
         // todavía no exista en una instalación recién migrada.
         const seedPool = Math.max(0, Math.min(100_000, Math.round(Number(req.body?.pool) || 20_000)))

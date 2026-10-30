@@ -91,8 +91,12 @@ test("Gutenberg HTTP: filtros, estados privados, preview completo, importación 
     assert.equal((await request("/api/admin/gutenberg/import", false, { gutenbergId: 100003 })).status, 403)
     assert.equal(writes, 0)
     assert.equal((await request("/api/admin/gutenberg/import", true, { gutenbergId: 100003, chapters: [] })).status, 400)
+    const beforeRejected = sourceCalls
+    assert.equal((await request("/api/admin/gutenberg/import", true, { gutenbergId: 100003, status: "published" })).status, 428)
+    assert.equal(sourceCalls, beforeRejected, "no source work or publication before reviewing the edition")
+    assert.equal(writes, 0)
     const callsBeforeImport = sourceCalls
-    res = await request("/api/admin/gutenberg/import", true, { gutenbergId: 100003, status: "draft", overrideTitle: "Curated" })
+    res = await request("/api/admin/gutenberg/import", true, { gutenbergId: 100003, overrideTitle: "Curated" })
     assert.equal(res.status, 201)
     const imported = await res.json()
     assert.equal(imported.book.status, "draft")

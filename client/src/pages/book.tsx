@@ -133,7 +133,10 @@ export default function BookPage() {
         credentials: "include",
         body:        JSON.stringify({ status: next }),
       })
-      if (!res.ok) throw new Error(t("visibilityErr"))
+      if (!res.ok) {
+        const failure = await res.json().catch(() => ({}))
+        throw new Error(failure.message || t("visibilityErr"))
+      }
       setBookStatus(next)
       // Refrescar el catálogo para que el cambio se vea de inmediato
       queryClient.invalidateQueries({ queryKey: ["/api/books"] })

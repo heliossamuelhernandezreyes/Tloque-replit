@@ -2,6 +2,8 @@ import { db } from "./db";
 import { isDeepStrictEqual } from "node:util"
 import { books, bookRevisions, comments, type CreateBookRequest, type UpdateBookRequest, type BookResponse, type Comment } from "@shared/schema";
 import { eq, and, desc, getTableColumns, inArray, sql } from "drizzle-orm";
+import type { PublicationAcceptance } from "@shared/legal"
+import { recordPublicationAcceptance } from "./legal"
 
 export type BookChangeType = "create" | "update" | "publish" | "unpublish" | "restore" | "delete"
 
@@ -16,6 +18,7 @@ type BookUpdateOptions = {
   expectedRevision?: number
   changedBy?: number | null
   changeType?: BookChangeType
+  legalAcceptance?: PublicationAcceptance
 }
 
 export interface IStorage {
@@ -24,7 +27,7 @@ export interface IStorage {
   getBook(id: number): Promise<BookResponse | undefined>;
   findBookByGutenbergId(gutenbergId: number): Promise<BookResponse | undefined>;
   getGutenbergReferences(ids: number[], includeUnpublished?: boolean): Promise<{ id: number; gutenbergId: number | null; status: string }[]>;
-  createBook(book: CreateBookRequest): Promise<BookResponse>;
+  createBook(book: CreateBookRequest, options?: BookUpdateOptions): Promise<BookResponse>;
   updateBook(id: number, updates: UpdateBookRequest, options?: BookUpdateOptions): Promise<BookResponse>;
   deleteBook(id: number, changedBy?: number | null): Promise<void>;
 }
@@ -82,7 +85,7 @@ export class DatabaseStorage implements IStorage {
       ))
   }
 
-  async createBook(insertBook: CreateBookRequest): Promise<BookResponse> {
+  async createBook(insertBook: CreateBookRequest, options: BookUpdateOptions = {}): Promise<BookResponse> {
     return db.transaction(async tx => {
       const [book] = await tx.insert(books).values({ ...insertBook, revision: 1, updatedAt: new Date() }).returning();
       await tx.insert(bookRevisions).values({
@@ -92,6 +95,7 @@ export class DatabaseStorage implements IStorage {
         changeType: "create",
         createdBy: book.authorId,
       })
+      await recordPublicationAcceptance(tx, book, options.changedBy ?? book.authorId, options.legalAcceptance)
       return book;
     })
   }
@@ -108,7 +112,7 @@ export class DatabaseStorage implements IStorage {
         ? eq(books.id, id)
         : and(eq(books.id, id), eq(books.revision, options.expectedRevision))
       const [currentBook] = await tx.select().from(books).where(condition).for("update")
-      if (currentBook && Object.entries(safeUpdates).every(([key, value]) => value === undefined || isDeepStrictEqual((currentBook as any)[key], value))) return currentBook
+      if (currentBook && !options.legalAcceptance && Object.entries(safeUpdates).every(([key, value]) => value === undefined || isDeepStrictEqual((currentBook as any)[key], value))) return currentBook
       const [updated] = await tx.update(books)
         .set({
           ...safeUpdates,
@@ -131,6 +135,7 @@ export class DatabaseStorage implements IStorage {
         changeType: options.changeType ?? "update",
         createdBy: options.changedBy ?? null,
       })
+      await recordPublicationAcceptance(tx, updated, options.changedBy, options.legalAcceptance, currentBook)
       return updated
     })
   }

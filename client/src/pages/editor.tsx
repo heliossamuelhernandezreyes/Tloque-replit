@@ -22,6 +22,8 @@ import {
   saveDurableEditorDraft,
 } from "@/lib/editor-drafts"
 import { buildDirectionWorkspaceUrl, isServerBookId } from "@/lib/editor-workspace"
+import PublicationConsent from "@/components/PublicationConsent"
+import type { PublicationAcceptance } from "@shared/legal"
 
 // ── TIPOS ────────────────────────────────────────────────
 type Chapter  = { title: string; content: string }
@@ -313,6 +315,14 @@ export default function Editor() {
   const [manuscriptDirty, setManuscriptDirty] = useState(false)
   const [focusMode,     setFocusMode]     = useState(false)
   const [showChecklist, setShowChecklist] = useState(false)
+  const [showRights, setShowRights] = useState(false)
+  const rightsResolver = useRef<((value: PublicationAcceptance | null) => void) | null>(null)
+  useEffect(() => () => { rightsResolver.current?.(null) }, [])
+  function resolveRights(value: PublicationAcceptance | null) {
+    rightsResolver.current?.(value)
+    rightsResolver.current = null
+    setShowRights(false)
+  }
   // Metadata del libro de servidor que se está editando (admin/clásicos).
   // Se preserva al guardar para no corromper autor, idioma, etc.
   const [serverMeta,    setServerMeta]    = useState<any>(null)
@@ -662,6 +672,7 @@ export default function Editor() {
   }, [form, focusMode])
 
   async function publish() {
+    if (rightsResolver.current) return
     if (!form.title.trim() || !form.synopsis.trim()) {
       toast({ title: "Faltan datos", description: "Título y sinopsis son obligatorios." })
       return
@@ -671,6 +682,11 @@ export default function Editor() {
       return
     }
 
+    const legalAcceptance = await new Promise<PublicationAcceptance | null>(resolve => {
+      rightsResolver.current = resolve
+      setShowRights(true)
+    })
+    if (!legalAcceptance) return
     setSaveStatus("saving")
 
     // Construir coverFx final según el modo
@@ -692,6 +708,7 @@ export default function Editor() {
       const created = form.id ? createdDrafts.current.get(form.id) : undefined
       const localId = created?.id ?? form.id
       const serverPayload = {
+        legalAcceptance,
         title:        form.title,
         // Si es edición de servidor (admin/clásico), preservar autor original
         author:       serverMeta ? form.author : (user?.name || form.author),
@@ -787,7 +804,7 @@ export default function Editor() {
       // Para libros de servidor (clásicos/admin), no intentamos guardar en
       // memoria local (son enormes). Solo avisamos del fallo de conexión.
       if (serverMeta) {
-        toast({ title: "No se pudo guardar", description: "Revisa tu conexión e inténtalo de nuevo." })
+        toast({ title: "No se pudo guardar", description: err instanceof Error ? err.message : "Revisa tu conexión e inténtalo de nuevo." })
         return
       }
       const id = form.id || Date.now()
@@ -803,7 +820,7 @@ export default function Editor() {
       }
       toast({
         title: "No se publicó",
-        description: "La copia quedó como borrador local. Revisa la conexión e inténtalo nuevamente.",
+        description: err instanceof Error ? err.message : "La copia quedó como borrador local. Revisa la conexión e inténtalo nuevamente.",
       })
     }
   }
@@ -899,6 +916,7 @@ export default function Editor() {
 
   return (
     <div className="min-h-screen bg-black text-zinc-300 overflow-x-hidden">
+      {showRights && <PublicationConsent category={form.type} onConfirm={resolveRights} onCancel={() => resolveRights(null)} />}
 
       {/* ── BARRA SUPERIOR ── */}
       <div

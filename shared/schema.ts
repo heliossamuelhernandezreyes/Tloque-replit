@@ -31,6 +31,34 @@ export const users = pgTable("users", {
 export type User       = typeof users.$inferSelect
 export type InsertUser = typeof users.$inferInsert
 
+// Legal evidence is append-only in the SQL migration, not merely in the UI.
+export const legalAcceptances = pgTable("legal_acceptances", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  bookId: integer("book_id").notNull(),
+  bookRevision: integer("book_revision").notNull(),
+  documentVersion: text("document_version").notNull(),
+  documentHash: text("document_hash").notNull(),
+  documents: jsonb("documents").notNull(),
+  workHash: text("work_hash").notNull(),
+  declaration: jsonb("declaration").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, table => [unique("legal_acceptances_book_id_book_revision_key").on(table.bookId, table.bookRevision)])
+
+export const privacyRequests = pgTable("privacy_requests", {
+  id: serial("id").primaryKey(), publicId: text("public_id").notNull().unique(),
+  userId: integer("user_id").references(() => users.id), email: text("email").notNull(),
+  type: text("request_type").notNull(), description: text("description").notNull(),
+  status: text("status").notNull().default("received"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+export const privacyRequestEvents = pgTable("privacy_request_events", {
+  id: serial("id").primaryKey(), requestId: integer("request_id").notNull().references(() => privacyRequests.id),
+  actorId: integer("actor_id").references(() => users.id), status: text("status").notNull(),
+  note: text("note").notNull(), createdAt: timestamp("created_at").defaultNow().notNull(),
+})
+
 // ── ADMINISTRADORES ───────────────────────────────────────
 // Tabla para gestionar quién tiene permisos de admin.
 // El ADMIN_EMAIL configurado se auto-inserta al arrancar.

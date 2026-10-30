@@ -42,6 +42,9 @@ const Editions = lazy(() => import("@/pages/Editions"))
 const AdminHub = lazy(() => import("@/pages/AdminHub"))
 const PayoutAdmin = lazy(() => import("@/pages/PayoutAdmin"))
 const LegalPage = lazy(() => import("@/pages/legal"))
+const PrivacyRequest = lazy(() => import("@/pages/PrivacyRequest"))
+const PrivacyAdmin = lazy(() => import("@/pages/PrivacyAdmin"))
+const LegalReceipts = lazy(() => import("@/pages/LegalReceipts"))
 import { CardViewerProvider } from "@/components/CardViewer"
 import { MusicProvider } from "@/audio/MusicProvider"
 import { VisualEngineProvider } from "@/visual/VisualEngine"
@@ -101,6 +104,8 @@ function Router() {
         <Route path="/marcos"                  component={FrameGallery} />
         <Route path="/admin"                   component={adminPage(AdminHub)} />
         <Route path="/admin/liquidaciones"     component={adminPage(PayoutAdmin, "manageFinance")} />
+        <Route path="/admin/privacidad"        component={adminPage(PrivacyAdmin, "managePrivacy")} />
+        <Route path="/legal/receipts"          component={LegalReceipts} />
         <Route path="/admin/diag"              component={adminPage(FlickerLab, "runDiagnostics")} />
         <Route path="/admin/marcos"            component={adminPage(FrameWorkshop, "manageFrames")} />
         <Route path="/admin/fonoteca"          component={adminPage(AudioCatalogAdmin, "manageAudioCatalog")} />
@@ -214,6 +219,7 @@ function AppContent() {
     needsOnboarding
   )
 
+  if (window.location.pathname === "/privacy/requests") return <Suspense fallback={<RouteFallback />}><PrivacyRequest /></Suspense>
   if (legalPath) return <Suspense fallback={<RouteFallback />}><LegalPage kind={legalPath} /></Suspense>
   if (!bootComplete) return <BootExperience phase={bootPhase} />
   if (isLoading) return <RouteFallback />

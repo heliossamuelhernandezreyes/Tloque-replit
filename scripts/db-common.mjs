@@ -30,6 +30,7 @@ export const BASE_COLUMNS = {
 }
 
 export const EXPECTED_TABLES = [
+  "legal_acceptances", "privacy_requests", "privacy_request_events",
   "ai_requests",
   "visual_uploads",
   "adaptive_score_layers",
@@ -58,6 +59,7 @@ export const EXPECTED_TABLES = [
 ]
 
 export const EXPECTED_INDEXES = [
+  "legal_acceptances_user_created_idx", "privacy_requests_status_created_idx",
   "ai_requests_recovery_idx",
   "audiobook_jobs_recovery_idx",
   "books_author_client_draft_idx",
@@ -352,6 +354,9 @@ export async function validateExpectedSchema(client) {
   }
 
   const requiredColumns = {
+    legal_acceptances: ["user_id", "book_id", "book_revision", "document_version", "document_hash", "documents", "work_hash", "declaration", "created_at"],
+    privacy_requests: ["public_id", "email", "request_type", "description", "status", "created_at", "updated_at"],
+    privacy_request_events: ["request_id", "actor_id", "status", "note", "created_at"],
     users: ["subscription_plan", "subscription_status", "subscription_expires_at", "deleted_at"],
     print_copies: ["sale_status", "sold_at", "sale_price_cents", "sale_channel", "sale_note", "claim_key_hash", "updated_at"],
     audiobook_cache: ["cache_key", "storage_key", "status", "content_hash"],

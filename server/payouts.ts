@@ -13,6 +13,7 @@ import { rateLimit } from "./rateLimit"
 import { publicOriginForRequest } from "./security"
 import { stripeForm, verifyStripeWebhook } from "./payments"
 import { hasOpenPaymentIncidents } from "./paymentIncidents"
+import { commercialLegalReady } from "./legalConfig"
 
 const ACTIVE_PAYOUT_STATES = ["requested", "processing", "processing_unknown"]
 
@@ -27,7 +28,8 @@ export function canClaimPayout(row: { status: string; processedAt: Date | null; 
 
 export function payoutSystemEnabled(): boolean {
   return Boolean(
-    process.env.STRIPE_SECRET_KEY
+    commercialLegalReady()
+    && process.env.STRIPE_SECRET_KEY
     && process.env.STRIPE_CONNECT_WEBHOOK_SECRET
     && process.env.STRIPE_CONNECT_ENABLED === "true"
     && process.env.PAYOUTS_READY === "true",
