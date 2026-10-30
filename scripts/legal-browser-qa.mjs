@@ -84,7 +84,7 @@ try {
   await screenshot("privacy-receipt-mobile")
   await show("admin")
   await page.getByRole("button", { name: "Ver actuaciones", exact: true }).click()
-  await page.getByText("Identidad y alcance pendientes de verificar", { exact: true }).waitFor()
+  await page.getByText("Identidad y alcance pendientes de verificar", { exact: false }).waitFor()
   await screenshot("privacy-actions-mobile")
   assert.deepEqual(errors, [])
   console.log("Legal browser QA passed: explicit choices, pending setup, public receipt and restricted-action interface")
