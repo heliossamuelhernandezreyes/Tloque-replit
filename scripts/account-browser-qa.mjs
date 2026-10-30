@@ -94,11 +94,22 @@ try {
   await aReloadedAgain
   assert.deepEqual(remaining, { library: "library B", draft: { text: "draft B" } })
   checks.push("deleting one account's copies preserves the other account and unassigned historical data")
+  await context.route("**/api/books/81/offline", route => route.fulfill({ json: { id: 81, revision: 1,
+    content: "Texto conservado sin conexión. <script>window.offlineLeak=true</script>", hasOfflineContent: true } }))
+  await context.route("**/api/books/82/offline", route => route.fulfill({ status: 428, json: { code: "OFFLINE_RIGHTS_REQUIRED", message: "Descarga no autorizada" } }))
+  const denied = await b.evaluate(async () => {
+    const { saveOfflineContent, getOfflineContent } = await import("/src/lib/offline.ts")
+    let message = ""
+    try { await saveOfflineContent(82, { content: "No debe guardarse" }) } catch (error) { message = error.message }
+    return { message, content: await getOfflineContent(82) }
+  })
+  assert.deepEqual(denied, { message: "Descarga no autorizada", content: null })
+  checks.push("denied edition download never creates an offline copy")
   await b.evaluate(async () => {
     const { accountStorage } = await import("/src/lib/account-context.ts")
     const { saveOfflineContent } = await import("/src/lib/offline.ts")
     accountStorage.setItem("novareads_saved", JSON.stringify([{ id: 81, title: "Descarga de B", author: "Autor de prueba" }]))
-    await saveOfflineContent(81, { content: "Texto conservado sin conexión. <script>window.offlineLeak=true</script>" })
+    await saveOfflineContent(81, { content: "Client input is not the delivered edition" })
   })
   const apiRequests = []
   await context.route("**/api/**", route => { apiRequests.push(new URL(route.request().url()).pathname); return route.abort() })

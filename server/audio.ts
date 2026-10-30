@@ -323,7 +323,7 @@ export function registerAudioRoutes(app: Express) {
 
   app.post("/api/admin/audio/assets", requireAdmin, rateLimit(60_000, 20), async (req, res) => {
     const parsed = audioAssetInputSchema.safeParse(req.body)
-    if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0]?.message || "Activo inválido" })
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message || "Activo inválido" })
     try {
       const [created] = await db.insert(audioAssets).values({
         ...normalizedAudioAsset(parsed.data),
@@ -340,7 +340,7 @@ export function registerAudioRoutes(app: Express) {
     const id = parsePositiveInt(req.params.id)
     if (!id) return res.status(400).json({ message: "ID inválido" })
     const parsed = audioAssetInputSchema.safeParse(req.body)
-    if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0]?.message || "Activo inválido" })
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message || "Activo inválido" })
     try {
       const [updated] = await db.update(audioAssets)
         .set({ ...normalizedAudioAsset(parsed.data), updatedAt: new Date() })
@@ -444,7 +444,7 @@ export function registerAudioRoutes(app: Express) {
       return res.status(400).json({ message: "Capítulo inválido" })
     }
     const parsed = assignmentInputSchema.safeParse(req.body)
-    if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0]?.message || "Asignación inválida" })
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message || "Asignación inválida" })
     try {
       const [book] = await db.select().from(books).where(eq(books.id, bookId))
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })

@@ -270,6 +270,7 @@ function GutenbergExplorer({ onClose }: { onClose: () => void }) {
             <label className="block space-y-1 text-xs text-zinc-400">{t("synopsis")}<textarea className={field + " min-h-32"} value={synopsis} maxLength={8000} onChange={event => setSynopsis(event.target.value)} /></label>
           </div></details>}
           <p className="text-[11px] leading-relaxed text-zinc-500">{t("gutenbergRightsNotice")}</p>
+          <p className="text-xs leading-relaxed text-zinc-400">La descarga requiere una edición revisada y publicada con permiso offline. La disponibilidad en Gutenberg no acredita por sí sola los derechos para México.</p>
           {saveError && <p role="alert" className="rounded-xl border border-amber-200/20 p-3 text-sm text-amber-100">{saveError}</p>}
           {isAdmin && <p className="text-xs leading-relaxed text-zinc-400">Se importará como borrador. Antes de publicar, revisa la edición, traducción y derechos territoriales y confirma sus permisos en el editor.</p>}
           <div className="grid gap-3 pb-3 sm:grid-cols-2"><button className={button} onClick={() => void savePrivate()} disabled={!!saving}>{saving === "private" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}{t("saveBook")}</button>

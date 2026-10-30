@@ -246,9 +246,36 @@ try {
     assert.equal(preserved.status, 200); assert.equal(preserved.data.chapters[0].content, 'Public edition text');
     assert.equal((await request(`/api/sync/library/${work.id}`, { role: 'collector', method: 'PUT' })).status, 200);
     const restored = await request('/api/sync/library', { role: 'collector' });
-    assert.equal(restored.data.books.find(item => item.id === work.id).chapters[0].content, 'Public edition text');
+    const bookmark = restored.data.books.find(item => item.id === work.id);
+    assert.equal(bookmark.chapters, undefined, 'sync returns bookmarks without silently delivering a manuscript');
+    assert.equal(bookmark.offlineAvailable, true);
+    const offline = await request(`/api/books/${work.id}/offline`, { role: 'collector' });
+    assert.equal(offline.status, 200); assert.equal(offline.data.chapters[0].content, 'Public edition text');
     assert.equal((await request('/api/sync/progress', { role: 'collector', method: 'PUT', body: { bookId: work.id, chapter: 0, maxChapter: 0, completed: true } })).status, 200);
     assert.equal((await request(`/api/books/${work.id}`, { role: 'reader' })).status, 404);
+  });
+
+  await check('Denied offline and collectible rights stop new deliveries before any debit', async () => {
+    const denied = { ...legalAcceptance, choices: Object.fromEntries(Object.keys(legalAcceptance.choices).map(name => [name, false])) };
+    const created = await request('/api/books', { role: 'author', method: 'POST', body: { title: 'Online reading only', author: 'Fixture', status: 'published', legalAcceptance: denied, content: 'Do not download' } });
+    assert.equal(created.status, 201, JSON.stringify(created.data));
+    const work = created.data;
+    assert.equal((await request(`/api/books/${work.id}`, { role: 'reader' })).status, 200);
+    assert.equal((await request(`/api/books/${work.id}/offline`, { role: 'reader' })).status, 428);
+    assert.equal((await request(`/api/books/${work.id}/offline`, { role: 'author' })).status, 200);
+    assert.equal((await request(`/api/sync/library/${work.id}`, { role: 'reader', method: 'PUT' })).status, 200);
+    const restored = await request('/api/sync/library', { role: 'reader' });
+    const bookmark = restored.data.books.find(item => item.id === work.id);
+    assert.equal(bookmark.offlineAvailable, false); assert.equal(bookmark.content, undefined);
+    const card = await request(`/api/books/${work.id}/cards`, { role: 'author', method: 'POST', body: { name: 'Pending art', unlock: 'tinta', priceTinta: 5 } });
+    assert.equal(card.status, 201, JSON.stringify(card.data));
+    const before = await client.query('select count(*)::integer as count from wallet_ledger where user_id=$1', [users.collector.id]);
+    const purchase = await request(`/api/cards/${card.data.id}/buy`, { role: 'collector', method: 'POST' });
+    assert.equal(purchase.status, 428, JSON.stringify(purchase.data));
+    const after = await client.query('select count(*)::integer as count from wallet_ledger where user_id=$1', [users.collector.id]);
+    assert.equal(after.rows[0].count, before.rows[0].count);
+    const catalog = await request(`/api/books/${work.id}/cards`, { role: 'reader' });
+    assert.deepEqual(catalog.data.cards, []);
   });
 
   await check('Tinta purchase retries across two servers issue one token and one debit', async () => {

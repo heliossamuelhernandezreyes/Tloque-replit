@@ -15,7 +15,7 @@ import BookmarkBurst from "@/components/BookmarkBurst"
 import { useSoundFX } from "@/hooks/useSoundFX"
 import { FREE_SAVE_LIMIT, countsTowardLimit } from "@/lib/library"
 import { pushSaveBook, pushUnsaveBook } from "@/lib/sync"
-import { slimBook, saveOfflineContent, removeOfflineContent, getOfflineContent } from "@/lib/offline"
+import { slimBook, saveOfflineContent, removeOfflineContent, getOfflineContent, OfflinePermissionError } from "@/lib/offline"
 import TokensPanel from "@/components/TokensPanel"
 import CardsGallery from "@/components/CardsGallery"
 import HeartCount from "@/components/HeartCount"
@@ -174,14 +174,14 @@ export default function BookPage() {
         }
       }
       try {
-        await saveOfflineContent(id, book)   // confirmar contenido antes de prometer offline
+        const edition = await saveOfflineContent(id, book)
         localStorage.setItem("novareads_saved",
-          JSON.stringify([...saved, { ...slimBook(book), isSaved: true }]))
-      } catch {
-        await removeOfflineContent(id)
+          JSON.stringify([...saved, { ...slimBook(edition), isSaved: true }]))
+      } catch (error) {
+        if (!(error instanceof OfflinePermissionError)) await removeOfflineContent(id)
         toast({
           title: "No se pudo guardar offline",
-          description: "Libera espacio del dispositivo y vuelve a intentarlo.",
+          description: error instanceof OfflinePermissionError ? error.message : "Libera espacio del dispositivo y vuelve a intentarlo.",
         })
         return
       }

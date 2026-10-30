@@ -37,7 +37,8 @@ import { lookupDictionary, normalizeDictionaryLanguage } from "./dictionary";
 import { translateText, SUPPORTED_LANGUAGES } from "./gutenberg";
 import { registerGutenbergRoutes } from "./gutenberg-routes";
 import { registerVisualUploadRoutes } from "./visualUploads";
-import { registerLegalRoutes, LegalRequirementError, hasBookRight } from "./legal"
+import { registerLegalRoutes, LegalRequirementError, hasBookRight, rightsForBooks, offlineEdition } from "./legal"
+import { grantAuthorizedSupportCards } from "./collectibleRights"
 import { gachaLegalReady } from "./legalConfig"
 import { legalAcceptances } from "@shared/schema"
 
@@ -198,6 +199,23 @@ export async function registerRoutes(
   })
 
   // ── GET /api/books/:id ────────────────────────────────
+  app.get("/api/books/:id/offline", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
+      const current = await storage.getBook(Number(req.params.id))
+      if (!current) return res.status(404).json({ message: "Libro no encontrado" })
+      const [book] = await readableEditions(req, [current])
+      if (!book) return res.status(404).json({ message: "Libro no encontrado" })
+      const edition = await offlineEdition(book, (req.user as any).id)
+      const entitled = await entitledBookIds(req, [book])
+      res.setHeader("Cache-Control", "private, no-store")
+      res.json(withoutPremiumArt(edition, entitled.has(book.id)))
+    } catch (err) {
+      if (err instanceof LegalRequirementError) return res.status(err.status).json({ code: err.code, message: err.message })
+      res.status(500).json({ message: "No se pudo preparar la descarga offline" })
+    }
+  })
+
   app.get(api.books.get.path, async (req, res) => {
     try {
       const currentBook = await storage.getBook(Number(req.params.id));
@@ -267,8 +285,8 @@ export async function registerRoutes(
       if (err instanceof LegalRequirementError) return res.status(err.status).json({ message: err.message, code: err.code })
       if (err instanceof z.ZodError) {
         return res.status(400).json({
-          message: err.errors[0].message,
-          field:   err.errors[0].path.join("."),
+          message: err.issues[0].message,
+          field:   err.issues[0].path.join("."),
         });
       }
       res.status(500).json({ message: "Failed to create book" });
@@ -335,8 +353,8 @@ export async function registerRoutes(
       }
       if (err instanceof z.ZodError) {
         return res.status(400).json({
-          message: err.errors[0].message,
-          field:   err.errors[0].path.join("."),
+          message: err.issues[0].message,
+          field:   err.issues[0].path.join("."),
         });
       }
       res.status(500).json({ message: "Failed to update book" });
@@ -406,7 +424,7 @@ export async function registerRoutes(
       }
       res.json({ draft: saved.draft })
     } catch (err) {
-      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message })
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.issues[0].message })
       res.status(500).json({ message: "No se pudo guardar el borrador" })
     }
   })
@@ -474,7 +492,7 @@ export async function registerRoutes(
       if (err instanceof BookRevisionConflictError) {
         return res.status(409).json({ message: err.message, currentRevision: err.currentRevision })
       }
-      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message })
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.issues[0].message })
       res.status(500).json({ message: "No se pudo restaurar la revisión" })
     }
   })
@@ -574,7 +592,7 @@ export async function registerRoutes(
         content:      req.body?.content ?? "",
       })
       if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Comentario inválido" })
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Comentario inválido" })
       }
       const chapterCount = Array.isArray(book.chapters) && book.chapters.length ? book.chapters.length : 1
       const chapterIndex = parsed.data.chapterIndex ?? 0
@@ -1117,7 +1135,7 @@ export async function registerRoutes(
   })
 
   // Biblioteca guardada en la nube ──────────────────────────
-  // GET: devuelve los libros guardados COMPLETOS (para restaurar en otro dispositivo)
+  // Restore bookmarks without implicitly delivering a new offline manuscript.
   app.get("/api/sync/library", async (req, res) => {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
@@ -1130,8 +1148,12 @@ export async function registerRoutes(
       const list = await db.select().from(books).where(inArray(books.id, ids))
       const entitled = await entitledBookIds(req, list)
       const readable = await readableEditions(req, list, entitled)
-      res.json({ books: readable.map(book =>
-        withoutPremiumArt(book, entitled.has(book.id))) })
+      const rights = await rightsForBooks(readable)
+      res.json({ books: readable.map(book => {
+        const { chapters, content, ...metadata } = withoutPremiumArt(book, entitled.has(book.id))
+        return { ...metadata, chapterCount: Array.isArray(chapters) ? chapters.length : 0,
+          hasOfflineContent: false, offlineAvailable: book.authorId === userId || rights.get(book.id)?.offline === true }
+      }) })
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
     }
@@ -1932,7 +1954,7 @@ export async function registerRoutes(
       const { claimKey: _claimKey, claimKeyHash: _claimKeyHash, claimedByUserId, ...safeCopy } = updated
       res.json({ ...safeCopy, digitalClaimed: claimedByUserId != null })
     } catch (err: any) {
-      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0]?.message || "Datos inválidos" })
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.issues[0]?.message || "Datos inválidos" })
       res.status(500).json({ message: err.message || "No se pudo actualizar el ejemplar" })
     }
   })
@@ -2183,20 +2205,15 @@ export async function registerRoutes(
             eq(unlockedBooks.bookId, bookId),
             eq(unlockedBooks.source, "support"),
           ))
-        if (unlocked) {
-          const pending = cards
-            .filter(card => card.unlock === "support")
-            .map(card => ({ userId, cardId: card.id, source: "support" }))
-          if (pending.length) {
-            await db.insert(userCards).values(pending).onConflictDoNothing()
-          }
-        }
+        if (unlocked) await grantAuthorizedSupportCards(userId, [bookId])
         const mine = await db.select().from(userCards)
           .where(and(eq(userCards.userId, userId), inArray(userCards.cardId, cards.map(c => c.id))))
         ownedIds = new Set(mine.map(m => m.cardId))
         for (const m of mine) if (m.snapshot) editions.set(m.cardId, m.snapshot)
       }
-      res.json({ cards: cards.map(c => ({ ...(editions.get(c.id) || c), owned: ownedIds.has(c.id) })) })
+      const allowed = await hasBookRight(book.id, book.revision, "collectibles")
+      const editor = req.isAuthenticated() && (book.authorId === (req.user as any).id || hasCapability(req.user, "manageCatalog"))
+      res.json({ cards: cards.filter(c => allowed || editor || ownedIds.has(c.id)).map(c => ({ ...(editions.get(c.id) || c), owned: ownedIds.has(c.id) })) })
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
     }
@@ -2216,15 +2233,7 @@ export async function registerRoutes(
         eq(unlockedBooks.source, "support"),
       ))
       const unlockedBookIds = unlocked.map(u => u.bookId)
-      if (unlockedBookIds.length > 0) {
-        const supportCards = await db.select().from(bookCards)
-          .where(and(inArray(bookCards.bookId, unlockedBookIds), eq(bookCards.unlock, "support"), eq(bookCards.archived, false)))
-        if (supportCards.length) {
-          await db.insert(userCards)
-            .values(supportCards.map(card => ({ userId, cardId: card.id, source: "support" })))
-            .onConflictDoNothing()
-        }
-      }
+      await grantAuthorizedSupportCards(userId, unlockedBookIds)
 
       // Traer las tarjetas que posee, con datos de la tarjeta
       const owned = await db.select().from(userCards).where(eq(userCards.userId, userId))
@@ -2292,11 +2301,13 @@ export async function registerRoutes(
         const [already] = await tx.select().from(userCards)
           .where(and(eq(userCards.userId, userId), eq(userCards.cardId, cardId)))
         if (already) return { state: "owned" as const }
+        const [edition] = await tx.select().from(books).where(eq(books.id, card.bookId!)).for("share")
+        if (!edition || edition.status !== "published" || !await hasBookRight(edition.id, edition.revision, "collectibles", tx)) return { state: "rights" as const }
         const [order] = await tx.insert(tokenOrders).values({
           userId, bookId: card.bookId!, kind: "card",
           amountCents: cost * TINTA_CENTS, currency: "mxn",
           status: "pending", provider: "tinta",
-          ...economySnapshotForBook(book, AUTHOR_SHARE_STORY),
+          ...economySnapshotForBook(edition, AUTHOR_SHARE_STORY),
         }).returning()
         const debit = await debitTinta(tx, {
           userId, amount: cost, reason: "spend_card",
@@ -2322,6 +2333,7 @@ export async function registerRoutes(
         return { state: "paid" as const }
       })
       if (purchase.state === "owned") return res.status(409).json({ message: "Ya está en tu colección" })
+      if (purchase.state === "rights") return res.status(428).json({ code: "COLLECTIBLE_RIGHTS_REQUIRED", message: "El titular debe autorizar los coleccionables de esta versión antes de nuevas entregas." })
       if (purchase.state === "changed") return res.status(409).json({ message: "La tarjeta cambió o fue retirada. Actualiza el catálogo" })
       if (purchase.state === "funds") {
         const balance = await walletBalance(userId, "tinta")
@@ -2639,12 +2651,16 @@ export async function registerRoutes(
       const [cfg] = await db.select().from(gachaConfig).where(eq(gachaConfig.id, 1))
       const enabled = !!cfg?.enabled && gachaLegalReady()
       const pool = cfg?.poolBalance ?? 0
+      const editions = await db.select().from(books).where(eq(books.status, "published"))
+      const rights = await rightsForBooks(editions)
+      const eligible = editions.filter(book => rights.get(book.id)?.collectibles).map(book => book.id)
+      const eligibleList = sql.join((eligible.length ? eligible : [0]).map(id => sql`${id}`), sql`, `)
 
       // Cuántas obras hay por rareza (stock real, sin mentir)
       const stock: any = await db.execute(sql`
         select c.rarity, count(distinct c.book_id) as obras, count(*) as cartas
         from book_cards c join books b on b.id = c.book_id
-        where c.in_gacha_pool = true and b.status = 'published' and c.book_id is not null
+        where c.in_gacha_pool = true and c.archived = false and b.status = 'published' and c.book_id in (${eligibleList})
         group by c.rarity
       `)
       const byRarity: Record<string, { obras: number; cartas: number }> = {}
@@ -2877,6 +2893,7 @@ export async function registerRoutes(
         await db.update(bookCards).set({ inGachaPool: false }).where(eq(bookCards.id, cardId))
         return res.json({ inGachaPool: false })
       }
+      if (!await hasBookRight(book.id, book.revision, "collectibles")) return res.status(428).json({ code: "COLLECTIBLE_RIGHTS_REQUIRED", message: "Autoriza los coleccionables de esta versión antes de ofrecerlos en el sorteo." })
 
       const rarity = String(req.body?.rarity || "common") as any
       if (!RARITIES.some(r => r.key === rarity)) {
@@ -2948,10 +2965,13 @@ export async function registerRoutes(
           })
         }
 
-        // 4. Poner TODAS las cartas existentes en el sorteo, repartidas por rareza
+        // 4. Poner cartas autorizadas en el sorteo, repartidas por rareza
         //    (solo en beta: en producción la rareza se gana)
-        const cartas = await db.select().from(bookCards)
-          .where(sql`${bookCards.bookId} is not null`)
+        const editions = await db.select().from(books).where(eq(books.status, "published"))
+        const rights = await rightsForBooks(editions)
+        const eligible = editions.filter(book => rights.get(book.id)?.collectibles).map(book => book.id)
+        const cartas = eligible.length ? await db.select().from(bookCards)
+          .where(and(inArray(bookCards.bookId, eligible), eq(bookCards.archived, false))) : []
         const keys = RARITIES.map(r => r.key)
         let i = 0
         for (const c of cartas) {

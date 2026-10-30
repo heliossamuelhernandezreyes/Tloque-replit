@@ -232,7 +232,7 @@ export function registerSpeechRoutes(app: Express) {
   app.post("/api/admin/voices", rateLimit(60_000, 20), async (req, res) => {
     if (!req.isAuthenticated() || !hasCapability(req.user, "manageAudioCatalog")) return res.status(403).json({ message: "Acceso de administrador requerido" })
     const parsed = voiceInputSchema.safeParse(req.body)
-    if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0]?.message || "Voz inválida" })
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message || "Voz inválida" })
     try {
       const [voice] = await db.insert(voiceProfiles).values({
         ...parsed.data,

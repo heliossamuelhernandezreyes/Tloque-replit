@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto"
 import type { Express, RequestHandler } from "express"
 import { Router } from "express"
-import { and, desc, eq } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "./db"
 import { books, legalAcceptances, privacyRequests, privacyRequestEvents } from "@shared/schema"
@@ -55,12 +55,35 @@ export async function recordPublicationAcceptance(tx: Executor, book: typeof boo
 export async function hasBookRight(bookId: number, revision: number, right: RightsOption, executor: Pick<typeof db, "select"> = db) {
   const [book] = await executor.select().from(books).where(and(eq(books.id, bookId), eq(books.revision, revision))).limit(1)
   if (!book) return false
-  const [receipt] = await executor.select({ declaration: legalAcceptances.declaration }).from(legalAcceptances)
-    .where(and(eq(legalAcceptances.bookId, bookId), eq(legalAcceptances.workHash, publicationWorkHash(book))))
-    .orderBy(desc(legalAcceptances.id)).limit(1)
-  const parsed = publicationAcceptanceSchema.safeParse(receipt?.declaration && typeof receipt.declaration === "object"
-    ? Object.fromEntries(Object.entries(receipt.declaration).filter(([key]) => !["economicCategory", "authorShareBps", "workTitle"].includes(key))) : undefined)
-  return parsed.success && parsed.data.choices[right] === true
+  return (await rightsForBooks([book], executor)).get(bookId)?.[right] === true
+}
+
+/** Batch by exact content/ownership fingerprint, including withdrawn editions. */
+export async function rightsForBooks(editions: Array<typeof books.$inferSelect>, executor: Pick<typeof db, "select"> = db) {
+  const result = new Map<number, PublicationAcceptance["choices"]>()
+  if (!editions.length) return result
+  const receipts = await executor.select().from(legalAcceptances)
+    .where(inArray(legalAcceptances.bookId, editions.map(book => book.id))).orderBy(desc(legalAcceptances.id))
+  const latest = new Map<string, typeof receipts[number]>()
+  for (const receipt of receipts) {
+    const key = `${receipt.bookId}:${receipt.workHash}`
+    if (!latest.has(key)) latest.set(key, receipt)
+  }
+  for (const book of editions) {
+    const declaration = latest.get(`${book.id}:${publicationWorkHash(book)}`)?.declaration
+    const parsed = publicationAcceptanceSchema.safeParse(declaration && typeof declaration === "object"
+      ? Object.fromEntries(Object.entries(declaration).filter(([key]) => !["economicCategory", "authorShareBps", "workTitle"].includes(key))) : undefined)
+    if (parsed.success) result.set(book.id, parsed.data.choices)
+  }
+  return result
+}
+
+export async function offlineEdition(book: typeof books.$inferSelect, actorId: number, executor: Pick<typeof db, "select"> = db) {
+  const choices = (await rightsForBooks([book], executor)).get(book.id)
+  if (book.authorId !== actorId && !choices?.offline) {
+    throw new LegalRequirementError("El titular no ha autorizado nuevas descargas offline de esta edición. Puedes seguir leyéndola en línea.", "OFFLINE_RIGHTS_REQUIRED")
+  }
+  return { ...book, offlineAvailable: true, hasOfflineContent: true }
 }
 
 /** Checks are server-side and do not touch valid deliveries/webhooks or free reading. */
@@ -110,7 +133,7 @@ export function registerLegalRoutes(app: Express, database: typeof db = db) {
   app.post("/api/privacy/requests", rateLimit(60 * 60_000, 5, "privacy-requests"), async (req, res, next) => {
     try {
       const parsed = privacyRequestSchema.safeParse(req.body)
-      if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0].message })
+      if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0].message })
       const userId = req.isAuthenticated() ? (req.user as any).id : null
       const received = await database.transaction(async tx => {
         const [row] = await tx.insert(privacyRequests).values({ ...parsed.data, publicId: randomUUID(), userId }).returning()
@@ -127,6 +150,14 @@ export function registerLegalRoutes(app: Express, database: typeof db = db) {
     try {
       res.setHeader("Cache-Control", "private, no-store")
       res.json(await database.select().from(privacyRequests).orderBy(desc(privacyRequests.id)).limit(100))
+    } catch (error) { next(error) }
+  })
+  app.get("/api/admin/privacy/requests/:id/events", requireAdmin, async (req, res, next) => {
+    try {
+      const id = Number(req.params.id)
+      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ message: "Solicitud inválida" })
+      res.setHeader("Cache-Control", "private, no-store")
+      res.json(await database.select().from(privacyRequestEvents).where(eq(privacyRequestEvents.requestId, id)).orderBy(privacyRequestEvents.id))
     } catch (error) { next(error) }
   })
   app.patch("/api/admin/privacy/requests/:id", requireAdmin, rateLimit(60_000, 20), async (req, res, next) => {

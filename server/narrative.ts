@@ -334,7 +334,7 @@ export function registerNarrativeRoutes(app: Express) {
     const chapterIndex = parseChapterIndex(req.params.chapterIndex)
     if (!bookId || chapterIndex === null) return res.status(400).json({ message: "Capítulo inválido" })
     const parsed = projectBodySchema.safeParse(req.body)
-    if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0]?.message || "Proyecto inválido" })
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message || "Proyecto inválido" })
 
     try {
       const book = await loadBook(bookId)

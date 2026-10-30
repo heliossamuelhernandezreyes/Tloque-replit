@@ -11,6 +11,7 @@ import {
 import { randomBytes } from "node:crypto"
 import { debitTinta, refundTintaDebit } from "./economy"
 import { gachaLegalReady } from "./legalConfig"
+import { rightsForBooks } from "./legal"
 
 // Un candado global para el pozo: dos lectores no pueden cobrarle
 // al mismo tiempo. Serializa las tiradas — a cambio, el dinero nunca miente.
@@ -46,9 +47,9 @@ export interface DrawPayload {
  * UNA TIRADA. Todo ocurre dentro de una transacción con candado:
  * o pasa entero, o no pasa nada. El pozo nunca queda inconsistente.
  */
-export async function drawTicket(userId: number): Promise<DrawOutcome> {
+export async function drawTicket(userId: number, database: typeof db = db): Promise<DrawOutcome> {
   if (!gachaLegalReady()) return { ok: false, code: 503, message: "El sorteo sigue pendiente de habilitación jurídica y del procesador de pagos." }
-  return await db.transaction(async (tx) => {
+  return await database.transaction(async (tx) => {
     // ── Candados: primero el usuario, luego el pozo (orden fijo = sin abrazos mortales)
     await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)
     await tx.execute(sql`select pg_advisory_xact_lock(${POOL_LOCK})`)
@@ -67,6 +68,14 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
         || cfg.poolBalance < 0 || direct + toPool + house !== price) {
       return { ok: false as const, code: 503 as const, message: "Configuración del sorteo inválida" }
     }
+
+    const candidates = await tx.select().from(books).where(and(eq(books.status, "published"), sql`exists (
+      select 1 from book_cards c where c.book_id = ${books.id} and c.in_gacha_pool = true and c.archived = false
+    )`)).for("share")
+    const rights = await rightsForBooks(candidates, tx)
+    const eligible = candidates.filter(book => rights.get(book.id)?.collectibles).map(book => book.id)
+    if (!eligible.length) return { ok: false as const, code: 404 as const, message: "No hay coleccionables con permisos vigentes; no se cobró el intento" }
+    const eligibleList = sql.join(eligible.map(id => sql`${id}`), sql`, `)
 
     // ── 2. Cobrar el boleto. El insert SOLO ocurre si el saldo alcanza.
     const charged = await debitTinta(tx, {
@@ -96,6 +105,7 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
       where c.in_gacha_pool = true and c.archived = false
         and b.status = 'published'
         and c.book_id is not null
+        and c.book_id in (${eligibleList})
         ${excluded.length ? sql`and coalesce(b.genre, '') <> all(${excluded})` : sql``}
       group by c.rarity
     `)
@@ -138,6 +148,7 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
         from book_cards c
         join books b on b.id = c.book_id
         where c.in_gacha_pool = true and c.rarity = ${draw.rarity}
+          and c.archived = false and c.book_id in (${eligibleList})
           and b.status = 'published' and c.book_id is not null
           and not exists (
             select 1 from user_cards uc
@@ -155,6 +166,7 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
           from book_cards c
           join books b on b.id = c.book_id
           where c.in_gacha_pool = true and c.rarity = ${draw.rarity}
+            and c.archived = false and c.book_id in (${eligibleList})
             and b.status = 'published' and c.book_id is not null
             ${excluded.length ? sql`and coalesce(b.genre, '') <> all(${excluded})` : sql``}
         ) candidates
@@ -171,6 +183,7 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
     let cartas: any = await tx.execute(sql`
       select id from book_cards
       where in_gacha_pool = true and rarity = ${draw.rarity} and book_id = ${bookId}
+        and archived = false
         and not exists (
           select 1 from user_cards uc
           where uc.user_id = ${userId} and uc.card_id = book_cards.id
@@ -181,6 +194,7 @@ export async function drawTicket(userId: number): Promise<DrawOutcome> {
       cartas = await tx.execute(sql`
         select id from book_cards
         where in_gacha_pool = true and rarity = ${draw.rarity} and book_id = ${bookId}
+          and archived = false
         order by random() limit 1
       `)
     }

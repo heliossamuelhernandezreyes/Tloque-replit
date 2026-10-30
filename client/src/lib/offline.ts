@@ -1,4 +1,4 @@
-import { accountStorage as localStorage } from "@/lib/account-context"
+import { accountStorage as localStorage, accountFetch, accountContext } from "@/lib/account-context"
 // Almacén offline para el CONTENIDO pesado de los libros guardados.
 // El registro ligero (título, autor, portada…) sigue en localStorage
 // (novareads_saved) para que las listas carguen síncronas e instantáneas.
@@ -17,23 +17,39 @@ export function slimBook(book: any): any {
   return {
     ...rest,
     chapterCount: Array.isArray(chapters) ? chapters.length : (rest.chapterCount ?? 0),
-    hasOfflineContent: true,
+    hasOfflineContent: book.hasOfflineContent === true || Array.isArray(chapters) || content != null,
   }
 }
 
 // Guarda el contenido pesado de un libro (para leer sin conexión).
-export async function saveOfflineContent(id: string | number, book: any): Promise<void> {
+export class OfflinePermissionError extends Error {}
+
+export async function saveOfflineContent(id: string | number, book: any): Promise<any> {
+  const accountId = accountContext.requireId()
+  let edition = book
+  if (/^\d+$/.test(String(id))) {
+    const response = await accountFetch(`/api/books/${id}/offline`, { credentials: "include", cache: "no-store" })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new OfflinePermissionError(data.message || "No se pudo autorizar la descarga de esta edición")
+    edition = data
+  } else if (/^gutenberg-/.test(String(id))) {
+    throw new OfflinePermissionError("Esta edición requiere revisar sus derechos territoriales. Un administrador debe importarla como borrador y autorizar su publicación y descarga.")
+  }
+  accountContext.assertCurrent(accountId)
   await store.setItem(key(id), {
-    chapters: book?.chapters ?? null,
-    content:  book?.content  ?? null,
+    chapters: edition?.chapters ?? null,
+    content: edition?.content ?? null,
+    revision: edition?.revision ?? null,
     savedAt: Date.now(),
   })
   // Verificación posterior: algunos motores de almacenamiento pueden resolver
   // sin persistir cuando la cuota cambia durante la escritura.
   const confirmed = await store.getItem<any>(key(id))
+  accountContext.assertCurrent(accountId)
   if (!confirmed || (!Array.isArray(confirmed.chapters) && confirmed.content == null)) {
     throw new Error("No se pudo verificar el contenido offline")
   }
+  return { ...edition, hasOfflineContent: true }
 }
 
 export async function getOfflineContent(id: string | number): Promise<{ chapters: any; content: any } | null> {

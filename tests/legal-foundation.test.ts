@@ -9,6 +9,7 @@ import { legalConfiguration } from "../server/legalConfig"
 import { publicationAcceptanceSchema, privacyRequestSchema, type PublicationAcceptance } from "../shared/legal"
 import * as schema from "../shared/schema"
 import { permissionsForRole } from "../shared/admin-permissions"
+import { eq } from "drizzle-orm"
 
 const config = {
   LEGAL_OPERATOR_NAME: "Operador simulado del catálogo", LEGAL_OPERATOR_ADDRESS: "Domicilio simulado 123, Monterrey, Nuevo León",
@@ -146,10 +147,84 @@ test("solicitud pública persistida; admin de finanzas no ve datos de privacidad
     assert.equal((await fetch(origin + "/api/admin/privacy/requests")).status, 401)
     assert.equal((await fetch(origin + "/api/admin/privacy/requests", { headers: { "X-Fixture-Role": "finance" } })).status, 403)
     assert.equal((await fetch(origin + "/api/admin/privacy/requests", { headers: { "X-Fixture-Role": "full" } })).status, 200)
+    const [request] = await database.select().from(schema.privacyRequests)
+    const changed = await fetch(origin + `/api/admin/privacy/requests/${request.id}`, { method: "PATCH", headers: { "X-Fixture-Role": "full", "Content-Type": "application/json" }, body: JSON.stringify({ status: "verification", note: "Se pidió aclarar el alcance por el canal verificado" }) })
+    assert.equal(changed.status, 200)
+    assert.equal((await fetch(origin + `/api/admin/privacy/requests/${request.id}/events`, { headers: { "X-Fixture-Role": "finance" } })).status, 403)
+    const events = await fetch(origin + `/api/admin/privacy/requests/${request.id}/events`, { headers: { "X-Fixture-Role": "full" } })
+    assert.deepEqual((await events.json() as any[]).map(event => event.status), ["received", "verification"])
     assert.equal((await fetch(origin + "/api/legal/receipts")).status, 401)
     const other = await fetch(origin + "/api/legal/receipts", { headers: { "X-Fixture-Role": "other" } })
     assert.deepEqual(await other.json(), [])
     assert.equal(permissionsForRole("legacy").includes("managePrivacy"), false)
     assert.equal((await fetch(origin + "/api/privacy/requests/" + receipt.folio)).status, 404)
   } finally { await new Promise<void>(resolve => server.close(() => resolve())) }
+})
+
+test("offline y tarjetas: permiso por edición, apoyo comprobado y conservación de entregas previas", async () => {
+  const { grantAuthorizedSupportCards } = await import("../server/collectibleRights")
+  await assert.rejects(() => legal.offlineEdition(book, 2, database as any), /no ha autorizado/)
+  assert.equal((await legal.offlineEdition(book, 1, database as any)).authorId, 1, "el autor puede descargar su propio trabajo")
+  const [edition] = await database.insert(schema.books).values({ title: "Edición autorizada", author: "Author", authorId: 1, status: "published", content: "Lectura autorizada" }).returning()
+  await legal.recordPublicationAcceptance(database as any, edition, 1, { ...acceptance, choices: { ...acceptance.choices, offline: true, collectibles: true } })
+  const [deniedCard] = await database.insert(schema.bookCards).values({ bookId: book.id, authorId: 1, name: "Sin licencia", unlock: "support" }).returning()
+  const [allowedCard] = await database.insert(schema.bookCards).values({ bookId: edition.id, authorId: 1, name: "Con licencia", unlock: "support" }).returning()
+  await grantAuthorizedSupportCards(2, [book.id, edition.id], database as any)
+  assert.equal((await database.select().from(schema.userCards)).length, 0, "un permiso no inventa un apoyo")
+  await database.insert(schema.unlockedBooks).values([{ userId: 2, bookId: book.id, source: "support" }, { userId: 2, bookId: edition.id, source: "support" }])
+  await grantAuthorizedSupportCards(2, [book.id, edition.id], database as any)
+  const acquired = await database.select().from(schema.userCards)
+  assert.deepEqual(acquired.map(row => row.cardId), [allowedCard.id])
+  assert.notEqual(acquired[0].cardId, deniedCard.id)
+  assert.equal((await legal.offlineEdition(edition, 2, database as any)).content, "Lectura autorizada")
+  await database.update(schema.books).set({ content: "Una edición diferente", revision: 2 }).where(eq(schema.books.id, edition.id))
+  const [changed] = await database.select().from(schema.books).where(eq(schema.books.id, edition.id))
+  await database.insert(schema.bookCards).values({ bookId: edition.id, authorId: 1, name: "Nueva, sin permiso de versión", unlock: "support" })
+  await grantAuthorizedSupportCards(2, [edition.id], database as any)
+  assert.equal((await database.select().from(schema.userCards)).length, 1, "no entrega nuevas tarjetas ni borra la adquirida")
+  await assert.rejects(() => legal.offlineEdition(changed, 2, database as any), /no ha autorizado/)
+  assert.equal((await legal.offlineEdition(edition, 2, database as any)).content, "Lectura autorizada", "la edición histórica con permiso conserva su autorización")
+})
+
+test("el inventario de retención funciona en solo lectura y no expone textos ni contactos", async () => {
+  const { retentionInventory } = await import("../scripts/retention-inventory.mjs")
+  await pg.exec("BEGIN READ ONLY")
+  try {
+    const report = await retentionInventory({ query: (text: string, values: any[]) => pg.query(text, values) }, 1)
+    assert.equal(report.executedDeletions, 0)
+    assert.equal(report.mode, "read-only")
+    assert.equal(report.accountClosed, false)
+    assert.ok(report.counts.some((row: any) => row.table === "books" && row.rows === 2))
+    assert.ok(!JSON.stringify(report).includes("author@fixture.mx"))
+    assert.ok(!JSON.stringify(report).includes("Una versión original"))
+    assert.ok(report.limits.some((line: string) => line.includes("backups")))
+  } finally { await pg.exec("ROLLBACK") }
+  assert.equal((await database.select().from(schema.books)).length, 2)
+})
+
+test("el sorteo excluye obras sin permiso y nunca cobra cuando no queda stock autorizado", async () => {
+  const { drawTicket } = await import("../server/gachaEngine")
+  const gates = { GACHA_LEGAL_REVIEW_REF: "fixture-dictamen", GACHA_AUTHORIZATION_REF: "fixture-expediente", GACHA_PROCESSOR_APPROVAL_REF: "fixture-procesador" }
+  const prior = Object.fromEntries(Object.keys(gates).map(key => [key, process.env[key]]))
+  Object.assign(process.env, gates)
+  try {
+    await database.update(schema.gachaConfig).set({ enabled: true, ticketPrice: 25, splitDirect: 10, splitPool: 10, splitHouse: 5, poolBalance: 1000 }).where(eq(schema.gachaConfig.id, 1))
+    await database.update(schema.bookCards).set({ inGachaPool: true })
+    const before = (await database.select().from(schema.walletLedger)).length
+    const empty = await drawTicket(2, database as any)
+    assert.equal(empty.ok, false)
+    if (!empty.ok) assert.equal(empty.code, 404)
+    assert.equal((await database.select().from(schema.walletLedger)).length, before)
+    const [authorized] = await database.select().from(schema.books).where(eq(schema.books.title, "Edición autorizada"))
+    await database.update(schema.books).set({ content: "Lectura autorizada", revision: 3 }).where(eq(schema.books.id, authorized.id))
+    await database.insert(schema.walletLedger).values({ userId: 2, currency: "tinta", delta: 100, reason: "fixture" })
+    const drawn = await drawTicket(2, database as any)
+    assert.equal(drawn.ok, true)
+    if (drawn.ok) assert.equal(drawn.result.book.id, authorized.id, "solo participa la obra con autorización exacta")
+  } finally {
+    for (const [key, value] of Object.entries(prior)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
 })

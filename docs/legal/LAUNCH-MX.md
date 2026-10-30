@@ -19,6 +19,18 @@ aprobación de proveedores, y no reemplaza dictámenes profesionales.
 - Una preferencia de comentarios no crea una aceptación ficticia. Los permisos
   se resuelven por huella de contenido, autor, categoría y recursos de la obra.
 - Nuevos permisos de impresión requieren la elección personal o comercial.
+- Nuevas descargas offline de obras del catálogo requieren autorización por
+  edición en `/api/books/:id/offline`. La sincronización restaura marcadores y
+  no descarga implícitamente un manuscrito. El autor puede descargar su trabajo.
+- Nuevas compras, regalos por apoyo y entradas al sorteo de tarjetas verifican
+  coleccionables para la versión vigente. El sorteo filtra el stock autorizado
+  antes del débito y conserva el bloqueo durante la operación. Una retirada no
+  borra automáticamente tarjetas previamente entregadas.
+- La descarga privada directa de Gutenberg queda pendiente de revisión de la
+  edición para México; su disponibilidad en el proveedor no acredita ese alcance.
+- La traducción completa sigue sin estar disponible; no se publica una
+  traducción automáticamente. El diccionario de palabras es otro recorrido y
+  sus proveedores se identifican en el aviso versión `2026-10-30.2`.
 - Nuevas solicitudes de audiolibro y publicación de perfiles de voz requieren
   autorización de audio para esa versión. El documento no acredita derechos de
   una voz concreta ni cumplimiento de un proveedor.
@@ -70,8 +82,10 @@ la base tenga `enabled=true`; tampoco puede habilitarlo su preparación de beta.
 | `/admin/privacidad` | Bandeja reservada a privacidad. |
 | `GET /api/legal/documents` | Texto, versión, huella y estado de habilitación. |
 | `GET /api/legal/receipts` | Solo comprobantes del usuario autenticado. |
+| `GET /api/books/:id/offline` | Nueva entrega offline autorizada de una edición accesible. |
 | `POST /api/privacy/requests` | Alta con límite de solicitudes, sin datos adjuntos. |
 | `GET/PATCH /api/admin/privacy/requests[/id]` | Listado/actuaciones con permiso específico. |
+| `GET /api/admin/privacy/requests/:id/events` | Bitácora de actuaciones, también restringida. |
 
 Un folio público no permite consultar contenido privado. Cambiar un estado
 administrativo no envía correo, prueba que se respondió ni elimina información.
@@ -98,15 +112,17 @@ real; la bandeja guarda las actuaciones en `privacy_request_events`.
 - Falta resolver la marca TLOQUE y su análisis cultural, precio único, ISBN,
   depósito, facturación, retenciones y base comercial de reparto.
 - No audita cada traducción, muestra, fuente, imagen, voz o modelo del catálogo.
-- Las elecciones offline, traducción y coleccionables quedan registradas; falta
-  completar su control específico en todos los recorridos. No anunciar esa
-  aplicación como terminada. La obtención de permisos no reemplaza derechos
-  concretos del activo o términos del proveedor.
+- Las autorizaciones de obra no reemplazan derechos concretos de cada imagen,
+  personaje, voz, modelo ni los términos del proveedor. Falta esa revisión de
+  activos y acuerdos antes de ofrecerlos comercialmente.
 - No convierte una casilla de mayoría de edad en un sistema de verificación.
   La contratación con representante/tutor requiere un recorrido adicional.
 - No completa la depuración de manuscritos/versiones/respaldos tras baja. El
   aviso describe la retención actual y permite solicitar revisión sin cuenta.
   Falta fijar fundamento, bloqueo, periodos y procedimiento de purga por clase.
+  [RETENTION-REVIEW.md](RETENTION-REVIEW.md) incluye la matriz pendiente y un
+  inventario de solo lectura (`npm run legal:retention:inventory -- --user-id 123`).
+  No se ha ejecutado sobre datos reales ni inspecciona proveedores o respaldos.
 - La conservación de evidencias tampoco es indefinida por defecto: sus accesos,
   plazos y supresión justificada deben incluirse en ese procedimiento. El trigger
   de inmutabilidad protege el CRUD ordinario; no sustituye dicha política.
@@ -118,6 +134,12 @@ real; la bandeja guarda las actuaciones en `privacy_request_events`.
 ## Verificación
 
 `npm run check`, `npm test`, `npm run build`, `npm run check:bundle`.
+También `npm audit --omit=dev --audit-level=high`. Se actualizaron dependencias
+vulnerables y Zod 4 con sus adaptadores y manejo de errores; una prueba exige
+rechazar colecciones sobredimensionadas antes de recorrer sus elementos. No se
+omite el control de auditoría. SpessaSynth biblioteca/núcleo están fijados como
+pareja compatible, incluido el override del núcleo, para evitar la deriva de
+su dependencia `latest` que impedía arrancar Chromium/Vite en CI.
 Las pruebas nuevas ejecutan todas las migraciones en PostgreSQL embebido PGlite,
 repetición de `0024`, restricciones e inmutabilidad, transacciones de permisos y
 HTTP de privacidad con roles. Usan datos sintéticos y no llaman a OAuth/Stripe.

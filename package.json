@@ -19,11 +19,12 @@
     "test:audio:browser": "node scripts/audio-browser-qa.mjs",
     "test:composer:browser": "node --import tsx scripts/composer-browser-qa.mjs",
     "test:visual:browser": "node --import tsx scripts/visual-browser-qa.mjs",
-    "test:gutenberg:browser": "node --import tsx scripts/gutenberg-browser-qa.mjs",
+    "test:gutenberg:browser": "node --import tsx scripts/gutenberg-browser-qa.mjs && node --import tsx scripts/legal-browser-qa.mjs",
     "test:print:browser": "node --import tsx scripts/print-browser-qa.mjs",
     "db:push": "drizzle-kit push",
     "db:migrate": "node scripts/migrate.mjs --apply",
     "db:preflight": "node scripts/preflight.mjs",
+    "legal:retention:inventory": "node scripts/legal-retention-inventory.mjs",
     "test:print:home": "node --import tsx scripts/print-home-browser-qa.mjs"
   },
   "engines": {
@@ -70,7 +71,7 @@
     "connect-pg-simple": "^10.0.0",
     "date-fns": "^3.6.0",
     "drizzle-orm": "^0.45.2",
-    "drizzle-zod": "^0.7.0",
+    "drizzle-zod": "0.8.3",
     "embla-carousel-react": "^8.6.0",
     "express": "^5.0.1",
     "express-session": "^1.18.1",
@@ -95,7 +96,8 @@
     "react-icons": "^5.4.0",
     "react-resizable-panels": "^2.1.7",
     "recharts": "^2.15.2",
-    "spessasynth_lib": "4.3.14",
+    "spessasynth_core": "4.4.2",
+    "spessasynth_lib": "4.4.1",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "three": "0.185.0",
@@ -105,8 +107,8 @@
     "vaul": "^1.1.2",
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
-    "zod": "^3.24.2",
-    "zod-validation-error": "^3.4.0"
+    "zod": "4.6.7",
+    "zod-validation-error": "5.0.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.13",
@@ -138,6 +140,7 @@
     "vite": "^7.3.0"
   },
   "overrides": {
+    "spessasynth_core": "$spessasynth_core",
     "qs": "^6.16.0",
     "uuid": "^11.1.1",
     "drizzle-kit": {
