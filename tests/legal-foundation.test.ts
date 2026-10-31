@@ -246,6 +246,7 @@ test("la edición pagada conserva texto y autorización; primera cuenta y contra
   const { freezeLicensedEdition, purchasedEditions, tokenEdition } = await import("../server/tokenEditions")
   await pg.exec("INSERT INTO users(id,google_id,email,name) VALUES(3,'reader3','reader3@fixture.mx','Reader3')")
   const [work] = await database.insert(schema.books).values({ title: "Edición permanente", author: "Author", authorId: 1, status: "published", content: "TEXTO ADQUIRIDO" }).returning()
+  await database.insert(schema.bookRevisions).values({ bookId: work.id, revision: work.revision, snapshot: work, changeType: "publish", createdBy: 1 })
   const choices = { ...acceptance.choices, offline: true, monetization: true, permanentDigital: true, commercialPrint: true }
   await legal.recordPublicationAcceptance(database as any, work, 1, { ...acceptance, choices })
   const consent = await legal.bookAcceptance(work, database as any)
@@ -256,6 +257,9 @@ test("la edición pagada conserva texto y autorización; primera cuenta y contra
   const [copy] = await database.insert(schema.printCopies).values({ tokenId: sale.id, folio: "TLQ-EDTN-0001", claimKey: "TEST-KEY1", claimedByUserId: 3, claimedAt: new Date() }).returning()
   await database.update(schema.books).set({ content: "BORRADOR PRIVADO POSTERIOR", status: "draft", revision: 2 }).where(eq(schema.books.id, work.id))
   assert.equal((await tokenEdition(support, database))!.content, "TEXTO ADQUIRIDO")
+  assert.equal((await tokenEdition({ bookId: work.id }, database))!.content, "TEXTO ADQUIRIDO", "historic printing uses a public revision, never the current private draft")
+  const [neverPublished] = await database.insert(schema.books).values({ title: "Borrador sin edición pública", author: "Author", authorId: 1, status: "draft", content: "TEXTO PRIVADO" }).returning()
+  assert.equal(await tokenEdition({ bookId: neverPublished.id }, database), undefined, "missing public history cannot authorize exposing a manuscript")
   assert.equal((await purchasedEditions(2, [work.id], database)).get(work.id)!.snapshot.content, "TEXTO ADQUIRIDO")
   assert.equal((await purchasedEditions(1, [work.id], database)).size, 0)
   assert.equal((await legal.offlineEdition(edition.snapshot, 3, database as any)).content, "TEXTO ADQUIRIDO")

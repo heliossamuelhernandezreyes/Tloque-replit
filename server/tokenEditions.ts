@@ -1,5 +1,5 @@
-import { and, asc, eq, inArray, or, sql } from "drizzle-orm"
-import { books, bookTokens, licensedEditions, printCopies, type Book } from "@shared/schema"
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
+import { books, bookRevisions, bookTokens, licensedEditions, printCopies, type Book } from "@shared/schema"
 import type { PublicationAcceptance } from "@shared/legal"
 import { publicationWorkHash } from "./editionFingerprint"
 
@@ -27,7 +27,12 @@ export async function tokenEdition(token: { bookId: number; editionId?: number |
   }
   // Historic paid licences have no fabricated snapshot or newly inferred rights.
   const [book] = await tx.select().from(books).where(eq(books.id, token.bookId))
-  return book as Book | undefined
+  if (!book || book.status === "published") return book as Book | undefined
+  // A withdrawal must never make a later private manuscript printable.
+  const [released] = await tx.select({ snapshot: bookRevisions.snapshot }).from(bookRevisions)
+    .where(and(eq(bookRevisions.bookId, token.bookId), sql`${bookRevisions.snapshot}->>'status' = 'published'`))
+    .orderBy(desc(bookRevisions.revision)).limit(1)
+  return released?.snapshot as Book | undefined
 }
 
 /** A seller's refund never reassigns a legitimate third party's digital claim. */

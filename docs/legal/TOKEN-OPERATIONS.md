@@ -37,7 +37,9 @@ instantáneas de compras antiguas. Los folios históricos conservan sus benefici
 los canjes ya vinculados no se reasignan. El tratamiento compatible de compras
 sin instantánea conserva el mecanismo anterior, que necesita revisión del
 historial real antes de un lanzamiento comercial. No garantiza reconstruir una
-edición antigua que nunca se guardó.
+edición antigua que nunca se guardó. Si la obra ya no está publicada, la impresión
+histórica solo usa la última revisión pública registrada; sin ese historial no
+se entrega un borrador privado como sustituto.
 
 La base impide cambiar la primera cuenta vinculada y la identidad del ejemplar.
 La recuperación de la misma cuenta es distinta de una transferencia. Una sospecha
