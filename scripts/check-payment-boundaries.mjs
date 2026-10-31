@@ -131,7 +131,7 @@ async function paidToken(role, kind = 'sale') {
     const paymentRef = id('pi_');
     const { rows: [token] } = await client.query("insert into book_tokens(kind,book_id,owner_user_id) values('support',$1,$2) returning id", [book.id, users[role].id]);
     const { rows: [order] } = await client.query("insert into token_orders(user_id,book_id,kind,amount_cents,cash_backing_cents,status,provider,payment_ref,token_id,paid_at) values($1,$2,'support',2000,2000,'paid','stripe',$3,$4,now()) returning *", [users[role].id, book.id, paymentRef, token.id]);
-    for (let i = 0; i < 3; i++) await client.query("insert into print_copies(token_id,folio,claim_key,claimed_by_user_id,claimed_at) values($1,$2,'ABCD-EFGH',$3,$4)", [token.id, 'TLQ-' + id(''), i === 0 ? users[role].id : null, i === 0 ? new Date() : null]);
+    for (let i = 0; i < 3; i++) await client.query("insert into print_copies(token_id,folio,claim_key,claimed_by_user_id,claimed_at) values($1,$2,'ABCD-EFGH',$3,$4)", [token.id, ('TLQ-' + id('')).toUpperCase(), i === 0 ? users[role].id : null, i === 0 ? new Date() : null]);
     await client.query("insert into unlocked_books(user_id,book_id,source) values($1,$2,'support') on conflict do nothing", [users[role].id, book.id]);
     const mine = await copies(role, token.id);
     for (const copy of mine.copies) copy.claimKey = (await prepare(copy, role)).data.copy.key;

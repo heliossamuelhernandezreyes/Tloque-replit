@@ -17,6 +17,17 @@ CREATE TABLE IF NOT EXISTS licensed_editions (
     AND (snapshot->>'revision')::integer = book_revision
   )
 );
+-- db:push may already have created the table without SQL-only checks.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='licensed_editions_contract_check' AND conrelid='licensed_editions'::regclass) THEN
+    ALTER TABLE licensed_editions ADD CONSTRAINT licensed_editions_contract_check CHECK (
+      book_revision > 0 AND work_hash ~ '^[a-f0-9]{64}$'
+      AND jsonb_typeof(snapshot) = 'object' AND jsonb_typeof(rights) = 'object'
+      AND (snapshot->>'id')::integer = book_id
+      AND (snapshot->>'revision')::integer = book_revision
+    );
+  END IF;
+END $$;
 ALTER TABLE book_tokens ADD COLUMN IF NOT EXISTS edition_id integer REFERENCES licensed_editions(id);
 ALTER TABLE token_orders ADD COLUMN IF NOT EXISTS edition_id integer REFERENCES licensed_editions(id);
 ALTER TABLE token_orders ADD COLUMN IF NOT EXISTS purchase_terms jsonb;

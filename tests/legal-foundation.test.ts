@@ -68,6 +68,9 @@ test("migración desde vacío, repetible y sin aceptar publicaciones históricas
   assert.deepEqual(await validateExpectedSchema({ query: (text: string, values: any[]) => pg.query(text, values) }), [])
   assert.equal((await database.select().from(schema.legalAcceptances)).length, 0)
   await pg.exec(readFileSync("migrations/0024_legal_foundation.sql", "utf8"))
+  await pg.exec("ALTER TABLE licensed_editions DROP CONSTRAINT licensed_editions_contract_check")
+  await pg.exec(readFileSync("migrations/0025_acquired_editions.sql", "utf8"))
+  assert.deepEqual(await validateExpectedSchema({ query: (text: string, values: any[]) => pg.query(text, values) }), [], "also upgrades a table created by db:push without SQL checks")
   assert.equal(await legal.hasBookRight(book.id, book.revision, "personalPrint", database as any), false)
 })
 
