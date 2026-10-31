@@ -1,5 +1,7 @@
 import { z } from 'zod';
+import { patchSchema } from './patch-schema';
 import { insertBookSchema, books } from './schema';
+import { publicationAcceptanceSchema } from './legal';
 
 export const errorSchemas = {
   validation: z.object({
@@ -34,7 +36,7 @@ export const api = {
     create: {
       method: 'POST' as const,
       path: '/api/books' as const,
-      input: insertBookSchema,
+      input: insertBookSchema.extend({ legalAcceptance: publicationAcceptanceSchema.optional() }),
       responses: {
         201: z.custom<typeof books.$inferSelect>(),
         400: errorSchemas.validation,
@@ -43,8 +45,9 @@ export const api = {
     update: {
       method: 'PUT' as const,
       path: '/api/books/:id' as const,
-      input: insertBookSchema.partial().extend({
+      input: patchSchema(insertBookSchema).extend({
         expectedRevision: z.number().int().min(1),
+        legalAcceptance: publicationAcceptanceSchema.optional(),
       }),
       responses: {
         200: z.custom<typeof books.$inferSelect>(),

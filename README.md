@@ -4,6 +4,10 @@ Tloque es una plataforma de lectura y publicación digital con biblioteca,
 lector, TTS, lectura guardada sin conexión, comunidad, Fonoteca, cartas coleccionables,
 marcos y herramientas creativas.
 
+La [base de permisos y privacidad de octubre](docs/legal/LAUNCH-MX.md) añade
+comprobantes por versión, solicitudes de privacidad y condiciones de habilitación.
+No constituye certificación jurídica ni activa pagos o sorteos.
+
 La experiencia visual incluye un motor 3D compartido y opcional para orbes,
 portadas, tarjetas portal y marcos. Sus controles, límites y verificación están
 en [Tloque Visual Engine V1](docs/VISUAL_ENGINE_V1.md).
@@ -37,7 +41,7 @@ npm run db:migrate
 ```
 
 El migrador puede reconstruir PostgreSQL vacío desde `0000`, aplica en orden
-las migraciones hasta `0023`, verifica checksums, restricciones e índices y
+las migraciones hasta `0024`, verifica checksums, restricciones e índices y
 valida la estructura antes del commit. `0012` agrega revisiones del manuscrito,
 `0013` introduce respaldo de Tinta y liquidaciones, `0014` fija los contratos
 SQL que no expresa Drizzle, `0015` protege las claves de reclamación y `0016`

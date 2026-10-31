@@ -66,7 +66,7 @@ function Compositor({ entries, budget, onFailure, onDprChange }: { entries: Visu
         const rect = entry.element.getBoundingClientRect()
         const clip = entry.element.closest("[data-visual-clip]")?.getBoundingClientRect()
         const crop = visualViewport(rect, size.width, size.height, clip)
-        if (!entry.element.isConnected || !crop) { entry.ready(false); continue }
+        if (!entry.element.isConnected || !crop) { entry.element.dataset.visualStage = "clipped"; entry.ready(false); continue }
         let resource = resources.current.get(entry.id)
         const key = resource?.options === entry.options.current && resource.textureEdge === budget.maxTextureEdge ? resource.key : `${budget.maxTextureEdge}:${sceneKey(entry.options.current)}`
         if (!resource || resource.key !== key) {
@@ -79,6 +79,8 @@ function Compositor({ entries, budget, onFailure, onDprChange }: { entries: Visu
         gl.setScissor(...crop.scissor)
         gl.clear(false, true, true)
         resource.scene.update(now, dt, rect.width / rect.height, entry.pointer.current, entry.options.current)
+        const stage = resource.scene.status()
+        if (entry.element.dataset.visualStage !== stage) entry.element.dataset.visualStage = stage
         if (resource.scene.ready()) {
           resource.scene.render(gl)
           entry.ready(true)

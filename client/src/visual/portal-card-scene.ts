@@ -134,6 +134,7 @@ export function createPortalCardScene(options: VisualOptions,maxTextureEdge: num
   const viewport=new Vector4(),scissor=new Vector4(),clearColor=new Color()
   return {
     ready:()=>!disposed&&pending===0,
+    status:()=>disposed?"disposed":pending?"loading":"ready",
     update(_time,_dt,aspect,pointer,current){
       const recipe=portalRecipe(current),native=readFrameScene(current.frame),f=recipe.frame
       buildShell(recipe);drawBack(recipe)

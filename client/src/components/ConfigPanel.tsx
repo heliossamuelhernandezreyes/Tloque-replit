@@ -621,6 +621,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
               {/* ── PRIVACIDAD ── */}
               <Section icon={Shield} title={t("sectionPrivacy")}>
                 <div className="space-y-3">
+                  <div className="flex flex-wrap gap-4 text-sm text-white/65"><a className="min-h-11 py-3 underline" href="/privacy/requests">Solicitudes de privacidad</a><a className="min-h-11 py-3 underline" href="/legal/receipts">Mis permisos de publicación</a></div>
                   <motion.button whileTap={{ scale: 0.97 }} onClick={exportData} disabled={exporting}
                     className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-sans"
                     style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)" }}>

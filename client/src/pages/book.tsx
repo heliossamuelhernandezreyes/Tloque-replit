@@ -15,7 +15,7 @@ import BookmarkBurst from "@/components/BookmarkBurst"
 import { useSoundFX } from "@/hooks/useSoundFX"
 import { FREE_SAVE_LIMIT, countsTowardLimit } from "@/lib/library"
 import { pushSaveBook, pushUnsaveBook } from "@/lib/sync"
-import { slimBook, saveOfflineContent, removeOfflineContent, getOfflineContent } from "@/lib/offline"
+import { slimBook, saveOfflineContent, removeOfflineContent, getOfflineContent, OfflinePermissionError } from "@/lib/offline"
 import TokensPanel from "@/components/TokensPanel"
 import CardsGallery from "@/components/CardsGallery"
 import HeartCount from "@/components/HeartCount"
@@ -133,7 +133,10 @@ export default function BookPage() {
         credentials: "include",
         body:        JSON.stringify({ status: next }),
       })
-      if (!res.ok) throw new Error(t("visibilityErr"))
+      if (!res.ok) {
+        const failure = await res.json().catch(() => ({}))
+        throw new Error(failure.message || t("visibilityErr"))
+      }
       setBookStatus(next)
       // Refrescar el catálogo para que el cambio se vea de inmediato
       queryClient.invalidateQueries({ queryKey: ["/api/books"] })
@@ -171,14 +174,14 @@ export default function BookPage() {
         }
       }
       try {
-        await saveOfflineContent(id, book)   // confirmar contenido antes de prometer offline
+        const edition = await saveOfflineContent(id, book)
         localStorage.setItem("novareads_saved",
-          JSON.stringify([...saved, { ...slimBook(book), isSaved: true }]))
-      } catch {
-        await removeOfflineContent(id)
+          JSON.stringify([...saved, { ...slimBook(edition), isSaved: true }]))
+      } catch (error) {
+        if (!(error instanceof OfflinePermissionError)) await removeOfflineContent(id)
         toast({
           title: "No se pudo guardar offline",
-          description: "Libera espacio del dispositivo y vuelve a intentarlo.",
+          description: error instanceof OfflinePermissionError ? error.message : "Libera espacio del dispositivo y vuelve a intentarlo.",
         })
         return
       }
@@ -193,16 +196,16 @@ export default function BookPage() {
   // Retomar lectura donde se quedó
 
   // Lightweight shelf records store their complete manuscript in IndexedDB.
-  async function openPrintStudio(copy?: PdfCopy) {
+  async function openPrintStudio(copy?: PdfCopy, acquiredEdition?: PrintBook) {
     if (!book || isDownloading) return
     setIsDownloading(true)
     try {
-      let complete = book
-      if (!book.chapters?.some((c: { content?: string }) => c.content?.trim()) && !book.content?.trim()) {
+      let complete = acquiredEdition || book
+      if (!acquiredEdition && !book.chapters?.some((c: { content?: string }) => c.content?.trim()) && !book.content?.trim()) {
         const offline = await getOfflineContent(id)
         if (offline) complete = { ...book, ...offline }
       }
-      setPrintSession({ book: { ...complete, coverUrl: shownCover, backCoverUrl: backCoverFor(book, user?.id) }, copy })
+      setPrintSession({ book: acquiredEdition ? complete : { ...complete, coverUrl: shownCover, backCoverUrl: backCoverFor(book, user?.id) }, copy })
     } catch {
       toast({ title: settings.language === "es" ? "No se pudo abrir el taller de impresión" : "The print studio could not be opened", description: t("tryAgain") })
     } finally { setIsDownloading(false) }
@@ -529,7 +532,8 @@ export default function BookPage() {
                 accentColor={gc.color}
                 accentGlow={gc.glow}
                 isDownloading={isDownloading}
-                onPrintCopy={c => void openPrintStudio(c)}
+                onPrintCopy={(copy, edition) => void openPrintStudio(copy, edition)}
+                isAuthor={isMine}
                 premiumUnlocked={isPremiumView}
               />
             )}

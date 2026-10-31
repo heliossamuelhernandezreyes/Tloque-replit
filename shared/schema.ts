@@ -31,6 +31,34 @@ export const users = pgTable("users", {
 export type User       = typeof users.$inferSelect
 export type InsertUser = typeof users.$inferInsert
 
+// Legal evidence is append-only in the SQL migration, not merely in the UI.
+export const legalAcceptances = pgTable("legal_acceptances", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  bookId: integer("book_id").notNull(),
+  bookRevision: integer("book_revision").notNull(),
+  documentVersion: text("document_version").notNull(),
+  documentHash: text("document_hash").notNull(),
+  documents: jsonb("documents").notNull(),
+  workHash: text("work_hash").notNull(),
+  declaration: jsonb("declaration").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, table => [unique("legal_acceptances_book_id_book_revision_key").on(table.bookId, table.bookRevision)])
+
+export const privacyRequests = pgTable("privacy_requests", {
+  id: serial("id").primaryKey(), publicId: text("public_id").notNull().unique(),
+  userId: integer("user_id").references(() => users.id), email: text("email").notNull(),
+  type: text("request_type").notNull(), description: text("description").notNull(),
+  status: text("status").notNull().default("received"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+export const privacyRequestEvents = pgTable("privacy_request_events", {
+  id: serial("id").primaryKey(), requestId: integer("request_id").notNull().references(() => privacyRequests.id),
+  actorId: integer("actor_id").references(() => users.id), status: text("status").notNull(),
+  note: text("note").notNull(), createdAt: timestamp("created_at").defaultNow().notNull(),
+})
+
 // ── ADMINISTRADORES ───────────────────────────────────────
 // Tabla para gestionar quién tiene permisos de admin.
 // El ADMIN_EMAIL configurado se auto-inserta al arrancar.
@@ -68,6 +96,7 @@ export type CoverFx = z.infer<typeof coverFxSchema>
 
 // ── LIBROS ────────────────────────────────────────────────
 export const books = pgTable("books", {
+  rightsHold: boolean("rights_hold").notNull().default(false),
   id:              serial("id").primaryKey(),
   title:           text("title").notNull(),
   author:          text("author").notNull(),
@@ -130,7 +159,7 @@ export const insertBookSchema = createInsertSchema(books, {
     .default(""),
   publicationYear: z.number().int().min(-4_000).max(new Date().getUTCFullYear() + 1).nullable().optional(),
   coverFx: coverFxSchema.optional().default({ mode: "simple", layers: { back: "", mid: "", front: "" } }),
-}).omit({ id: true, createdAt: true, updatedAt: true, clientDraftId: true })
+}).omit({ id: true, createdAt: true, updatedAt: true, clientDraftId: true, rightsHold: true })
 
 export type Book              = typeof books.$inferSelect
 export type InsertBook        = z.input<typeof insertBookSchema>
@@ -249,11 +278,23 @@ export type SavedBook = typeof savedBooks.$inferSelect
 // Un token de VENTA da 1 ejemplar imprimible con permiso de venta.
 // Cada EJEMPLAR tiene folio único (va en el QR de la portada) y una
 // clave (va impresa DENTRO del libro): folio+clave = reclamo único.
+export const licensedEditions = pgTable("licensed_editions", {
+  id: serial("id").primaryKey(),
+  bookId: integer("book_id").references(() => books.id).notNull(),
+  bookRevision: integer("book_revision").notNull(),
+  acceptanceId: integer("acceptance_id").references(() => legalAcceptances.id).notNull(),
+  workHash: text("work_hash").notNull(),
+  snapshot: jsonb("snapshot").$type<Book>().notNull(),
+  rights: jsonb("rights").$type<Record<string, boolean>>().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, table => [unique("licensed_editions_revision_unique").on(table.bookId, table.bookRevision)])
+
 export const bookTokens = pgTable("book_tokens", {
   id:          serial("id").primaryKey(),
   kind:        text("kind").notNull(),                                // "support" | "sale"
   bookId:      integer("book_id").references(() => books.id).notNull(),
   ownerUserId: integer("owner_user_id").references(() => users.id).notNull(),
+  editionId: integer("edition_id").references(() => licensedEditions.id),
   licenseStatus: text("license_status").notNull().default("active"), // active | suspended | revoked
   createdAt:   timestamp("created_at").defaultNow().notNull(),
 })
@@ -266,6 +307,7 @@ export const printCopies = pgTable("print_copies", {
   claimKeyHash:    text("claim_key_hash").notNull().default(""),      // HMAC para verificar sin descifrar
   claimedByUserId: integer("claimed_by_user_id").references(() => users.id),
   claimedAt:       timestamp("claimed_at"),
+  digitalClaimAllowed: boolean("digital_claim_allowed").notNull().default(true),
   // Ciclo comercial del ejemplar. Nunca se infiere una venta a partir del
   // reclamo digital: son hechos distintos y pueden ocurrir en otro orden.
   saleStatus:      text("sale_status").notNull().default("available"), // available | sold | returned
@@ -344,6 +386,8 @@ export const tokenOrders = pgTable("token_orders", {
   authorShareBps: integer("author_share_bps").default(0).notNull(),
   bookTypeSnapshot: text("book_type_snapshot").default("").notNull(),
   bookRevisionSnapshot: integer("book_revision_snapshot").default(1).notNull(),
+  editionId: integer("edition_id").references(() => licensedEditions.id),
+  purchaseTerms: jsonb("purchase_terms").$type<Record<string, any>>(),
   // Efectivo real que respalda la operación. En compras directas coincide con
   // amountCents; al gastar Tinta usa el costo real todavía disponible en el
   // monedero (los bonos y créditos beta aportan cero).

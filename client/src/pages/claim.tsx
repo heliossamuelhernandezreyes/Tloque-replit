@@ -9,7 +9,7 @@ import { useSettings } from "@/context/SettingsContext"
 
 interface ClaimInfo {
   folio:    string
-  status:   "free" | "yours" | "taken" | "unavailable"
+  status:   "free" | "yours" | "taken" | "unavailable" | "personal"
   kind:     string
   bookId:   number
   title:    string
@@ -153,6 +153,7 @@ export default function ClaimPage() {
                 Este ejemplar no admite nuevas activaciones. Su permiso está suspendido o reembolsado; consulta con quien te lo entregó.
               </div>
             )}
+            {status === "personal" && <div role="status" className="rounded-2xl border border-white/20 p-5 text-sm text-white/70">Este folio permite una impresión personal sin venta. El acceso digital pertenece al comprador del Token 1; no incluye otro canje.</div>}
 
             {status === "free" && (
               <div className="rounded-2xl p-5"

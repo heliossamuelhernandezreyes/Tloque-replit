@@ -5,11 +5,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Printer, Heart, Store, BadgeCheck, CircleDashed, UserCheck, Droplets, CreditCard } from "lucide-react"
 import WalletPanel from "@/components/WalletPanel"
 import { useSettings } from "@/context/SettingsContext"
+import type { LegalDocument } from "@shared/legal"
+import type { PdfCopy, PrintBook } from "@/print/model"
 
 interface Copy {
   id: number; folio: string; canPrint: boolean
   digitalClaimed: boolean
   claimedByOwner: boolean
+  digitalClaimAllowed?: boolean
 }
 interface TokenWithCopies {
   id: number; kind: "support" | "sale"; licenseStatus: "active" | "suspended" | "revoked"; copies: Copy[]
@@ -20,15 +23,21 @@ interface Props {
   accentColor: string
   accentGlow:  string
   isDownloading: boolean
-  onPrintCopy: (copy: { folio: string; key: string }) => void
+  onPrintCopy: (copy: PdfCopy, edition?: PrintBook) => void
   premiumUnlocked?: boolean
+  isAuthor?: boolean
 }
 
-export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloading, onPrintCopy, premiumUnlocked }: Props) {
+export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloading, onPrintCopy, premiumUnlocked, isAuthor }: Props) {
   const { t } = useSettings()
   const queryClient = useQueryClient()
   const [payMenu, setPayMenu] = useState<"support" | "sale" | null>(null)
   const [showWallet, setShowWallet] = useState(false)
+  const [acceptedHash, setAcceptedHash] = useState("")
+  const legal = useQuery<{ hash: string; documents: LegalDocument[] }>({
+    queryKey: ["/api/legal/documents"], staleTime: 0,
+    queryFn: async () => { const response = await fetch("/api/legal/documents", { cache: "no-store" }); if (!response.ok) throw new Error("No se pudieron cargar las condiciones"); return response.json() },
+  })
 
   const { data } = useQuery<{ tokens: TokenWithCopies[] }>({
     queryKey: [`/api/tokens/mine`, bookId],
@@ -40,7 +49,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
   })
 
   // Configuración de pagos: si Stripe está activo, mostrar precios reales
-  const { data: payCfg } = useQuery<{ enabled: boolean; prices: Record<string, { cents: number; currency: string; tinta: number }> }>({
+  const { data: payCfg } = useQuery<{ enabled: boolean; offers?: { support: string | null; sale: string | null }; prices: Record<string, { cents: number; currency: string; tinta: number }> }>({
     queryKey: ["/api/payments/config", bookId],
     queryFn: async () => {
       const res = await fetch(`/api/payments/config?bookId=${bookId}`)
@@ -81,13 +90,14 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
         method:      "POST",
         headers:     { "Content-Type": "application/json", "Idempotency-Key": purchaseKey },
         credentials: "include",
-        body:        JSON.stringify({ bookId, kind, payWith }),
+        body:        JSON.stringify({ bookId, kind, payWith, acceptance: { accepted: acceptedHash === legal.data?.hash, documentHash: acceptedHash } }),
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
         // Keep the key after network/server/429 errors: the first request may
         // already have succeeded. A completed checkout keeps it until confirmed.
-        if ([400, 402, 409].includes(res.status)) localStorage.removeItem(intent)
+        if ([400, 402, 409, 428].includes(res.status)) localStorage.removeItem(intent)
+        if (e.code === "LEGAL_DOCUMENT_CHANGED") { setAcceptedHash(""); void legal.refetch() }
         throw new Error(e.message || "Error")
       }
       const result = await res.json()
@@ -102,6 +112,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
       }
       queryClient.invalidateQueries({ queryKey: [`/api/tokens/mine`, bookId] })
       queryClient.invalidateQueries({ queryKey: ["/api/wallet"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/books", bookId] })
       setPayMenu(null)
       // Refrescar desbloqueados (el apoyo desbloquea la obra)
       fetch("/api/tokens/unlocked", { credentials: "include" })
@@ -118,9 +129,9 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
         const error = await response.json().catch(() => ({}))
         throw new Error(error.message || "No se pudo verificar el permiso de impresión. Reintenta cuando tengas conexión.")
       }
-      const prepared: { bookId: number; copy: { folio: string; key: string } } = await response.json()
+      const prepared: { bookId: number; book: PrintBook; copy: PdfCopy } = await response.json()
       if (prepared.bookId !== bookId || !prepared.copy?.folio || !prepared.copy?.key) throw new Error("No se pudo preparar el ejemplar.")
-      onPrintCopy(prepared.copy)
+      onPrintCopy(prepared.copy, prepared.book)
 
     },
   })
@@ -133,7 +144,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
     return (
       <div className="grid grid-cols-2 gap-1.5">
         <button
-          disabled={acquire.isPending}
+          disabled={acquire.isPending || acceptedHash !== legal.data?.hash}
           onClick={() => acquire.mutate({ kind, payWith: "money" })}
           className="flex items-center justify-center gap-1.5 text-[10px] font-sans px-2 py-2.5 rounded-lg disabled:opacity-40"
           style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.8)", border: "1px solid rgba(255,255,255,0.12)" }}
@@ -142,7 +153,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
           {payOn ? `${t("payWithCard")} · $${((p?.cents ?? 0) / 100).toFixed(0)}` : t("tokenBeta").split("·")[0].trim()}
         </button>
         <button
-          disabled={acquire.isPending || !enough}
+          disabled={acquire.isPending || !enough || acceptedHash !== legal.data?.hash}
           onClick={() => enough ? acquire.mutate({ kind, payWith: "tinta" }) : setShowWallet(true)}
           className="flex items-center justify-center gap-1.5 text-[10px] font-sans px-2 py-2.5 rounded-lg disabled:opacity-40"
           style={{ background: `${accentGlow}15`, color: accentColor, border: `1px solid ${accentColor}35` }}
@@ -156,6 +167,9 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
 
   const tokens     = data?.tokens || []
   const hasSupport = tokens.some(tk => tk.kind === "support" && tk.licenseStatus !== "revoked")
+  const activeSupport = tokens.some(tk => tk.kind === "support" && tk.licenseStatus === "active")
+  const supportReason = isAuthor ? "Esta obra es tuya: ya tienes acceso completo." : payCfg?.offers?.support
+  const saleReason = payCfg?.offers?.sale || (!activeSupport && !isAuthor ? "Necesitas un Token 1 activo antes de adquirir un permiso comercial." : null)
   const allCopies: { copy: Copy; kind: string; licenseStatus: TokenWithCopies["licenseStatus"] }[] = []
   for (const tk of tokens) for (const c of tk.copies) allCopies.push({ copy: c, kind: tk.kind, licenseStatus: tk.licenseStatus })
 
@@ -185,10 +199,10 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
 
       {/* Adquirir */}
       <div className="space-y-2">
-        {!hasSupport && (
+        {!hasSupport && !isAuthor && (
           <motion.button
             whileTap={{ scale: 0.97 }}
-            disabled={acquire.isPending}
+            disabled={acquire.isPending || !payCfg?.offers || !!supportReason}
             onClick={() => setPayMenu(payMenu === "support" ? null : "support")}
             className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-left disabled:opacity-50"
             style={{ background: `${accentGlow}14`, border: `1px solid ${accentColor}35` }}
@@ -204,12 +218,13 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
             </div>
           </motion.button>
         )}
-        {payMenu === "support" && !hasSupport && (
+        {!hasSupport && !isAuthor && supportReason && <p className="text-xs text-amber-100">{supportReason}</p>}
+        {payMenu === "support" && !hasSupport && !supportReason && (
           <PayOptions kind="support" />
         )}
         <motion.button
           whileTap={{ scale: 0.97 }}
-          disabled={acquire.isPending}
+          disabled={acquire.isPending || !payCfg?.offers || !!saleReason}
           onClick={() => setPayMenu(payMenu === "sale" ? null : "sale")}
           className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-left disabled:opacity-50"
           style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.12)" }}
@@ -224,7 +239,8 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
             </p>
           </div>
         </motion.button>
-        {payMenu === "sale" && (
+        {saleReason && <p className="text-xs text-amber-100">{saleReason}</p>}
+        {payMenu === "sale" && !saleReason && (
           <PayOptions kind="sale" />
         )}
         {acquire.isError && (
@@ -235,6 +251,12 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
           </p>
         )}
       </div>
+      {payMenu && <div className="space-y-3 text-xs text-white/70">
+        <p>{payMenu === "support" ? "Token 1: edición digital permanente sin suscripción y tres impresiones personales, sin venta ni accesos digitales adicionales." : "Un ejemplar físico nuevo y su primera distribución comercial. Un canje digital definitivo a la primera cuenta; una reventa no lo renueva."}</p>
+        {legal.data?.documents.filter(document => document.id === "terms").map(document => <details key={document.id}><summary className="cursor-pointer underline">Condiciones · {document.version}</summary><p className="mt-2 whitespace-pre-line leading-6">{document.text}</p></details>)}
+        {legal.isError && <button onClick={() => void legal.refetch()} className="underline">Reintentar carga de condiciones</button>}
+        <label className="flex min-h-11 items-start gap-2"><input type="checkbox" checked={!!legal.data && acceptedHash === legal.data.hash} disabled={!legal.data} onChange={event => setAcceptedHash(event.target.checked ? legal.data!.hash : "")} />Leí y acepto las condiciones de esta compra.</label>
+      </div>}
 
       {/* Ejemplares */}
       {allCopies.length > 0 && (
@@ -266,7 +288,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
                       {kind === "sale" && <span className="ml-1.5 text-[8px] font-sans" style={{ color: accentColor + "aa" }}>venta</span>}
                     </p>
                     <p className="text-[9px] font-sans" style={{ color: "rgba(255,255,255,0.4)" }}>
-                      {licenseStatus === "revoked" ? "Permiso reembolsado" : licenseStatus === "suspended" ? "Permiso suspendido: pago en revisión" : isMineClaim ? t("tokenYourCopy") : isFree ? t("tokenFreeCopy") : t("tokenClaimedCopy")}
+                      {licenseStatus === "revoked" ? "Permiso reembolsado" : licenseStatus === "suspended" ? "Permiso suspendido: pago en revisión" : copy.digitalClaimAllowed === false ? "Impresión personal · sin canje adicional" : isMineClaim ? t("tokenYourCopy") : isFree ? t("tokenFreeCopy") : t("tokenClaimedCopy")}
                     </p>
                   </div>
                   <button
@@ -289,6 +311,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
 
       <WalletPanel open={showWallet} onClose={() => setShowWallet(false)}
         accentColor={accentColor} accentGlow={accentGlow} />
+      <a href="/legal/receipts" className="block text-xs text-white/60 underline">Mis comprobantes de compra y permisos</a>
     </div>
   )
 }

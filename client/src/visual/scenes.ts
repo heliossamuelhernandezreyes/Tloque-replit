@@ -21,6 +21,7 @@ export interface VisualScene {
   update: (time: number, dt: number, aspect: number, pointer: { x: number; y: number }, options: VisualOptions) => void
   render: (renderer: WebGLRenderer) => void
   ready: () => boolean
+  status: () => "ready" | "loading" | "failed" | "disposed"
   dispose: () => void
 }
 export const sceneKey = (options: VisualOptions) => {
@@ -78,12 +79,13 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
   const color = new Color(visualColor(options.color))
 
   function loadTexture(url: string, targetAspect: number, attach: (texture: Texture) => void) {
-    if (!isSafeImageSource(url) || url.length > 8_000_000) { failed = true; return }
+    if (!isSafeImageSource(url) || url.length > 8_000_000) { failed = true; options.onAssetIssue?.("No se pudo cargar una imagen. Revisa su origen y reintenta la vista."); return }
     pending++
     let settled = false
     const finish = (error: boolean) => {
       if (settled) return
       settled = true; pending--; failed ||= error; clearTimeout(timer); timers.delete(timer)
+      if (error && !disposed) options.onAssetIssue?.("No se pudo cargar una imagen. El diseño sigue disponible; puedes reintentar.")
     }
     const timer = setTimeout(() => finish(true), 12_000); timers.add(timer)
     new TextureLoader().load(url, (texture: Texture) => {
@@ -257,6 +259,7 @@ export function createVisualScene(options: VisualOptions, maxTextureEdge: number
   }
   return {
     ready: () => !disposed && !failed && pending === 0,
+    status: () => disposed ? "disposed" : failed ? "failed" : pending ? "loading" : "ready",
     update(time, dt, aspect, pointer, current) {
       const lerp = 1 - Math.exp(-dt * 7)
       openness += ((current.active ? 1 : current.pressed ? .9 : .15) - openness) * lerp

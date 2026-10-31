@@ -1,5 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import { LEGAL_FIXTURE_ENV } from "../scripts/fixtures/legal-config.mjs"
 import { tintaBackingForDebit } from "../server/economy"
 
 process.env.DATABASE_URL ||= "postgresql://test:test@127.0.0.1:5432/tloque_test"
@@ -54,6 +55,7 @@ test("las liquidaciones fallan cerradas y acotan espera y mínimo", async () => 
   const { payoutHoldDays, payoutMinimumCents, payoutSystemEnabled } = await import("../server/payouts")
   const previous = { ...process.env }
   try {
+    Object.assign(process.env, LEGAL_FIXTURE_ENV)
     process.env.STRIPE_SECRET_KEY = "sk_test"
     process.env.STRIPE_CONNECT_ENABLED = "true"
     process.env.PAYOUTS_READY = "true"

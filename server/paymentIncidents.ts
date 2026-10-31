@@ -246,7 +246,7 @@ export function registerPaymentIncidentRoutes(app: Express) {
       if (!resolved) return res.status(409).json({ message: "La incidencia ya fue resuelta o no existe" })
       res.json({ ok: true })
     } catch (error) {
-      if (error instanceof z.ZodError) return res.status(400).json({ message: error.errors[0]?.message || "Datos inválidos" })
+      if (error instanceof z.ZodError) return res.status(400).json({ message: error.issues[0]?.message || "Datos inválidos" })
       res.status(500).json({ message: "No se pudo resolver la incidencia" })
     }
   })

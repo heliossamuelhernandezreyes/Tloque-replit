@@ -13,7 +13,7 @@ import CommentsSection from "@/components/CommentsSection"
 import SupportInvite from "@/components/SupportInvite"
 import AudiobookChapterControl from "@/components/AudiobookChapterControl"
 import { pushStreak, pushProgress, pushSaveBook, pushUnsaveBook } from "@/lib/sync"
-import { slimBook, saveOfflineContent, removeOfflineContent, getOfflineContent } from "@/lib/offline"
+import { slimBook, saveOfflineContent, removeOfflineContent, getOfflineContent, OfflinePermissionError } from "@/lib/offline"
 import { useAuth } from "@/hooks/useAuth"
 import { useMusic } from "@/audio/MusicProvider"
 import ReaderAudioMenu from "@/components/ReaderAudioMenu"
@@ -394,14 +394,14 @@ export default function Reader() {
         }
       }
       try {
-        await saveOfflineContent(bookId!, currentBook)
-        saved.push({ ...slimBook(currentBook), isSaved: true })
+        const edition = await saveOfflineContent(bookId!, currentBook)
+        saved.push({ ...slimBook(edition), isSaved: true })
         localStorage.setItem("novareads_saved", JSON.stringify(saved))
-      } catch {
-        await removeOfflineContent(bookId!)
+      } catch (error) {
+        if (!(error instanceof OfflinePermissionError)) await removeOfflineContent(bookId!)
         toast({
           title: "No se pudo guardar offline",
-          description: "Libera espacio del dispositivo y vuelve a intentarlo.",
+          description: error instanceof OfflinePermissionError ? error.message : "Libera espacio del dispositivo y vuelve a intentarlo.",
         })
         return
       }

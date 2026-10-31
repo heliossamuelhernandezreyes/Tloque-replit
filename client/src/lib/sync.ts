@@ -218,10 +218,12 @@ export async function pullAndMerge(): Promise<void> {
       let changed = false
       for (const sb of serverBooks) {
         if (!localIds.has(String(sb.id)) && pending.get(String(sb.id)) !== "remove") {
-          local.push({ ...slimBook(sb), isSaved: true })
-          void saveOfflineContent(sb.id, sb).catch(error => {
-            console.warn("No se pudo restaurar el contenido offline", error)
-          })
+          let restored = { ...slimBook(sb), isSaved: true, hasOfflineContent: false }
+          if (sb.offlineAvailable) {
+            try { restored = { ...slimBook(await saveOfflineContent(sb.id, sb)), isSaved: true, hasOfflineContent: true } }
+            catch { /* Keep the bookmark without promising a new offline copy. */ }
+          }
+          local.push(restored)
           changed = true
         }
       }

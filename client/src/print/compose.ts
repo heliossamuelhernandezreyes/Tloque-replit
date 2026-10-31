@@ -51,9 +51,13 @@ export function composeEdition(book: PrintBook, input: EditionSettings, metrics:
   if (!source.some(c => c.content?.trim()) && !resources.illustrations.length) { layout.issues.push({ code: "missingText", severity: "error", scope: "interior" }); return layout }
   const missing = new Set<string>(), checked = new Set<string>()
   const credits = printSourceCredits(book, labels)
+  const claimText = copy?.digitalClaimAllowed === false
+    ? "Impresión personal autorizada. Sin permiso de venta ni canje digital adicional."
+    : labels.claim
   const values: [string, FontStyle][] = [[book.title, "normal"], [book.title, "bold"], [book.author, "normal"], [book.author, "italic"],
     ...Object.values(labels).map(v => [v, "normal"] as [string, FontStyle]), [labels.end, "italic"],
     ...credits.map(v => [v, "normal"] as [string, FontStyle]),
+    ...(copy ? [[claimText, "normal"] as [string, FontStyle]] : []),
     ...(copy ? [[copy.folio, "bold"], [copy.key, "normal"]] as [string, FontStyle][] : []),
     ...source.flatMap(c => [[c.title, "normal"], [c.title, "bold"], [c.content, "normal"]] as [string, FontStyle][]),
     ...resources.illustrations.map(i => [i.caption, "normal"] as [string, FontStyle])]
@@ -146,11 +150,11 @@ export function composeEdition(book: PrintBook, input: EditionSettings, metrics:
   y = block(labels.rights, y + 4, 9, "normal", "legal")
   if (copy) {
     y = block(labels.copy + ": " + copy.folio, y + 8, 9, "bold", "legal")
-    y = block(labels.key + ": " + copy.key, y + 2, 8.5, "normal", "legal")
-    y = block(labels.claim, y + 4, 8.5, "normal", "legal")
+    if (copy.digitalClaimAllowed !== false) y = block(labels.key + ": " + copy.key, y + 2, 8.5, "normal", "legal")
+    y = block(claimText, y + 4, 8.5, "normal", "legal")
     const size = 34
     current!.ops.push({ kind: "qr", x: width / 2 - size / 2, y: y + 3, size,
-      value: origin + "/claim/" + encodeURIComponent(copy.folio) + "#key=" + encodeURIComponent(copy.key) })
+      value: origin + "/claim/" + encodeURIComponent(copy.folio) + (copy.digitalClaimAllowed === false ? "" : "#key=" + encodeURIComponent(copy.key)) })
     if (y + size + 3 > bottomY) throw new Error("tooLong")
   }
 

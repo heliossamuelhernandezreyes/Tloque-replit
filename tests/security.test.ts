@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
 import { isSafeHttpsUrl, isSafeStorageKey } from "../shared/media"
 import { checkInvariants, poolCushion, TICKET } from "../shared/gacha"
 import { rateLimit } from "../server/rateLimit"
@@ -66,8 +67,10 @@ test("las salidas HTTPS no aceptan credenciales ni esquemas alternos", () => {
   assert.equal(isSafeHttpsUrl("file:///etc/passwd"), false)
 })
 
-test("el límite global no se evade cambiando la ruta", async () => {
-  const middleware = rateLimit(60_000, 2, "api-global")
+test("el límite global no se evade cambiando la ruta", async t => {
+  const now = Date.now()
+  t.mock.method(Date, "now", () => now)
+  const middleware = rateLimit(60_000, 2, "api-global-test-" + randomUUID())
   let allowed = 0
   let denied = 0
   const request = (path: string) => ({

@@ -1,12 +1,16 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { createHmac } from "node:crypto"
+import { LEGAL_FIXTURE_ENV } from "../scripts/fixtures/legal-config.mjs"
 import {
   AUTHOR_SHARE_BOOK, AUTHOR_SHARE_STORY, betaPaymentsEnabled, economySnapshotForBook, priceFor,
   refundStripePayment, splitEarnings, stripeEnabled, stripeForm, TINTA_PACKS, verifyStripeWebhook,
 } from "../server/payments"
 
 test("preserva precios y reparto económico actuales", () => {
+  assert.equal(priceFor("support", { type: "book", chapters: [{}] }).isStory, false)
+  assert.equal(economySnapshotForBook({ type: "book", chapters: [{}] }).authorShareBps, 9000)
+  assert.equal(economySnapshotForBook({ type: "story", chapters: [{}, {}] }).authorShareBps, 5000)
   assert.deepEqual(priceFor("support", { chapters: [{ content: "cuento" }] }), {
     tinta: 5, cents: 1_000, currency: "mxn", isStory: true,
   })
@@ -52,6 +56,7 @@ test("el modo beta exige autorización explícita en cualquier entorno", () => {
 })
 
 test("Stripe exige webhook, monetización y retiros listos antes de cobrar", () => {
+  const legalPrevious = Object.fromEntries(Object.keys(LEGAL_FIXTURE_ENV).map(key => [key, process.env[key]]))
   const previous = {
     nodeEnv: process.env.NODE_ENV,
     stripe: process.env.STRIPE_SECRET_KEY,
@@ -62,6 +67,7 @@ test("Stripe exige webhook, monetización y retiros listos antes de cobrar", () 
     payouts: process.env.PAYOUTS_READY,
   }
   try {
+    Object.assign(process.env, LEGAL_FIXTURE_ENV)
     process.env.NODE_ENV = "production"
     process.env.STRIPE_SECRET_KEY = "sk_test_configured"
     delete process.env.STRIPE_WEBHOOK_SECRET
@@ -80,6 +86,10 @@ test("Stripe exige webhook, monetización y retiros listos antes de cobrar", () 
     delete process.env.STRIPE_WEBHOOK_SECRET
     assert.equal(stripeEnabled(), false)
   } finally {
+    for (const [key, value] of Object.entries(legalPrevious)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
     for (const [key, value] of [
       ["NODE_ENV", previous.nodeEnv],
       ["STRIPE_SECRET_KEY", previous.stripe],

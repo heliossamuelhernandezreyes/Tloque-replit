@@ -24,6 +24,11 @@ function midi7(value: number) {
   return Math.max(0, Math.min(127, Math.round(value * 127)))
 }
 
+function midiController(value: number): Parameters<MIDIBuilder["controllerChange"]>[3] {
+  if (!Number.isInteger(value) || value < 0 || value > 127) throw new Error("Controlador MIDI fuera de rango")
+  return value as Parameters<MIDIBuilder["controllerChange"]>[3]
+}
+
 function scoreManifests(recipe: LinearScoreRecipe, override?: readonly InstrumentManifest[]) {
   if (override) return override
   return manifestsForModule(recipe.version === 2 ? recipe.plan.moduleId : null)
@@ -81,7 +86,7 @@ export function buildTloqueScoreMidi(
           const fraction = step / steps
           const at = ticks(control.timeSeconds + control.rampSeconds * fraction)
           const controllerValue = midi7(from + (target - from) * fraction)
-          for (const channel of channels) midi.controllerChange(at, trackNumber, channel, controller, controllerValue)
+          for (const channel of channels) midi.controllerChange(at, trackNumber, channel, midiController(controller), controllerValue)
         }
         state[key] = target
       }
@@ -123,7 +128,7 @@ export function buildTloqueScoreMidi(
     const setupAt = Math.max(0, start - 0.01)
     for (const action of spessaSynthActions(samplerPlan)) {
       if (action.type === "controller") {
-        midi.controllerChange(ticks(setupAt), trackNumber, channel, action.cc, action.value)
+        midi.controllerChange(ticks(setupAt), trackNumber, channel, midiController(action.cc), action.value)
       } else if (action.type === "keyswitch") {
         midi.noteOn(ticks(Math.max(0, setupAt - 0.015)), trackNumber, channel, action.note, action.velocity)
         midi.noteOff(ticks(setupAt), trackNumber, channel, action.note)
@@ -184,7 +189,7 @@ export async function renderTloqueScoreWithModuleToWav(
   const context = new OfflineAudioContext(2, Math.ceil(durationSeconds * profile.sampleRate), profile.sampleRate)
   await context.audioWorklet.addModule(processorUrl)
   const { WorkletSynthesizer } = await import("spessasynth_lib")
-  const synth = new WorkletSynthesizer(context, { oneOutput: true })
+  const synth = new WorkletSynthesizer(context)
   const mix = createSampledMixMaster(context, 1)
   synth.connect(mix.input)
   mix.output.connect(context.destination)
