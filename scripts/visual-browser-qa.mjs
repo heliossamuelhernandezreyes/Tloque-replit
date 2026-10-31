@@ -477,6 +477,9 @@ try {
 } catch (error) {
   console.error("Collected browser errors:",errors)
   for (const context of browser.contexts()) for (const [i, page] of context.pages().entries()) {
+    console.error("Visual state:", await page.evaluate(() => ({ visibility: document.visibilityState,
+      slots: Array.from(document.querySelectorAll('.tq-cinematic-slot')).map(element => ({ ready: element.getAttribute('data-visual-ready'), stage: element.getAttribute('data-visual-stage'), rect: element.getBoundingClientRect().toJSON(), clip: element.closest('[data-visual-clip]')?.getBoundingClientRect().toJSON() })),
+      canvases: Array.from(document.querySelectorAll('canvas')).map(element => ({ width: element.width, height: element.height, rect: element.getBoundingClientRect().toJSON() })) })).catch(() => null))
     await page.screenshot({ path: `${output}/failure-${i}.png` }).catch(() => {})
     const bytes=await page.screenshot({type:"jpeg",quality:45}).catch(()=>null)
     if(bytes)console.log(`TLOQUE_VISUAL_PROOF failure-${i} ${bytes.toString("base64")}`)
