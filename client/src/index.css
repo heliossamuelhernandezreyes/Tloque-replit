@@ -264,6 +264,11 @@ html.tloque-reduce-motion *::after {
   .tloque-field { display:flex; flex-direction:column; gap:.38rem; color:rgba(255,255,255,.36); font-size:.64rem; }
   .tloque-field input { width:100%; border:1px solid rgba(255,255,255,.08); border-radius:.72rem; background:rgba(255,255,255,.035); padding:.7rem .75rem; color:rgba(255,255,255,.82); outline:none; font-size:.78rem; }
   .tloque-field input:focus { border-color:rgba(196,181,253,.42); }
+  .tloque-rights-form .tloque-field { color:#d4d4d8; font-size:.875rem; }
+  .tloque-rights-form .tloque-field :is(input, textarea, select) { width:100%; min-height:2.75rem; border:1px solid #52525b; border-radius:.72rem; background:#09090b; padding:.7rem .75rem; color:#f4f4f5; font-size:1rem; }
+  .tloque-rights-form .tloque-field textarea { min-height:7.5rem; resize:vertical; }
+  .tloque-rights-form .tloque-field :is(input, textarea, select):focus-visible { outline:2px solid #c4b5fd; outline-offset:3px; }
+  .tloque-rights-form .tloque-primary-button { background:#e9d5a1; color:#18181b; font-size:.875rem; }
   .tloque-orb-dock { bottom:calc(1.35rem + var(--tloque-safe-bottom)); contain:layout style; }
 }
 

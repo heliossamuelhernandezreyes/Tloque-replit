@@ -23,7 +23,7 @@ export default function RightsAdmin() {
     const f = new FormData(event.currentTarget), notified = String(f.get("notifiedAt") || ""), deadline = String(f.get("deadlineAt") || "")
     mutation.mutate({ path: `/api/admin/rights/cases/${selected.id}`, method: "PATCH", body: { expectedStatus: selected.status, action: f.get("action"), note: f.get("note"), reference: f.get("reference"), resolutionConfirmed: f.get("resolution") === "on", ...(notified ? { notifiedAt: new Date(notified).toISOString() } : {}), ...(deadline ? { deadlineAt: new Date(deadline).toISOString() } : {}) } })
   }
-  return <Layout><main className="mx-auto max-w-5xl space-y-6 px-5 py-8 pb-24 text-zinc-300">
+  return <Layout><main className="tloque-rights-form mx-auto max-w-5xl space-y-6 px-5 py-8 pb-24 text-zinc-300">
     <h1 className="font-serif text-3xl text-white">Permisos y reclamaciones autorales</h1>
     <p className="text-sm leading-7">Acceso restringido. Los registros documentan actuaciones; no verifican por sí mismos la autenticidad de contratos. Notifica por el canal acordado y conserva constancia de entrega. Este panel no envía correos automáticamente.</p>
     {query.isError && <button className="underline" onClick={() => void query.refetch()}>Reintentar carga de expedientes</button>}

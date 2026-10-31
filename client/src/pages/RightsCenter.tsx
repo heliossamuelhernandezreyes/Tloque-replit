@@ -25,7 +25,7 @@ export default function RightsCenter() {
     } catch (e) { setError(e instanceof Error ? e.message : "No se pudo registrar la solicitud") }
     finally { setBusy(false) }
   }
-  return <main className="min-h-screen bg-black px-5 py-8 text-zinc-300"><article className="mx-auto max-w-3xl space-y-6">
+  return <main className="tloque-rights-form min-h-screen bg-black px-5 py-8 text-zinc-300"><article className="mx-auto max-w-3xl space-y-6">
     <a href="/" className="underline">Volver a Tloque</a>
     <h1 className="font-serif text-3xl text-white">Derechos de autor</h1>
     <p className="text-sm leading-7">Puedes comunicar una posible infracción sin crear una cuenta. Identifica la obra, tu derecho y el contenido concreto. No incluyas identificaciones, datos bancarios ni documentos sensibles. La recepción genera un folio y requiere atención del responsable.</p>
