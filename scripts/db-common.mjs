@@ -30,6 +30,8 @@ export const BASE_COLUMNS = {
 }
 
 export const EXPECTED_TABLES = [
+  "commercial_approvals", "copyright_cases", "copyright_case_events",
+  "licensed_editions",
   "legal_acceptances", "privacy_requests", "privacy_request_events",
   "ai_requests",
   "visual_uploads",
@@ -59,6 +61,8 @@ export const EXPECTED_TABLES = [
 ]
 
 export const EXPECTED_INDEXES = [
+  "commercial_approvals_book_idx", "copyright_cases_book_status_idx",
+  "book_tokens_edition_idx",
   "legal_acceptances_user_created_idx", "privacy_requests_status_created_idx",
   "ai_requests_recovery_idx",
   "audiobook_jobs_recovery_idx",
@@ -112,6 +116,7 @@ export const EXPECTED_INDEXES = [
 ]
 
 export const EXPECTED_CONSTRAINTS = [
+  "licensed_editions_contract_check",
   "admins_role_allowed",
   "audio_assets_kind_check",
   "audio_assets_source_type_check",
@@ -354,17 +359,21 @@ export async function validateExpectedSchema(client) {
   }
 
   const requiredColumns = {
+    licensed_editions: ["book_id", "book_revision", "acceptance_id", "work_hash", "snapshot", "rights"],
+    commercial_approvals: ["book_id", "acceptance_id", "work_hash", "actor_id", "agreement_ref", "evidence_ref", "action"],
+    copyright_cases: ["public_id", "book_id", "author_id", "status", "counter_notice", "notified_at", "deadline_at"],
+    copyright_case_events: ["case_id", "actor_id", "action", "note"],
     legal_acceptances: ["user_id", "book_id", "book_revision", "document_version", "document_hash", "documents", "work_hash", "declaration", "created_at"],
     privacy_requests: ["public_id", "email", "request_type", "description", "status", "created_at", "updated_at"],
     privacy_request_events: ["request_id", "actor_id", "status", "note", "created_at"],
     users: ["subscription_plan", "subscription_status", "subscription_expires_at", "deleted_at"],
-    print_copies: ["sale_status", "sold_at", "sale_price_cents", "sale_channel", "sale_note", "claim_key_hash", "updated_at"],
+    print_copies: ["sale_status", "sold_at", "sale_price_cents", "sale_channel", "sale_note", "claim_key_hash", "updated_at", "digital_claim_allowed"],
     audiobook_cache: ["cache_key", "storage_key", "status", "content_hash"],
     audiobook_jobs: ["request_key", "reserved_paper", "status", "content_hash"],
     notifications: ["user_id", "kind", "title", "body", "destination", "dedupe_key", "read_at"],
     advanced_direction_projects: ["book_id", "chapter_index", "revision", "content_hash", "data"],
     direction_agent_runs: ["request_key", "status", "maximum_paper", "reserved_paper", "proposal", "expires_at"],
-    books: ["revision", "updated_at"],
+    books: ["revision", "updated_at", "rights_hold"],
     book_drafts: ["book_id", "author_id", "base_revision", "draft_revision", "data", "updated_at"],
     book_revisions: ["book_id", "revision", "snapshot", "change_type", "created_by", "created_at"],
     api_rate_limits: ["bucket_key", "window_start", "request_count", "expires_at"],

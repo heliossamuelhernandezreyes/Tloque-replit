@@ -196,16 +196,16 @@ export default function BookPage() {
   // Retomar lectura donde se quedó
 
   // Lightweight shelf records store their complete manuscript in IndexedDB.
-  async function openPrintStudio(copy?: PdfCopy) {
+  async function openPrintStudio(copy?: PdfCopy, acquiredEdition?: PrintBook) {
     if (!book || isDownloading) return
     setIsDownloading(true)
     try {
-      let complete = book
-      if (!book.chapters?.some((c: { content?: string }) => c.content?.trim()) && !book.content?.trim()) {
+      let complete = acquiredEdition || book
+      if (!acquiredEdition && !book.chapters?.some((c: { content?: string }) => c.content?.trim()) && !book.content?.trim()) {
         const offline = await getOfflineContent(id)
         if (offline) complete = { ...book, ...offline }
       }
-      setPrintSession({ book: { ...complete, coverUrl: shownCover, backCoverUrl: backCoverFor(book, user?.id) }, copy })
+      setPrintSession({ book: acquiredEdition ? complete : { ...complete, coverUrl: shownCover, backCoverUrl: backCoverFor(book, user?.id) }, copy })
     } catch {
       toast({ title: settings.language === "es" ? "No se pudo abrir el taller de impresión" : "The print studio could not be opened", description: t("tryAgain") })
     } finally { setIsDownloading(false) }
@@ -532,7 +532,8 @@ export default function BookPage() {
                 accentColor={gc.color}
                 accentGlow={gc.glow}
                 isDownloading={isDownloading}
-                onPrintCopy={c => void openPrintStudio(c)}
+                onPrintCopy={(copy, edition) => void openPrintStudio(copy, edition)}
+                isAuthor={isMine}
                 premiumUnlocked={isPremiumView}
               />
             )}

@@ -129,6 +129,7 @@ export default function AdminHub() {
     { capability: "manageCatalog", label: copy("catalog"), Icon: Import, action: () => setShowImport(true) },
     { capability: "manageFinance", label: "Liquidaciones", Icon: Banknote, action: () => setLocation("/admin/liquidaciones") },
     { capability: "managePrivacy", label: "Solicitudes de privacidad", Icon: Shield, action: () => setLocation("/admin/privacidad") },
+    { capability: "manageRights", label: "Permisos y derechos de autor", Icon: Shield, action: () => setLocation("/admin/derechos") },
     { capability: "manageFinance", label: t("gachaTitle"), Icon: Ticket, action: () => setLocation("/sorteo") },
     { capability: "manageFrames", label: copy("frames"), Icon: Sparkles, action: () => setLocation("/admin/marcos") },
     { capability: "manageAudioCatalog", label: copy("phonotheque"), Icon: Headphones, action: () => setLocation("/admin/fonoteca") },

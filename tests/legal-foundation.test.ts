@@ -6,10 +6,10 @@ import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import express from "express"
 import { legalConfiguration } from "../server/legalConfig"
-import { publicationAcceptanceSchema, privacyRequestSchema, type PublicationAcceptance } from "../shared/legal"
+import { publicationAcceptanceSchema, privacyRequestSchema, tokenRightsFailure, type PublicationAcceptance } from "../shared/legal"
 import * as schema from "../shared/schema"
 import { permissionsForRole } from "../shared/admin-permissions"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 
 const config = {
   LEGAL_OPERATOR_NAME: "Operador simulado del catálogo", LEGAL_OPERATOR_ADDRESS: "Domicilio simulado 123, Monterrey, Nuevo León",
@@ -36,7 +36,7 @@ before(async () => {
   }
   await pg.exec("INSERT INTO users (id,google_id,email,name) VALUES (1,'author','author@fixture.mx','Author'),(2,'other','other@fixture.mx','Other');")
   ;[book] = await database.insert(schema.books).values({ title: "Novela de un capítulo", author: "Author", authorId: 1, type: "book", status: "published", content: "Una versión original", chapters: [{ title: "Único", content: "Una versión original" }] }).returning()
-  acceptance = { documentHash: legal.publicLegalBundle().hash, accepted: true, adultAndAuthorized: true, hasRights: true, origin: "original", evidence: "", choices: { offline: false, personalPrint: true, commercialPrint: false, audio: false, translation: false, collectibles: false } }
+  acceptance = { documentHash: legal.publicLegalBundle().hash, accepted: true, adultAndAuthorized: true, hasRights: true, origin: "original", evidence: "", choices: { offline: false, personalPrint: true, commercialPrint: false, audio: false, translation: false, collectibles: false, monetization: false, permanentDigital: false } }
 })
 after(async () => {
   await pg?.close()
@@ -227,4 +227,120 @@ test("el sorteo excluye obras sin permiso y nunca cobra cuando no queda stock au
       else process.env[key] = value
     }
   }
+})
+
+test("un permiso histórico no autoriza implícitamente monetización ni acceso permanente", () => {
+  const legacy: any = { ...acceptance, choices: { ...acceptance.choices } }
+  delete legacy.choices.monetization; delete legacy.choices.permanentDigital
+  const parsed = publicationAcceptanceSchema.parse(legacy)
+  assert.equal(parsed.choices.monetization, false)
+  assert.match(tokenRightsFailure(parsed.choices, "support")!, /monetización/)
+  assert.match(tokenRightsFailure({ monetization: true, permanentDigital: true, offline: false }, "sale")!, /sin conexión/)
+  assert.equal(tokenRightsFailure({ monetization: true, permanentDigital: true, offline: true, commercialPrint: true }, "sale"), null)
+})
+
+test("la edición pagada conserva texto y autorización; primera cuenta y contrato son inmutables", async () => {
+  const { freezeLicensedEdition, purchasedEditions, tokenEdition } = await import("../server/tokenEditions")
+  await pg.exec("INSERT INTO users(id,google_id,email,name) VALUES(3,'reader3','reader3@fixture.mx','Reader3')")
+  const [work] = await database.insert(schema.books).values({ title: "Edición permanente", author: "Author", authorId: 1, status: "published", content: "TEXTO ADQUIRIDO" }).returning()
+  const choices = { ...acceptance.choices, offline: true, monetization: true, permanentDigital: true, commercialPrint: true }
+  await legal.recordPublicationAcceptance(database as any, work, 1, { ...acceptance, choices })
+  const consent = await legal.bookAcceptance(work, database as any)
+  const edition = await database.transaction(tx => freezeLicensedEdition(tx, work, consent!.receipt.id, choices))
+  assert.equal((await freezeLicensedEdition(database, work, consent!.receipt.id, choices)).id, edition.id)
+  const [support] = await database.insert(schema.bookTokens).values({ kind: "support", bookId: work.id, ownerUserId: 2, editionId: edition.id }).returning()
+  const [sale] = await database.insert(schema.bookTokens).values({ kind: "sale", bookId: work.id, ownerUserId: 2, editionId: edition.id }).returning()
+  const [copy] = await database.insert(schema.printCopies).values({ tokenId: sale.id, folio: "TLQ-EDTN-0001", claimKey: "TEST-KEY1", claimedByUserId: 3, claimedAt: new Date() }).returning()
+  await database.update(schema.books).set({ content: "BORRADOR PRIVADO POSTERIOR", status: "draft", revision: 2 }).where(eq(schema.books.id, work.id))
+  assert.equal((await tokenEdition(support, database))!.content, "TEXTO ADQUIRIDO")
+  assert.equal((await purchasedEditions(2, [work.id], database)).get(work.id)!.snapshot.content, "TEXTO ADQUIRIDO")
+  assert.equal((await purchasedEditions(1, [work.id], database)).size, 0)
+  assert.equal((await legal.offlineEdition(edition.snapshot, 3, database as any)).content, "TEXTO ADQUIRIDO")
+  await database.update(schema.bookTokens).set({ licenseStatus: "revoked" }).where(eq(schema.bookTokens.id, sale.id))
+  assert.equal((await purchasedEditions(3, [work.id], database)).get(work.id)!.id, edition.id, "a reader retains their digital claim after a seller refund")
+  await assert.rejects(() => pg.query("UPDATE print_copies SET claimed_by_user_id=2 WHERE id=$1", [copy.id]), /first account/)
+  await assert.rejects(() => pg.query("UPDATE print_copies SET claimed_by_user_id=NULL WHERE id=$1", [copy.id]), /first account/)
+  await database.update(schema.printCopies).set({ saleStatus: "returned" }).where(eq(schema.printCopies.id, copy.id))
+  await assert.rejects(() => pg.query("UPDATE licensed_editions SET snapshot='{}' WHERE id=$1", [edition.id]), /append-only/)
+  const [order] = await database.insert(schema.tokenOrders).values({ userId: 2, bookId: work.id, kind: "support", editionId: edition.id, purchaseTerms: { accepted: true, documentHash: acceptance.documentHash } }).returning()
+  await assert.rejects(() => pg.query("UPDATE token_orders SET purchase_terms='{}' WHERE id=$1", [order.id]), /immutable/)
+})
+
+test("avisos y contraavisos aislados por rol y autor; bloqueo persistente y restauración con evidencia", async () => {
+  const { registerRightsRoutes, commercialApproval } = await import("../server/rightsCases")
+  const { resolvePrincipalPermissions } = await import("../server/principalPermissions")
+  const [work] = await database.insert(schema.books).values({ title: "Reclamación probada", author: "Author", authorId: 1, status: "published", content: "VERSION PARA REVISAR" }).returning()
+  await legal.recordPublicationAcceptance(database as any, work, 1, { ...acceptance, choices: { ...acceptance.choices, offline: true, monetization: true, permanentDigital: true, commercialPrint: true } })
+  const consent = await legal.bookAcceptance(work, database as any)
+  assert.equal(await commercialApproval(work.id, consent!.receipt.id, legal.publicationWorkHash(work), database), false)
+  const app = express(); app.use(express.json())
+  app.use((req: any, _res, next) => {
+    const role = req.get("X-Fixture-Role"); req.isAuthenticated = () => !!role
+    if (role) { req.user = { id: role === "other" ? 2 : 1 }; resolvePrincipalPermissions(req.user, role, false) }
+    next()
+  })
+  registerRightsRoutes(app, database)
+  app.use((err: any, _req: any, res: any, _next: any) => res.status(500).json({ message: err.message }))
+  const server = app.listen(0, "127.0.0.1"); await once(server, "listening")
+  const origin = `http://127.0.0.1:${(server.address() as any).port}`
+  const request = async (path: string, method = "GET", body?: any, role?: string) => {
+    const response = await fetch(origin + path, { method, headers: { "Content-Type": "application/json", ...(role ? { "X-Fixture-Role": role } : {}) }, body: body ? JSON.stringify(body) : undefined })
+    return { status: response.status, body: await response.json() as any }
+  }
+  try {
+    const approval = { bookId: work.id, revision: work.revision, action: "approve", agreementRef: "fixture-signed-commercial-agreement", evidenceRef: "fixture-holder-evidence", confirmedRightsAndAgreement: true }
+    assert.equal((await request("/api/admin/rights/approvals", "POST", approval, "finance")).status, 403)
+    assert.equal((await request("/api/admin/rights/approvals", "POST", approval, "full")).status, 201)
+    assert.equal(await commercialApproval(work.id, consent!.receipt.id, legal.publicationWorkHash(work), database), true)
+    const sent = await request("/api/rights/notices", "POST", { bookId: work.id, name: "Titular simulado", email: "claimant@fixture.mx", work: "La edición identificada", location: "/book/" + work.id, rightsBasis: "Soy titular de los derechos invocados en este caso simulado.", goodFaith: true })
+    assert.equal(sent.status, 201)
+    assert.equal(sent.body.email, undefined)
+    assert.equal((await request("/api/admin/rights", "GET", undefined, "finance")).status, 403)
+    const listed = await request("/api/admin/rights", "GET", undefined, "full"), row = listed.body.cases[0]
+    assert.equal(row.claimant_email, "claimant@fixture.mx")
+    const decide = (action: string, expectedStatus: string, extra: any = {}) => request(`/api/admin/rights/cases/${row.id}`, "PATCH", { action, expectedStatus, note: "Actuación documentada en expediente simulado", ...extra }, "full")
+    assert.equal((await decide("removed", "received")).status, 200)
+    const [held] = await database.select().from(schema.books).where(eq(schema.books.id, work.id))
+    assert.equal(held.rightsHold, true)
+    assert.equal(await legal.hasBookRight(held.id, held.revision, "offline", database as any), false)
+    await assert.rejects(() => database.transaction(async tx => {
+      const [duplicate] = await tx.insert(schema.books).values({ title: "Otro título para el mismo texto", author: "Author", authorId: 1, status: "published", content: work.content, chapters: work.chapters }).returning()
+      await legal.recordPublicationAcceptance(tx as any, duplicate, 1, acceptance)
+    }), /coincide con una obra retirada/)
+    await database.update(schema.books).set({ status: "published" }).where(eq(schema.books.id, held.id))
+    const [republished] = await database.select().from(schema.books).where(eq(schema.books.id, held.id))
+    assert.equal(republished.rightsHold, true, "a catalogue status edit cannot release a rights hold")
+    const counter = { publicId: sent.body.folio, authorized: true, evidence: "Aporto un permiso suficiente para esta edición simulada." }
+    assert.equal((await request("/api/rights/counter-notices", "POST", counter, "other")).status, 404)
+    assert.equal((await request("/api/rights/counter-notices", "POST", counter, "full")).status, 201)
+    assert.equal((await decide("restored", "counter_received")).status, 409)
+    const future = new Date(Date.now() + 30 * 86_400_000).toISOString()
+    assert.equal((await decide("counter_notified", "counter_received", { reference: "fixture-delivery-record", notifiedAt: new Date(Date.now() - 1000).toISOString(), deadlineAt: future })).status, 200)
+    assert.equal((await decide("restored", "counter_notified")).status, 409)
+    await database.execute(sql`update copyright_cases set deadline_at=now()-interval '1 day' where id=${row.id}`)
+    assert.equal((await decide("restored", "counter_notified")).status, 200)
+    assert.equal((await database.select().from(schema.books).where(eq(schema.books.id, held.id)))[0].rightsHold, false)
+    assert.equal((await decide("removed", "received")).status, 409)
+    await assert.rejects(() => pg.query("delete from copyright_case_events where case_id=$1", [row.id]), /append-only/)
+    assert.equal((await request("/api/rights/cases/mine", "GET", undefined, "other")).body.length, 0)
+    const own = await request("/api/rights/cases/mine", "GET", undefined, "full")
+    assert.equal(own.body[0].claimant_email, undefined)
+    assert.equal(own.body[0].work_description, "La edición identificada")
+    const additional: any[] = []
+    for (let n = 0; n < 2; n++) {
+      const fresh = await request("/api/rights/notices", "POST", { bookId: work.id, name: "Titular simulado", email: "claimant@fixture.mx", work: "Otra reclamación de prueba", location: "/book/" + work.id, rightsBasis: "Derecho invocado en otra reclamación simulada.", goodFaith: true })
+      assert.equal(fresh.status, 201)
+      const all = await request("/api/admin/rights", "GET", undefined, "full")
+      const item = all.body.cases.find((entry: any) => entry.public_id === fresh.body.folio)
+      additional.push(item)
+      const removed = await request(`/api/admin/rights/cases/${item.id}`, "PATCH", { action: "removed", expectedStatus: "received", note: "Se verifica el alcance del segundo aviso simulado." }, "full")
+      assert.equal(removed.status, 200)
+    }
+    for (let n = 0; n < 2; n++) {
+      assert.equal((await request(`/api/admin/rights/cases/${additional[n].id}`, "PATCH", { action: "restored", expectedStatus: "removed", note: "El reclamante retiró el aviso según constancia revisada.", reference: "fixture-withdrawal-proof", resolutionConfirmed: true }, "full")).status, 200)
+      const [current] = await database.select().from(schema.books).where(eq(schema.books.id, work.id))
+      assert.equal(current.rightsHold, n === 0, "another unresolved case keeps the hold")
+      if (n === 1) assert.equal(current.status, "published", "the last case restores the original status")
+    }
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())) }
 })

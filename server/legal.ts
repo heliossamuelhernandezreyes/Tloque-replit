@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto"
 import type { Express, RequestHandler } from "express"
 import { Router } from "express"
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray, ne } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "./db"
 import { books, legalAcceptances, privacyRequests, privacyRequestEvents } from "@shared/schema"
@@ -9,6 +9,9 @@ import { legalDocuments, LEGAL_VERSION, publicationAcceptanceSchema, privacyRequ
 import { legalConfiguration } from "./legalConfig"
 import { hasCapability, requireAdmin } from "./auth"
 import { rateLimit } from "./rateLimit"
+import { publicationWorkHash } from "./editionFingerprint"
+import { purchasedEditions } from "./tokenEditions"
+export { publicationWorkHash } from "./editionFingerprint"
 
 export class LegalRequirementError extends Error {
   constructor(message: string, public readonly code = "LEGAL_ACCEPTANCE_REQUIRED", public readonly status = 428) { super(message) }
@@ -23,15 +26,24 @@ export function publicLegalBundle() {
 }
 
 type Executor = Pick<typeof db, "insert" | "select">
-export function publicationWorkHash(book: typeof books.$inferSelect) {
-  return createHash("sha256").update(JSON.stringify({
-    id: book.id, authorId: book.authorId, title: book.title, author: book.author, type: book.type,
-    content: book.content, chapters: book.chapters, coverUrl: book.coverUrl, coverFx: book.coverFx,
-    backCoverUrl: book.backCoverUrl, premiumCoverUrl: book.premiumCoverUrl, premiumBackUrl: book.premiumBackUrl,
-  })).digest("hex")
+export async function bookAcceptance(book: typeof books.$inferSelect, executor: Pick<typeof db, "select"> = db) {
+  const receipts = await executor.select().from(legalAcceptances)
+    .where(and(eq(legalAcceptances.bookId, book.id), eq(legalAcceptances.workHash, publicationWorkHash(book))))
+    .orderBy(desc(legalAcceptances.id)).limit(1)
+  const receipt = receipts[0]
+  const parsed = publicationAcceptanceSchema.safeParse(receipt?.declaration && typeof receipt.declaration === "object"
+    ? Object.fromEntries(Object.entries(receipt.declaration).filter(([key]) => !["economicCategory", "authorShareBps", "workTitle"].includes(key))) : undefined)
+  return parsed.success ? { receipt, choices: parsed.data.choices } : null
 }
 export async function recordPublicationAcceptance(tx: Executor, book: typeof books.$inferSelect, actorId: number | null | undefined, input?: PublicationAcceptance, previous?: typeof books.$inferSelect) {
   if (book.status !== "published") return
+  if (book.rightsHold) throw new LegalRequirementError("Esta obra tiene una retención por derechos. Puedes conservar un borrador mientras se atiende el expediente.", "RIGHTS_HOLD", 409)
+  if (book.content.trim() || Array.isArray(book.chapters) && book.chapters.some((chapter: any) => String(chapter.content || "").trim())) {
+    const [heldCopy] = await tx.select({ id: books.id }).from(books).where(and(
+      eq(books.rightsHold, true), ne(books.id, book.id), eq(books.content, book.content), eq(books.chapters, book.chapters),
+    )).limit(1)
+    if (heldCopy) throw new LegalRequirementError("El texto coincide con una obra retirada por derechos. Requiere revisión antes de volver a publicarse.", "RIGHTS_HOLD", 409)
+  }
   // A comment preference/operational update does not manufacture new consent.
   // Content, ownership, category or artwork changes require another acceptance.
   if (!input && previous?.status === "published" && publicationWorkHash(previous) === publicationWorkHash(book)) return
@@ -70,6 +82,7 @@ export async function rightsForBooks(editions: Array<typeof books.$inferSelect>,
     if (!latest.has(key)) latest.set(key, receipt)
   }
   for (const book of editions) {
+    if (book.rightsHold) continue
     const declaration = latest.get(`${book.id}:${publicationWorkHash(book)}`)?.declaration
     const parsed = publicationAcceptanceSchema.safeParse(declaration && typeof declaration === "object"
       ? Object.fromEntries(Object.entries(declaration).filter(([key]) => !["economicCategory", "authorShareBps", "workTitle"].includes(key))) : undefined)
@@ -79,6 +92,10 @@ export async function rightsForBooks(editions: Array<typeof books.$inferSelect>,
 }
 
 export async function offlineEdition(book: typeof books.$inferSelect, actorId: number, executor: Pick<typeof db, "select"> = db) {
+  const retained = (await purchasedEditions(actorId, [book.id], executor)).get(book.id)
+  if (retained && retained.workHash === publicationWorkHash(book) && retained.rights.offline) {
+    return { ...retained.snapshot, acquiredEditionId: retained.id, offlineAvailable: true, hasOfflineContent: true }
+  }
   const choices = (await rightsForBooks([book], executor)).get(book.id)
   if (book.authorId !== actorId && !choices?.offline) {
     throw new LegalRequirementError("El titular no ha autorizado nuevas descargas offline de esta edición. Puedes seguir leyéndola en línea.", "OFFLINE_RIGHTS_REQUIRED")

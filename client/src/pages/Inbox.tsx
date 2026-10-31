@@ -29,7 +29,7 @@ export default function Inbox() {
   async function openNotice(notice: Notice) {
     if (!notice.readAt) await fetch(`/api/notifications/${notice.id}/read`, { method: "PATCH", credentials: "include" })
     client.invalidateQueries({ queryKey: ["/api/notifications"] })
-    if (/^\/(editions|library|book\/\d+)$/.test(notice.destination)) setLocation(notice.destination)
+    if (/^\/(editions|library|rights|book\/\d+)$/.test(notice.destination)) setLocation(notice.destination)
   }
 
   return (

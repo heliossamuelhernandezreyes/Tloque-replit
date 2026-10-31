@@ -37,7 +37,10 @@ import { lookupDictionary, normalizeDictionaryLanguage } from "./dictionary";
 import { translateText, SUPPORTED_LANGUAGES } from "./gutenberg";
 import { registerGutenbergRoutes } from "./gutenberg-routes";
 import { registerVisualUploadRoutes } from "./visualUploads";
-import { registerLegalRoutes, LegalRequirementError, hasBookRight, rightsForBooks, offlineEdition } from "./legal"
+import { registerLegalRoutes, LegalRequirementError, hasBookRight, rightsForBooks, offlineEdition, bookAcceptance, publicLegalBundle } from "./legal"
+import { tokenAcceptanceSchema, tokenRightsFailure } from "@shared/legal"
+import { freezeLicensedEdition, purchasedEditions, tokenEdition } from "./tokenEditions"
+import { commercialApproval, registerRightsRoutes } from "./rightsCases"
 import { grantAuthorizedSupportCards } from "./collectibleRights"
 import { gachaLegalReady } from "./legalConfig"
 import { legalAcceptances } from "@shared/schema"
@@ -59,6 +62,7 @@ export async function registerRoutes(
 ): Promise<Server> {
 
   registerLegalRoutes(app)
+  registerRightsRoutes(app)
   registerAudioRoutes(app)
   registerVisualUploadRoutes(app)
   registerNarrativeRoutes(app)
@@ -81,7 +85,7 @@ export async function registerRoutes(
   }
 
   function canViewBook(req: any, book: any): boolean {
-    if (book?.status === "published") return true
+    if (book?.status === "published" && !book.rightsHold) return true
     if (!req.isAuthenticated()) return false
     return hasCapability(req.user, "manageCatalog") || (!!book?.authorId && book.authorId === (req.user as any)?.id)
   }
@@ -123,6 +127,7 @@ export async function registerRoutes(
   // so restoring a library does not issue one query per withdrawn book.
   async function readableEditions(req: any, catalog: any[], entitled?: Set<number>): Promise<any[]> {
     const allowed = entitled ?? await entitledBookIds(req, catalog)
+    const acquired = req.isAuthenticated() ? await purchasedEditions((req.user as any).id, catalog.map(book => book.id), db) : new Map()
     const withdrawn = catalog.filter(book => !canViewBook(req, book) && book.status !== "review" && allowed.has(book.id))
     const editions = withdrawn.length ? await db.selectDistinctOn([bookRevisions.bookId], {
       bookId: bookRevisions.bookId, snapshot: bookRevisions.snapshot,
@@ -130,7 +135,16 @@ export async function registerRoutes(
       sql`${bookRevisions.snapshot}->>'status' = 'published'`))
       .orderBy(bookRevisions.bookId, desc(bookRevisions.revision)) : []
     const snapshots = new Map(editions.map(edition => [edition.bookId, edition.snapshot]))
-    return catalog.flatMap(book => canViewBook(req, book) ? [book] : snapshots.has(book.id) ? [{ ...snapshots.get(book.id), withdrawn: true }] : [])
+    return catalog.flatMap(book => {
+      if (book.rightsHold && !canEditBook(req, book)) return []
+      const edition = acquired.get(book.id)
+      // Moderation affects every version. An ordinary withdrawal does not erase
+      // the purchaser's frozen edition or expose a later private manuscript.
+      if (edition && book.status !== "review" && !canEditBook(req, book)) {
+        return [{ ...edition.snapshot, acquiredEditionId: edition.id, withdrawn: book.status !== "published" }]
+      }
+      return canViewBook(req, book) ? [book] : snapshots.has(book.id) ? [{ ...snapshots.get(book.id), rightsHold: book.rightsHold, withdrawn: true }] : []
+    })
   }
 
   const PROFILE_FRAMES_BASE = new Set(["", "silver", "purple", "crimson", "azure", "emerald"])
@@ -1228,10 +1242,10 @@ export async function registerRoutes(
   }
 
   // Emite un token dentro del ejecutor/transacción recibido.
-  async function issueTokenWith(executor: any, userId: number, bookId: number, kind: "support" | "sale") {
+  async function issueTokenWith(executor: any, userId: number, bookId: number, kind: "support" | "sale", editionId?: number | null) {
     const copiesToMake = kind === "support" ? 3 : 1
     const [token] = await executor.insert(bookTokens)
-      .values({ kind, bookId, ownerUserId: userId }).returning()
+      .values({ kind, bookId, ownerUserId: userId, editionId }).returning()
     const copies = []
     for (let i = 0; i < copiesToMake; i++) {
       const folio = await uniqueFolio(executor)
@@ -1245,6 +1259,9 @@ export async function registerRoutes(
         claimKeyHash: protectedClaimKey.digest,
         claimedByUserId: isOwnerCopy ? userId : null,
         claimedAt: isOwnerCopy ? new Date() : null,
+        // Historic copies retain their existing benefits. New personal folios
+        // are printing permissions; they do not mint extra digital licences.
+        digitalClaimAllowed: !editionId || kind === "sale",
       }).returning()
       const { claimKeyHash: _claimKeyHash, ...safeCopy } = copy
       copies.push({ ...safeCopy, claimKey: plainClaimKey })
@@ -1255,8 +1272,8 @@ export async function registerRoutes(
 
   // Valida si un usuario puede adquirir un token de este libro
   async function validateAcquire(userId: number, bookId: number, kind: string, executor: any = db) {
-    const [book] = await executor.select().from(books).where(eq(books.id, bookId))
-    if (!book || book.status !== "published") return { error: "Libro no encontrado", code: 404, book: null }
+    const [book] = await executor.select().from(books).where(eq(books.id, bookId)).for("update")
+    if (!book || book.status !== "published" || book.rightsHold) return { error: "Libro no encontrado", code: 404, book: null }
     if (book.isClassic || !book.authorId) {
       return { error: "Los clásicos son de dominio público: no necesitan token", code: 400, book: null }
     }
@@ -1267,6 +1284,13 @@ export async function registerRoutes(
       const mine = await executor.select().from(bookTokens)
         .where(and(eq(bookTokens.bookId, bookId), eq(bookTokens.ownerUserId, userId), eq(bookTokens.kind, "support"), sql`${bookTokens.licenseStatus} <> 'revoked'`))
       if (mine.length > 0) return { error: "Ya tienes el token de apoyo de esta obra", code: 409, book: null }
+    }
+    if (kind === "sale" && book.authorId !== userId) {
+      const [support] = await executor.select().from(bookTokens).where(and(
+        eq(bookTokens.bookId, bookId), eq(bookTokens.ownerUserId, userId),
+        eq(bookTokens.kind, "support"), eq(bookTokens.licenseStatus, "active"),
+      )).limit(1)
+      if (!support) return { error: "Necesitas un Token 1 activo de esta obra antes de adquirir un permiso comercial.", code: 428, book: null }
     }
     return { error: null, code: 200, book }
   }
@@ -1327,6 +1351,7 @@ export async function registerRoutes(
       mode: order.provider === "beta" ? "free_beta" : order.provider === "tinta" ? "tinta" : "paid",
       ...(order.provider === "tinta" ? { spent: order.checkoutRequest?.spent } : {}),
       orderId: order.id, token, copies,
+      purchaseTerms: order.purchaseTerms,
     } }
   }
 
@@ -1364,9 +1389,17 @@ export async function registerRoutes(
         const check = await validateAcquire(userId, bookId, kind, tx)
         if (check.error) return { reply: { code: check.code, body: { message: check.error } } }
         const book = check.book!
-        if (!await hasBookRight(book.id, book.revision, kind === "sale" ? "commercialPrint" : "personalPrint", tx)) {
-          return { reply: { code: 428, body: { code: "PRINT_RIGHTS_REQUIRED", message: "El titular debe autorizar esta modalidad de impresión para la versión publicada." } } }
+        const permission = await bookAcceptance(book, tx)
+        const failure = tokenRightsFailure(permission?.choices, kind as "support" | "sale")
+        if (failure) return { reply: { code: 428, body: { code: "TOKEN_RIGHTS_REQUIRED", message: failure } } }
+        if (!await commercialApproval(book.id, permission!.receipt.id, permission!.receipt.workHash, tx)) {
+          return { reply: { code: 428, body: { code: "WORK_COMMERCIAL_REVIEW_REQUIRED", message: "Esta edición necesita registrar la revisión de sus permisos y su acuerdo comercial antes de vender tokens." } } }
         }
+        const bundle = publicLegalBundle()
+        const accepted = tokenAcceptanceSchema.safeParse(req.body?.acceptance)
+        if (!accepted.success) return { reply: { code: 428, body: { code: "TOKEN_ACCEPTANCE_REQUIRED", message: "Lee y acepta las condiciones del token antes de comprar." } } }
+        if (accepted.data.documentHash !== bundle.hash) return { reply: { code: 409, body: { code: "LEGAL_DOCUMENT_CHANGED", message: "Las condiciones cambiaron. Vuelve a leerlas antes de comprar." } } }
+        const edition = await freezeLicensedEdition(tx, book, permission!.receipt.id, permission!.choices)
         const price = priceFor(kind as "support" | "sale", book)
         const provider = payWith === "tinta" ? "tinta" : stripeEnabled() ? "stripe" : "beta"
         if (provider === "beta" && !betaPaymentsEnabled()) {
@@ -1383,6 +1416,10 @@ export async function registerRoutes(
         const [order] = await tx.insert(tokenOrders).values({
           userId, bookId, kind, amountCents: provider === "beta" ? 0 : price.cents, currency: price.currency,
           status: "pending", provider, purchaseKey, purchaseFingerprint, ...economySnapshotForBook(book),
+          editionId: edition.id,
+          purchaseTerms: { accepted: true, documentHash: bundle.hash, version: bundle.version,
+            documents: bundle.documents, editionId: edition.id, workHash: edition.workHash,
+            kind, price, acceptedAt: new Date().toISOString() },
         }).returning()
         if (provider === "stripe") {
           const checkoutRequest = {
@@ -1400,7 +1437,7 @@ export async function registerRoutes(
           await tx.update(tokenOrders).set({ status: "failed" }).where(eq(tokenOrders.id, order.id))
           return { reply: { code: 402, body: { message: "tinta_insuficiente", needed: price.tinta } } }
         }
-        const issued = await issueTokenWith(tx, userId, bookId, kind as "support" | "sale")
+        const issued = await issueTokenWith(tx, userId, bookId, kind as "support" | "sale", order.editionId)
         const [paid] = await tx.update(tokenOrders).set({
           status: "paid", paidAt: new Date(), tokenId: issued.token.id,
           cashBackingCents: debit?.cashBackingCents || 0, checkoutRequest: { spent: price.tinta },
@@ -1470,7 +1507,13 @@ export async function registerRoutes(
                 return { state: "refund" as const, orderId: order.id }
               }
             }
-            const result = await issueTokenWith(tx, order.userId, order.bookId, order.kind as "support" | "sale")
+            // A moderation hold is different from a voluntary catalogue withdrawal.
+            const [current] = await tx.select().from(books).where(eq(books.id, order.bookId))
+            if (!current || current.status === "review" || current.rightsHold) {
+              await tx.update(tokenOrders).set({ status: "needs_refund", paymentRef }).where(eq(tokenOrders.id, order.id))
+              return { state: "refund" as const, orderId: order.id }
+            }
+            const result = await issueTokenWith(tx, order.userId, order.bookId, order.kind as "support" | "sale", order.editionId)
             await tx.update(tokenOrders)
               .set({
                 status: "paid", paidAt: new Date(), tokenId: result.token.id,
@@ -1543,8 +1586,17 @@ export async function registerRoutes(
       if (!isNaN(bookId) && bookId > 0) {
         const book = await storage.getBook(bookId)
         if (book) {
+          const permission = await bookAcceptance(book)
+          const reviewed = permission && await commercialApproval(book.id, permission.receipt.id, permission.receipt.workHash, db)
+          const bundle = publicLegalBundle()
+          const unavailable = book.status !== "published" || book.rightsHold || book.isClassic || !book.authorId
+            ? "Esta obra no admite nuevas compras." : !bundle.commercialReady
+              ? "Las compras están pendientes de habilitación comercial."
+              : !reviewed ? "Falta completar la revisión de permisos y el acuerdo comercial de esta edición." : null
           return res.json({
             enabled: stripeEnabled(), beta: betaPaymentsEnabled(),
+            offers: { support: unavailable || tokenRightsFailure(permission?.choices, "support"), sale: unavailable || tokenRightsFailure(permission?.choices, "sale") },
+            requiresSupport: !req.isAuthenticated() || book.authorId !== (req.user as any).id,
             tintaCents: TINTA_CENTS,
             prices: {
               support: priceFor("support", book),
@@ -2042,7 +2094,7 @@ export async function registerRoutes(
     try {
       const result = await db.transaction(async tx => {
         await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)
-        return preparePrintCopy(userId, Number(req.params.copyId), {
+        const prepared = await preparePrintCopy(userId, Number(req.params.copyId), {
           copy: async id => (await tx.select().from(printCopies).where(eq(printCopies.id, id)))[0],
           token: async id => (await tx.select().from(bookTokens).where(eq(bookTokens.id, id)))[0],
           protect: async (copy, key) => {
@@ -2050,6 +2102,13 @@ export async function registerRoutes(
               .where(and(eq(printCopies.id, copy.id), eq(printCopies.claimKey, copy.claimKey)))
           },
         })
+        const [copy] = await tx.select().from(printCopies).where(eq(printCopies.folio, prepared.copy.folio))
+        const [token] = await tx.select().from(bookTokens).where(eq(bookTokens.id, copy.tokenId))
+        const [current] = await tx.select().from(books).where(eq(books.id, token.bookId))
+        if (!current || current.status === "review" || current.rightsHold) throw new PrintPreparationError(409, "Esta obra está en revisión y no admite nuevas impresiones.")
+        const edition = await tokenEdition(token, tx)
+        if (!edition) throw new PrintPreparationError(409, "No se encuentra la edición autorizada.")
+        return { ...prepared, book: edition, copy: { ...prepared.copy, digitalClaimAllowed: copy.digitalClaimAllowed, licenseKind: token.kind } }
       })
       res.setHeader("Cache-Control", "no-store")
       res.json(result)
@@ -2067,18 +2126,21 @@ export async function registerRoutes(
       if (!copy) return res.status(404).json({ message: "Folio no encontrado" })
 
       const [token] = await db.select().from(bookTokens).where(eq(bookTokens.id, copy.tokenId))
-      const book = token ? await storage.getBook(token.bookId) : null
+      const current = token ? await storage.getBook(token.bookId) : null
+      const book = token ? await tokenEdition(token, db) : null
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
 
       const me = req.isAuthenticated() ? (req.user as any).id : null
       const retainedClaim = copy.claimedByUserId != null && copy.claimedByUserId !== token!.ownerUserId
-      const status = token!.licenseStatus !== "active" && !retainedClaim ? "unavailable"
-        : !copy.claimedByUserId ? "free" : copy.claimedByUserId === me ? "yours" : "taken"
+      const status = current?.status === "review" || current?.rightsHold || token!.licenseStatus !== "active" && !retainedClaim ? "unavailable"
+        : !copy.digitalClaimAllowed ? "personal" : !copy.claimedByUserId ? "free" : copy.claimedByUserId === me ? "yours" : "taken"
+      res.setHeader("Cache-Control", "no-store")
 
       res.json({
         folio,
         status,                               // free | yours | taken
         kind:   token!.kind,
+        digitalClaimAllowed: copy.digitalClaimAllowed,
         bookId: book.id,
         title:  book.title,
         author: book.author,
@@ -2106,6 +2168,9 @@ export async function registerRoutes(
         await tx.execute(sql`select pg_advisory_xact_lock(74001, ${copy.id})`)
         const [fresh] = await tx.select().from(printCopies).where(eq(printCopies.id, copy.id))
         if (!fresh) return { state: "missing" as const }
+        if (!fresh.digitalClaimAllowed) return { state: "personal" as const }
+        const [current] = await tx.select().from(books).where(eq(books.id, candidate.bookId))
+        if (!current || current.status === "review" || current.rightsHold) return { state: "license" as const }
         if (fresh.claimedByUserId && fresh.claimedByUserId !== userId) {
           return { state: "taken" as const }
         }
@@ -2147,6 +2212,7 @@ export async function registerRoutes(
 
       if (result.state === "missing") return res.status(404).json({ message: "Folio no encontrado" })
       if (result.state === "taken") return res.status(409).json({ message: "taken" })
+      if (result.state === "personal") return res.status(409).json({ message: "Este folio permite una impresión personal; no incluye otro canje digital." })
       if (result.state === "key") return res.status(403).json({ message: "Clave incorrecta" })
       if (result.state === "license") return res.status(409).json({ message: "Este ejemplar no admite nuevas activaciones: su permiso está suspendido o reembolsado" })
       if (result.state === "token") return res.status(404).json({ message: "Token no encontrado" })
@@ -2157,6 +2223,19 @@ export async function registerRoutes(
   })
 
   // Libros desbloqueados del usuario (no cuentan para el límite; re-descargables)
+  app.get("/api/tokens/receipts", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
+    try {
+      const before = Number(req.query.before)
+      const rows = await db.select({ id: tokenOrders.id, bookId: tokenOrders.bookId, kind: tokenOrders.kind,
+        status: tokenOrders.status, amountCents: tokenOrders.amountCents, currency: tokenOrders.currency,
+        editionId: tokenOrders.editionId, purchaseTerms: tokenOrders.purchaseTerms, createdAt: tokenOrders.createdAt, paidAt: tokenOrders.paidAt,
+      }).from(tokenOrders).where(and(eq(tokenOrders.userId, (req.user as any).id),
+        Number.isSafeInteger(before) && before > 0 ? sql`${tokenOrders.id} < ${before}` : undefined,
+      )).orderBy(desc(tokenOrders.id)).limit(100)
+      res.setHeader("Cache-Control", "private, no-store"); res.json(rows)
+    } catch { res.status(500).json({ message: "No se pudieron cargar tus comprobantes de compra" }) }
+  })
   app.get("/api/tokens/unlocked", async (req, res) => {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })

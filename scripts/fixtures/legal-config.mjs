@@ -8,5 +8,5 @@ export const LEGAL_FIXTURE_ENV = {
 };
 export function legalFixtureAcceptance(bundle) {
   return { documentHash: bundle.hash, accepted: true, adultAndAuthorized: true, hasRights: true,
-    origin: 'original', evidence: '', choices: { offline: true, personalPrint: true, commercialPrint: true, audio: true, translation: false, collectibles: true } };
+    origin: 'original', evidence: '', choices: { offline: true, personalPrint: true, commercialPrint: true, audio: true, translation: false, collectibles: true, monetization: true, permanentDigital: true } };
 }

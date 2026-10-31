@@ -1,6 +1,6 @@
 export const ADMIN_CAPABILITIES = [
   "manageCatalog", "manageFrames", "manageAudioCatalog",
-  "manageFinance", "manageAdmins", "runDiagnostics", "managePrivacy",
+  "manageFinance", "manageAdmins", "runDiagnostics", "managePrivacy", "manageRights",
 ] as const
 export type AdminCapability = typeof ADMIN_CAPABILITIES[number]
 
@@ -21,7 +21,7 @@ const ROLE_PERMISSIONS: Record<AdminRole, readonly AdminCapability[]> = {
   full: ADMIN_CAPABILITIES,
   // Preserve existing operational access. Delegating access now requires an
   // explicit grant by the founder or an access manager.
-  legacy: ADMIN_CAPABILITIES.filter(capability => capability !== "manageAdmins" && capability !== "managePrivacy"),
+  legacy: ADMIN_CAPABILITIES.filter(capability => capability !== "manageAdmins" && capability !== "managePrivacy" && capability !== "manageRights"),
 }
 export function permissionsForRole(role: unknown): readonly AdminCapability[] {
   return typeof role === "string" && Object.hasOwn(ROLE_PERMISSIONS, role)
@@ -32,6 +32,7 @@ export function permissionsForRole(role: unknown): readonly AdminCapability[] {
 export function administrativeCapability(path: string): AdminCapability | null {
   const segment = path.split("/")[3]
   if (segment === "privacy") return "managePrivacy"
+  if (segment === "rights") return "manageRights"
   if (segment === "admins") return "manageAdmins"
   if (["books", "authors", "gutenberg"].includes(segment)) return "manageCatalog"
   if (segment === "frames") return "manageFrames"

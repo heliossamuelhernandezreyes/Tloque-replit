@@ -28,7 +28,7 @@ export default function PublicationConsent({ category, onConfirm, onCancel }: {
   const [rights, setRights] = useState(false)
   const [origin, setOrigin] = useState<PublicationAcceptance["origin"]>("original")
   const [evidence, setEvidence] = useState("")
-  const [choices, setChoices] = useState<PublicationAcceptance["choices"]>({ offline: false, personalPrint: false, commercialPrint: false, audio: false, translation: false, collectibles: false })
+  const [choices, setChoices] = useState<PublicationAcceptance["choices"]>({ offline: false, personalPrint: false, commercialPrint: false, audio: false, translation: false, collectibles: false, monetization: false, permanentDigital: false })
   const query = useQuery<{ hash: string; documents: LegalDocument[]; publicationReady: boolean }>({
     queryKey: ["/api/legal/documents"], staleTime: 0,
     queryFn: async () => {

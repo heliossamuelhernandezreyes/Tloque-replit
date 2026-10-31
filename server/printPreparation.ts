@@ -10,8 +10,9 @@ export interface PrintPreparationStore {
 export class PrintPreparationError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
 }
-export function printCopySummary(copy: { id: number; folio: string; claimedByUserId: number | null }, owner: number, active: boolean) {
-  return { id: copy.id, folio: copy.folio, canPrint: active, digitalClaimed: copy.claimedByUserId !== null, claimedByOwner: copy.claimedByUserId === owner }
+export function printCopySummary(copy: { id: number; folio: string; claimedByUserId: number | null; digitalClaimAllowed?: boolean }, owner: number, active: boolean) {
+  return { id: copy.id, folio: copy.folio, canPrint: active, digitalClaimed: copy.claimedByUserId !== null, claimedByOwner: copy.claimedByUserId === owner,
+    ...(copy.digitalClaimAllowed === undefined ? {} : { digitalClaimAllowed: copy.digitalClaimAllowed }) }
 }
 // The route holds the owner's transaction lock while this operation runs.
 // Authorisation always precedes decryption, including for migrated records.

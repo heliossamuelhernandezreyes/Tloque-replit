@@ -45,7 +45,7 @@ export class DatabaseStorage implements IStorage {
         when jsonb_typeof(${books.chapters}) = 'array' then jsonb_array_length(${books.chapters})
         when length(${books.content}) > 0 then 1 else 0 end`,
       openingLine: sql<string>`left(coalesce(nullif(${books.chapters}->0->>'content', ''), ${books.content}, ''), 320)`,
-    }).from(books).where(and(eq(books.status, "published"),
+    }).from(books).where(and(eq(books.status, "published"), eq(books.rightsHold, false),
       options.before ? sql`${books.id} < ${options.before}` : undefined,
       options.author ? sql`lower(${books.author}) = lower(${options.author})` : undefined,
       options.search ? sql`(${books.title} ilike ${pattern} or ${books.author} ilike ${pattern} or ${books.genre} ilike ${pattern})` : undefined,
@@ -107,6 +107,7 @@ export class DatabaseStorage implements IStorage {
       delete safeUpdates.revision
       delete safeUpdates.createdAt
       delete safeUpdates.updatedAt
+      delete safeUpdates.rightsHold
 
       const condition = options.expectedRevision === undefined
         ? eq(books.id, id)

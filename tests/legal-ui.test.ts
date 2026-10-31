@@ -22,7 +22,7 @@ test("publicar empieza sin permisos opcionales y exige declaración afirmativa",
   try {
     await act(async () => { root = create(React.createElement(QueryClientProvider, { client }, React.createElement(PublicationConsent, { category: "book", onConfirm: value => { confirmed = value }, onCancel: () => {} }))) })
     const checks = root!.root.findAllByType("input")
-    assert.equal(checks.length, 9)
+    assert.equal(checks.length, 11)
     assert.ok(checks.every(input => input.props.checked === false))
     const confirm = () => root!.root.findAllByType("button").find(button => button.children.includes("Confirmar y publicar esta versión"))!
     assert.equal(confirm().props.disabled, true)

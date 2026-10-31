@@ -63,7 +63,7 @@ fixture.listen(0, '127.0.0.1'); await once(fixture, 'listening');
 const fixtureUrl = 'http://127.0.0.1:' + fixture.address().port;
 const id = prefix => prefix + randomBytes(8).toString('hex');
 const key = () => randomUUID();
-let book;
+let book, tokenAcceptance;
 
 async function check(name, fn) {
   // Each scenario stays under the real route limit. Reset only between isolated
@@ -92,7 +92,7 @@ async function webhook(event, instance = 0, expected = 200) {
 }
 async function buyToken(role = 'buyer', { kind = 'sale', payWith = 'money', purchaseKey = key(), instance = 0 } = {}) {
   return request('/api/tokens/acquire', { role, instance, method: 'POST',
-    headers: { 'Idempotency-Key': purchaseKey }, body: { bookId: book.id, kind, payWith } });
+    headers: { 'Idempotency-Key': purchaseKey }, body: { bookId: book.id, kind, payWith, acceptance: tokenAcceptance } });
 }
 async function buyWallet(role = 'buyer', purchaseKey = key(), instance = 0, packId = 'gota') {
   return request('/api/wallet/buy', { role, instance, method: 'POST', headers: { 'Idempotency-Key': purchaseKey }, body: { packId } });
@@ -125,6 +125,18 @@ async function prepare(copy, role, instance = 0) {
   return request(`/api/print-copies/${copy.id}/prepare`, { role, instance, method: 'POST' });
 }
 async function paidToken(role, kind = 'sale') {
+  if (role === 'supporter' && kind === 'support') {
+    // Genuine historical shape: no edition snapshot and the original extra
+    // personal digital benefits. Never create these benefits for new orders.
+    const paymentRef = id('pi_');
+    const { rows: [token] } = await client.query("insert into book_tokens(kind,book_id,owner_user_id) values('support',$1,$2) returning id", [book.id, users[role].id]);
+    const { rows: [order] } = await client.query("insert into token_orders(user_id,book_id,kind,amount_cents,cash_backing_cents,status,provider,payment_ref,token_id,paid_at) values($1,$2,'support',2000,2000,'paid','stripe',$3,$4,now()) returning *", [users[role].id, book.id, paymentRef, token.id]);
+    for (let i = 0; i < 3; i++) await client.query("insert into print_copies(token_id,folio,claim_key,claimed_by_user_id,claimed_at) values($1,$2,'ABCD-EFGH',$3,$4)", [token.id, 'TLQ-' + id(''), i === 0 ? users[role].id : null, i === 0 ? new Date() : null]);
+    await client.query("insert into unlocked_books(user_id,book_id,source) values($1,$2,'support') on conflict do nothing", [users[role].id, book.id]);
+    const mine = await copies(role, token.id);
+    for (const copy of mine.copies) copy.claimKey = (await prepare(copy, role)).data.copy.key;
+    return { ...order, paymentRef, tokenId: token.id, token: mine };
+  }
   const purchase = await buyToken(role, { kind }); assert.equal(purchase.status, 201, JSON.stringify(purchase.data));
   const order = await complete('token_orders', purchase.data.orderId);
   const { rows: [paid] } = await client.query('select token_id from token_orders where id=$1', [order.id]);
@@ -196,6 +208,28 @@ try {
   const fixtureBook = (await request('/api/books/' + book.id, { role: 'author' })).data;
   const authorizedBook = await request('/api/books/' + book.id, { role: 'author', method: 'PUT', body: { expectedRevision: fixtureBook.revision, legalAcceptance } });
   assert.equal(authorizedBook.status, 200, JSON.stringify(authorizedBook.data));
+  tokenAcceptance = { accepted: true, documentHash: legalAcceptance.documentHash };
+  // Explicit synthetic agreement review, not a production authorization.
+  await client.query(`insert into commercial_approvals(book_id,acceptance_id,work_hash,actor_id,action,agreement_ref,evidence_ref)
+    select book_id,id,work_hash,$1,'approve','fixture-commercial-agreement','fixture-holder-evidence'
+    from legal_acceptances where book_id=$2 order by id desc limit 1`, [users.author.id, book.id]);
+  await check('A commercial token requires active support; personal folios do not mint extra digital access', async () => {
+    assert.equal((await buyToken('reader')).status, 428);
+    const missing = await request('/api/tokens/acquire', { role: 'reader', method: 'POST', headers: { 'Idempotency-Key': key() }, body: { bookId: book.id, kind: 'support', payWith: 'money' } });
+    assert.equal(missing.status, 428);
+    const owned = await paidToken('reader', 'support');
+    assert.equal(owned.token.copies.length, 3);
+    for (const copy of owned.token.copies) {
+      assert.equal((await request('/api/claim/' + copy.folio, { role: null })).data.status, 'personal');
+      assert.equal((await claim(copy, 'second')).status, 409);
+    }
+    const mine = await request('/api/tokens/receipts', { role: 'reader' });
+    assert.equal(mine.data.find(row => row.id === owned.id).purchaseTerms.documentHash, tokenAcceptance.documentHash);
+    assert.ok(!(await request('/api/tokens/receipts', { role: 'second' })).data.some(row => row.id === owned.id));
+  });
+  for (const role of ['buyer', 'second', 'refund', 'seller', 'beta']) {
+    await client.query("insert into book_tokens(kind,book_id,owner_user_id) values('support',$1,$2)", [book.id, users[role].id]);
+  }
 
   await check('Concurrent payout approval and rejection cannot release money in flight', async () => {
     const authorId = users.payoutAuthor.id;
@@ -380,7 +414,9 @@ try {
       assert.equal(response.status, 200);
       assert.equal(response.data.copy.key, copy.claimKey);
       assert.equal(response.data.bookId, book.id);
-      assert.deepEqual(Object.keys(response.data.copy).sort(), ['folio', 'key']);
+      assert.deepEqual(Object.keys(response.data.copy).sort(), ['digitalClaimAllowed', 'folio', 'key', 'licenseKind']);
+      assert.equal(response.data.copy.digitalClaimAllowed, true);
+      assert.equal(response.data.book.id, book.id);
       assert.match(response.headers.get('cache-control'), /no-store/);
     }
     for (const [role, status] of [[null, 401], ['buyer', 404]]) {

@@ -12,7 +12,7 @@ export interface PrintBook {
   chapters?: { title: string; content: string }[]
   sourceMetadata?: Record<string, unknown> | null
 }
-export interface PdfCopy { folio: string; key: string }
+export interface PdfCopy { folio: string; key: string; digitalClaimAllowed?: boolean; licenseKind?: string }
 export interface EditionSettings {
   version: 1; destination: PrintDestination; trim: "a5" | "trade" | "digest"
   paper: "letter" | "a4"; template: PrintTemplate

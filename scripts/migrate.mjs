@@ -48,6 +48,8 @@ const migrations = [
   "0022_cloud_draft_identity.sql",
   "0023_visual_upload_quota.sql",
   "0024_legal_foundation.sql",
+  "0025_acquired_editions.sql",
+  "0026_rights_cases.sql",
 ]
 
 const pool = createPool()
