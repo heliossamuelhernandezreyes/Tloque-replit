@@ -294,6 +294,11 @@ try {
     const state = await request('/api/payouts/mine', { role: 'payoutAuthor' });
     assert.equal(state.status,200,JSON.stringify(state.data));
     assert.equal(state.data.availableCents,0);assert.equal(state.data.heldCents,900);
+    const accepted = { economics: { version: '2026-11-01.1', holdDays: 7, minimumCents: 15000 } };
+    const { rows: [available] } = await client.query("insert into token_orders(user_id,book_id,kind,amount_cents,status,provider,purchase_terms) values($1,$2,'sale',1000,'paid','stripe',$3) returning id", [users.collector.id,book.id,JSON.stringify(accepted)]);
+    await client.query("insert into author_earnings(author_user_id,order_id,book_id,gross_cents,author_cents,platform_cents,status,payout_eligible,created_at) values($1,$2,$3,1000,900,100,'accrued',true,now()-interval '60 days')", [users.payoutAuthor.id,available.id,book.id]);
+    const frozen = await request('/api/payouts/mine', { role: 'payoutAuthor' });
+    assert.equal(frozen.data.availableCents,900);assert.equal(frozen.data.heldCents,900);assert.equal(frozen.data.minimumCents,15000);
   });
 
   await check('Purchased card art, frame and book survive edits and withdrawal', async () => {

@@ -81,8 +81,8 @@ obligaciones fiscales; este módulo no calcula una rentabilidad ni subsidios.
 ## Conciliación y liquidaciones
 
 Cada compra nueva fija espera y mínimo efectivos. Las liquidaciones aplican su
-espera por operación. Si conviven mínimos diferentes, se permite el menor entre
-los aplicables a los ingresos disponibles y el vigente; nunca se eleva el umbral
+espera por operación. Si conviven mínimos diferentes, se permite el menor de
+los aplicables a los ingresos disponibles; nunca se eleva el umbral
 ya aceptado para impedir cobrar esos ingresos. Las órdenes históricas sin esta
 instantánea conservan el tratamiento anterior y se identifican como tales.
 

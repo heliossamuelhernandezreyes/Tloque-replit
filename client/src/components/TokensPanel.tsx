@@ -273,7 +273,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
           {query.isError && <button className="underline" onClick={() => void query.refetch()}>{query.error.message} · Reintentar desglose</button>}
           {query.data && <p className="leading-6" data-testid={index === 0 ? "money-breakdown" : "tinta-breakdown"}>{index === 0 ? "Con tarjeta" : "Con Tinta"}: {query.data.economics.provider === "tinta" ? `${query.data.economics.units} Tintas` : money(query.data.economics.chargedCents)}. Base efectiva {money(query.data.economics.cashBasisCents)}; titular {money(query.data.economics.authorCents)}; Tloque {money(query.data.economics.platformCents)}. {query.data.economics.cashBasisCents === 0 ? "Esta operación no genera ingreso liquidable." : ""}</p>}
         </div>)}
-        <label className="flex min-h-11 items-start gap-2"><input type="checkbox" checked={conditionsAccepted} disabled={!legal.data || (!moneyQuote.data && !tintaQuote.data)} onChange={event => { setAcceptedHash(event.target.checked ? legal.data!.hash : ""); setAcceptedQuoteKey(event.target.checked ? quoteKey : "") }} />Leí y acepto las condiciones y el desglose de esta compra.</label>
+        <label className="flex min-h-11 items-start gap-2"><input type="checkbox" checked={conditionsAccepted} disabled={!legal.data || moneyQuote.isPending || tintaQuote.isPending || (!moneyQuote.data && !tintaQuote.data)} onChange={event => { setAcceptedHash(event.target.checked ? legal.data!.hash : ""); setAcceptedQuoteKey(event.target.checked ? quoteKey : "") }} />Leí y acepto las condiciones y el desglose de esta compra.</label>
       </div>}
 
       {/* Ejemplares */}

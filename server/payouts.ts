@@ -60,7 +60,7 @@ async function payoutEarnings(executor: any, userId: number, now = Date.now()) {
   const entries = rows.map((row: any) => ({ ...row.earning, window: settlementWindow(row.earning.createdAt, row.terms?.economics as EconomicQuote | undefined, defaults) }))
   const available = entries.filter((row: any) => Date.parse(row.window.availableAt) <= now)
   const held = entries.filter((row: any) => Date.parse(row.window.availableAt) > now)
-  const minimumCents = Math.min(defaults.minimumCents, ...available.map((row: any) => row.window.minimumCents))
+  const minimumCents = available.length ? Math.min(...available.map((row: any) => row.window.minimumCents)) : defaults.minimumCents
   return { available, held, minimumCents }
 }
 
