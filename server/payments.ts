@@ -4,12 +4,13 @@
 import { createHmac, timingSafeEqual } from "crypto"
 import { isSafeHttpsUrl } from "@shared/media"
 import { commercialLegalReady } from "./legalConfig"
+import { splitCents, TINTA_UNIT_CENTS } from "@shared/commerce"
 
 // ── Precios y economía de Tinta 🪙 ───────────────────────────
 // 1 Tinta = $2.00 MXN (10 🪙 ≈ 1 USD). Cuento: 5 🪙 · Libro: 10 🪙.
 // Reparto al autor: cuentos 50/50 · libros 90/10 (decisión Tloque:
 // los cuentos sostienen la casa; los libros son casi todos del autor).
-export const TINTA_CENTS = 200                 // centavos MXN por 1 Tinta
+export const TINTA_CENTS = TINTA_UNIT_CENTS
 
 // Paquetes de Tinta (compra web vía Stripe; con bono por volumen)
 export const TINTA_PACKS = [
@@ -44,8 +45,7 @@ export const AUTHOR_SHARE_BOOK  = 0.90         // libros: 90% al autor
 export const AUTHOR_SHARE_STORY = 0.50         // cuentos: 50/50
 
 export function splitEarnings(grossCents: number, authorShare = AUTHOR_SHARE_BOOK) {
-  const authorCents = Math.round(grossCents * authorShare)
-  return { authorCents, platformCents: grossCents - authorCents }
+  return splitCents(grossCents, Math.round(authorShare * 10_000))
 }
 
 export function economySnapshotForBook(book: any, shareOverride?: number) {

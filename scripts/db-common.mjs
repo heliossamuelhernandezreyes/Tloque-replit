@@ -30,6 +30,7 @@ export const BASE_COLUMNS = {
 }
 
 export const EXPECTED_TABLES = [
+  "commercial_agreements",
   "commercial_approvals", "copyright_cases", "copyright_case_events",
   "licensed_editions",
   "legal_acceptances", "privacy_requests", "privacy_request_events",
@@ -61,6 +62,7 @@ export const EXPECTED_TABLES = [
 ]
 
 export const EXPECTED_INDEXES = [
+  "commercial_agreements_author_idx",
   "commercial_approvals_book_idx", "copyright_cases_book_status_idx",
   "book_tokens_edition_idx",
   "legal_acceptances_user_created_idx", "privacy_requests_status_created_idx",
@@ -359,8 +361,9 @@ export async function validateExpectedSchema(client) {
   }
 
   const requiredColumns = {
+    commercial_agreements: ["book_id", "author_id", "acceptance_id", "work_hash", "terms_hash", "terms", "accepted_at"],
     licensed_editions: ["book_id", "book_revision", "acceptance_id", "work_hash", "snapshot", "rights"],
-    commercial_approvals: ["book_id", "acceptance_id", "work_hash", "actor_id", "agreement_ref", "evidence_ref", "action"],
+    commercial_approvals: ["book_id", "acceptance_id", "work_hash", "actor_id", "agreement_ref", "evidence_ref", "action", "commercial_agreement_id"],
     copyright_cases: ["public_id", "book_id", "author_id", "status", "counter_notice", "notified_at", "deadline_at"],
     copyright_case_events: ["case_id", "actor_id", "action", "note"],
     legal_acceptances: ["user_id", "book_id", "book_revision", "document_version", "document_hash", "documents", "work_hash", "declaration", "created_at"],

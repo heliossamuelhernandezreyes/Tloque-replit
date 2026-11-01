@@ -190,6 +190,7 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
               </motion.div>
             )}
 
+            <p className="mb-3 text-xs leading-6 text-white/70">El valor de uso de una Tinta es $2.00 MXN. Los bonos no crean efectivo: el reparto al titular consume primero el respaldo real disponible. El desglose aparece antes de cada compra.</p>
             {/* Paquetes */}
             <p className="text-[11px] font-sans font-semibold mb-2" style={{ color: "rgba(255,255,255,0.7)" }}>
               {t("getTinta")}

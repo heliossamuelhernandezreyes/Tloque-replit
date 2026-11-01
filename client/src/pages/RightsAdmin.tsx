@@ -9,6 +9,11 @@ const labels: Record<string, string> = { received: "Recibido", removed: "Retirar
 
 export default function RightsAdmin() {
   const client = useQueryClient(), [selected, setSelected] = useState<RightsCase | null>(null), [message, setMessage] = useState("")
+  const [approvalBook, setApprovalBook] = useState("")
+  const commercial = useQuery<{ hash: string; document: { text: string }; receipt: { id: number; accepted_at: string } | null }>({
+    queryKey: ["/api/admin/rights/agreements", approvalBook], enabled: Number(approvalBook) > 0, staleTime: 0,
+    queryFn: async () => { const r = await accountFetch(`/api/admin/rights/agreements/${approvalBook}`, { cache: "no-store" }); const data = await r.json(); if (!r.ok) throw new Error(data.message || "No se pudo cargar el acuerdo"); return data },
+  })
   const query = useQuery<{ cases: RightsCase[]; approvals: { id: number; book_id: number; action: string; agreement_ref: string }[] }>({ queryKey: ["/api/admin/rights"], queryFn: async () => { const r = await accountFetch("/api/admin/rights"); if (!r.ok) throw new Error("No se pudo cargar la bandeja"); return r.json() } })
   const events = useQuery<{ id: number; action: string; note: string }[]>({ queryKey: ["/api/admin/rights", selected?.id, "events"], enabled: !!selected, queryFn: async () => { const r = await accountFetch(`/api/admin/rights/cases/${selected!.id}/events`); if (!r.ok) throw new Error("No se pudo cargar la bitácora"); return r.json() } })
   const mutation = useMutation({ mutationFn: async ({ path, method, body }: { path: string; method: string; body: unknown }) => {
@@ -16,7 +21,7 @@ export default function RightsAdmin() {
   }, onSuccess: response => { setMessage(response.message); setSelected(null); void client.invalidateQueries({ queryKey: ["/api/admin/rights"] }); void client.invalidateQueries({ queryKey: ["/api/payments/config"] }) } })
   function approve(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const f = new FormData(event.currentTarget)
-    mutation.mutate({ path: "/api/admin/rights/approvals", method: "POST", body: { bookId: Number(f.get("bookId")), revision: Number(f.get("revision")), action: f.get("action"), agreementRef: f.get("agreementRef"), evidenceRef: f.get("evidenceRef"), confirmedRightsAndAgreement: f.get("confirmed") === "on" } })
+    mutation.mutate({ path: "/api/admin/rights/approvals", method: "POST", body: { bookId: Number(f.get("bookId")), revision: Number(f.get("revision")), action: f.get("action"), agreementRef: f.get("agreementRef"), evidenceRef: f.get("evidenceRef"), confirmedRightsAndAgreement: f.get("confirmed") === "on", termsHash: commercial.data?.hash } })
   }
   function decide(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!selected) return
@@ -28,7 +33,9 @@ export default function RightsAdmin() {
     <p className="text-sm leading-7">Acceso restringido. Los registros documentan actuaciones; no verifican por sí mismos la autenticidad de contratos. Notifica por el canal acordado y conserva constancia de entrega. Este panel no envía correos automáticamente.</p>
     {query.isError && <button className="underline" onClick={() => void query.refetch()}>Reintentar carga de expedientes</button>}
     <details className="tloque-surface p-5"><summary className="cursor-pointer text-white">Registrar revisión comercial de una edición</summary><form onSubmit={approve} className="mt-5 grid gap-4 sm:grid-cols-2">
-      <label className="tloque-field"><span>Número de obra</span><input name="bookId" type="number" min="1" required /></label><label className="tloque-field"><span>Revisión actual</span><input name="revision" type="number" min="1" required /></label>
+      <label className="tloque-field"><span>Número de obra</span><input name="bookId" type="number" min="1" required value={approvalBook} onChange={e => setApprovalBook(e.target.value)} /></label><label className="tloque-field"><span>Revisión actual</span><input name="revision" type="number" min="1" required /></label>
+      {commercial.isError && <p role="alert">{commercial.error.message}</p>}
+      {commercial.data && <div className="sm:col-span-2"><p>{commercial.data.receipt ? `Aceptación del titular ${commercial.data.receipt.id} · ${new Date(commercial.data.receipt.accepted_at).toLocaleString()}` : "Falta la aceptación del titular de este acuerdo exacto; no puede habilitarse."}</p><details><summary>Acuerdo económico a revisar</summary><p className="whitespace-pre-line leading-7">{commercial.data.document.text}</p><p className="break-all text-xs">{commercial.data.hash}</p></details></div>}
       <label className="tloque-field"><span>Acuerdo comercial efectivo</span><input name="agreementRef" required minLength={5} maxLength={2000} /></label><label className="tloque-field"><span>Evidencia de facultades revisada</span><input name="evidenceRef" required minLength={5} maxLength={2000} /></label>
       <label className="tloque-field"><span>Actuación</span><select name="action"><option value="approve">Habilitar esta edición</option><option value="withdraw">Detener nuevas compras</option></select></label>
       <label className="flex min-h-11 gap-3 text-sm"><input name="confirmed" type="checkbox" required />Revisé las facultades del titular y el acuerdo real aplicable a esta edición.</label><button disabled={mutation.isPending} className="tloque-primary-button disabled:opacity-40">Registrar revisión</button>

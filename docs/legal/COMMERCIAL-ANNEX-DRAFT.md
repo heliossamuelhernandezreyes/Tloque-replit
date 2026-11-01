@@ -3,6 +3,13 @@
 Estado: preparatorio, sin firma ni habilitación comercial. No publicar como
 contrato definitivo ni completar datos o porcentajes ocultos unilateralmente.
 
+Desde 2026-11-01.1 el anexo operativo por edición se prepara con los datos
+configurados en `shared/commerce.ts`, se muestra al titular en **Mis comprobantes**
+y se guarda íntegro al aceptarlo. La revisión administrativa exige esa aceptación
+exacta. [COMMERCIAL-ACCOUNTING.md](COMMERCIAL-ACCOUNTING.md) describe las reglas
+implementadas y las revisiones externas pendientes; este archivo sigue siendo
+una guía de revisión, no una firma ni autorización ficticia.
+
 ## Identificación y alcance
 
 Operador, domicilio y contacto: completar con los datos reales de la operación.
@@ -39,6 +46,13 @@ Los bonos de recarga no son efectivo aportado. Definir qué parte de un cobro re
 respalda cada ingreso y qué pagos quedan pendientes de conciliación. La base de
 reparto, facturación, residencia fiscal y retenciones deben revisarse con contador
 antes del primer cargo. Este borrador no los determina por omisión.
+
+La propuesta implementada consume primero el efectivo disponible del monedero,
+hasta el valor nominal del gasto, y luego las unidades sin respaldo. No reparte
+el coste promedio del paquete. Un gasto de bono sin respaldo puede devengar cero;
+esto debe aceptarse expresamente. No se deducen comisiones operativas adicionales
+de la parte del titular. No se practican retenciones ni se generan facturas; la
+revisión debe resolver su compatibilidad o exigir su implementación antes de cobrar.
 
 Las esperas y mínimos de liquidación deben constar con sus valores efectivos;
 el código propone por defecto 30 días y 100 MXN. Definir fecha de pago, revisión,

@@ -8,6 +8,7 @@ import { requireAdmin } from "./auth"
 import { rateLimit } from "./rateLimit"
 import { bookAcceptance } from "./legal"
 import { publicationWorkHash } from "./editionFingerprint"
+import { currentCommercialAgreement, registerCommercialRoutes, reviewedCommercialAgreement } from "./commercial"
 
 const noticeSchema = z.object({
   bookId: z.number().int().positive(), name: z.string().trim().min(2).max(200),
@@ -36,13 +37,11 @@ export function minimumCounterDeadline(notifiedAt: Date) {
 }
 
 export async function commercialApproval(bookId: number, acceptanceId: number, workHash: string, tx: any) {
-  const result = await tx.execute(sql`select action from commercial_approvals
-    where book_id=${bookId} and acceptance_id=${acceptanceId} and work_hash=${workHash}
-    order by id desc limit 1`)
-  return result.rows[0]?.action === "approve"
+  return Boolean(await reviewedCommercialAgreement(bookId, acceptanceId, workHash, tx))
 }
 
 export function registerRightsRoutes(app: Express, database: any = db) {
+  registerCommercialRoutes(app, database)
   app.post("/api/rights/notices", rateLimit(3_600_000, 5, "rights-notices"), async (req, res, next) => {
     try {
       const parsed = noticeSchema.safeParse(req.body)
@@ -112,7 +111,7 @@ export function registerRightsRoutes(app: Express, database: any = db) {
   })
 
   app.post("/api/admin/rights/approvals", requireAdmin, async (req, res, next) => {
-    const parsed = z.object({ bookId: z.number().int().positive(), revision: z.number().int().positive(), action: z.enum(["approve", "withdraw"]), agreementRef: z.string().trim().min(5).max(2000), evidenceRef: z.string().trim().min(5).max(2000), confirmedRightsAndAgreement: z.literal(true) }).strict().safeParse(req.body)
+    const parsed = z.object({ bookId: z.number().int().positive(), revision: z.number().int().positive(), action: z.enum(["approve", "withdraw"]), agreementRef: z.string().trim().min(5).max(2000), evidenceRef: z.string().trim().min(5).max(2000), confirmedRightsAndAgreement: z.literal(true), termsHash: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict().safeParse(req.body)
     if (!parsed.success) return res.status(400).json({ message: "Identifica la versión, el acuerdo efectivo y la evidencia revisada." })
     try {
       const result = await database.transaction(async (tx: any) => {
@@ -120,8 +119,10 @@ export function registerRightsRoutes(app: Express, database: any = db) {
         if (!book || book.rightsHold) return false
         const permission = await bookAcceptance(book, tx)
         if (!permission?.choices.monetization || !permission.choices.permanentDigital || !permission.choices.offline) return false
-        await tx.execute(sql`insert into commercial_approvals(book_id,acceptance_id,work_hash,actor_id,action,agreement_ref,evidence_ref)
-          values (${book.id},${permission.receipt.id},${publicationWorkHash(book)},${(req.user as any).id},${parsed.data.action},${parsed.data.agreementRef},${parsed.data.evidenceRef})`)
+        const current = await currentCommercialAgreement(book, tx)
+        if (parsed.data.action === "approve" && (!current.receipt || current.hash !== parsed.data.termsHash)) return false
+        await tx.execute(sql`insert into commercial_approvals(book_id,acceptance_id,work_hash,actor_id,action,agreement_ref,evidence_ref,commercial_agreement_id)
+          values (${book.id},${permission.receipt.id},${publicationWorkHash(book)},${(req.user as any).id},${parsed.data.action},${parsed.data.agreementRef},${parsed.data.evidenceRef},${current.receipt?.id || null})`)
         return true
       })
       res.status(result ? 201 : 409).json({ message: result ? "Revisión registrada. El registro no acredita por sí solo un permiso de autoridad." : "La versión cambió, está bloqueada o aún faltan permisos expresos del titular." })

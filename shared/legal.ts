@@ -31,7 +31,7 @@ export const publicationAcceptanceSchema = z.object({
 })
 export type PublicationAcceptance = z.infer<typeof publicationAcceptanceSchema>
 
-export const tokenAcceptanceSchema = z.object({ accepted: z.literal(true), documentHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict()
+export const tokenAcceptanceSchema = z.object({ accepted: z.literal(true), documentHash: z.string().regex(/^[a-f0-9]{64}$/), quoteHash: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict()
 
 export function tokenRightsFailure(choices: Partial<Record<RightsOption, boolean>> | undefined, kind: "support" | "sale") {
   if (!choices?.monetization) return "El titular debe autorizar expresamente la monetización de esta edición."

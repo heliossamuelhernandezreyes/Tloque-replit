@@ -416,7 +416,7 @@ export default function AuthorPage() {
                         </p>
                         {payout.heldCents > 0 && (
                           <p className="text-[10px] font-sans mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>
-                            ${(payout.heldCents / 100).toFixed(2)} {payout.currency.toUpperCase()} · {t("payoutHeld").replace("{n}", String(payout.holdDays))}
+                            ${(payout.heldCents / 100).toFixed(2)} {payout.currency.toUpperCase()} · En espera según la fecha de cada operación
                           </p>
                         )}
                         {payout.payouts[0] && ["requested", "processing", "processing_unknown"].includes(payout.payouts[0].status) ? (
@@ -440,6 +440,7 @@ export default function AuthorPage() {
                         ) : !payout.enabled ? (
                           <p className="text-[10px] font-sans mt-2" style={{ color: "rgba(255,255,255,0.5)" }}>{t("payoutDisabled")}</p>
                         ) : null}
+                        <a href="/legal/receipts" className="mt-3 block min-h-11 text-xs underline">Acuerdos y estado de cuenta detallado</a>
                         {payoutMessage && (
                           <p className="text-[10px] font-sans mt-2" role="status" style={{ color: gc.color }}>{payoutMessage}</p>
                         )}

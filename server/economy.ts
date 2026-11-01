@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm"
 import { walletLedger } from "@shared/schema"
-import { TINTA_CENTS } from "./payments"
+import { cashForTinta } from "@shared/commerce"
 
 type Executor = any
 
@@ -16,8 +16,16 @@ function safeInteger(value: unknown): number {
 
 export function tintaBackingForDebit(availableBackingCents: number, amount: number): number {
   if (!Number.isSafeInteger(amount) || amount <= 0) return 0
-  const available = Math.max(0, Math.floor(Number(availableBackingCents) || 0))
-  return Math.min(available, amount * TINTA_CENTS)
+  return cashForTinta(availableBackingCents, amount)
+}
+
+export async function tintaState(executor: Executor, userId: number) {
+  const result = await executor.execute(sql`select coalesce(sum(delta),0)::bigint as balance,
+    greatest(0,coalesce(sum(cash_backing_cents),0))::bigint as backing from wallet_ledger
+    where user_id=${userId} and currency='tinta'`)
+  const balance = Number(result.rows[0]?.balance || 0), backing = Number(result.rows[0]?.backing || 0)
+  if (!Number.isSafeInteger(balance) || !Number.isSafeInteger(backing)) throw new Error("Saldo fuera de rango")
+  return { balance, backing }
 }
 
 /**

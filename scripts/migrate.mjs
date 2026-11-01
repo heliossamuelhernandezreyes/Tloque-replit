@@ -50,6 +50,7 @@ const migrations = [
   "0024_legal_foundation.sql",
   "0025_acquired_editions.sql",
   "0026_rights_cases.sql",
+  "0027_commercial_agreements.sql",
 ]
 
 const pool = createPool()

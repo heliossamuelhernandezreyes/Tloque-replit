@@ -297,8 +297,25 @@ test("avisos y contraavisos aislados por rol y autor; bloqueo persistente y rest
   try {
     const approval = { bookId: work.id, revision: work.revision, action: "approve", agreementRef: "fixture-signed-commercial-agreement", evidenceRef: "fixture-holder-evidence", confirmedRightsAndAgreement: true }
     assert.equal((await request("/api/admin/rights/approvals", "POST", approval, "finance")).status, 403)
-    assert.equal((await request("/api/admin/rights/approvals", "POST", approval, "full")).status, 201)
+    assert.equal((await request("/api/admin/rights/approvals", "POST", approval, "full")).status, 409, "an admin reference cannot invent the author's acceptance")
+    assert.equal((await request(`/api/commercial/agreements/${work.id}`, "GET", undefined, "other")).status, 404)
+    assert.equal((await request(`/api/admin/rights/agreements/${work.id}`, "GET", undefined, "finance")).status, 403)
+    const offer = await request(`/api/commercial/agreements/${work.id}`, "GET", undefined, "full")
+    assert.equal(offer.status, 200)
+    assert.equal(offer.body.receipt, null)
+    const economicAcceptance = { accepted: true, termsHash: offer.body.hash }
+    assert.equal((await request(`/api/commercial/agreements/${work.id}/accept`, "POST", economicAcceptance, "other")).status, 404)
+    assert.equal((await request(`/api/commercial/agreements/${work.id}/accept`, "POST", { ...economicAcceptance, termsHash: "0".repeat(64) }, "full")).status, 409)
+    const accepted = await request(`/api/commercial/agreements/${work.id}/accept`, "POST", economicAcceptance, "full")
+    assert.equal(accepted.status, 201)
+    assert.equal((await request(`/api/commercial/agreements/${work.id}/accept`, "POST", economicAcceptance, "full")).body.id, accepted.body.id)
+    assert.equal((await request("/api/admin/rights/approvals", "POST", { ...approval, termsHash: offer.body.hash }, "full")).status, 201)
+    await assert.rejects(() => pg.query("UPDATE commercial_agreements SET terms='{}' WHERE id=$1", [accepted.body.id]), /append-only/)
     assert.equal(await commercialApproval(work.id, consent!.receipt.id, legal.publicationWorkHash(work), database), true)
+    const previousHold = process.env.PAYOUT_HOLD_DAYS
+    process.env.PAYOUT_HOLD_DAYS = String(offer.body.document.holdDays + 1)
+    assert.equal(await commercialApproval(work.id, consent!.receipt.id, legal.publicationWorkHash(work), database), false, "new terms require a new author acceptance and review")
+    if (previousHold === undefined) delete process.env.PAYOUT_HOLD_DAYS; else process.env.PAYOUT_HOLD_DAYS = previousHold
     const sent = await request("/api/rights/notices", "POST", { bookId: work.id, name: "Titular simulado", email: "claimant@fixture.mx", work: "La edición identificada", location: "/book/" + work.id, rightsBasis: "Soy titular de los derechos invocados en este caso simulado.", goodFaith: true })
     assert.equal(sent.status, 201)
     assert.equal(sent.body.email, undefined)

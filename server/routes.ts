@@ -45,6 +45,7 @@ import { grantAuthorizedSupportCards } from "./collectibleRights"
 import { gachaLegalReady } from "./legalConfig"
 import { legalAcceptances } from "@shared/schema"
 import { patchSchema } from "@shared/patch-schema"
+import { quoteToken } from "./tokenQuote"
 
 const cloudBookDraftSchema = z.object({
   baseRevision: z.number().int().min(1),
@@ -1311,6 +1312,7 @@ export async function registerRoutes(
   async function settleEarnings(order: {
     id: number; bookId: number; amountCents: number; currency: string
     authorUserId?: number | null; authorShareBps?: number | null
+    purchaseTerms?: Record<string, any> | null
   }, options: {
     shareOverride?: number
     grossCents?: number
@@ -1326,6 +1328,8 @@ export async function registerRoutes(
       share = options.shareOverride ?? (isStory(legacyBook) ? AUTHOR_SHARE_STORY : AUTHOR_SHARE_BOOK)
     }
     const grossCents = Math.max(0, Math.floor(options.grossCents ?? order.amountCents))
+    const economic = order.purchaseTerms?.economics
+    if (economic && (economic.cashBasisCents !== grossCents || economic.authorShareBps !== Math.round((share ?? 0) * 10_000))) throw new Error("La entrega no coincide con el cálculo económico aceptado")
     if (grossCents <= 0) return
     const { authorCents, platformCents } = splitEarnings(grossCents, share)
     await executor.insert(authorEarnings).values({
@@ -1354,6 +1358,25 @@ export async function registerRoutes(
       purchaseTerms: order.purchaseTerms,
     } }
   }
+
+  app.get("/api/tokens/quote", rateLimit(60_000, 120), async (req, res, next) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
+    const bookId = Number(req.query.bookId), kind = String(req.query.kind || ""), payWith = String(req.query.payWith || "")
+    if (!Number.isSafeInteger(bookId) || bookId < 1 || !["support", "sale"].includes(kind) || !["money", "tinta"].includes(payWith)) return res.status(400).json({ message: "Solicitud inválida" })
+    try {
+      const userId = (req.user as any).id
+      const result = await db.transaction(async tx => {
+        await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)
+        const check = await validateAcquire(userId, bookId, kind, tx)
+        if (check.error) return { code: check.code, body: { message: check.error } }
+        return { code: 200, body: await quoteToken(tx, userId, check.book!, kind as "support" | "sale", payWith as "money" | "tinta") }
+      })
+      res.setHeader("Cache-Control", "private, no-store"); res.status(result.code).json(result.body)
+    } catch (error) {
+      if (error instanceof LegalRequirementError) { res.locals.publicErrorMessage = true; return res.status(error.status).json({ code: error.code, message: error.message }) }
+      next(error)
+    }
+  })
 
   app.post("/api/tokens/acquire", rateLimit(60_000, 10), async (req, res) => {
     try {
@@ -1399,6 +1422,9 @@ export async function registerRoutes(
         const accepted = tokenAcceptanceSchema.safeParse(req.body?.acceptance)
         if (!accepted.success) return { reply: { code: 428, body: { code: "TOKEN_ACCEPTANCE_REQUIRED", message: "Lee y acepta las condiciones del token antes de comprar." } } }
         if (accepted.data.documentHash !== bundle.hash) return { reply: { code: 409, body: { code: "LEGAL_DOCUMENT_CHANGED", message: "Las condiciones cambiaron. Vuelve a leerlas antes de comprar." } } }
+        const quoted = await quoteToken(tx, userId, book, kind as "support" | "sale", payWith as "money" | "tinta")
+        if (!quoted.canPay) return { reply: { code: 402, body: { message: "tinta_insuficiente", needed: quoted.economics.units } } }
+        if (accepted.data.quoteHash !== quoted.hash) return { reply: { code: accepted.data.quoteHash ? 409 : 428, body: { code: "ECONOMIC_QUOTE_CHANGED", message: "Revisa el desglose actualizado y vuelve a aceptar antes de pagar." } } }
         const edition = await freezeLicensedEdition(tx, book, permission!.receipt.id, permission!.choices)
         const price = priceFor(kind as "support" | "sale", book)
         const provider = payWith === "tinta" ? "tinta" : stripeEnabled() ? "stripe" : "beta"
@@ -1419,7 +1445,7 @@ export async function registerRoutes(
           editionId: edition.id,
           purchaseTerms: { accepted: true, documentHash: bundle.hash, version: bundle.version,
             documents: bundle.documents, editionId: edition.id, workHash: edition.workHash,
-            kind, price, acceptedAt: new Date().toISOString() },
+            kind, price, acceptedAt: new Date().toISOString(), economics: quoted.economics, quoteHash: quoted.hash, commercialAgreement: quoted.agreement },
         }).returning()
         if (provider === "stripe") {
           const checkoutRequest = {
@@ -1437,6 +1463,7 @@ export async function registerRoutes(
           await tx.update(tokenOrders).set({ status: "failed" }).where(eq(tokenOrders.id, order.id))
           return { reply: { code: 402, body: { message: "tinta_insuficiente", needed: price.tinta } } }
         }
+        if (debit && debit.cashBackingCents !== quoted.economics.cashBasisCents) throw new Error("El respaldo cambió durante la compra")
         const issued = await issueTokenWith(tx, userId, bookId, kind as "support" | "sale", order.editionId)
         const [paid] = await tx.update(tokenOrders).set({
           status: "paid", paidAt: new Date(), tokenId: issued.token.id,

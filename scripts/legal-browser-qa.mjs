@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises"
 import { resolve } from "node:path"
 import { createServer } from "vite"
 import { legalDocuments } from "../shared/legal.ts"
+import { economicQuote, commercialText } from "../shared/commerce.ts"
 
 if (process.env.CI !== "true") throw new Error("Run this isolated browser fixture in CI")
 const { chromium } = createRequire(import.meta.url)("playwright")
@@ -18,6 +19,8 @@ const page = await context.newPage()
 page.setDefaultTimeout(20_000)
 const errors = [], submissions = []
 let publicationReady = true
+let commercialAccepted = false
+const commercialDocument = { text: commercialText({ operator: { name: "Operador simulado", address: "Domicilio simulado", privacyEmail: "contacto@fixture.mx", phone: "8180000000" }, bookId: 123, title: "Obra simulada", author: "Titular simulado", workHash: "c".repeat(64), authorShareBps: 9000, supportUnits: 10, holdDays: 30, minimumCents: 10000 }) }
 page.on("pageerror", error => errors.push(error.message))
 const fixtureHtml = await vite.transformIndexHtml("/legal-fixture", '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><div id="root"></div>')
 await context.route("**/*", route => {
@@ -35,6 +38,15 @@ await context.route("**/*", route => {
   if (url.pathname === "/api/tokens/mine") return route.fulfill({ json: { tokens: [] } })
   if (url.pathname === "/api/payments/config") return route.fulfill({ json: { enabled: true, offers: { support: null, sale: null }, prices: { support: { cents: 2000, currency: "mxn", tinta: 10 }, sale: { cents: 2000, currency: "mxn", tinta: 10 } } } })
   if (url.pathname === "/api/wallet") return route.fulfill({ json: { tinta: 20, papel: 0 } })
+  if (url.pathname === "/api/tokens/quote") {
+    const provider = url.searchParams.get("payWith") === "tinta" ? "tinta" : "stripe"
+    return route.fulfill({ json: { hash: (provider === "tinta" ? "d" : "e").repeat(64), canPay: true, economics: economicQuote({ bookId: 123, workHash: "c".repeat(64), agreementId: 1, agreementHash: "f".repeat(64), kind: "support", provider, currency: "mxn", units: 10, nominalCents: 2000, availableBackingCents: 730, authorShareBps: 9000, holdDays: 30, minimumCents: 10000 }) } })
+  }
+  if (url.pathname === "/api/commercial/agreements/123") return route.fulfill({ json: { hash: "f".repeat(64), document: commercialDocument, receipt: commercialAccepted ? { accepted_at: "2026-11-01T12:00:00Z" } : null } })
+  if (url.pathname === "/api/commercial/agreements/123/accept") {
+    const body = route.request().postDataJSON(); assert.equal(body.accepted, true); assert.equal(body.termsHash, "f".repeat(64)); commercialAccepted = true
+    return route.fulfill({ status: 201, json: { id: 1 } })
+  }
   if (url.pathname === "/api/privacy/requests") {
     submissions.push({ body: route.request().postDataJSON(), cookie: route.request().headers().cookie })
     return route.fulfill({ status: 201, json: { folio: "fixture-folio", receivedAt: "2026-10-30T10:00:00Z", status: "received", message: "No se ha ejecutado ninguna eliminación ni entrega de datos." } })
@@ -118,9 +130,19 @@ try {
   await page.getByRole("button", { name: /Apoyar al autor/ }).click()
   const pay = page.getByRole("button", { name: /Con tarjeta/ })
   assert.equal(await pay.isDisabled(), true)
+  await page.getByTestId("tinta-breakdown").waitFor()
+  assert.match(await page.getByTestId("tinta-breakdown").innerText(), /titular \$6\.57 MXN/)
   await page.getByRole("checkbox", { name: /Leí y acepto/ }).check()
   assert.equal(await pay.isDisabled(), false)
   await screenshot("token-conditions-mobile")
+  await show("commercial")
+  await page.getByRole("button", { name: "Revisar acuerdo comercial de esta obra", exact: true }).click()
+  const acceptCommercial = page.getByRole("button", { name: "Aceptar acuerdo comercial", exact: true })
+  await acceptCommercial.waitFor(); assert.equal(await acceptCommercial.isDisabled(), true)
+  await page.getByRole("checkbox", { name: /Leí y acepto este acuerdo comercial/ }).check()
+  await screenshot("commercial-agreement-mobile")
+  await acceptCommercial.click()
+  await page.getByRole("status").filter({ hasText: "Aceptado por tu cuenta" }).waitFor()
   assert.deepEqual(errors, [])
   console.log("Legal browser QA passed: explicit choices, pending setup, public receipt and restricted-action interface")
 } finally { await context.close(); await browser.close(); await vite.close() }
