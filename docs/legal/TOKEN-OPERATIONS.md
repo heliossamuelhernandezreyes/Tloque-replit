@@ -7,6 +7,11 @@ inmunidad frente a demandas.
 
 ## Compras nuevas
 
+Actualización 2026-11-01.1: el titular acepta un acuerdo económico íntegro por
+edición antes de su revisión administrativa. Cada compra confirma un desglose
+vigente de precio, base real y reparto. Los cambios de respaldo o condiciones
+exigen revisar el cálculo antes del débito. Ver [COMMERCIAL-ACCOUNTING.md](COMMERCIAL-ACCOUNTING.md).
+
 - Token 1: una edición digital personal, sin suscripción, y tres folios para
   impresiones personales. Los folios nuevos no conceden accesos digitales extra.
 - Comercial: un ejemplar nuevo y su primera distribución comercial, con un canje

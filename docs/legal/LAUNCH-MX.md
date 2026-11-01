@@ -47,6 +47,11 @@ aprobación de proveedores, y no reemplaza dictámenes profesionales.
 
 ## Datos y revisiones pendientes
 
+El acuerdo comercial por edición y el desglose de tokens están implementados
+desde 2026-11-01.1: aceptación del titular, revisión posterior, cálculo previo al
+débito y estado de cuenta privado. Véase [COMMERCIAL-ACCOUNTING.md](COMMERCIAL-ACCOUNTING.md).
+Esto no completa datos reales, revisión jurídica/fiscal ni firmas externas.
+
 Configura únicamente datos públicos de atención legítimos del responsable:
 
 | Variable | Dato |

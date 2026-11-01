@@ -91,8 +91,9 @@ async function webhook(event, instance = 0, expected = 200) {
   assert.equal(response.status, expected, JSON.stringify(response.data)); return response;
 }
 async function buyToken(role = 'buyer', { kind = 'sale', payWith = 'money', purchaseKey = key(), instance = 0 } = {}) {
+  const quoted = await request(`/api/tokens/quote?bookId=${book.id}&kind=${kind}&payWith=${payWith}`, { role, instance });
   return request('/api/tokens/acquire', { role, instance, method: 'POST',
-    headers: { 'Idempotency-Key': purchaseKey }, body: { bookId: book.id, kind, payWith, acceptance: tokenAcceptance } });
+    headers: { 'Idempotency-Key': purchaseKey }, body: { bookId: book.id, kind, payWith, acceptance: { ...tokenAcceptance, quoteHash: quoted.data?.hash } } });
 }
 async function buyWallet(role = 'buyer', purchaseKey = key(), instance = 0, packId = 'gota') {
   return request('/api/wallet/buy', { role, instance, method: 'POST', headers: { 'Idempotency-Key': purchaseKey }, body: { packId } });
@@ -209,10 +210,14 @@ try {
   const authorizedBook = await request('/api/books/' + book.id, { role: 'author', method: 'PUT', body: { expectedRevision: fixtureBook.revision, legalAcceptance } });
   assert.equal(authorizedBook.status, 200, JSON.stringify(authorizedBook.data));
   tokenAcceptance = { accepted: true, documentHash: legalAcceptance.documentHash };
-  // Explicit synthetic agreement review, not a production authorization.
-  await client.query(`insert into commercial_approvals(book_id,acceptance_id,work_hash,actor_id,action,agreement_ref,evidence_ref)
-    select book_id,id,work_hash,$1,'approve','fixture-commercial-agreement','fixture-holder-evidence'
-    from legal_acceptances where book_id=$2 order by id desc limit 1`, [users.author.id, book.id]);
+  // Explicit author acceptance plus synthetic review; never a production approval.
+  const offer = await request(`/api/commercial/agreements/${book.id}`, { role: 'author' });
+  assert.equal(offer.status, 200, JSON.stringify(offer.data));
+  const agreement = await request(`/api/commercial/agreements/${book.id}/accept`, { role: 'author', method: 'POST', body: { accepted: true, termsHash: offer.data.hash } });
+  assert.equal(agreement.status, 201, JSON.stringify(agreement.data));
+  await client.query(`insert into commercial_approvals(book_id,acceptance_id,work_hash,actor_id,action,agreement_ref,evidence_ref,commercial_agreement_id)
+    select book_id,id,work_hash,$1,'approve','fixture-commercial-agreement','fixture-holder-evidence',$3
+    from legal_acceptances where book_id=$2 order by id desc limit 1`, [users.author.id, book.id, agreement.data.id]);
   await check('A commercial token requires active support; personal folios do not mint extra digital access', async () => {
     assert.equal((await buyToken('reader')).status, 428);
     const missing = await request('/api/tokens/acquire', { role: 'reader', method: 'POST', headers: { 'Idempotency-Key': key() }, body: { bookId: book.id, kind: 'support', payWith: 'money' } });
@@ -230,6 +235,32 @@ try {
   for (const role of ['buyer', 'second', 'refund', 'seller', 'beta']) {
     await client.query("insert into book_tokens(kind,book_id,owner_user_id) values('support',$1,$2)", [book.id, users[role].id]);
   }
+
+  await check('Accepted economic quote survives retry and rejects a changed cash basis before debit', async () => {
+    await client.query("insert into wallet_ledger(user_id,currency,delta,cash_backing_cents,reason) values($1,'tinta',20,730,'fixture')", [users.author.id]);
+    const quoted = await request(`/api/tokens/quote?bookId=${book.id}&kind=sale&payWith=tinta`, { role: 'author' });
+    assert.equal(quoted.status, 200, JSON.stringify(quoted.data));
+    assert.equal(quoted.data.economics.cashBasisCents, 730);
+    assert.equal(quoted.data.economics.authorCents, 657);
+    await client.query("insert into wallet_ledger(user_id,currency,delta,cash_backing_cents,reason) values($1,'tinta',1,200,'fixture')", [users.author.id]);
+    const stale = await request('/api/tokens/acquire', { role: 'author', method: 'POST', headers: { 'Idempotency-Key': key() }, body: { bookId: book.id, kind: 'sale', payWith: 'tinta', acceptance: { ...tokenAcceptance, quoteHash: quoted.data.hash } } });
+    assert.equal(stale.status, 409); assert.equal(stale.data.code, 'ECONOMIC_QUOTE_CHANGED');
+    const purchaseKey = key(), paid = await buyToken('author', { payWith: 'tinta', purchaseKey });
+    assert.equal(paid.status, 201, JSON.stringify(paid.data));
+    assert.equal(paid.data.purchaseTerms.economics.cashBasisCents, 930);
+    const again = await buyToken('author', { payWith: 'tinta', purchaseKey, instance: 1 });
+    assert.equal(again.data.orderId, paid.data.orderId);
+    const { rows: [earning] } = await client.query('select * from author_earnings where order_id=$1', [paid.data.orderId]);
+    assert.equal(earning.gross_cents, 930); assert.equal(earning.author_cents, 837);
+    const statement = await request('/api/commercial/statement', { role: 'author' });
+    assert.equal(statement.data.entries.find(row => row.orderId === paid.data.orderId).economics.agreementHash, offer.data.hash);
+    assert.ok(!(await request('/api/commercial/statement', { role: 'buyer' })).data.entries.some(row => row.orderId === paid.data.orderId));
+    const bonus = await buyToken('author', { payWith: 'tinta' });
+    assert.equal(bonus.status,201,JSON.stringify(bonus.data));
+    const { rows: [zero] } = await client.query('select * from author_earnings where order_id=$1',[bonus.data.orderId]);
+    assert.equal(zero.gross_cents,0);assert.equal(zero.author_cents,0);assert.equal(zero.payout_eligible,false);
+
+  });
 
   await check('Concurrent payout approval and rejection cannot release money in flight', async () => {
     const authorId = users.payoutAuthor.id;
@@ -254,6 +285,20 @@ try {
     assert.equal((await request(`/api/admin/payouts/${old.id}/approve`, { role: 'finance', method: 'POST' })).status, 409);
     assert.equal((await request(`/api/admin/payouts/${old.id}/reject`, { role: 'finance', method: 'POST' })).status, 409);
     assert.equal(transfers.size, 1);
+  });
+
+  await check('Payout availability honours the hold accepted on each order', async () => {
+    const terms = { economics: { version: '2026-11-01.1', holdDays: 180, minimumCents: 10000 } };
+    const { rows: [order] } = await client.query("insert into token_orders(user_id,book_id,kind,amount_cents,status,provider,purchase_terms) values($1,$2,'sale',1000,'paid','stripe',$3) returning id", [users.collector.id,book.id,JSON.stringify(terms)]);
+    await client.query("insert into author_earnings(author_user_id,order_id,book_id,gross_cents,author_cents,platform_cents,status,payout_eligible,created_at) values($1,$2,$3,1000,900,100,'accrued',true,now()-interval '60 days')", [users.payoutAuthor.id,order.id,book.id]);
+    const state = await request('/api/payouts/mine', { role: 'payoutAuthor' });
+    assert.equal(state.status,200,JSON.stringify(state.data));
+    assert.equal(state.data.availableCents,0);assert.equal(state.data.heldCents,900);
+    const accepted = { economics: { version: '2026-11-01.1', holdDays: 7, minimumCents: 15000 } };
+    const { rows: [available] } = await client.query("insert into token_orders(user_id,book_id,kind,amount_cents,status,provider,purchase_terms) values($1,$2,'sale',1000,'paid','stripe',$3) returning id", [users.collector.id,book.id,JSON.stringify(accepted)]);
+    await client.query("insert into author_earnings(author_user_id,order_id,book_id,gross_cents,author_cents,platform_cents,status,payout_eligible,created_at) values($1,$2,$3,1000,900,100,'accrued',true,now()-interval '60 days')", [users.payoutAuthor.id,available.id,book.id]);
+    const frozen = await request('/api/payouts/mine', { role: 'payoutAuthor' });
+    assert.equal(frozen.data.availableCents,900);assert.equal(frozen.data.heldCents,900);assert.equal(frozen.data.minimumCents,15000);
   });
 
   await check('Purchased card art, frame and book survive edits and withdrawal', async () => {

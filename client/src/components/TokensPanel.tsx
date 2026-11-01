@@ -7,6 +7,7 @@ import WalletPanel from "@/components/WalletPanel"
 import { useSettings } from "@/context/SettingsContext"
 import type { LegalDocument } from "@shared/legal"
 import type { PdfCopy, PrintBook } from "@/print/model"
+import { money, type EconomicQuote } from "@shared/commerce"
 
 interface Copy {
   id: number; folio: string; canPrint: boolean
@@ -34,6 +35,15 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
   const [payMenu, setPayMenu] = useState<"support" | "sale" | null>(null)
   const [showWallet, setShowWallet] = useState(false)
   const [acceptedHash, setAcceptedHash] = useState("")
+  const [acceptedQuoteKey, setAcceptedQuoteKey] = useState("")
+  async function loadQuote(payWith: "money" | "tinta") {
+    const r = await fetch(`/api/tokens/quote?bookId=${bookId}&kind=${payMenu}&payWith=${payWith}`, { cache: "no-store" })
+    const data = await r.json(); if (!r.ok) throw new Error(data.message || "No se pudo cargar el desglose")
+    return data as { hash: string; economics: EconomicQuote; canPay: boolean }
+  }
+  const moneyQuote = useQuery({ queryKey: ["/api/tokens/quote", bookId, payMenu, "money"], enabled: !!payMenu, queryFn: () => loadQuote("money"), staleTime: 0 })
+  const tintaQuote = useQuery({ queryKey: ["/api/tokens/quote", bookId, payMenu, "tinta"], enabled: !!payMenu, queryFn: () => loadQuote("tinta"), staleTime: 0 })
+  const quoteKey = `${moneyQuote.data?.hash || ""}:${tintaQuote.data?.hash || ""}`
   const legal = useQuery<{ hash: string; documents: LegalDocument[] }>({
     queryKey: ["/api/legal/documents"], staleTime: 0,
     queryFn: async () => { const response = await fetch("/api/legal/documents", { cache: "no-store" }); if (!response.ok) throw new Error("No se pudieron cargar las condiciones"); return response.json() },
@@ -69,6 +79,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
     },
   })
   const myTinta = wallet?.tinta ?? 0
+  const conditionsAccepted = !!legal.data && acceptedHash === legal.data.hash && acceptedQuoteKey === quoteKey
   const payOn = !!payCfg?.enabled
   const priceOf = (kind: "support" | "sale") => {
     const p = payCfg?.prices?.[kind]
@@ -90,7 +101,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
         method:      "POST",
         headers:     { "Content-Type": "application/json", "Idempotency-Key": purchaseKey },
         credentials: "include",
-        body:        JSON.stringify({ bookId, kind, payWith, acceptance: { accepted: acceptedHash === legal.data?.hash, documentHash: acceptedHash } }),
+        body:        JSON.stringify({ bookId, kind, payWith, acceptance: { accepted: conditionsAccepted, documentHash: acceptedHash, quoteHash: (payWith === "money" ? moneyQuote : tintaQuote).data?.hash } }),
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
@@ -98,6 +109,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
         // already have succeeded. A completed checkout keeps it until confirmed.
         if ([400, 402, 409, 428].includes(res.status)) localStorage.removeItem(intent)
         if (e.code === "LEGAL_DOCUMENT_CHANGED") { setAcceptedHash(""); void legal.refetch() }
+        if (e.code === "ECONOMIC_QUOTE_CHANGED") { setAcceptedQuoteKey(""); void moneyQuote.refetch(); void tintaQuote.refetch() }
         throw new Error(e.message || "Error")
       }
       const result = await res.json()
@@ -144,7 +156,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
     return (
       <div className="grid grid-cols-2 gap-1.5">
         <button
-          disabled={acquire.isPending || acceptedHash !== legal.data?.hash}
+          disabled={acquire.isPending || !conditionsAccepted || !moneyQuote.data?.canPay}
           onClick={() => acquire.mutate({ kind, payWith: "money" })}
           className="flex items-center justify-center gap-1.5 text-[10px] font-sans px-2 py-2.5 rounded-lg disabled:opacity-40"
           style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.8)", border: "1px solid rgba(255,255,255,0.12)" }}
@@ -153,7 +165,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
           {payOn ? `${t("payWithCard")} · $${((p?.cents ?? 0) / 100).toFixed(0)}` : t("tokenBeta").split("·")[0].trim()}
         </button>
         <button
-          disabled={acquire.isPending || !enough || acceptedHash !== legal.data?.hash}
+          disabled={acquire.isPending || !enough || !conditionsAccepted || !tintaQuote.data?.canPay}
           onClick={() => enough ? acquire.mutate({ kind, payWith: "tinta" }) : setShowWallet(true)}
           className="flex items-center justify-center gap-1.5 text-[10px] font-sans px-2 py-2.5 rounded-lg disabled:opacity-40"
           style={{ background: `${accentGlow}15`, color: accentColor, border: `1px solid ${accentColor}35` }}
@@ -255,7 +267,13 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
         <p>{payMenu === "support" ? "Token 1: edición digital permanente sin suscripción y tres impresiones personales, sin venta ni accesos digitales adicionales." : "Un ejemplar físico nuevo y su primera distribución comercial. Un canje digital definitivo a la primera cuenta; una reventa no lo renueva."}</p>
         {legal.data?.documents.filter(document => document.id === "terms").map(document => <details key={document.id}><summary className="cursor-pointer underline">Condiciones · {document.version}</summary><p className="mt-2 whitespace-pre-line leading-6">{document.text}</p></details>)}
         {legal.isError && <button onClick={() => void legal.refetch()} className="underline">Reintentar carga de condiciones</button>}
-        <label className="flex min-h-11 items-start gap-2"><input type="checkbox" checked={!!legal.data && acceptedHash === legal.data.hash} disabled={!legal.data} onChange={event => setAcceptedHash(event.target.checked ? legal.data!.hash : "")} />Leí y acepto las condiciones de esta compra.</label>
+        <p>El reparto se calcula sobre efectivo respaldado. Los bonos no crean ingresos; se consume primero el respaldo disponible.</p>
+        {([moneyQuote, tintaQuote] as const).map((query, index) => <div key={index}>
+          {query.isPending && <p>Cargando desglose {index === 0 ? "con tarjeta" : "con Tinta"}…</p>}
+          {query.isError && <button className="underline" onClick={() => void query.refetch()}>{query.error.message} · Reintentar desglose</button>}
+          {query.data && <p className="leading-6" data-testid={index === 0 ? "money-breakdown" : "tinta-breakdown"}>{index === 0 ? "Con tarjeta" : "Con Tinta"}: {query.data.economics.provider === "tinta" ? `${query.data.economics.units} Tintas` : money(query.data.economics.chargedCents)}. Base efectiva {money(query.data.economics.cashBasisCents)}; titular {money(query.data.economics.authorCents)}; Tloque {money(query.data.economics.platformCents)}. {query.data.economics.cashBasisCents === 0 ? "Esta operación no genera ingreso liquidable." : ""}</p>}
+        </div>)}
+        <label className="flex min-h-11 items-start gap-2"><input type="checkbox" checked={conditionsAccepted} disabled={!legal.data || moneyQuote.isPending || tintaQuote.isPending || (!moneyQuote.data && !tintaQuote.data)} onChange={event => { setAcceptedHash(event.target.checked ? legal.data!.hash : ""); setAcceptedQuoteKey(event.target.checked ? quoteKey : "") }} />Leí y acepto las condiciones y el desglose de esta compra.</label>
       </div>}
 
       {/* Ejemplares */}

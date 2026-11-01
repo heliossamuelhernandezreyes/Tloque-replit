@@ -1,11 +1,12 @@
 import type { Express } from "express"
-import { and, desc, eq, inArray, lte, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, sql } from "drizzle-orm"
 import { db } from "./db"
 import {
   authorEarnings,
   authorPayoutAccounts,
   authorPayouts,
   users,
+  tokenOrders,
 } from "@shared/schema"
 import { isSafeHttpsUrl } from "@shared/media"
 import { requireAdmin } from "./auth"
@@ -14,6 +15,7 @@ import { publicOriginForRequest } from "./security"
 import { stripeForm, verifyStripeWebhook } from "./payments"
 import { hasOpenPaymentIncidents } from "./paymentIncidents"
 import { commercialLegalReady } from "./legalConfig"
+import { settlementWindow, type EconomicQuote } from "@shared/commerce"
 
 const ACTIVE_PAYOUT_STATES = ["requested", "processing", "processing_unknown"]
 
@@ -46,6 +48,20 @@ export function payoutMinimumCents(): number {
   const parsed = Number(process.env.PAYOUT_MIN_CENTS || 10_000)
   if (!Number.isFinite(parsed)) return 10_000
   return Math.max(1_000, Math.min(10_000_000, Math.floor(parsed)))
+}
+
+async function payoutEarnings(executor: any, userId: number, now = Date.now()) {
+  const rows = await executor.select({ earning: authorEarnings, terms: tokenOrders.purchaseTerms }).from(authorEarnings)
+    .innerJoin(tokenOrders, eq(tokenOrders.id, authorEarnings.orderId)).where(and(
+      eq(authorEarnings.authorUserId, userId), eq(authorEarnings.status, "accrued"),
+      eq(authorEarnings.payoutEligible, true), eq(authorEarnings.currency, "mxn"),
+    ))
+  const defaults = { holdDays: payoutHoldDays(), minimumCents: payoutMinimumCents() }
+  const entries = rows.map((row: any) => ({ ...row.earning, window: settlementWindow(row.earning.createdAt, row.terms?.economics as EconomicQuote | undefined, defaults) }))
+  const available = entries.filter((row: any) => Date.parse(row.window.availableAt) <= now)
+  const held = entries.filter((row: any) => Date.parse(row.window.availableAt) > now)
+  const minimumCents = available.length ? Math.min(...available.map((row: any) => row.window.minimumCents)) : defaults.minimumCents
+  return { available, held, minimumCents }
 }
 
 export class StripeConnectError extends Error {
@@ -228,23 +244,20 @@ export function registerPayoutRoutes(app: Express) {
     try {
       if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
       const userId = (req.user as any).id as number
-      const cutoff = new Date(Date.now() - payoutHoldDays() * 86_400_000)
-      const [account, earnings, recent] = await Promise.all([
+      const [account, eligibility, recent] = await Promise.all([
         db.select().from(authorPayoutAccounts).where(eq(authorPayoutAccounts.userId, userId)).then(rows => rows[0] || null),
-        db.select().from(authorEarnings).where(eq(authorEarnings.authorUserId, userId)),
+        payoutEarnings(db, userId),
         db.select().from(authorPayouts).where(eq(authorPayouts.authorUserId, userId))
           .orderBy(desc(authorPayouts.requestedAt)).limit(10),
       ])
-      const eligible = earnings.filter(row => row.payoutEligible && row.status === "accrued")
-      const available = eligible.filter(row => row.createdAt <= cutoff)
-      const held = eligible.filter(row => row.createdAt > cutoff)
+      const { available, held, minimumCents } = eligibility
       res.json({
         enabled: payoutSystemEnabled(),
         holdDays: payoutHoldDays(),
-        minimumCents: payoutMinimumCents(),
+        minimumCents,
         currency: "mxn",
-        availableCents: available.reduce((sum, row) => sum + row.authorCents, 0),
-        heldCents: held.reduce((sum, row) => sum + row.authorCents, 0),
+        availableCents: available.reduce((sum: number, row: any) => sum + row.authorCents, 0),
+        heldCents: held.reduce((sum: number, row: any) => sum + row.authorCents, 0),
         account: account ? {
           connected: true,
           ready: account.detailsSubmitted && account.payoutsEnabled && account.transfersActive && !account.disabledReason,
@@ -311,7 +324,6 @@ export function registerPayoutRoutes(app: Express) {
         return res.status(409).json({ message: "Tu cuenta de liquidación todavía requiere información o verificación", account })
       }
 
-      const cutoff = new Date(Date.now() - payoutHoldDays() * 86_400_000)
       const result = await db.transaction(async tx => {
         await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)
         const active = await tx.select().from(authorPayouts).where(and(
@@ -319,27 +331,21 @@ export function registerPayoutRoutes(app: Express) {
           inArray(authorPayouts.status, ACTIVE_PAYOUT_STATES),
         ))
         if (active.length) return { state: "active" as const, payout: active[0] }
-        const eligible = await tx.select().from(authorEarnings).where(and(
-          eq(authorEarnings.authorUserId, userId),
-          eq(authorEarnings.status, "accrued"),
-          eq(authorEarnings.payoutEligible, true),
-          eq(authorEarnings.currency, "mxn"),
-          lte(authorEarnings.createdAt, cutoff),
-        ))
-        const amountCents = eligible.reduce((sum, row) => sum + row.authorCents, 0)
-        if (amountCents < payoutMinimumCents()) return { state: "minimum" as const, amountCents }
+        const { available: eligible, minimumCents } = await payoutEarnings(tx, userId)
+        const amountCents = eligible.reduce((sum: number, row: any) => sum + row.authorCents, 0)
+        if (amountCents < minimumCents) return { state: "minimum" as const, amountCents, minimumCents }
         const [payout] = await tx.insert(authorPayouts).values({
           authorUserId: userId, amountCents, currency: "mxn", status: "requested",
         }).returning()
         await tx.update(authorEarnings).set({ status: "reserved", payoutId: payout.id })
-          .where(inArray(authorEarnings.id, eligible.map(row => row.id)))
+          .where(inArray(authorEarnings.id, eligible.map((row: any) => row.id)))
         return { state: "requested" as const, payout }
       })
       if (result.state === "active") return res.status(409).json({ message: "Ya existe una liquidación en proceso", payout: result.payout })
       if (result.state === "minimum") return res.status(409).json({
         message: "Aún no alcanzas el mínimo de liquidación",
         availableCents: result.amountCents,
-        minimumCents: payoutMinimumCents(),
+        minimumCents: result.minimumCents,
       })
       res.status(201).json({ payout: result.payout })
     } catch (error: any) {
