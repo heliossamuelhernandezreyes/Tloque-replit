@@ -29,14 +29,36 @@ const modelSource = `/api/visual/models/${modelHash}.glb`
 let modelFetches = 0
 const user = { id: 9001, email: "fixture@example.test", name: "Visual QA", avatar: "", isAdmin: true, capabilities: { manageCatalog: true, manageFrames: true, manageAudioCatalog: true, manageFinance: true, manageAdmins: true, runDiagnostics: true }, persona: "admin", subscription: { plan: "aesthetic", status: "active", expiresAt: null }, visualEntitlements: { themes: ["singularity", "fluorescent-rose"], expiresAt: null } }
 
-async function setup({ mobile = false, essential = false, admin = true, strictAssets = false } = {}) {
+async function setup({ mobile = false, essential = false, admin = true, strictAssets = false, batchedIntersections = false } = {}) {
   const context = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1 })
   context.setDefaultTimeout(30000)
-  await context.addInitScript(({ essential }) => {
+  await context.addInitScript(({ essential, batchedIntersections }) => {
     localStorage.setItem("novareads_onboarding_done", "1")
     sessionStorage.setItem("tloque_boot_seen_v1", "1")
     localStorage.setItem("tloque_settings_v2", JSON.stringify({ visualQuality: essential ? "essential" : "premium", reduceMotion: false, orbSounds: false, musicEnabled: false, language: "es" }))
-  }, { essential })
+    if (batchedIntersections) {
+      // Reproduce a queued exit followed by re-entry in the same delivery.
+      // Real layout and the final visibility sample still come from Chromium.
+      const NativeObserver = window.IntersectionObserver
+      window.__tloqueBatchedIntersections = 0
+      window.IntersectionObserver = class extends NativeObserver {
+        constructor(callback, options) {
+          super((entries, observer) => {
+            const batch = entries.flatMap(entry => {
+              if (!entry.isIntersecting) return [entry]
+              window.__tloqueBatchedIntersections++
+              return [{
+                target: entry.target, time: entry.time - 1, isIntersecting: false,
+                boundingClientRect: entry.boundingClientRect, rootBounds: entry.rootBounds,
+                intersectionRect: new DOMRectReadOnly(), intersectionRatio: 0,
+              }, entry]
+            })
+            callback(batch, observer)
+          }, options)
+        }
+      }
+    }
+  }, { essential, batchedIntersections })
   await context.route("**/*", async route => {
     const url = new URL(route.request().url())
     if (url.hostname !== "127.0.0.1") return route.abort()
@@ -206,8 +228,9 @@ try {
   await mobile.context.close()
 
   console.log("QA: card direction, import and save")
-  const director = await setup()
+  const director = await setup({ batchedIntersections: true })
   await cardEditor(director.page); await rendered(director.page)
+  assert.ok(await director.page.evaluate(() => window.__tloqueBatchedIntersections > 0), "queued intersection regression exercised")
   await director.page.getByText("Compatibilidad con escenas anteriores",{exact:true}).click()
   await director.page.getByRole("button",{name:"Abrir modo anterior",exact:true}).click()
   await director.page.getByRole("button",{name:"Composición",exact:true}).first().click()

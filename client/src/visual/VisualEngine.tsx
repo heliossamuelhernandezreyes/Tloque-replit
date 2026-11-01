@@ -127,7 +127,15 @@ export default function VisualSlot({ options, priority = 10, className = "", chi
   useEffect(() => {
     if (!root.current) return
     if (typeof IntersectionObserver === "undefined") { setInView(true); return }
-    const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), { threshold: 0.01 })
+    const observer = new IntersectionObserver(entries => {
+      // Scrolling can queue several crossings for this slot in one callback.
+      // Using the first leaves a visible slot unregistered until it crosses again.
+      let latest: IntersectionObserverEntry | undefined
+      for (const entry of entries) {
+        if (entry.target === root.current && (!latest || entry.time >= latest.time)) latest = entry
+      }
+      if (latest) setInView(latest.isIntersecting)
+    }, { threshold: 0.01 })
     observer.observe(root.current)
     return () => observer.disconnect()
   }, [])
