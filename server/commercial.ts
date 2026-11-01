@@ -72,20 +72,18 @@ export function registerCommercialRoutes(app: Express, database: any = db) {
       res.setHeader("Cache-Control", "private, no-store"); res.json(rows.rows)
     } catch (error) { next(error) }
   })
-  app.get(["/api/commercial/agreements/:bookId", "/api/admin/rights/agreements/:bookId"], async (req, res, next) => {
+  const showAgreement = (admin = false): import("express").RequestHandler => async (req, res, next) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
-    // Admin access still goes through the same manageRights boundary as its inbox.
-    if (req.path.startsWith("/api/admin/")) return requireAdmin(req, res, next)
-    next()
-  }, async (req, res, next) => {
     try {
       const id = Number(req.params.bookId)
       if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ message: "Obra inválida" })
       const [book] = await database.select().from(books).where(eq(books.id, id))
-      if (!book || (!req.path.startsWith("/api/admin/") && book.authorId !== (req.user as any).id)) return res.status(404).json({ message: "Obra no disponible" })
+      if (!book || (!admin && book.authorId !== (req.user as any).id)) return res.status(404).json({ message: "Obra no disponible" })
       res.setHeader("Cache-Control", "private, no-store"); res.json(await currentCommercialAgreement(book, database))
     } catch (error) { next(error) }
-  })
+  }
+  app.get("/api/commercial/agreements/:bookId", showAgreement())
+  app.get("/api/admin/rights/agreements/:bookId", requireAdmin, showAgreement(true))
   app.post("/api/commercial/agreements/:bookId/accept", rateLimit(60_000, 10), async (req, res, next) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
     const parsed = z.object({ accepted: z.literal(true), termsHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict().safeParse(req.body)

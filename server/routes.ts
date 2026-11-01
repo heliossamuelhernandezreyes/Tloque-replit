@@ -1330,7 +1330,7 @@ export async function registerRoutes(
     const grossCents = Math.max(0, Math.floor(options.grossCents ?? order.amountCents))
     const economic = order.purchaseTerms?.economics
     if (economic && (economic.cashBasisCents !== grossCents || economic.authorShareBps !== Math.round((share ?? 0) * 10_000))) throw new Error("La entrega no coincide con el cálculo económico aceptado")
-    if (grossCents <= 0) return
+    if (grossCents <= 0 && !economic) return
     const { authorCents, platformCents } = splitEarnings(grossCents, share)
     await executor.insert(authorEarnings).values({
       authorUserId, orderId: order.id, bookId: order.bookId,

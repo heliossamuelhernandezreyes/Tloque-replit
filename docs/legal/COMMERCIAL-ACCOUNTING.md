@@ -74,6 +74,10 @@ Si exige deducciones, retenciones u otra base no implementada, deben añadirse
 antes de habilitar comercio y obtener una nueva aceptación. No usar referencias
 de prueba para declarar esta revisión hecha.
 
+La participación de Tloque es ingreso bruto, no utilidad garantizada. Antes de
+operar debe contrastarse con las comisiones efectivas del proveedor y las
+obligaciones fiscales; este módulo no calcula una rentabilidad ni subsidios.
+
 ## Conciliación y liquidaciones
 
 Cada compra nueva fija espera y mínimo efectivos. Las liquidaciones aplican su

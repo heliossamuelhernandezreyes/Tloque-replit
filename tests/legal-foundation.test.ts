@@ -300,6 +300,7 @@ test("avisos y contraavisos aislados por rol y autor; bloqueo persistente y rest
     assert.equal((await request("/api/admin/rights/approvals", "POST", approval, "full")).status, 409, "an admin reference cannot invent the author's acceptance")
     assert.equal((await request(`/api/commercial/agreements/${work.id}`, "GET", undefined, "other")).status, 404)
     assert.equal((await request(`/api/admin/rights/agreements/${work.id}`, "GET", undefined, "finance")).status, 403)
+    assert.equal((await request(`/API/ADMIN/RIGHTS/AGREEMENTS/${work.id}/`, "GET", undefined, "finance")).status, 403)
     const offer = await request(`/api/commercial/agreements/${work.id}`, "GET", undefined, "full")
     assert.equal(offer.status, 200)
     assert.equal(offer.body.receipt, null)

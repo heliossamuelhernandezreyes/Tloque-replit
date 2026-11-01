@@ -255,6 +255,11 @@ try {
     const statement = await request('/api/commercial/statement', { role: 'author' });
     assert.equal(statement.data.entries.find(row => row.orderId === paid.data.orderId).economics.agreementHash, offer.data.hash);
     assert.ok(!(await request('/api/commercial/statement', { role: 'buyer' })).data.entries.some(row => row.orderId === paid.data.orderId));
+    const bonus = await buyToken('author', { payWith: 'tinta' });
+    assert.equal(bonus.status,201,JSON.stringify(bonus.data));
+    const { rows: [zero] } = await client.query('select * from author_earnings where order_id=$1',[bonus.data.orderId]);
+    assert.equal(zero.gross_cents,0);assert.equal(zero.author_cents,0);assert.equal(zero.payout_eligible,false);
+
   });
 
   await check('Concurrent payout approval and rejection cannot release money in flight', async () => {
