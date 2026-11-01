@@ -20,5 +20,5 @@ export function renderLegalFixture(view: "publication" | "request" | "admin" | "
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   root.render(<QueryClientProvider key={++generation} client={client}>{view === "publication"
     ? <PublicationConsent category="book" onCancel={() => { (window as any).cancelled = true }} onConfirm={value => { (window as any).confirmed = value }} />
-    : view === "commercial" ? <CommercialAgreement bookId={123} /> : view === "request" ? <PrivacyRequest /> : view === "rights" ? <RightsCenter /> : view === "tokens" ? <SettingsProvider><TokensPanel bookId={123} accentColor="#d1ba71" accentGlow="#d1ba71" isDownloading={false} onPrintCopy={() => {}} /></SettingsProvider> : <PrivacyAdmin />}</QueryClientProvider>)
+    : view === "commercial" ? <main className="min-h-screen bg-black p-6 text-white"><CommercialAgreement bookId={123} /></main> : view === "request" ? <PrivacyRequest /> : view === "rights" ? <RightsCenter /> : view === "tokens" ? <SettingsProvider><TokensPanel bookId={123} accentColor="#d1ba71" accentGlow="#d1ba71" isDownloading={false} onPrintCopy={() => {}} /></SettingsProvider> : <PrivacyAdmin />}</QueryClientProvider>)
 }
