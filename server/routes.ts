@@ -1326,7 +1326,8 @@ export async function registerRoutes(
     const economic = order.purchaseTerms?.economics
     if (economic && (economic.cashBasisCents !== grossCents || economic.authorShareBps !== Math.round((share ?? 0) * 10_000))) throw new Error("La entrega no coincide con el cálculo económico aceptado")
     if (grossCents <= 0 && !economic) return
-    const { authorCents, platformCents } = economic?.version === COMMERCE_VERSION ? economic : splitEarnings(grossCents, share)
+    const { authorCents, platformCents } = economic ?? splitEarnings(grossCents, share)
+    if (![authorCents, platformCents].every(Number.isSafeInteger) || authorCents < 0 || platformCents < 0 || authorCents + platformCents !== grossCents) throw new Error("El reparto aceptado no conserva el efectivo")
     await executor.insert(authorEarnings).values({
       authorUserId, orderId: order.id, bookId: order.bookId,
       grossCents, authorCents, platformCents,
@@ -1440,7 +1441,7 @@ export async function registerRoutes(
           editionId: edition.id,
           purchaseTerms: { accepted: true, documentHash: bundle.hash, version: bundle.version,
             documents: bundle.documents, editionId: edition.id, workHash: edition.workHash,
-            kind, price, acceptedAt: new Date().toISOString(), economics: quoted.economics, quoteHash: quoted.hash, commercialAgreement: quoted.agreement },
+            rewardPolicy: "tinta-patronage-only-v1", kind, price, acceptedAt: new Date().toISOString(), economics: quoted.economics, quoteHash: quoted.hash, commercialAgreement: quoted.agreement },
         }).returning()
         if (provider === "stripe") {
           const checkoutRequest = {

@@ -1,4 +1,3 @@
-import { COMMERCE_VERSION } from "@shared/commerce"
 import { and, eq, inArray, sql } from "drizzle-orm"
 import { db } from "./db"
 import { books, bookCards, userCards, unlockedBooks } from "@shared/schema"
@@ -15,7 +14,7 @@ export async function grantAuthorizedSupportCards(userId: number, bookIds: numbe
     const eligible = await tx.execute(sql`select id from unlocked_books u where user_id=${userId}
       and source='support' and book_id in (${sql.join(bookIds.map(id => sql`${id}`), sql`,`)})
       and not exists (select 1 from token_orders o where o.user_id=u.user_id and o.book_id=u.book_id
-        and o.kind='support' and o.purchase_terms->'economics'->>'version'=${COMMERCE_VERSION}
+        and o.kind='support' and o.purchase_terms->>'rewardPolicy'='tinta-patronage-only-v1'
         and o.provider <> 'tinta' and o.status='paid')`)
     const eligibleIds = new Set(eligible.rows.map((row: any) => row.id))
     const eligibleBooks = unlocked.filter(row => eligibleIds.has(row.id)).map(row => row.bookId)

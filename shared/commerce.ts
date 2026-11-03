@@ -2,6 +2,7 @@ import { displayTinta, planTintaDebit, proportionalCents, type TintaFunding } fr
 
 /** The economic policy is shared by quotes, receipts and the author agreement. */
 export const COMMERCE_VERSION = "2026-11-03.1"
+const FROZEN_SETTLEMENT_VERSIONS = ["2026-11-01.1", "2026-11-03.1"]
 export const TINTA_UNIT_CENTS = 200
 export const TINTA_ALLOCATION = "paid-proportional-legacy-cash-first-v2" as const
 
@@ -50,7 +51,7 @@ export function money(cents: number) { return `$${(cents / 100).toFixed(2)} MXN`
 
 export function settlementWindow(createdAt: Date | string, economics: Partial<EconomicQuote> | null | undefined, fallback: { holdDays: number; minimumCents: number }) {
   // Keep supporting accepted versions when COMMERCE_VERSION advances.
-  const frozen = ["2026-11-01.1", COMMERCE_VERSION].includes(economics?.version || "") && Number.isInteger(economics.holdDays) && economics.holdDays! >= 7 && economics.holdDays! <= 180
+  const frozen = !!economics && FROZEN_SETTLEMENT_VERSIONS.includes(economics.version || "") && Number.isInteger(economics.holdDays) && economics.holdDays! >= 7 && economics.holdDays! <= 180
     && Number.isSafeInteger(economics.minimumCents) && economics.minimumCents! >= 1000 && economics.minimumCents! <= 10_000_000
   const holdDays = frozen ? economics!.holdDays! : fallback.holdDays
   const minimumCents = frozen ? economics!.minimumCents! : fallback.minimumCents

@@ -362,6 +362,8 @@ try {
   });
 
   await check('A paid small package assigns its full premium but keeps the author royalty at $18', async () => {
+    const stale=await request('/api/wallet/buy',{role:'mecenas',method:'POST',headers:{'Idempotency-Key':key()},body:{packId:'gota',acceptance:{accepted:true,documentHash:tokenAcceptance.documentHash,commerceVersion:'2026-11-03.1',packCents:2999,packUnits:10}}});
+    assert.equal(stale.status,409,'a stale package price cannot open checkout');
     const purchase = await buyWallet('mecenas', key(), 0, 'gota');
     assert.equal(purchase.status, 201, JSON.stringify(purchase.data));
     await complete('wallet_orders', purchase.data.orderId);
@@ -382,6 +384,14 @@ try {
     assert.equal(await balance('mecenas'),10);
     const { rows:[backing] } = await client.query("select sum(cash_backing_cents)::int as cents from wallet_ledger where user_id=$1",[users.mecenas.id]);
     assert.equal(backing.cents,3000);
+  });
+  await check('New Tinta patronage grants configured reward cards while new direct patronage does not', async () => {
+    const card=await request(`/api/books/${book.id}/cards`,{role:'author',method:'POST',body:{name:'Patronage reward',unlock:'support',priceTinta:0,fx:{layers:{back:'https://example.test/reward.png',mid:'',front:''}}}});
+    assert.equal(card.status,201,JSON.stringify(card.data));
+    const direct=await request('/api/cards/collection',{role:'reader'});
+    const tinta=await request('/api/cards/collection',{role:'mecenas'});
+    assert.ok(!direct.data.groups.flatMap(group=>group.cards).some(item=>item.id===card.data.id));
+    assert.ok(tinta.data.groups.flatMap(group=>group.cards).some(item=>item.id===card.data.id));
   });
   await check('Tinta purchase retries across two servers issue one token and one debit', async () => {
     await paidWallet('buyer');
