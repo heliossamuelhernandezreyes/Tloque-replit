@@ -71,7 +71,7 @@ export function useBook(id: number | null) {
       } catch (error) {
         const cached = await store.getItem(`book_${id}`);
         if (cached) return cached as any;
-        return null;
+        throw error;
       }
     },
     enabled: !!id && !isNaN(id),

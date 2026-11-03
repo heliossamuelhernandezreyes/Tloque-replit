@@ -208,21 +208,21 @@ export default function DirectionAgentPanel({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-xs font-semibold text-white/80">{copy.title}</span>
-          <span className="mt-0.5 block truncate text-[10px] text-white/35">{copy.hidden} · v2</span>
+          <span className="mt-0.5 block truncate text-xs text-white/65">{copy.hidden} · v2</span>
         </span>
-        {busy === "load" ? <Loader2 className="h-4 w-4 animate-spin text-white/25" /> : open ? <ChevronUp className="h-4 w-4 text-white/25" /> : <ChevronDown className="h-4 w-4 text-white/25" />}
+        {busy === "load" ? <Loader2 className="h-4 w-4 animate-spin text-white/65" /> : open ? <ChevronUp className="h-4 w-4 text-white/65" /> : <ChevronDown className="h-4 w-4 text-white/65" />}
       </button>
 
       {open && (
         <div className="space-y-3 border-t border-white/[.06] p-3.5 sm:p-4">
           <div className="rounded-xl border border-white/[.06] bg-black/20 p-3">
             <p className="text-xs leading-relaxed text-white/55">{copy.subtitle}</p>
-            <p className="mt-1.5 flex items-center gap-1.5 text-[10px] text-emerald-200/55"><FileLock2 className="h-3 w-3" />{copy.safety}</p>
+            <p className="mt-1.5 flex items-center gap-1.5 text-xs text-emerald-200/55"><FileLock2 className="h-3 w-3" />{copy.safety}</p>
           </div>
 
-          {!agent.configured && <p className="rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-[11px] text-amber-100/60">{copy.unavailable}</p>}
-          {stale && <p className="rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-[11px] text-amber-100/60">{copy.stale}</p>}
-          {sidecarStale && !stale && <p className="rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-[11px] text-amber-100/60">La partitura guardada pertenece a una versión anterior. El análisis nuevo la reemplazará sin tocar el manuscrito.</p>}
+          {!agent.configured && <p className="rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-xs text-amber-100/60">{copy.unavailable}</p>}
+          {stale && <p className="rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-xs text-amber-100/60">{copy.stale}</p>}
+          {sidecarStale && !stale && <p className="rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-xs text-amber-100/60">La partitura guardada pertenece a una versión anterior. El análisis nuevo la reemplazará sin tocar el manuscrito.</p>}
 
           {!proposal && (
             <>
@@ -231,7 +231,7 @@ export default function DirectionAgentPanel({
                   ["replace_unlocked", copy.replace],
                   ["fill_gaps", copy.gaps],
                 ] as const).map(([value, label]) => (
-                  <button key={value} type="button" onClick={() => { setMode(value); setQuote(null) }} className="min-h-10 rounded-lg px-2 text-[10px] leading-tight transition-colors" style={mode === value ? { color: accent, background: `${accent}14`, border: `1px solid ${accent}25` } : { color: "rgba(255,255,255,.3)", border: "1px solid transparent" }}>{label}</button>
+                  <button key={value} type="button" onClick={() => { setMode(value); setQuote(null) }} className="min-h-10 rounded-lg px-2 text-xs leading-tight transition-colors" style={mode === value ? { color: accent, background: `${accent}14`, border: `1px solid ${accent}25` } : { color: "rgba(255,255,255,0.65)", border: "1px solid transparent" }}>{label}</button>
                 ))}
               </div>
 
@@ -239,20 +239,20 @@ export default function DirectionAgentPanel({
                 {busy === "quote" || busy === "run" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 {busy === "quote" ? copy.quote : busy === "run" ? copy.analyzing : copy.run}
               </button>
-              <p className="text-center text-[9px] text-white/25">{copy.balance}: {agent.paperBalance} Papel · el costo se confirma antes de ejecutar</p>
+              <p className="text-center text-xs text-white/65">{copy.balance}: {agent.paperBalance} Papel · el costo se confirma antes de ejecutar</p>
             </>
           )}
 
-          {busy === "run" && <div className="flex items-center gap-3 rounded-xl border border-white/[.06] bg-black/25 p-4"><Loader2 className="h-5 w-5 shrink-0 animate-spin" style={{ color: accent }} /><p className="text-xs leading-relaxed text-white/50">{copy.analyzing}</p></div>}
+          {busy === "run" && <div className="flex items-center gap-3 rounded-xl border border-white/[.06] bg-black/25 p-4"><Loader2 className="h-5 w-5 shrink-0 animate-spin" style={{ color: accent }} /><p className="text-xs leading-relaxed text-white/65">{copy.analyzing}</p></div>}
 
           {visible && (
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] font-semibold uppercase tracking-[.16em] text-white/35">{proposal ? copy.review : `${copy.title} · r${visible.revision}`}</p>
+                <p className="text-xs font-semibold uppercase tracking-[.16em] text-white/65">{proposal ? copy.review : `${copy.title} · r${visible.revision}`}</p>
               </div>
 
               <div className="space-y-2">
-                <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-white/30"><Volume2 className="h-3.5 w-3.5" />{copy.voice} · {visible.voiceNotes.length} {copy.cues}</p>
+                <p className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-white/65"><Volume2 className="h-3.5 w-3.5" />{copy.voice} · {visible.voiceNotes.length} {copy.cues}</p>
                 {visibleVoiceNotes.map(note => {
                   const span = visible.voiceProject.spans.find(candidate => candidate.id === note.spanId)
                   const excerpt = span ? paragraphs[span.paragraphIndex]?.slice(span.startOffset, span.endOffset) : ""
@@ -260,21 +260,21 @@ export default function DirectionAgentPanel({
                     <div key={note.spanId} className="rounded-xl border border-white/[.06] bg-black/20 p-3">
                       <div className="flex items-start gap-2">
                         <p className="min-w-0 flex-1 line-clamp-2 font-serif text-xs leading-relaxed text-white/55">{excerpt}</p>
-                        {proposal && <button type="button" onClick={() => updateVoiceNote(note.spanId, { locked: !note.locked })} className="shrink-0 p-1.5 text-white/30" aria-label={copy.locked}>{note.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}</button>}
+                        {proposal && <button type="button" onClick={() => updateVoiceNote(note.spanId, { locked: !note.locked })} className="shrink-0 p-1.5 text-white/65" aria-label={copy.locked}>{note.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}</button>}
                       </div>
                       {proposal ? (
                         <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-3">
-                          <select value={note.emotion} onChange={event => updateVoiceNote(note.spanId, { emotion: event.target.value as DirectionVoiceNoteV2["emotion"] })} className="min-h-9 rounded-lg border border-white/[.07] bg-zinc-950 px-2 text-[10px] text-white/55">{directionEmotionSchema.options.map(value => <option key={value} value={value}>{value}</option>)}</select>
-                          <select value={note.projection} onChange={event => updateVoiceNote(note.spanId, { projection: event.target.value as DirectionVoiceNoteV2["projection"] })} className="min-h-9 rounded-lg border border-white/[.07] bg-zinc-950 px-2 text-[10px] text-white/55">{directionProjectionSchema.options.map(value => <option key={value} value={value}>{value}</option>)}</select>
-                          <select value={note.vocalState} onChange={event => updateVoiceNote(note.spanId, { vocalState: event.target.value as DirectionVoiceNoteV2["vocalState"] })} className="min-h-9 rounded-lg border border-white/[.07] bg-zinc-950 px-2 text-[10px] text-white/55">{directionVocalStateSchema.options.map(value => <option key={value} value={value}>{value}</option>)}</select>
-                          <input value={note.elevenLabsTags.join(", ")} onChange={event => updateVoiceNote(note.spanId, { elevenLabsTags: event.target.value.split(",").map(value => value.trim()).filter(Boolean).slice(0, 12) })} className="min-h-9 rounded-lg border border-white/[.07] bg-zinc-950 px-2 text-[10px] text-white/55 sm:col-span-3" placeholder="ElevenLabs: sad, near tears…" />
+                          <select value={note.emotion} onChange={event => updateVoiceNote(note.spanId, { emotion: event.target.value as DirectionVoiceNoteV2["emotion"] })} className="min-h-9 rounded-lg border border-white/[.07] bg-zinc-950 px-2 text-xs text-white/55">{directionEmotionSchema.options.map(value => <option key={value} value={value}>{value}</option>)}</select>
+                          <select value={note.projection} onChange={event => updateVoiceNote(note.spanId, { projection: event.target.value as DirectionVoiceNoteV2["projection"] })} className="min-h-9 rounded-lg border border-white/[.07] bg-zinc-950 px-2 text-xs text-white/55">{directionProjectionSchema.options.map(value => <option key={value} value={value}>{value}</option>)}</select>
+                          <select value={note.vocalState} onChange={event => updateVoiceNote(note.spanId, { vocalState: event.target.value as DirectionVoiceNoteV2["vocalState"] })} className="min-h-9 rounded-lg border border-white/[.07] bg-zinc-950 px-2 text-xs text-white/55">{directionVocalStateSchema.options.map(value => <option key={value} value={value}>{value}</option>)}</select>
+                          <input value={note.elevenLabsTags.join(", ")} onChange={event => updateVoiceNote(note.spanId, { elevenLabsTags: event.target.value.split(",").map(value => value.trim()).filter(Boolean).slice(0, 12) })} className="min-h-9 rounded-lg border border-white/[.07] bg-zinc-950 px-2 text-xs text-white/55 sm:col-span-3" placeholder="ElevenLabs: sad, near tears…" />
                         </div>
-                      ) : <p className="mt-1.5 text-[10px] text-white/28">{note.emotion} · {note.projection} · {note.vocalState}{note.locked ? ` · ${copy.locked}` : ""}</p>}
+                      ) : <p className="mt-1.5 text-xs text-white/28">{note.emotion} · {note.projection} · {note.vocalState}{note.locked ? ` · ${copy.locked}` : ""}</p>}
                     </div>
                   )
                 })}
                 {voicePages > 1 && (
-                  <div className="flex items-center justify-center gap-3 pt-1 text-[10px] text-white/35">
+                  <div className="flex items-center justify-center gap-3 pt-1 text-xs text-white/65">
                     <button type="button" disabled={voicePage === 0} onClick={() => setVoicePage(page => Math.max(0, page - 1))} className="rounded-lg border border-white/[.07] p-1.5 disabled:opacity-25" aria-label="Anterior"><ChevronLeft className="h-3.5 w-3.5" /></button>
                     <span>{voicePage + 1} / {voicePages}</span>
                     <button type="button" disabled={voicePage >= voicePages - 1} onClick={() => setVoicePage(page => Math.min(voicePages - 1, page + 1))} className="rounded-lg border border-white/[.07] p-1.5 disabled:opacity-25" aria-label="Siguiente"><ChevronRight className="h-3.5 w-3.5" /></button>
@@ -283,11 +283,11 @@ export default function DirectionAgentPanel({
               </div>
 
               <div className="space-y-2">
-                <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-white/30"><Music2 className="h-3.5 w-3.5" />{copy.music} · {visible.musicNodes.length} {copy.cues}</p>
-                {visible.musicNodes.length === 0 && <p className="rounded-xl border border-dashed border-white/[.07] p-3 text-center text-[10px] text-white/25">{copy.noMusic}</p>}
+                <p className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-white/65"><Music2 className="h-3.5 w-3.5" />{copy.music} · {visible.musicNodes.length} {copy.cues}</p>
+                {visible.musicNodes.length === 0 && <p className="rounded-xl border border-dashed border-white/[.07] p-3 text-center text-xs text-white/65">{copy.noMusic}</p>}
                 {visible.musicNodes.map(node => {
                   const region = visible.musicProject.regions.find(candidate => candidate.id === node.regionId)
-                  return <div key={node.regionId} className="flex items-center gap-2 rounded-xl border border-white/[.06] bg-black/20 p-3"><div className="min-w-0 flex-1"><p className="truncate text-xs text-white/55">{region?.name || node.regionId}</p><p className="mt-1 text-[10px] text-white/25">score {node.scoreId ?? "—"} · {node.layerIds.length} nodos · {node.crossfadeSeconds}s</p></div>{proposal && <button type="button" onClick={() => toggleMusicLock(node.regionId, !node.locked)} className="shrink-0 p-1.5 text-white/30" aria-label={copy.locked}>{node.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}</button>}</div>
+                  return <div key={node.regionId} className="flex items-center gap-2 rounded-xl border border-white/[.06] bg-black/20 p-3"><div className="min-w-0 flex-1"><p className="truncate text-xs text-white/55">{region?.name || node.regionId}</p><p className="mt-1 text-xs text-white/65">score {node.scoreId ?? "—"} · {node.layerIds.length} nodos · {node.crossfadeSeconds}s</p></div>{proposal && <button type="button" onClick={() => toggleMusicLock(node.regionId, !node.locked)} className="shrink-0 p-1.5 text-white/65" aria-label={copy.locked}>{node.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}</button>}</div>
                 })}
               </div>
             </div>
@@ -298,7 +298,7 @@ export default function DirectionAgentPanel({
               {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{copy.apply}
             </button>
           )}
-          {notice && <p className="rounded-xl border border-white/[.06] bg-black/20 p-3 text-[11px] leading-relaxed text-white/50">{notice}</p>}
+          {notice && <p className="rounded-xl border border-white/[.06] bg-black/20 p-3 text-xs leading-relaxed text-white/65">{notice}</p>}
         </div>
       )}
     </section>

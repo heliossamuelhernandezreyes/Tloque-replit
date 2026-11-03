@@ -1,5 +1,6 @@
 import passport from "passport"
 import { Strategy as GoogleStrategy } from "passport-google-oauth20"
+import { safeAuthReturn } from "@shared/auth-return"
 import expressSession from "express-session"
 import connectPgSimple from "connect-pg-simple"
 import { pool } from "./db"
@@ -173,12 +174,22 @@ export function setupAuth(app: Express) {
 }
 
 export function setupAuthRoutes(app: Express) {
-  app.get("/api/auth/google",
-    passport.authenticate("google", { scope: ["profile", "email"] })
-  )
+  app.get("/api/auth/google", (req, res, next) => {
+    ;(req.session as typeof req.session & { authReturnTo?: string }).authReturnTo = safeAuthReturn(req.query.returnTo)
+    req.session.save(error => {
+      if (error) return next(error)
+      passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next)
+    })
+  })
   app.get("/api/auth/google/callback",
+    (req, res, next) => {
+      const session = req.session as typeof req.session & { authReturnTo?: string }
+      res.locals.authReturnTo = safeAuthReturn(session.authReturnTo)
+      delete session.authReturnTo
+      next()
+    },
     passport.authenticate("google", { failureRedirect: "/?auth=error" }),
-    (_req, res) => { res.redirect("/") }
+    (_req, res) => { res.redirect(safeAuthReturn(res.locals.authReturnTo)) }
   )
   app.post("/api/auth/logout", (req, res, next) => {
     req.logout((error) => {

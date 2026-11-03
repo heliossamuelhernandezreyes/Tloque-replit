@@ -60,7 +60,7 @@ export default function InfoDot({ text, color = "rgba(255,255,255,0.4)", size = 
               boxShadow: "0 8px 24px -6px rgba(0,0,0,0.6)",
             }}
           >
-            <p className="text-[11px] font-sans leading-relaxed text-left"
+            <p className="text-xs font-sans leading-relaxed text-left"
               style={{ color: "rgba(255,255,255,0.8)" }}>
               {text}
             </p>

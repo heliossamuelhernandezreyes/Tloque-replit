@@ -1,3 +1,4 @@
+import AccessibleDialog from "./AccessibleDialog"
 import { accountFetch as fetch } from "@/lib/account-context"
 import { useState, useRef } from "react"
 import { motion } from "framer-motion"
@@ -109,35 +110,18 @@ export default function ProfileEditor({
     },
   })
 
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-[450] flex items-end sm:items-center justify-center p-3 sm:p-4"
-      style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
-    >
-      <motion.div
-        initial={{ y: 40, opacity: 0, scale: 0.97 }}
-        animate={{ y: 0, opacity: 1, scale: 1 }}
-        exit={{ y: 40, opacity: 0 }}
-        transition={{ type: "spring", stiffness: 260, damping: 24 }}
-        onClick={e => e.stopPropagation()}
-        className="w-full max-w-md rounded-3xl overflow-hidden max-h-[88vh] flex flex-col"
-        style={{ background: "rgba(18,18,24,0.99)", border: "1px solid rgba(255,255,255,0.1)" }}
-      >
+  return <AccessibleDialog open onClose={onClose} title={t("editProfile")} className="max-w-md" style={{ background: "#121218" }}>
         {/* Encabezado */}
-        <div className="flex items-center justify-between px-5 py-4"
+        <div className="flex shrink-0 items-center justify-between px-5 py-4"
           style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
           <h2 className="text-base font-display font-bold text-white">{t("editProfile")}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
+          <button onClick={onClose} aria-label={t("closeAction")} className="grid min-h-11 min-w-11 place-items-center rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
             <X className="w-4 h-4 text-white/60" />
           </button>
         </div>
 
         {/* Contenido desplazable */}
-        <div className="overflow-y-auto px-5 py-5 space-y-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 space-y-5">
           {/* Banner — portada del perfil */}
           <div>
             <label className="text-xs font-sans font-semibold block mb-2" style={{ color: "rgba(255,255,255,0.7)" }}>
@@ -171,7 +155,7 @@ export default function ProfileEditor({
                 ) : (
                   <>
                     <ImageIcon className="w-5 h-5" style={{ color: banner.trim() ? "rgba(255,255,255,0.9)" : accentColor }} />
-                    <span className="text-[10px] font-sans" style={{ color: banner.trim() ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.55)" }}>
+                    <span className="text-xs font-sans" style={{ color: banner.trim() ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.55)" }}>
                       {banner.trim() ? t("changeBanner") : t("uploadBanner")}
                     </span>
                   </>
@@ -181,7 +165,7 @@ export default function ProfileEditor({
             {banner.trim() && (
               <button
                 onClick={() => setBanner("")}
-                className="text-[10px] font-sans mt-1.5"
+                className="text-xs font-sans mt-1.5"
                 style={{ color: "rgba(255,120,120,0.7)" }}
               >
                 {t("removeBanner")}
@@ -213,7 +197,7 @@ export default function ProfileEditor({
                     <img src={avatar} alt="" className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <ImageIcon className="w-6 h-6" style={{ color: "rgba(255,255,255,0.3)" }} />
+                      <ImageIcon className="w-6 h-6" style={{ color: "rgba(255,255,255,0.65)" }} />
                     </div>
                   )}
                   {/* Capa de subir */}
@@ -237,8 +221,8 @@ export default function ProfileEditor({
                   {avatar.trim() && (
                     <button
                       onClick={() => setAvatar("")}
-                      className="block text-[11px] font-sans mt-2 ml-1"
-                      style={{ color: "rgba(255,255,255,0.45)" }}
+                      className="block text-xs font-sans mt-2 ml-1"
+                      style={{ color: "rgba(255,255,255,0.65)" }}
                     >
                       {t("removePhoto")}
                     </button>
@@ -249,8 +233,8 @@ export default function ProfileEditor({
               {/* Opción avanzada: pegar enlace */}
               <button
                 onClick={() => setShowAvatarUrl(v => !v)}
-                className="text-[11px] font-sans mt-3"
-                style={{ color: "rgba(255,255,255,0.4)" }}
+                className="text-xs font-sans mt-3"
+                style={{ color: "rgba(255,255,255,0.65)" }}
               >
                 {showAvatarUrl ? t("hideWord") : t("pasteImageLink")}
               </button>
@@ -271,7 +255,7 @@ export default function ProfileEditor({
             <label className="text-xs font-sans font-semibold block mb-1" style={{ color: "rgba(255,255,255,0.7)" }}>
               {t("frameLabel")}
             </label>
-            <p className="text-[11px] font-sans mb-3" style={{ color: "rgba(255,255,255,0.4)" }}>
+            <p className="text-xs font-sans mb-3" style={{ color: "rgba(255,255,255,0.65)" }}>
               {isAdmin ? t("frameHintAdmin") : t("frameHint")}
             </p>
             <div className="flex flex-wrap gap-3">
@@ -300,12 +284,12 @@ export default function ProfileEditor({
                       <div className="rounded-full" style={{ width: "100%", height: "100%", padding: 1.5, background: "rgba(15,15,20,0.9)" }}>
                         <div className="w-full h-full rounded-full flex items-center justify-center"
                           style={{ background: "rgba(255,255,255,0.06)" }}>
-                          {fr.id === "" && <span className="text-[9px] font-sans" style={{ color: "rgba(255,255,255,0.4)" }}>—</span>}
-                          {locked && <Lock className="w-3 h-3" style={{ color: "rgba(255,255,255,0.5)" }} />}
+                          {fr.id === "" && <span className="text-xs font-sans" style={{ color: "rgba(255,255,255,0.65)" }}>—</span>}
+                          {locked && <Lock className="w-3 h-3" style={{ color: "rgba(255,255,255,0.65)" }} />}
                         </div>
                       </div>
                     </div>
-                    <span className="text-[9px] font-sans" style={{ color: selected ? accentColor : "rgba(255,255,255,0.5)" }}>
+                    <span className="text-xs font-sans" style={{ color: selected ? accentColor : "rgba(255,255,255,0.5)" }}>
                       {t(fr.id ? `frame_${fr.id}` : "frame_none")}
                     </span>
                   </button>
@@ -324,7 +308,7 @@ export default function ProfileEditor({
                           <div className="w-full h-full rounded-full bg-zinc-800" />
                         </FrameRenderer>
                       </div>
-                      <span className="text-[8px] max-w-14 truncate" style={{ color: selected ? accentColor : "rgba(255,255,255,0.4)" }}>{fr.name}</span>
+                      <span className="text-xs max-w-14 truncate" style={{ color: selected ? accentColor : "rgba(255,255,255,0.4)" }}>{fr.name}</span>
                     </button>
                   )
                 })}
@@ -345,7 +329,7 @@ export default function ProfileEditor({
               className="w-full rounded-xl px-3.5 py-3 text-sm font-sans resize-none outline-none text-white"
               style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
             />
-            <p className="text-[10px] font-sans mt-1 text-right" style={{ color: "rgba(255,255,255,0.35)" }}>
+            <p className="text-xs font-sans mt-1 text-right" style={{ color: "rgba(255,255,255,0.65)" }}>
               {bio.length}/500
             </p>
           </div>
@@ -355,13 +339,13 @@ export default function ProfileEditor({
             <label className="text-xs font-sans font-semibold block mb-1" style={{ color: "rgba(255,255,255,0.7)" }}>
               {t("linksLabel")}
             </label>
-            <p className="text-[11px] font-sans mb-3" style={{ color: "rgba(255,255,255,0.4)" }}>
+            <p className="text-xs font-sans mb-3" style={{ color: "rgba(255,255,255,0.65)" }}>
               {t("linksHint")}
             </p>
             <div className="space-y-2.5">
               {NETWORKS.map(n => (
                 <div key={n.key} className="flex items-center gap-2.5">
-                  <div className="flex-shrink-0 w-8 flex justify-center" style={{ color: "rgba(255,255,255,0.5)" }}>
+                  <div className="flex-shrink-0 w-8 flex justify-center" style={{ color: "rgba(255,255,255,0.65)" }}>
                     <n.Icon className="w-[18px] h-[18px]" strokeWidth={1.6} />
                   </div>
                   <input
@@ -380,7 +364,7 @@ export default function ProfileEditor({
         {/* Pie con guardar */}
         <div className="px-5 py-4" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
           {save.isError && (
-            <p className="text-[11px] font-sans mb-2" style={{ color: "#e8a0a0" }}>
+            <p className="text-xs font-sans mb-2" style={{ color: "#e8a0a0" }}>
               {(save.error as Error)?.message || t("saveErr")}
             </p>
           )}
@@ -398,7 +382,6 @@ export default function ProfileEditor({
                 : t("saveProfile")}
           </motion.button>
         </div>
-      </motion.div>
-    </motion.div>
-  )
+
+</AccessibleDialog>
 }

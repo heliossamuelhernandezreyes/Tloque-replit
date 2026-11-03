@@ -213,10 +213,10 @@ export default function NarrativeStudioPanel({
         <span className="grid place-items-center w-8 h-8 rounded-xl" style={{ background: `${accent}16`, color: accent }}><EyeOff className="w-4 h-4" /></span>
         <span className="min-w-0 flex-1">
           <span className="block text-xs text-zinc-200 font-sans font-semibold">{copy.title}</span>
-          <span className="block text-[10px] text-zinc-600 font-sans truncate">{copy.subtitle}</span>
+          <span className="block text-xs text-zinc-400 font-sans truncate">{copy.subtitle}</span>
         </span>
-        <span className="text-[9px] text-zinc-600 font-sans hidden sm:block">{project.regions.length} {copy.regions}</span>
-        {open ? <ChevronUp className="w-3.5 h-3.5 text-zinc-600" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-600" />}
+        <span className="text-xs text-zinc-400 font-sans hidden sm:block">{project.regions.length} {copy.regions}</span>
+        {open ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
       </button>
 
       {open && (
@@ -227,38 +227,38 @@ export default function NarrativeStudioPanel({
               disabled={oracleDisabled}
               title={oracleReason}
               onClick={runOracle}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-sans font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-sans font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ background: `${accent}18`, border: `1px solid ${accent}42`, color: accent }}
             >
               {busy === "oracle" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
               {busy === "oracle" ? copy.analyzing : copy.oracle}
             </button>
-            <span className="text-[9px] text-zinc-600 font-sans">{copy.paper}: {oracle.paperBalance}</span>
-            <span className="inline-flex items-center gap-1 text-[9px] text-zinc-700 font-sans"><EyeOff className="w-3 h-3" />{copy.hidden}</span>
+            <span className="text-xs text-zinc-400 font-sans">{copy.paper}: {oracle.paperBalance}</span>
+            <span className="inline-flex items-center gap-1 text-xs text-zinc-400 font-sans"><EyeOff className="w-3 h-3" />{copy.hidden}</span>
           </div>
-          {oracleReason && <p className="text-[10px] text-zinc-600 font-sans">{oracleReason}</p>}
+          {oracleReason && <p className="text-xs text-zinc-400 font-sans">{oracleReason}</p>}
 
           {proposal && (
             <div className="rounded-xl p-3" style={{ background: `${accent}0d`, border: `1px solid ${accent}2f` }}>
-              <p className="text-[11px] text-zinc-300 font-sans font-semibold">{copy.proposal} · {proposal.regions.length} {copy.regions}</p>
+              <p className="text-xs text-zinc-300 font-sans font-semibold">{copy.proposal} · {proposal.regions.length} {copy.regions}</p>
               <div className="flex gap-2 mt-2">
-                <button type="button" onClick={() => { setProject(proposal); setProposal(null); setNotice("") }} className="px-3 py-1.5 rounded-lg text-[10px] font-sans" style={{ background: accent, color: "#080808" }}>{copy.accept}</button>
-                <button type="button" onClick={() => setProposal(null)} className="px-3 py-1.5 rounded-lg text-[10px] text-zinc-500 font-sans" style={{ background: "rgba(255,255,255,0.05)" }}>{copy.discard}</button>
+                <button type="button" onClick={() => { setProject(proposal); setProposal(null); setNotice("") }} className="px-3 py-1.5 rounded-lg text-xs font-sans" style={{ background: accent, color: "#080808" }}>{copy.accept}</button>
+                <button type="button" onClick={() => setProposal(null)} className="px-3 py-1.5 rounded-lg text-xs text-zinc-400 font-sans" style={{ background: "rgba(255,255,255,0.05)" }}>{copy.discard}</button>
               </div>
             </div>
           )}
 
           <div className="space-y-2">
-            {project.regions.length === 0 && <p className="py-3 text-center text-[10px] text-zinc-700 font-sans">{copy.noRegions}</p>}
+            {project.regions.length === 0 && <p className="py-3 text-center text-xs text-zinc-400 font-sans">{copy.noRegions}</p>}
             {project.regions.map(region => (
               <div key={region.id} className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2 rounded-xl p-3" style={{ background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.06)" }}>
                 <div className="min-w-0">
-                  <input value={region.name} onChange={event => updateRegion(region.id, { name: event.target.value })} className="w-full bg-transparent outline-none text-[11px] text-zinc-300 font-sans font-semibold" />
-                  <select value={region.mood} onChange={event => updateRegion(region.id, { mood: event.target.value as NarrativeMood })} className="mt-1 bg-transparent text-[9px] text-zinc-600 font-sans outline-none">
+                  <input value={region.name} onChange={event => updateRegion(region.id, { name: event.target.value })} className="w-full bg-transparent outline-none text-xs text-zinc-300 font-sans font-semibold" />
+                  <select value={region.mood} onChange={event => updateRegion(region.id, { mood: event.target.value as NarrativeMood })} className="mt-1 bg-transparent text-xs text-zinc-400 font-sans outline-none">
                     {MOODS.map(mood => <option key={mood} value={mood}>{mood}</option>)}
                   </select>
                 </div>
-                <label className="flex items-center gap-1.5 text-[9px] text-zinc-600 font-sans">
+                <label className="flex items-center gap-1.5 text-xs text-zinc-400 font-sans">
                   {copy.paragraph}
                   <input type="number" min={0} max={localParagraphs - 1} value={region.startParagraph} onChange={event => {
                     const startParagraph = Number(event.target.value)
@@ -271,21 +271,21 @@ export default function NarrativeStudioPanel({
                   }} className="w-12 rounded-md px-1 py-1 bg-black/30 text-zinc-400 outline-none" />
                 </label>
                 <div className="flex items-center gap-2">
-                  <label className="text-[9px] text-zinc-600 font-sans">{copy.intensity}<input type="range" min="0" max="0.8" step="0.05" value={region.targetIntensity} onChange={event => updateRegion(region.id, { targetIntensity: Number(event.target.value) })} className="block w-24 accent-current" /></label>
-                  <button type="button" title={copy.remove} onClick={() => setProject(current => ({ ...current, regions: current.regions.filter(item => item.id !== region.id) }))} className="p-1.5 rounded-lg text-zinc-700 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <label className="text-xs text-zinc-400 font-sans">{copy.intensity}<input type="range" min="0" max="0.8" step="0.05" value={region.targetIntensity} onChange={event => updateRegion(region.id, { targetIntensity: Number(event.target.value) })} className="block w-24 accent-current" /></label>
+                  <button type="button" title={copy.remove} onClick={() => setProject(current => ({ ...current, regions: current.regions.filter(item => item.id !== region.id) }))} className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
             ))}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={addRegion} disabled={project.regions.some(region => region.endParagraph >= localParagraphs - 1)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] text-zinc-500 font-sans disabled:opacity-30" style={{ background: "rgba(255,255,255,0.04)" }}><Plus className="w-3 h-3" />{copy.addRegion}</button>
+            <button type="button" onClick={addRegion} disabled={project.regions.some(region => region.endParagraph >= localParagraphs - 1)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-zinc-400 font-sans disabled:opacity-30" style={{ background: "rgba(255,255,255,0.04)" }}><Plus className="w-3 h-3" />{copy.addRegion}</button>
             <span className="flex-1" />
-            <button type="button" onClick={saveProject} disabled={!!busy} className="px-2.5 py-1.5 rounded-lg text-[10px] text-zinc-400 font-sans disabled:opacity-40" style={{ border: "1px solid rgba(255,255,255,0.09)" }}>{copy.save}</button>
-            <button type="button" onClick={compile} disabled={!!busy || storedRevision === 0} className="px-2.5 py-1.5 rounded-lg text-[10px] text-zinc-400 font-sans disabled:opacity-40" style={{ border: "1px solid rgba(255,255,255,0.09)" }}>{copy.compile}</button>
-            <button type="button" onClick={publish} disabled={!!busy || profileStatus !== "draft"} className="px-2.5 py-1.5 rounded-lg text-[10px] font-sans disabled:opacity-40" style={{ background: profileStatus === "approved" ? "rgba(52,211,153,0.12)" : `${accent}18`, color: profileStatus === "approved" ? "#6ee7b7" : accent }}>{copy.publish}</button>
+            <button type="button" onClick={saveProject} disabled={!!busy} className="px-2.5 py-1.5 rounded-lg text-xs text-zinc-400 font-sans disabled:opacity-40" style={{ border: "1px solid rgba(255,255,255,0.09)" }}>{copy.save}</button>
+            <button type="button" onClick={compile} disabled={!!busy || storedRevision === 0} className="px-2.5 py-1.5 rounded-lg text-xs text-zinc-400 font-sans disabled:opacity-40" style={{ border: "1px solid rgba(255,255,255,0.09)" }}>{copy.compile}</button>
+            <button type="button" onClick={publish} disabled={!!busy || profileStatus !== "draft"} className="px-2.5 py-1.5 rounded-lg text-xs font-sans disabled:opacity-40" style={{ background: profileStatus === "approved" ? "rgba(52,211,153,0.12)" : `${accent}18`, color: profileStatus === "approved" ? "#6ee7b7" : accent }}>{copy.publish}</button>
           </div>
-          {notice && <p role="status" className="text-[10px] text-zinc-500 font-sans">{notice}</p>}
+          {notice && <p role="status" className="text-xs text-zinc-400 font-sans">{notice}</p>}
         </div>
       )}
     </section>

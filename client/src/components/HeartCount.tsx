@@ -24,7 +24,7 @@ export default function HeartCount({ bookId, accentColor, size = "sm" }: Props) 
   if (hearts <= 0) return null
 
   const iconSize = size === "md" ? "w-4 h-4" : "w-3 h-3"
-  const textSize = size === "md" ? "text-xs" : "text-[10px]"
+  const textSize = size === "md" ? "text-xs" : "text-xs"
 
   return (
     <span className="inline-flex items-center gap-1" title="Apoyos y lectores que llegaron lejos">

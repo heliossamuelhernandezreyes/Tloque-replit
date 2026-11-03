@@ -1,6 +1,7 @@
+import QueryNotice from "@/components/QueryNotice"
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
-import { useLocation } from "wouter"
+import { useLocation, useSearch } from "wouter"
 import { Layout } from "@/components/layout"
 import { BookCard } from "@/components/book-card"
 import { Plus, User, Camera, BookOpen, FileText, Edit3, Trash2, Archive, Eye, EyeOff, Star, Sparkles, UserCircle, Frame, Hammer, WalletCards, Ticket, MoreHorizontal, Shield } from "lucide-react"
@@ -24,7 +25,6 @@ import {
 const STORAGE_DRAFTS    = "novareads_drafts"
 const STORAGE_PUBLISHED = "novareads_authored"
 const STORAGE_SAVED     = "novareads_saved"
-const STORAGE_PROFILE   = "novareads_profile_name"
 
 function loadAll(key: string): any[] {
   try { return JSON.parse(localStorage.getItem(key) || "[]") } catch { return [] }
@@ -36,42 +36,32 @@ export default function Library() {
   const { user, logout, can } = useAuth()
   const { t, settings } = useSettings()
   const isAdminActive = can("manageCatalog") && (settings?.adminMode ?? true)
-  const { data: myServerBooks, refetch: refetchMyBooks } = useMyBooks()
+  const { data: myServerBooks, refetch: refetchMyBooks, isError: myBooksError } = useMyBooks()
 
   const [, setLocation] = useLocation()
-  const searchQuery = useMemo(() => {
-    return new URLSearchParams(window.location.search).get("search")?.toLowerCase().trim() || ""
-  }, [location])
-  const { data: serverBooks, refetch: refetchBooks, hasNextPage, fetchNextPage, isFetchingNextPage } = useBooks(searchQuery)
+  const search = useSearch()
+  const searchQuery = new URLSearchParams(search).get("search")?.toLowerCase().trim() || ""
+  const { data: serverBooks, refetch: refetchBooks, isError: booksError, isLoading: booksLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useBooks(searchQuery)
   const moreBooks = hasNextPage && <div className="py-4 text-center"><button className="min-h-11 rounded-full border border-white/20 px-6 py-2 text-sm text-white" disabled={isFetchingNextPage} onClick={() => { void fetchNextPage() }}>{isFetchingNextPage ? "Cargando…" : "Cargar más libros"}</button></div>
 
   const [drafts,        setDrafts]        = useState<any[]>([])
   const [published,     setPublished]     = useState<any[]>([])
   const [savedBooks,    setSavedBooks]    = useState<any[]>([])
-  const [profileImage,  setProfileImage]  = useState<string | null>(null)
-  const [coverImage,    setCoverImage]    = useState<string | null>(null)
-  const [profileName,   setProfileName]   = useState("")
-  const [editingName,   setEditingName]   = useState(false)
-  const [nameInput,     setNameInput]     = useState("")
+  const profileImage = user?.avatar || null
+  const coverImage = user?.banner || null
+  const profileName = user?.name || ""
   const [activeTab,     setActiveTab]     = useState<"published"|"drafts"|"saved"|"cards"|"catalog">("published")
   const [deleteConfirm, setDeleteConfirm] = useState<{id:any, store:string, server?: "author" | "admin"} | null>(null)
   const [showImport,    setShowImport]    = useState(false)
   const [deletingServer, setDeletingServer] = useState(false)
   const [reviewBooks,   setReviewBooks]   = useState<any[]>([])
 
-  const profileInputRef = useRef<HTMLInputElement>(null)
-  const coverInputRef   = useRef<HTMLInputElement>(null)
-  const nameInputRef    = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setDrafts(loadAll(STORAGE_DRAFTS))
     setPublished(loadAll(STORAGE_PUBLISHED))
     setSavedBooks(loadAll(STORAGE_SAVED))
-    setProfileImage(localStorage.getItem("novareads_profile"))
-    setCoverImage(localStorage.getItem("novareads_cover"))
-    const savedName = localStorage.getItem(STORAGE_PROFILE)
-    if (savedName) setProfileName(savedName)
-    else if (user?.name) setProfileName(user.name)
+
   }, [user?.name])
 
   const mergeCanonical = useCallback((local: any[], status: "published" | "draft") => {
@@ -130,37 +120,6 @@ export default function Library() {
     return () => { cancelled = true }
   }, [isAdminActive, activeTab, serverBooks])
 
-  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>, target: "profile"|"cover") {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const b64 = reader.result as string
-      if (target === "profile") {
-        setProfileImage(b64)
-        localStorage.setItem("novareads_profile", b64)
-      } else {
-        setCoverImage(b64)
-        localStorage.setItem("novareads_cover", b64)
-      }
-    }
-    reader.readAsDataURL(file)
-  }
-
-  function saveName() {
-    const n = nameInput.trim()
-    if (!n) return
-    setProfileName(n)
-    localStorage.setItem(STORAGE_PROFILE, n)
-    setEditingName(false)
-  }
-
-  function startEditName() {
-    setNameInput(profileName)
-    setEditingName(true)
-    setTimeout(() => nameInputRef.current?.focus(), 50)
-  }
-
   function deleteLocalBook(id: any, storageKey: string) {
     const current = loadAll(storageKey)
     const updated = current.filter((b: any) => String(b.id) !== String(id))
@@ -206,19 +165,20 @@ export default function Library() {
       <Layout>
         <div className="pt-16 px-4 pb-32 space-y-6 max-w-2xl mx-auto">
           <div className="flex items-center gap-3">
-            <button onClick={() => setLocation("/")} className="text-zinc-600 hover:text-white transition p-1">←</button>
+            <button onClick={() => setLocation("/")} className="text-zinc-400 hover:text-white transition p-1">←</button>
             <div>
-              <p className="text-[10px] text-zinc-700 uppercase tracking-widest font-sans">{t("searching")}</p>
+              <p className="text-xs text-zinc-400 uppercase tracking-widest font-sans">{t("searching")}</p>
               <h1 className="text-base text-white font-semibold font-sans">"{searchQuery}"</h1>
             </div>
           </div>
-          {searchResults.length === 0 ? (
+          <QueryNotice loading={booksLoading} error={booksError} onRetry={() => { void refetchBooks() }} />
+          {!booksError && !booksLoading && searchResults.length === 0 ? (
             <div className="py-20 text-center space-y-2">
-              <p className="text-zinc-600 text-sm font-sans">{t("noResults")}</p>
+              <p className="text-zinc-400 text-sm font-sans">{t("noResults")}</p>
             </div>
           ) : (
             <>
-              <p className="text-zinc-700 text-xs font-sans">{t("searchResultCount").replace("{n}", String(searchResults.length))}</p>
+              <p className="text-zinc-400 text-xs font-sans">{t("searchResultCount").replace("{n}", String(searchResults.length))}</p>
               <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4">
                 {searchResults.map(book => <BookCard key={book.id} {...book} />)}
               </div>
@@ -251,62 +211,44 @@ export default function Library() {
             <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black" />
           </div>
           <button
-            onClick={() => coverInputRef.current?.click()}
+            onClick={() => setLocation("/profile?edit=1")} aria-label="Editar perfil"
             className="absolute top-3 right-3 p-2 rounded-full border backdrop-blur-xl transition"
             style={{ background: "rgba(0,0,0,0.6)", borderColor: "rgba(255,255,255,0.1)" }}
           >
             <Camera className="w-3.5 h-3.5 text-white/60" />
           </button>
-          <input type="file" ref={coverInputRef} className="hidden" accept="image/*"
-            onChange={e => handleImageUpload(e, "cover")} />
+
 
           <div className="absolute -bottom-10 left-4 sm:left-6">
             <motion.div
               whileTap={{ scale: 0.96 }}
               className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-zinc-900 border-[3px] border-black overflow-hidden flex items-center justify-center cursor-pointer shadow-xl"
-              onClick={() => profileInputRef.current?.click()}
+              onClick={() => setLocation("/profile?edit=1")}
             >
               {profileImage
                 ? <img loading="lazy" src={profileImage} className="w-full h-full object-cover" />
-                : <User className="w-9 h-9 text-zinc-700" />
+                : <User className="w-9 h-9 text-zinc-400" />
               }
             </motion.div>
-            <input type="file" ref={profileInputRef} className="hidden" accept="image/*"
-              onChange={e => handleImageUpload(e, "profile")} />
+
           </div>
         </div>
 
+        <div className="mx-4"><QueryNotice error={myBooksError} onRetry={() => { void refetchMyBooks() }} /></div>
         {/* NOMBRE + BOTONES */}
         <div className="mt-14 flex items-end justify-between gap-3 px-4 sm:mt-16 sm:px-6">
           <div className="min-w-0">
-            {editingName ? (
-              <div className="flex items-center gap-2">
-                <input
-                  ref={nameInputRef}
-                  value={nameInput}
-                  onChange={e => setNameInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") saveName(); if (e.key === "Escape") setEditingName(false) }}
-                  className="bg-transparent text-white text-xl font-bold outline-none border-b pb-0.5 font-sans"
-                  style={{ borderColor: cfg.color + "60", caretColor: cfg.color, minWidth: 120 }}
-                />
-                <button onClick={saveName} className="text-xs px-2 py-0.5 rounded font-sans"
-                  style={{ background: cfg.bg, color: cfg.color }}>✓</button>
-              </div>
-            ) : (
-              <button onClick={startEditName} className="text-left group">
-                <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight group-hover:text-zinc-300 transition-colors">
-                  {profileName || user?.name || "Mi perfil"}
-                </h1>
-              </button>
-            )}
-            <p className="text-xs text-zinc-600 mt-0.5 font-sans">
+            <button onClick={() => setLocation("/profile?edit=1")} className="min-h-11 text-left" aria-label="Editar perfil">
+              <h1 className="text-xl font-bold text-white sm:text-2xl">{profileName || "Mi perfil"}</h1>
+            </button>
+            <p className="text-xs text-zinc-400 mt-0.5 font-sans">
               {t("profileWorkCounts").replace("{published}", String(visiblePublished.length)).replace("{drafts}", String(visibleDrafts.length))}
             </p>
             <div className="flex items-center gap-3 mt-1.5">
               {(profileName || user?.name) && (
                 <button
                   onClick={() => setLocation(`/author/${encodeURIComponent(profileName || user?.name || "")}`)}
-                  className="flex items-center gap-1 text-[11px] font-sans font-medium transition-colors"
+                  className="flex items-center gap-1 text-xs font-sans font-medium transition-colors"
                   style={{ color: cfg.color }}
                 >
                   <UserCircle className="w-3.5 h-3.5" />
@@ -314,7 +256,7 @@ export default function Library() {
                 </button>
               )}
               <button onClick={logout}
-                className="text-[10px] text-zinc-700 hover:text-zinc-500 transition-colors font-sans">
+                className="text-xs text-zinc-400 hover:text-zinc-400 transition-colors font-sans">
                 {t("signOut")}
               </button>
             </div>
@@ -336,7 +278,7 @@ export default function Library() {
                 sideOffset={8}
                 className="w-64 rounded-2xl border-white/10 bg-zinc-950/95 p-2 text-white shadow-2xl backdrop-blur-xl"
               >
-                <DropdownMenuLabel className="px-3 text-[10px] uppercase tracking-[0.2em] text-white/35">
+                <DropdownMenuLabel className="px-3 text-xs uppercase tracking-[0.2em] text-white/65">
                   Tloque
                 </DropdownMenuLabel>
                 <DropdownMenuItem onSelect={() => setLocation("/sorteo")} className="rounded-xl px-3 py-2.5 focus:bg-white/[.07] focus:text-white">
@@ -354,7 +296,7 @@ export default function Library() {
                 {isAdminActive && (
                   <>
                     <DropdownMenuSeparator className="my-2 bg-white/[.07]" />
-                    <DropdownMenuLabel className="flex items-center gap-2 px-3 text-[10px] uppercase tracking-[0.2em] text-violet-200/45">
+                    <DropdownMenuLabel className="flex items-center gap-2 px-3 text-xs uppercase tracking-[0.2em] text-violet-200/45">
                       <Shield className="h-3 w-3" />
                       Admin
                     </DropdownMenuLabel>
@@ -398,7 +340,7 @@ export default function Library() {
               <tab.icon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               {tab.label}
               {(tab.count ?? 0) > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full"
+                <span className="text-xs px-1.5 py-0.5 rounded-full"
                   style={{
                     background: tab.key === "catalog"
                       ? "rgba(255,210,100,0.15)"
@@ -463,12 +405,12 @@ export default function Library() {
                     <div className="space-y-3">
                       <div className="flex items-center gap-1.5">
                         <EyeOff className="w-3 h-3" style={{ color: "rgba(255,170,100,0.8)" }} />
-                        <p className="text-[10px] uppercase tracking-widest font-sans"
+                        <p className="text-xs uppercase tracking-widest font-sans"
                           style={{ color: "rgba(255,170,100,0.8)" }}>
                           En revisión · {reviewBooks.length}
                         </p>
                       </div>
-                      <p className="text-[11px] text-zinc-600 font-sans -mt-1">
+                      <p className="text-xs text-zinc-400 font-sans -mt-1">
                         Ocultos del catálogo público. Toca uno para auditarlo, corregirlo o restaurarlo.
                       </p>
                       <BookGrid books={reviewBooks} />
@@ -484,13 +426,13 @@ export default function Library() {
                     <div className="space-y-4">
                       {/* Header informativo */}
                       <div className="flex items-center justify-between">
-                        <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-sans">
+                        <p className="text-xs text-zinc-400 uppercase tracking-widest font-sans">
                           {serverClassics.length} clásico{serverClassics.length !== 1 ? "s" : ""} en el catálogo
                         </p>
                         <motion.button
                           whileTap={{ scale: 0.95 }}
                           onClick={() => setShowImport(true)}
-                          className="text-[10px] font-sans px-2.5 py-1 rounded-lg"
+                          className="text-xs font-sans px-2.5 py-1 rounded-lg"
                           style={{
                             background: "rgba(255,210,100,0.08)",
                             border:     "1px solid rgba(255,210,100,0.2)",
@@ -543,7 +485,7 @@ export default function Library() {
                 <p className="text-white font-semibold font-sans">
                   {deleteConfirm.server ? t("deleteConfirmServer") : t("deleteConfirmTitle")}
                 </p>
-                <p className="text-zinc-500 text-sm font-sans leading-relaxed">
+                <p className="text-zinc-400 text-sm font-sans leading-relaxed">
                   {deleteConfirm.server
                     ? t("deleteConfirmServer2")
                     : t("deleteConfirmBody")
@@ -648,8 +590,8 @@ function BookItem({ book, onEdit, onDelete, onRead, showEdit, showDelete, isDraf
       {/* Badge borrador */}
       {isDraft && (
         <div
-          className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-widest font-sans backdrop-blur-sm pointer-events-none"
-          style={{ background: "rgba(0,0,0,0.8)", color: "rgba(255,255,255,0.3)" }}
+          className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-xs uppercase tracking-widest font-sans backdrop-blur-sm pointer-events-none"
+          style={{ background: "rgba(0,0,0,0.8)", color: "rgba(255,255,255,0.65)" }}
         >
           borrador
         </div>
@@ -677,7 +619,7 @@ function BookItem({ book, onEdit, onDelete, onRead, showEdit, showDelete, isDraf
               }}
             >
               <div className="p-1.5 space-y-0.5">
-                <p className="text-[9px] text-zinc-700 uppercase tracking-widest font-sans px-2 py-1">
+                <p className="text-xs text-zinc-400 uppercase tracking-widest font-sans px-2 py-1">
                   {book.title?.slice(0,20)}{book.title?.length > 20 ? "…" : ""}
                 </p>
                 {onRead && (
@@ -746,7 +688,7 @@ function BookGrid({ books, onEdit, onDelete, onRead, showEdit, showDelete, isDra
 function Empty({ msg, btn, onClick }: { msg: string; btn?: string; onClick?: () => void }) {
   return (
     <div className="py-16 text-center space-y-4">
-      <p className="text-zinc-600 italic text-sm font-sans">{msg}</p>
+      <p className="text-zinc-400 italic text-sm font-sans">{msg}</p>
       {btn && onClick && (
         <motion.button whileTap={{ scale: 0.97 }} onClick={onClick}
           className="px-4 py-2 rounded-lg text-white/60 text-sm font-sans transition hover:bg-white/5"

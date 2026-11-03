@@ -4,6 +4,9 @@ import { mkdir } from "node:fs/promises"
 import { resolve } from "node:path"
 import { createServer } from "vite"
 import { legalDocuments } from "../shared/legal.ts"
+import { DEFAULT_PRICES, TINTA_PACKS } from "../shared/pricing.ts"
+import { TINTA_CURRENCY } from "../shared/tinta.ts"
+import { COMMERCE_VERSION } from "../shared/commerce.ts"
 import { economicQuote, commercialText } from "../shared/commerce.ts"
 
 if (process.env.CI !== "true") throw new Error("Run this isolated browser fixture in CI")
@@ -36,11 +39,16 @@ await context.route("**/*", route => {
     return route.fulfill({ status: 201, json: { folio: "rights-fixture-folio", message: "Aviso recibido para revisión." } })
   }
   if (url.pathname === "/api/tokens/mine") return route.fulfill({ json: { tokens: [] } })
-  if (url.pathname === "/api/payments/config") return route.fulfill({ json: { enabled: true, offers: { support: null, sale: null }, prices: { support: { cents: 2000, currency: "mxn", tinta: 10 }, sale: { cents: 2000, currency: "mxn", tinta: 10 } } } })
+  if (url.pathname === "/api/payments/config") return route.fulfill({ json: { enabled: true, offers: { support: null, sale: null }, prices: DEFAULT_PRICES } })
   if (url.pathname === "/api/wallet") return route.fulfill({ json: { tinta: 20, papel: 0 } })
+  if (url.pathname === "/api/wallet/packs") return route.fulfill({ json: { enabled: true, beta: false, commerceVersion: COMMERCE_VERSION, tintaDisplayScale: 20, currencyDefinition: TINTA_CURRENCY, packs: TINTA_PACKS } })
+  if (url.pathname === "/api/paper/catalog") return route.fulfill({ json: { beta: false, plans: [], rates: {} } })
   if (url.pathname === "/api/tokens/quote") {
     const provider = url.searchParams.get("payWith") === "tinta" ? "tinta" : "stripe"
-    return route.fulfill({ json: { hash: (provider === "tinta" ? "d" : "e").repeat(64), canPay: true, economics: economicQuote({ bookId: 123, workHash: "c".repeat(64), agreementId: 1, agreementHash: "f".repeat(64), kind: "support", provider, currency: "mxn", units: 10, nominalCents: 2000, availableBackingCents: 730, authorShareBps: 9000, holdDays: 30, minimumCents: 10000 }) } })
+    const kind = url.searchParams.get("kind") === "sale" ? "sale" : "support"
+    const price = DEFAULT_PRICES[kind]
+    return route.fulfill({ json: { hash: (provider === "tinta" ? "d" : "e").repeat(64), canPay: true, economics: economicQuote({ bookId: 123, workHash: "c".repeat(64), agreementId: 1, agreementHash: "f".repeat(64), kind, provider, currency: "mxn", units: price.tinta, nominalCents: provider === "tinta" ? price.tinta * 200 : price.cents,
+      availableBackingCents: 4400, walletFunding: { legacyUnits: 0, legacyCents: 0, paidUnits: 20, paidCents: 4400 }, authorShareBps: kind === "sale" ? 7500 : provider === "tinta" ? 9000 : 5000, ...(kind === "sale" ? { fixedAuthorCents: 1800 } : {}), holdDays: 30, minimumCents: 10000 }) } })
   }
   if (url.pathname === "/api/commercial/agreements/123") return route.fulfill({ json: { hash: "f".repeat(64), document: commercialDocument, receipt: commercialAccepted ? { accepted_at: "2026-11-01T12:00:00Z" } : null } })
   if (url.pathname === "/api/commercial/agreements/123/accept") {
@@ -131,10 +139,41 @@ try {
   const pay = page.getByRole("button", { name: /Con tarjeta/ })
   assert.equal(await pay.isDisabled(), true)
   await page.getByTestId("tinta-breakdown").waitFor()
-  assert.match(await page.getByTestId("tinta-breakdown").innerText(), /titular \$6\.57 MXN/)
+  assert.match(await page.getByTestId("tinta-breakdown").innerText(), /titular \$18\.00 MXN/)
   await page.getByRole("checkbox", { name: /Leí y acepto/ }).check()
   assert.equal(await pay.isDisabled(), false)
   await screenshot("token-conditions-mobile")
+  await page.getByRole("button", { name: /Licencia comercial ·/ }).click()
+  await page.getByTestId("money-breakdown").waitFor()
+  assert.match(await page.getByTestId("money-breakdown").innerText(), /\$30\.00 MXN/)
+  assert.match(await page.getByTestId("money-breakdown").innerText(), /titular \$18\.00 MXN/)
+  await page.getByRole("button", { name: /Conseguir Tinta/ }).click()
+  const walletDialog = page.getByRole("dialog", { name: "Monedero", exact: true })
+  await walletDialog.waitFor()
+  const consent = walletDialog.getByRole("checkbox", { name: /Acepto las condiciones/ })
+  await consent.check()
+  for (const size of [{ width: 360, height: 640 }, { width: 568, height: 320 }]) {
+    await page.setViewportSize(size)
+    await consent.check()
+    await walletDialog.getByTestId("wallet-scroll").evaluate(element => { element.scrollTop = 0 })
+    await page.screenshot({ path: resolve(output, `legal-wallet-${size.width}x${size.height}.png`) })
+    for (const pack of TINTA_PACKS) {
+      const button = walletDialog.getByRole("button").filter({ hasText: pack.id === "entrada" ? "Entrada" : pack.id === "biblioteca" ? "Biblioteca" : pack.label })
+      await button.scrollIntoViewIfNeeded()
+      const rect = await button.boundingBox()
+      assert.ok(rect.y >= 0 && rect.y + rect.height <= size.height, "package remains reachable")
+      assert.equal(await button.isEnabled(), true)
+    }
+    await walletDialog.getByRole("button", { name: "Cerrar", exact: true }).click()
+    await page.getByRole("button", { name: /Conseguir Tinta/ }).click()
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.evaluate(() => { document.documentElement.style.fontSize = "200%" })
+  await walletDialog.getByRole("checkbox", { name: /Acepto las condiciones/ }).scrollIntoViewIfNeeded()
+  await page.keyboard.press("Escape")
+  assert.equal(await walletDialog.count(), 0)
+  await page.evaluate(() => { document.documentElement.style.fontSize = "" })
+
   await show("commercial")
   await page.getByRole("button", { name: "Revisar acuerdo comercial de esta obra", exact: true }).click()
   const acceptCommercial = page.getByRole("button", { name: "Aceptar acuerdo comercial", exact: true })

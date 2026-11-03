@@ -1,3 +1,4 @@
+import QueryNotice from "@/components/QueryNotice"
 import { accountFetch as fetch } from "@/lib/account-context"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -37,7 +38,7 @@ export default function PayoutAdmin() {
   const [, setLocation] = useLocation()
   const [workingId, setWorkingId] = useState<number | null>(null)
   const [message, setMessage] = useState("")
-  const { data, isLoading, refetch } = useQuery<{ payouts: PayoutRow[] }>({
+  const { data, isLoading, isError: payoutError, refetch } = useQuery<{ payouts: PayoutRow[] }>({
     queryKey: ["/api/admin/payouts"],
     queryFn: async () => {
       const response = await fetch("/api/admin/payouts", { credentials: "include" })
@@ -45,7 +46,7 @@ export default function PayoutAdmin() {
       return response.json()
     },
   })
-  const { data: incidentData, refetch: refetchIncidents } = useQuery<{ incidents: PaymentIncident[] }>({
+  const { data: incidentData, isError: incidentError, refetch: refetchIncidents } = useQuery<{ incidents: PaymentIncident[] }>({
     queryKey: ["/api/admin/payment-incidents"],
     queryFn: async () => {
       const response = await fetch("/api/admin/payment-incidents", { credentials: "include" })
@@ -110,40 +111,41 @@ export default function PayoutAdmin() {
   return (
     <Layout>
       <main className="mx-auto w-full max-w-4xl px-4 pb-24 pt-8 sm:px-6">
-        <button onClick={() => setLocation("/admin")} className="mb-5 inline-flex items-center gap-2 text-xs text-white/45 hover:text-white/70">
+        <button onClick={() => setLocation("/admin")} className="mb-5 inline-flex items-center gap-2 text-xs text-white/65 hover:text-white/70">
           <ArrowLeft className="h-3.5 w-3.5" /> Administración
         </button>
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="tloque-eyebrow">Economía · revisión manual</p>
             <h1 className="mt-1 text-2xl text-white">Liquidaciones de autores</h1>
-            <p className="mt-2 max-w-2xl text-xs leading-5 text-white/40">
+            <p className="mt-2 max-w-2xl text-xs leading-5 text-white/65">
               Aprobar crea una transferencia idempotente hacia la cuenta Stripe Connect verificada. Stripe realiza después el depósito bancario según la programación del autor.
             </p>
           </div>
-          <button aria-label="Actualizar" onClick={() => { void Promise.all([refetch(), refetchIncidents()]) }} className="rounded-xl border border-white/10 p-2 text-white/40 hover:text-white/70">
+          <button aria-label="Actualizar" onClick={() => { void Promise.all([refetch(), refetchIncidents()]) }} className="rounded-xl border border-white/10 p-2 text-white/65 hover:text-white/70">
             <RefreshCw className="h-4 w-4" />
           </button>
         </div>
 
+        <QueryNotice error={payoutError || incidentError} onRetry={() => { void refetch(); void refetchIncidents() }} />
         {message && <p role="status" className="mt-4 rounded-xl border border-white/10 bg-white/[.03] px-3 py-2 text-xs text-white/65">{message}</p>}
         {openIncidents.length > 0 && (
           <section className="mt-6 rounded-2xl border border-red-300/20 bg-red-950/10 p-4">
             <h2 className="text-sm font-semibold text-red-100/80">Liquidaciones congeladas · {openIncidents.length} incidencia(s)</h2>
-            <p className="mt-1 text-[11px] leading-5 text-white/40">Stripe notificó un reembolso o contracargo. Documenta primero la restauración de fondos, reversa de transferencia o ajuste contable.</p>
+            <p className="mt-1 text-xs leading-5 text-white/65">Stripe notificó un reembolso o contracargo. Documenta primero la restauración de fondos, reversa de transferencia o ajuste contable.</p>
             <div className="mt-3 space-y-3">
               {openIncidents.map(incident => (
                 <article key={incident.id} className="rounded-xl border border-white/[.07] bg-black/20 p-3">
                   <div className="flex flex-wrap justify-between gap-2">
                     <div>
                       <p className="text-xs text-white/75">{incident.kind} · {incident.providerStatus}</p>
-                      <p className="text-[10px] text-white/35">{incident.providerObjectId} · {incident.reason}</p>
+                      <p className="text-xs text-white/65">{incident.providerObjectId} · {incident.reason}</p>
                     </div>
                     <p className="text-sm font-semibold text-red-100/75">${(incident.amountCents / 100).toFixed(2)} {incident.currency.toUpperCase()}</p>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button disabled={workingId !== null} onClick={() => resolveIncident(incident.id, "funds_restored")} className="rounded-lg border border-emerald-300/20 px-2.5 py-1.5 text-[10px] text-emerald-100/70 disabled:opacity-40">Fondos restaurados</button>
-                    <button disabled={workingId !== null} onClick={() => resolveIncident(incident.id, "liability_reconciled")} className="rounded-lg border border-amber-300/20 px-2.5 py-1.5 text-[10px] text-amber-100/70 disabled:opacity-40">Reversa/ajuste conciliado</button>
+                    <button disabled={workingId !== null || payoutError || incidentError || !incidentData} onClick={() => resolveIncident(incident.id, "funds_restored")} className="rounded-lg border border-emerald-300/20 px-2.5 py-1.5 text-xs text-emerald-100/70 disabled:opacity-40">Fondos restaurados</button>
+                    <button disabled={workingId !== null || payoutError || incidentError || !incidentData} onClick={() => resolveIncident(incident.id, "liability_reconciled")} className="rounded-lg border border-amber-300/20 px-2.5 py-1.5 text-xs text-amber-100/70 disabled:opacity-40">Reversa/ajuste conciliado</button>
                   </div>
                 </article>
               ))}
@@ -151,9 +153,9 @@ export default function PayoutAdmin() {
           </section>
         )}
         {isLoading ? (
-          <div className="mt-10 flex items-center gap-2 text-sm text-white/35"><Loader2 className="h-4 w-4 animate-spin" /> Cargando</div>
-        ) : !data?.payouts.length ? (
-          <div className="mt-8 rounded-2xl border border-white/[.07] bg-white/[.02] p-6 text-sm text-white/35">No hay solicitudes.</div>
+          <div className="mt-10 flex items-center gap-2 text-sm text-white/65"><Loader2 className="h-4 w-4 animate-spin" /> Cargando</div>
+        ) : payoutError ? null : !data?.payouts.length ? (
+          <div className="mt-8 rounded-2xl border border-white/[.07] bg-white/[.02] p-6 text-sm text-white/65">No hay solicitudes.</div>
         ) : (
           <div className="mt-6 space-y-3">
             {data.payouts.map(({ payout, authorName, authorEmail }) => (
@@ -161,23 +163,23 @@ export default function PayoutAdmin() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-medium text-white/80">{authorName}</p>
-                    <p className="text-[11px] text-white/35">{authorEmail} · solicitud #{payout.id}</p>
+                    <p className="text-xs text-white/65">{authorEmail} · solicitud #{payout.id}</p>
                     <p className="mt-2 text-xl font-semibold text-white">
                       ${(payout.amountCents / 100).toFixed(2)} {payout.currency.toUpperCase()}
                     </p>
                   </div>
                   <div className="text-right">
-                    <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-wide text-white/55">{payout.status}</span>
-                    <p className="mt-2 text-[10px] text-white/25">{new Date(payout.requestedAt).toLocaleString()}</p>
+                    <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs uppercase tracking-wide text-white/55">{payout.status}</span>
+                    <p className="mt-2 text-xs text-white/65">{new Date(payout.requestedAt).toLocaleString()}</p>
                   </div>
                 </div>
-                {payout.failureCode && <p className="mt-2 text-[10px] text-amber-200/55">{payout.failureCode}</p>}
+                {payout.failureCode && <p className="mt-2 text-xs text-amber-200/55">{payout.failureCode}</p>}
                 {ACTIVE.has(payout.status) && (
                   <div className="mt-4 flex gap-2">
-                    <button disabled={workingId !== null} onClick={() => processPayout(payout.id, "approve")} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-300/85 px-3 py-2 text-xs font-semibold text-black disabled:opacity-40">
+                    <button disabled={workingId !== null || payoutError || incidentError || !incidentData} onClick={() => processPayout(payout.id, "approve")} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-300/85 px-3 py-2 text-xs font-semibold text-black disabled:opacity-40">
                       {workingId === payout.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Aprobar
                     </button>
-                    <button disabled={workingId !== null} onClick={() => processPayout(payout.id, "reject")} className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-300/20 px-3 py-2 text-xs text-red-200/70 disabled:opacity-40">
+                    <button disabled={workingId !== null || payoutError || incidentError || !incidentData} onClick={() => processPayout(payout.id, "reject")} className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-300/20 px-3 py-2 text-xs text-red-200/70 disabled:opacity-40">
                       <XCircle className="h-3.5 w-3.5" /> Rechazar
                     </button>
                   </div>

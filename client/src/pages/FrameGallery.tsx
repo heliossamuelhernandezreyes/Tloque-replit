@@ -1,3 +1,4 @@
+import QueryNotice from "@/components/QueryNotice"
 import { displayTinta } from "@shared/tinta"
 import { accountFetch as fetch } from "@/lib/account-context"
 import { useState } from "react"
@@ -34,16 +35,16 @@ export default function FrameGallery() {
   const { t } = useSettings()
   const { isLoggedIn } = useAuth()
   const queryClient = useQueryClient()
-  const { frames, isLoading } = useFrames()
+  const { frames, isLoading, isError: framesError, refetch: retryFrames } = useFrames()
   const [showWallet, setShowWallet] = useState(false)
   const [previewFrame, setPreviewFrame] = useState<GalleryFrame | null>(null)
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string; missing?: number } | null>(null)
 
-  const { data: wallet } = useQuery<{ tinta: number; papel: number }>({
+  const { data: wallet, isError: walletError, refetch: retryWallet } = useQuery<{ tinta: number; papel: number }>({
     queryKey: ["/api/wallet"],
     queryFn: async () => {
       const res = await fetch("/api/wallet", { credentials: "include" })
-      if (!res.ok) return { tinta: 0, papel: 0 }
+      if (!res.ok) throw new Error("No se pudo cargar el saldo")
       return res.json()
     },
     enabled: !!isLoggedIn,
@@ -86,6 +87,8 @@ export default function FrameGallery() {
   const targetLabel = (tg: string) =>
     tg === "card" ? t("targetCards") : tg === "profile" ? t("targetProfile") : t("targetBoth")
 
+  if (walletError || framesError) return <main className="min-h-screen bg-zinc-950 p-5 text-white"><button className="min-h-11 underline" onClick={() => setLocation("/library")}>Volver a la biblioteca</button><QueryNotice error onRetry={() => { void retryWallet(); void retryFrames() }} /></main>
+
   return (
     <div className="min-h-screen bg-zinc-950 pb-10">
       <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 border-b border-zinc-800 bg-zinc-950/90"
@@ -100,10 +103,10 @@ export default function FrameGallery() {
         </h1>
         {isLoggedIn && (
           <button onClick={() => setShowWallet(true)}
-            className="ml-auto flex items-center gap-1 text-[11px] font-sans font-semibold px-2.5 py-1.5 rounded-lg"
+            className="ml-auto flex items-center gap-1 text-xs font-sans font-semibold px-2.5 py-1.5 rounded-lg"
             style={{ background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.3)", color: ACCENT }}>
             <Droplets className="w-3 h-3" />
-            {displayTinta(tinta)}
+            {wallet ? displayTinta(tinta) : "—"}
           </button>
         )}
       </div>
@@ -118,7 +121,7 @@ export default function FrameGallery() {
           <span className="flex-1">{notice.text}</span>
           {notice.missing != null && (
             <button onClick={() => { setShowWallet(true); setNotice(null) }}
-              className="flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold"
+              className="flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold"
               style={{ background: ACCENT, color: "#1a1508" }}>
               {t("getTinta")}
             </button>
@@ -133,9 +136,9 @@ export default function FrameGallery() {
       ) : frames.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-24 px-8 text-center">
           <div className="p-3 rounded-full bg-zinc-900 border border-zinc-800">
-            <Frame className="w-5 h-5 text-zinc-600" />
+            <Frame className="w-5 h-5 text-zinc-400" />
           </div>
-          <p className="text-[13px] text-zinc-500 font-sans max-w-[240px]">{t("frameGalleryEmpty")}</p>
+          <p className="text-[13px] text-zinc-400 font-sans max-w-[240px]">{t("frameGalleryEmpty")}</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 px-4 pt-5 max-w-lg mx-auto">
@@ -157,11 +160,11 @@ export default function FrameGallery() {
 
                 <div className="mt-2.5 px-0.5">
                   <p className="text-[12.5px] font-display font-semibold text-zinc-200 truncate">{f.name}</p>
-                  <p className="text-[9.5px] text-zinc-600 font-sans mt-0.5">{targetLabel(f.target)}</p>
+                  <p className="text-xs text-zinc-400 font-sans mt-0.5">{targetLabel(f.target)}</p>
                   <button onClick={() => setPreviewFrame(f)} className="mt-2 min-h-10 w-full rounded-lg border border-white/15 text-xs text-zinc-300 hover:bg-white/5">{t("visualFramePreview")}</button>
 
                   {f.owned ? (
-                    <div className="mt-1.5 flex items-center gap-1 text-[10.5px] font-sans font-semibold"
+                    <div className="mt-1.5 flex items-center gap-1 text-xs font-sans font-semibold"
                       style={{ color: "#6bd08a" }}>
                       <Check className="w-3 h-3" />
                       {f.priceTinta > 0 ? t("frameOwned") : t("freeLabel")}
@@ -170,7 +173,7 @@ export default function FrameGallery() {
                     <button
                       onClick={() => isLoggedIn ? buy.mutate(f) : setLocation("/")}
                       disabled={isBuying}
-                      className="mt-1.5 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-sans font-semibold disabled:opacity-60"
+                      className="mt-1.5 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-sans font-semibold disabled:opacity-60"
                       style={{
                         background: canAfford ? "rgba(201,168,76,0.15)" : "rgba(255,255,255,0.04)",
                         border: `1px solid ${canAfford ? ACCENT + "60" : "rgba(255,255,255,0.1)"}`,

@@ -167,42 +167,42 @@ export default function ReaderAudioMenu({
         <div className="mx-auto w-full max-w-lg pb-[max(1rem,env(safe-area-inset-bottom))]">
           <DrawerHeader className="text-left">
             <DrawerTitle className="text-base">{text.title}</DrawerTitle>
-            <DrawerDescription className="text-xs text-zinc-500">{text.description}</DrawerDescription>
+            <DrawerDescription className="text-xs text-zinc-400">{text.description}</DrawerDescription>
           </DrawerHeader>
           <div className="space-y-2 px-4">
             {tloqueCue && (
               <button onClick={chooseTloque} className={optionClass} style={preference === "tloque" ? { borderColor: `${accent}55`, background: `${accent}0d` } : undefined}>
                 <Music2 className="h-4 w-4 shrink-0" style={{ color: accent }} />
-                <span className="min-w-0 flex-1"><span className="block text-xs font-medium">{text.tloque}</span><span className="mt-0.5 block truncate text-[10px] text-zinc-500">{tloqueCue.title} · {text.original}</span></span>
+                <span className="min-w-0 flex-1"><span className="block text-xs font-medium">{text.tloque}</span><span className="mt-0.5 block truncate text-xs text-zinc-400">{tloqueCue.title} · {text.original}</span></span>
                 {preference === "tloque" && <Check className="h-4 w-4" style={{ color: accent }} />}
               </button>
             )}
-            {downloadError && <p className="px-1 text-center text-[10px] text-red-300/70">{downloadError}</p>}
-            {music.state === "error" && <p className="px-1 text-center text-[10px] text-red-300/70">{runtimeText.unavailable}</p>}
-            {music.state === "blocked" && <p className="px-1 text-center text-[10px] text-amber-200/70">{runtimeText.blocked}</p>}
-            {music.cue?.playbackTier && <p className="px-1 text-center text-[10px] text-zinc-500">{music.cue.orchestralSynthesis ? (language === "en" ? "Orchestral synthesis" : "Síntesis orquestal") : runtimeText[music.cue.playbackTier]}</p>}
+            {downloadError && <p className="px-1 text-center text-xs text-red-300/70">{downloadError}</p>}
+            {music.state === "error" && <p className="px-1 text-center text-xs text-red-300/70">{runtimeText.unavailable}</p>}
+            {music.state === "blocked" && <p className="px-1 text-center text-xs text-amber-200/70">{runtimeText.blocked}</p>}
+            {music.cue?.playbackTier && <p className="px-1 text-center text-xs text-zinc-400">{music.cue.orchestralSynthesis ? (language === "en" ? "Orchestral synthesis" : "Síntesis orquestal") : runtimeText[music.cue.playbackTier]}</p>}
             {spotifyLink && (
               <button onClick={chooseSpotify} className={optionClass} style={preference === "spotify" ? { borderColor: `${accent}55`, background: `${accent}0d` } : undefined}>
                 <ExternalLink className="h-4 w-4 shrink-0" style={{ color: accent }} />
-                <span className="min-w-0 flex-1"><span className="block text-xs font-medium">{text.spotify}</span><span className="mt-0.5 block text-[10px] text-zinc-500">Spotify · {text.external}</span></span>
+                <span className="min-w-0 flex-1"><span className="block text-xs font-medium">{text.spotify}</span><span className="mt-0.5 block text-xs text-zinc-400">Spotify · {text.external}</span></span>
                 {preference === "spotify" && <Check className="h-4 w-4" style={{ color: accent }} />}
               </button>
             )}
             <button onClick={chooseOff} className={optionClass} style={preference === "off" ? { borderColor: `${accent}55`, background: `${accent}0d` } : undefined}>
-              <VolumeX className="h-4 w-4 shrink-0 text-zinc-500" />
-              <span className="min-w-0 flex-1"><span className="block text-xs font-medium">{text.off}</span><span className="mt-0.5 block text-[10px] text-zinc-500">{text.silence}</span></span>
+              <VolumeX className="h-4 w-4 shrink-0 text-zinc-400" />
+              <span className="min-w-0 flex-1"><span className="block text-xs font-medium">{text.off}</span><span className="mt-0.5 block text-xs text-zinc-400">{text.silence}</span></span>
               {preference === "off" && <Check className="h-4 w-4" style={{ color: accent }} />}
             </button>
 
             <div className="mt-3 rounded-xl border border-white/[.07] bg-black/20 p-3">
-              <label className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-zinc-500"><Volume2 className="h-3.5 w-3.5" />{text.volume}<span className="ml-auto">{Math.round(settings.musicVolume * 100)}%</span></label>
+              <label className="flex items-center gap-2 text-xs uppercase tracking-wider text-zinc-400"><Volume2 className="h-3.5 w-3.5" />{text.volume}<span className="ml-auto">{Math.round(settings.musicVolume * 100)}%</span></label>
               <input className="mt-3 w-full" type="range" min={0} max={1} step={0.05} value={settings.musicVolume} onChange={event => updateSetting("musicVolume", Number(event.target.value))} />
             </div>
 
             {tloqueCue && (
               soundtrack?.asset.sourceType === "procedural" && !musicBrain
-                ? <p className="px-1 py-2 text-center text-[10px] text-emerald-300/55">{text.procedural}</p>
-                : (resource || musicBrain) && <button onClick={() => void download()} disabled={cached || downloading} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-white/[.07] text-[11px] text-zinc-400 disabled:text-emerald-300/55">
+                ? <p className="px-1 py-2 text-center text-xs text-emerald-300/55">{text.procedural}</p>
+                : (resource || musicBrain) && <button onClick={() => void download()} disabled={cached || downloading} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-white/[.07] text-xs text-zinc-400 disabled:text-emerald-300/55">
                     {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : cached ? <Check className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />}
                     {cached ? text.saved : text.download}{!cached && soundtrack?.asset.packBytes ? ` · ${(soundtrack.asset.packBytes / 1_048_576).toFixed(1)} MB` : ""}
                   </button>

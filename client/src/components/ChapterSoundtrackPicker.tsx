@@ -77,7 +77,7 @@ export default function ChapterSoundtrackPicker({ bookId, chapterIndex, accent }
     <div className="rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${accent}25` }}>
       <div className="flex items-center gap-2 mb-2">
         <Music2 className="w-3.5 h-3.5" style={{ color: accent }} />
-        <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-sans">{t("soundtrackChapter")}</span>
+        <span className="text-xs uppercase tracking-widest text-zinc-400 font-sans">{t("soundtrackChapter")}</span>
         {assign.isPending && <Loader2 className="ml-auto w-3 h-3 animate-spin" />}
       </div>
       <select
@@ -89,7 +89,7 @@ export default function ChapterSoundtrackPicker({ bookId, chapterIndex, accent }
         {assets.map(asset => <option key={asset.id} value={asset.id}>{asset.favorite ? "♥ " : ""}{asset.title}{asset.artist ? ` · ${asset.artist}` : ""}{asset.sourceType !== "stream" ? " · sintetizado" : ""}</option>)}
       </select>
       {current && currentAsset && (
-        <div className="flex items-center gap-2 mt-2 text-[10px] font-sans text-zinc-500">
+        <div className="flex items-center gap-2 mt-2 text-xs font-sans text-zinc-400">
           <button onClick={() => togglePreview(currentAsset)} className="p-1 rounded-md bg-white/5" title={t("previewAction")} aria-label={t("previewAction")}>
             {previewId === currentAsset.id ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
           </button>
@@ -99,7 +99,7 @@ export default function ChapterSoundtrackPicker({ bookId, chapterIndex, accent }
           </button>
         </div>
       )}
-      {assign.isError && <p className="text-[10px] text-red-300 mt-2">{(assign.error as Error).message}</p>}
+      {assign.isError && <p className="text-xs text-red-300 mt-2">{(assign.error as Error).message}</p>}
     </div>
   )
 }

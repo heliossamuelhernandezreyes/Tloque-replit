@@ -1,10 +1,11 @@
+import AccessibleDialog from "./AccessibleDialog"
 import { accountFetch as fetch, accountContext } from "@/lib/account-context"
 import { motion, AnimatePresence } from "framer-motion"
 import { X, User, BookOpen, Volume2, Palette, Shield, Info, ChevronRight, Check, LogOut, Globe, Download, RotateCcw } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import { useGenre } from "@/context/GenreContext"
 import { useSettings, LANGUAGE_LABELS, type ReadingMode, type FontSize, type AppLanguage } from "@/context/SettingsContext"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { clearLocalAccountData } from "@/lib/privacy"
 import VisualPreferences from "@/visual/VisualPreferences"
@@ -32,10 +33,10 @@ function Section({ icon: Icon, title, children, onOpen, defaultOpen = false }: {
         className="w-full flex items-center gap-3 px-5 py-4 text-left"
         aria-expanded={open}
       >
-        <Icon className="w-4 h-4 text-zinc-500 shrink-0" />
+        <Icon className="w-4 h-4 text-zinc-400 shrink-0" />
         <span className="flex-1 text-sm font-medium text-zinc-300 font-sans">{title}</span>
         <motion.div animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.2 }}>
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-600" />
+          <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
         </motion.div>
       </button>
       <AnimatePresence initial={false}>
@@ -65,7 +66,7 @@ function Toggle({ value, onChange, label, sublabel }: {
     <div className="flex items-center justify-between gap-4">
       <div>
         <p className="text-sm text-zinc-300 font-sans">{label}</p>
-        {sublabel && <p className="text-xs text-zinc-600 font-sans mt-0.5">{sublabel}</p>}
+        {sublabel && <p className="text-xs text-zinc-400 font-sans mt-0.5">{sublabel}</p>}
       </div>
       <motion.button
         onClick={() => onChange(!value)}
@@ -104,7 +105,7 @@ function Slider({ value, onChange, label, min = 0, max = 1, step = 0.05 }: {
     <div className="space-y-2">
       <div className="flex justify-between">
         <p className="text-sm text-zinc-300 font-sans">{label}</p>
-        <p className="text-xs text-zinc-500 font-sans">{Math.round(value * 100)}%</p>
+        <p className="text-xs text-zinc-400 font-sans">{Math.round(value * 100)}%</p>
       </div>
       <div className="relative h-1.5 rounded-full bg-white/8">
         <div
@@ -134,19 +135,6 @@ export default function ConfigPanel({ open, onClose }: Props) {
   const [exporting, setExporting] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  useEffect(() => {
-    if (!open) return
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = "hidden"
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose()
-    }
-    window.addEventListener("keydown", onKeyDown)
-    return () => {
-      document.body.style.overflow = previousOverflow
-      window.removeEventListener("keydown", onKeyDown)
-    }
-  }, [open, onClose])
 
   async function exportData() {
     if (exporting) return
@@ -210,7 +198,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
       key:   "free",
       name:  t("planFree"),
       price: t("planFreePrice"),
-      color: "rgba(255,255,255,0.5)",
+      color: "rgba(255,255,255,0.65)",
       glow:  "rgba(255,255,255,0.1)",
       perks: [t("perkUnlimited"), t("perkBasicVoice"), t("perkSearch")],
     },
@@ -238,46 +226,13 @@ export default function ConfigPanel({ open, onClose }: Props) {
     : user?.subscription?.plan === "estetic" ? "estetic" : "free"
   const [showPlans, setShowPlans] = useState(false)
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <>
-          {/* Overlay */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[200]"
-            style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)" }}
-            onClick={onClose}
-          />
-
-          {/* Panel */}
-          <motion.div
-            initial={{ y: "100%", opacity: 0.8 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: "100%", opacity: 0 }}
-            transition={{ type: "spring", stiffness: 320, damping: 36 }}
-            className="fixed bottom-0 left-0 right-0 z-[210] rounded-t-3xl overflow-hidden"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("configTitle")}
-            style={{
-              background:  "rgba(8,8,12,0.98)",
-              border:      `1px solid ${cfg.color}20`,
-              borderBottom: "none",
-              boxShadow:   `0 -8px 64px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.04)`,
-              maxHeight:   "88vh",
-            }}
-          >
-            {/* Indicador de arrastre */}
+  return <AccessibleDialog open={open} onClose={onClose} title={t("configTitle")} sheet style={{ background: "#08080c", border: `1px solid ${cfg.color}40` }}>
             <div className="flex justify-center pt-3 pb-1">
               <div className="w-10 h-1 rounded-full bg-white/15" />
             </div>
 
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3">
+            <div className="flex shrink-0 items-center justify-between px-5 py-3">
               <h2 className="text-base font-display font-bold text-white tracking-wide">
                 {t("configTitle")}
               </h2>
@@ -293,7 +248,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
             </div>
 
             {/* Contenido scrollable */}
-            <div className="overflow-y-auto" style={{ maxHeight: "calc(88vh - 80px)" }}>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
 
               {/* ── CUENTA ── */}
               <Section icon={User} title={t("sectionAccount")} defaultOpen>
@@ -305,12 +260,12 @@ export default function ConfigPanel({ open, onClose }: Props) {
                       alt={user.name} />
                   ) : (
                     <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center shrink-0">
-                      <User className="w-5 h-5 text-zinc-500" />
+                      <User className="w-5 h-5 text-zinc-400" />
                     </div>
                   )}
                   <div className="min-w-0">
                     <p className="text-white text-sm font-medium font-sans truncate">{user?.name}</p>
-                    <p className="text-zinc-500 text-xs font-sans truncate">{user?.email}</p>
+                    <p className="text-zinc-400 text-xs font-sans truncate">{user?.email}</p>
                   </div>
                 </div>
 
@@ -338,10 +293,10 @@ export default function ConfigPanel({ open, onClose }: Props) {
                       style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
                       <div>
                         <p className="text-white text-sm font-medium font-sans">{t("planFree")}</p>
-                        <p className="text-zinc-500 text-xs font-sans">{t("planFreePrice")}</p>
+                        <p className="text-zinc-400 text-xs font-sans">{t("planFreePrice")}</p>
                       </div>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full font-sans uppercase tracking-wide"
-                        style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.4)" }}>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-sans uppercase tracking-wide"
+                        style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.65)" }}>
                         {t("activeLabel")}
                       </span>
                     </div>
@@ -373,7 +328,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
                         }}
                       >
                         {plan.badge && (
-                          <span className="absolute -top-2.5 right-4 text-[9px] px-2 py-0.5 rounded-full font-sans uppercase tracking-wide"
+                          <span className="absolute -top-2.5 right-4 text-xs px-2 py-0.5 rounded-full font-sans uppercase tracking-wide"
                             style={{ background: plan.color, color: "black", fontWeight: 700 }}>
                             {plan.badge}
                           </span>
@@ -419,7 +374,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
                       </motion.div>
                     ))}
                     <button onClick={() => setShowPlans(false)}
-                      className="w-full text-xs text-zinc-600 font-sans py-1">
+                      className="w-full text-xs text-zinc-400 font-sans py-1">
                       {t("hidePlans")}
                     </button>
                   </div>
@@ -430,7 +385,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
               <Section icon={BookOpen} title={t("sectionReading")}>
                 {/* Modo de lectura */}
                 <div className="space-y-2">
-                  <p className="text-xs text-zinc-500 font-sans uppercase tracking-widest">{t("backgroundLabel")}</p>
+                  <p className="text-xs text-zinc-400 font-sans uppercase tracking-widest">{t("backgroundLabel")}</p>
                   <div className="grid grid-cols-3 gap-2">
                     {(["night", "twilight", "dawn"] as ReadingMode[]).map(mode => {
                       const colors = {
@@ -452,10 +407,10 @@ export default function ConfigPanel({ open, onClose }: Props) {
                             boxShadow:    active ? `0 0 12px ${cfg.glow}40` : "none",
                           }}
                         >
-                          <span className="text-[11px] font-sans" style={{ color: c.text }}>
+                          <span className="text-xs font-sans" style={{ color: c.text }}>
                             Aa
                           </span>
-                          <span className="text-[9px] font-sans tracking-wide"
+                          <span className="text-xs font-sans tracking-wide"
                             style={{ color: active ? cfg.color : "rgba(255,255,255,0.35)" }}>
                             {c.label}
                           </span>
@@ -467,7 +422,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
 
                 {/* Tamaño de fuente */}
                 <div className="space-y-2">
-                  <p className="text-xs text-zinc-500 font-sans uppercase tracking-widest">{t("textSize")}</p>
+                  <p className="text-xs text-zinc-400 font-sans uppercase tracking-widest">{t("textSize")}</p>
                   <div className="grid grid-cols-3 gap-2">
                     {(["small", "medium", "large"] as FontSize[]).map(size => {
                       const active = settings.fontSize === size
@@ -485,7 +440,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
                           }}
                         >
                           <span className={`${sizes[size]} text-zinc-300 font-serif`}>Aa</span>
-                          <span className="text-[9px] font-sans tracking-wide"
+                          <span className="text-xs font-sans tracking-wide"
                             style={{ color: active ? cfg.color : "rgba(255,255,255,0.35)" }}>
                             {t(`fontSize${size[0].toUpperCase()}${size.slice(1)}`)}
                           </span>
@@ -497,14 +452,14 @@ export default function ConfigPanel({ open, onClose }: Props) {
 
                 {/* Espaciado */}
                 <div className="space-y-2">
-                  <p className="text-xs text-zinc-500 font-sans uppercase tracking-widest">{t("spacingLabel")}</p>
+                  <p className="text-xs text-zinc-400 font-sans uppercase tracking-widest">{t("spacingLabel")}</p>
                   <div className="flex gap-2">
                     {(["compact", "normal", "relaxed"] as const).map(sp => {
                       const active = settings.lineSpacing === sp
                       return (
                         <motion.button key={sp} whileTap={{ scale: 0.93 }}
                           onClick={() => updateSetting("lineSpacing", sp)}
-                          className="flex-1 py-2 rounded-lg text-[11px] font-sans border transition-all"
+                          className="flex-1 py-2 rounded-lg text-xs font-sans border transition-all"
                           style={{
                             background:  active ? cfg.bg : "rgba(255,255,255,0.03)",
                             borderColor: active ? cfg.color + "70" : "rgba(255,255,255,0.08)",
@@ -573,7 +528,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
                       } : {
                         background: "rgba(255,255,255,0.03)",
                         border:     "1px solid rgba(255,255,255,0.07)",
-                        color:      "rgba(255,255,255,0.35)",
+                        color:      "rgba(255,255,255,0.65)",
                       }}
                     >
                       {settings.language === code && (
@@ -583,7 +538,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
                     </motion.button>
                   ))}
                 </div>
-                <p className="text-[10px] text-zinc-700 font-sans mt-2 leading-relaxed">
+                <p className="text-xs text-zinc-400 font-sans mt-2 leading-relaxed">
                   {t("languageNote")}
                 </p>
               </Section>
@@ -612,7 +567,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
                 </div>
                 <button
                   onClick={() => { resetSettings(); toast({ title: t("resetSettings") }) }}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-sans text-white/45 border border-white/[0.07] bg-white/[0.025]"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-sans text-white/65 border border-white/[0.07] bg-white/[0.025]"
                 >
                   <RotateCcw className="w-3.5 h-3.5" /> {t("resetSettings")}
                 </button>
@@ -626,7 +581,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
                     className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-sans"
                     style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)" }}>
                     <span className="flex items-center gap-2"><Download className="w-4 h-4" />{exporting ? t("exportWorking") : t("exportData")}</span>
-                    <ChevronRight className="w-4 h-4 text-zinc-600" />
+                    <ChevronRight className="w-4 h-4 text-zinc-400" />
                   </motion.button>
                   <motion.button whileTap={{ scale: 0.97 }} onClick={deleteAccount} disabled={deleting}
                     className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-sans"
@@ -634,7 +589,7 @@ export default function ConfigPanel({ open, onClose }: Props) {
                     {deleting ? "Eliminando…" : t("deleteAccount")}
                     <ChevronRight className="w-4 h-4" />
                   </motion.button>
-                  <p className="text-[10px] text-zinc-700 font-sans leading-relaxed">
+                  <p className="text-xs text-zinc-400 font-sans leading-relaxed">
                     {t("dataExportNote")}
                     <br />{ACCOUNT_DELETION_NOTICE}
                   </p>
@@ -645,21 +600,21 @@ export default function ConfigPanel({ open, onClose }: Props) {
               <Section icon={Info} title={t("sectionAbout")}>
                 <div className="space-y-3 pb-2">
                   <div className="flex justify-between text-sm font-sans">
-                    <span className="text-zinc-500">{t("versionLabel")}</span>
+                    <span className="text-zinc-400">{t("versionLabel")}</span>
                     <span className="text-zinc-400">0.1.0 Alpha</span>
                   </div>
                   <div className="flex justify-between text-sm font-sans">
-                    <span className="text-zinc-500">{t("platformLabel")}</span>
+                    <span className="text-zinc-400">{t("platformLabel")}</span>
                     <span className="text-zinc-400">Web · Tloque</span>
                   </div>
                   <div
                     className="p-3 rounded-xl text-center"
                     style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}
                   >
-                    <p className="text-[11px] text-zinc-600 font-sans leading-relaxed italic">
+                    <p className="text-xs text-zinc-400 font-sans leading-relaxed italic">
                       {t("tagline")}
                     </p>
-                    <p className="text-[10px] text-zinc-700 font-sans mt-1">
+                    <p className="text-xs text-zinc-400 font-sans mt-1">
                       {t("madeBy")}
                     </p>
                   </div>
@@ -669,9 +624,6 @@ export default function ConfigPanel({ open, onClose }: Props) {
               {/* Espacio inferior para los orbes */}
               <div className="h-32" />
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  )
+
+</AccessibleDialog>
 }

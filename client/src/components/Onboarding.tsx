@@ -137,7 +137,7 @@ export default function Onboarding({ onComplete }: Props) {
             <div className="flex items-center justify-between gap-4">
               <button
                 onClick={finish}
-                className="text-xs font-sans text-zinc-600 hover:text-zinc-400 transition-colors"
+                className="text-xs font-sans text-zinc-400 hover:text-zinc-400 transition-colors"
               >
                 Omitir
               </button>

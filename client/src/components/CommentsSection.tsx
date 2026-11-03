@@ -138,7 +138,7 @@ export default function CommentsSection({
           <button
             onClick={() => toggleEnabled.mutate(!enabled)}
             disabled={toggleEnabled.isPending}
-            className="flex items-center gap-1.5 text-[11px] font-sans px-2.5 py-1.5 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-xs font-sans px-2.5 py-1.5 rounded-lg transition-colors"
             style={{
               background: enabled ? `${accentGlow}18` : "rgba(120,120,130,0.12)",
               color:      enabled ? accentColor : textColor + "70",
@@ -167,7 +167,7 @@ export default function CommentsSection({
               <div className="flex items-center gap-2 rounded-2xl px-4 py-3 mb-6"
                 style={{ background: textColor + "08", border: `1px solid ${textColor}12` }}>
                 <Lock className="w-3.5 h-3.5 flex-shrink-0" style={{ color: textColor + "55" }} />
-                <p className="text-[11px] font-sans leading-snug" style={{ color: textColor + "60" }}>
+                <p className="text-xs font-sans leading-snug" style={{ color: textColor + "60" }}>
                   {t("commentsLocked")}
                 </p>
               </div>
@@ -185,7 +185,7 @@ export default function CommentsSection({
                   />
                   <div className="flex items-center justify-between px-3 py-2"
                     style={{ borderTop: `1px solid ${textColor}10` }}>
-                    <span className="text-[10px] font-sans" style={{ color: textColor + "40" }}>
+                    <span className="text-xs font-sans" style={{ color: textColor + "40" }}>
                       {draft.length}/2000
                     </span>
                     <motion.button
@@ -206,7 +206,7 @@ export default function CommentsSection({
                   </div>
                 </div>
                 {post.isError && (
-                  <p className="text-[11px] font-sans mt-2 px-1" style={{ color: "#e8a0a0" }}>
+                  <p className="text-xs font-sans mt-2 px-1" style={{ color: "#e8a0a0" }}>
                     {(post.error as Error)?.message || t("commentPostErr")}
                   </p>
                 )}
@@ -255,11 +255,11 @@ export default function CommentsSection({
                           <span className="text-xs font-sans font-semibold" style={{ color: textColor }}>
                             {c.userName || t("readerFallback")}
                           </span>
-                          <span className="text-[10px] font-sans" style={{ color: textColor + "45" }}>
+                          <span className="text-xs font-sans" style={{ color: textColor + "45" }}>
                             {timeAgo(c.createdAt, t)}
                           </span>
                           {hidden && (
-                            <span className="text-[9px] font-sans px-1.5 py-0.5 rounded-full"
+                            <span className="text-xs font-sans px-1.5 py-0.5 rounded-full"
                               style={{ background: "rgba(255,150,80,0.15)", color: "rgba(255,170,100,0.9)" }}>
                               {t("hiddenBadge")}
                             </span>
@@ -275,7 +275,7 @@ export default function CommentsSection({
                           <button
                             onClick={() => moderate.mutate({ id: c.id, status: hidden ? "visible" : "hidden" })}
                             disabled={moderate.isPending}
-                            className="flex items-center gap-1 text-[10px] font-sans mt-1.5 opacity-70 hover:opacity-100"
+                            className="flex items-center gap-1 text-xs font-sans mt-1.5 opacity-70 hover:opacity-100"
                             style={{ color: hidden ? "rgba(150,230,170,0.9)" : textColor + "60" }}
                           >
                             {hidden

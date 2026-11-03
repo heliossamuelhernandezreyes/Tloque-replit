@@ -52,8 +52,8 @@ export default function CardCollection() {
         <p className="text-sm font-display font-semibold text-white mb-1">
           {t("collectionEmptyTitle")}
         </p>
-        <p className="text-[11px] font-sans leading-relaxed max-w-[240px]"
-          style={{ color: "rgba(255,255,255,0.45)" }}>
+        <p className="text-xs font-sans leading-relaxed max-w-[240px]"
+          style={{ color: "rgba(255,255,255,0.65)" }}>
           {t("collectionEmptyBody")}
         </p>
       </div>
@@ -70,7 +70,7 @@ export default function CardCollection() {
             {t("collectionTitle")}
           </p>
         </div>
-        <span className="text-[11px] font-sans px-2.5 py-1 rounded-full"
+        <span className="text-xs font-sans px-2.5 py-1 rounded-full"
           style={{ background: `${cfg.glow}15`, color: cfg.color, border: `1px solid ${cfg.color}30` }}>
           {t("collectionTotal").replace("{n}", String(total))}
         </span>
@@ -84,12 +84,12 @@ export default function CardCollection() {
               onClick={() => setLocation(`/book/${group.bookId}`)}
               className="flex items-center gap-1.5 mb-2.5 px-1 group"
             >
-              <LibraryIcon className="w-3 h-3" style={{ color: "rgba(255,255,255,0.4)" }} />
-              <span className="text-[11px] font-sans font-semibold text-left"
+              <LibraryIcon className="w-3 h-3" style={{ color: "rgba(255,255,255,0.65)" }} />
+              <span className="text-xs font-sans font-semibold text-left"
                 style={{ color: "rgba(255,255,255,0.7)" }}>
                 {group.bookTitle}
               </span>
-              <span className="text-[10px] font-sans" style={{ color: cfg.color + "99" }}>
+              <span className="text-xs font-sans" style={{ color: cfg.color + "99" }}>
                 · {group.cards.length}
               </span>
             </button>

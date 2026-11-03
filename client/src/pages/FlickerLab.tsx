@@ -99,7 +99,7 @@ export default function FlickerLab() {
   if (!isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <p className="text-zinc-500 text-sm font-sans">Solo administradores.</p>
+        <p className="text-zinc-400 text-sm font-sans">Solo administradores.</p>
       </div>
     )
   }
@@ -122,7 +122,7 @@ export default function FlickerLab() {
         <Activity className="w-4 h-4 ml-auto text-amber-400/60" />
       </div>
 
-      <p className="px-4 pt-3 text-[11px] text-zinc-500 font-sans leading-relaxed">
+      <p className="px-4 pt-3 text-xs text-zinc-400 font-sans leading-relaxed">
         Inclina el teléfono sobre la carta de abajo (una carta <b className="text-zinc-300">real</b> de
         tu colección) y mira los números en vivo.
       </p>
@@ -145,13 +145,13 @@ export default function FlickerLab() {
 
       {stats.imgs.length > 0 && (
         <div className="px-4 pt-3">
-          <p className="text-[9.5px] text-zinc-600 font-sans mb-1">Tamaño real de las imágenes cargadas:</p>
+          <p className="text-xs text-zinc-400 font-sans mb-1">Tamaño real de las imágenes cargadas:</p>
           <div className="flex flex-wrap gap-1.5">
             {stats.imgs.map((s, i) => {
               const [w, h] = s.split("×").map(Number)
               const grande = w * h > 4_000_000
               return (
-                <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded"
+                <span key={i} className="text-xs font-mono px-2 py-0.5 rounded"
                   style={{
                     background: grande ? "rgba(224,122,122,0.15)" : "rgba(255,255,255,0.05)",
                     color: grande ? "#e07a7a" : "#a1a1aa",
@@ -169,7 +169,7 @@ export default function FlickerLab() {
         {card ? (
           <CollectibleCard card={card} accentColor="#c9a84c" accentGlow="#c9a84c" zoomable={false} />
         ) : (
-          <p className="text-[11px] text-zinc-600 font-sans text-center py-10">
+          <p className="text-xs text-zinc-400 font-sans text-center py-10">
             Cargando una carta de tu colección…
           </p>
         )}
@@ -179,7 +179,7 @@ export default function FlickerLab() {
         <div className="px-4 flex gap-1.5 flex-wrap">
           {cards.slice(0, 8).map((c, i) => (
             <button key={i} onClick={() => setSel(i)}
-              className="text-[10px] px-2 py-1 rounded-lg font-sans"
+              className="text-xs px-2 py-1 rounded-lg font-sans"
               style={{
                 background: i === sel ? "rgba(201,168,76,0.2)" : "rgba(255,255,255,0.04)",
                 color: i === sel ? "#e6cd82" : "#71717a",
@@ -190,10 +190,10 @@ export default function FlickerLab() {
         </div>
       )}
 
-      <div className="mx-4 mt-6 p-3 rounded-xl text-[10.5px] font-sans leading-relaxed"
+      <div className="mx-4 mt-6 p-3 rounded-xl text-xs font-sans leading-relaxed"
         style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
         <b className="text-zinc-400">Cómo leerlo:</b><br />
-        <span className="text-zinc-500">
+        <span className="text-zinc-400">
           · <b>Renders/seg alto</b> (más de 10) mientras inclinas → React re-renderiza en cada
           movimiento. Ese es el bug.<br />
           · <b>Imágenes en memoria enorme</b> (más de 60 MB) → el navegador las descarta y recarga.
@@ -215,12 +215,12 @@ function Metric({ label, value, hint, danger }: {
         background: danger ? "rgba(224,122,122,0.1)" : "rgba(255,255,255,0.03)",
         border: `1px solid ${danger ? "rgba(224,122,122,0.3)" : "rgba(255,255,255,0.08)"}`,
       }}>
-      <p className="text-[9.5px] text-zinc-500 font-sans">{label}</p>
+      <p className="text-xs text-zinc-400 font-sans">{label}</p>
       <p className="text-[20px] font-display font-bold tabular-nums"
         style={{ color: danger ? "#e07a7a" : "#e4e4e7" }}>
         {value}
       </p>
-      <p className="text-[9px] font-sans" style={{ color: danger ? "#e07a7a" : "#52525b" }}>
+      <p className="text-xs font-sans" style={{ color: danger ? "#e07a7a" : "#52525b" }}>
         {hint}
       </p>
     </div>

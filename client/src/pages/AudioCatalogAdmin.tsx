@@ -723,12 +723,12 @@ export default function AudioCatalogAdmin() {
           <section className="space-y-3">
             <div>
               <h2 className="text-sm font-semibold">Módulos instrumentales bajo demanda</h2>
-              <p className="mt-1 text-xs text-zinc-500">La síntesis base siempre está incluida. Los bancos SF2/SF3 de mayor fidelidad se descargan uno por uno y pueden retirarse sin borrar partituras.</p>
+              <p className="mt-1 text-xs text-zinc-400">La síntesis base siempre está incluida. Los bancos SF2/SF3 de mayor fidelidad se descargan uno por uno y pueden retirarse sin borrar partituras.</p>
             </div>
             <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.04] p-3 flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">Importar banco desde este teléfono</p>
-                <p className="mt-1 text-[10px] text-zinc-500">SF2, SF3 o DLS · máximo 500 MB · contenido verificado · SHA-256 · deduplicación. Para móvil se recomienda SF3.</p>
+                <p className="mt-1 text-xs text-zinc-400">SF2, SF3 o DLS · máximo 500 MB · contenido verificado · SHA-256 · deduplicación. Para móvil se recomienda SF3.</p>
               </div>
               <label className="cursor-pointer rounded-lg bg-amber-400 px-3 py-2 text-center text-xs font-semibold text-black">
                 {uploadModule.isPending ? <Loader2 className="inline w-4 h-4 animate-spin mr-1" /> : <Upload className="inline w-4 h-4 mr-1" />} Seleccionar banco
@@ -741,7 +741,7 @@ export default function AudioCatalogAdmin() {
             </div>
             {uploadModule.isError && <p className="rounded-lg bg-red-950/30 px-3 py-2 text-xs text-red-200">{(uploadModule.error as Error).message}</p>}
             <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 flex items-center justify-between gap-3">
-              <div><p className="text-sm font-medium">Síntesis base Tloque</p><p className="text-[10px] text-zinc-500">Incluida · sin descarga · <code>module builtin</code></p></div>
+              <div><p className="text-sm font-medium">Síntesis base Tloque</p><p className="text-xs text-zinc-400">Incluida · sin descarga · <code>module builtin</code></p></div>
               <CheckCircle2 className="w-5 h-5 text-emerald-300" />
             </div>
             {AUDIO_MODULE_SOURCES.filter(source => source.install).map(source => (
@@ -749,8 +749,8 @@ export default function AudioCatalogAdmin() {
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-sky-100">{source.name} {source.install!.version}</p>
-                    <p className="mt-1 text-[10px] leading-4 text-zinc-400">{source.install!.presetCount} presets · {source.install!.drumKitCount} baterías · {source.install!.estimatedMegabytes} MB · {source.formats.join("/")}</p>
-                    <p className="mt-1 text-[10px] leading-4 text-orange-200/80">Instalación comunitaria con aceptación de procedencia. Se guarda internamente y se fija por SHA-256.</p>
+                    <p className="mt-1 text-xs leading-4 text-zinc-400">{source.install!.presetCount} presets · {source.install!.drumKitCount} baterías · {source.install!.estimatedMegabytes} MB · {source.formats.join("/")}</p>
+                    <p className="mt-1 text-xs leading-4 text-orange-200/80">Instalación comunitaria con aceptación de procedencia. Se guarda internamente y se fija por SHA-256.</p>
                   </div>
                   <Package className="h-5 w-5 shrink-0 text-sky-300" />
                 </div>
@@ -773,8 +773,8 @@ export default function AudioCatalogAdmin() {
                 <div key={asset.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 flex flex-col sm:flex-row sm:items-center gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{asset.title}</p>
-                    <p className="text-[10px] text-zinc-500">{moduleTag} · {asset.packBytes ? `${(asset.packBytes / 1024 / 1024).toFixed(1)} MB` : "tamaño no declarado"} · {asset.license}</p>
-                    <p className="text-[10px] text-zinc-600 truncate">{asset.sourceName}</p>
+                    <p className="text-xs text-zinc-400">{moduleTag} · {asset.packBytes ? `${(asset.packBytes / 1024 / 1024).toFixed(1)} MB` : "tamaño no declarado"} · {asset.license}</p>
+                    <p className="text-xs text-zinc-400 truncate">{asset.sourceName}</p>
                   </div>
                   <div className="grid grid-cols-2 gap-2 sm:flex">
                     <button disabled={!moduleTag.startsWith("module:")} onClick={() => useModuleInComposer(asset)} className="rounded-lg bg-sky-300 px-3 py-2 text-xs font-semibold text-sky-950 disabled:opacity-40"><Music2 className="mr-1 inline h-3.5 w-3.5" /> Usar</button>
@@ -785,11 +785,11 @@ export default function AudioCatalogAdmin() {
                 </div>
               )
             })}
-            {!qualityModules.length && <p className="rounded-xl border border-dashed border-white/10 p-4 text-xs text-zinc-500">Aún no hay bancos instrumentales. Créalo en Fonoteca como “Instrumentos SF2/SF3” y añade una etiqueta única como <code>module:orchestra-core</code>.</p>}
+            {!qualityModules.length && <p className="rounded-xl border border-dashed border-white/10 p-4 text-xs text-zinc-400">Aún no hay bancos instrumentales. Créalo en Fonoteca como “Instrumentos SF2/SF3” y añade una etiqueta única como <code>module:orchestra-core</code>.</p>}
             {manageModule.isError && <p className="text-xs text-red-300">{(manageModule.error as Error).message}</p>}
             <details className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
               <summary className="cursor-pointer text-sm font-medium">Motores, herramientas y bibliotecas evaluadas · {AUDIO_MODULE_SOURCES.length}</summary>
-              <p className="mt-2 text-[10px] leading-4 text-zinc-500">Registro {AUDIO_SOURCE_REGISTRY_VERSION}. Estos enlaces documentan procedencia; Tloque nunca consulta GitHub durante la reproducción. Cada banco publicado queda en la app y fijado por SHA-256.</p>
+              <p className="mt-2 text-xs leading-4 text-zinc-400">Registro {AUDIO_SOURCE_REGISTRY_VERSION}. Estos enlaces documentan procedencia; Tloque nunca consulta GitHub durante la reproducción. Cada banco publicado queda en la app y fijado por SHA-256.</p>
               <div className="mt-3 grid gap-2">
                 {AUDIO_MODULE_SOURCES.map(source => {
                   const status = SOURCE_STATUS[source.status]
@@ -798,13 +798,13 @@ export default function AudioCatalogAdmin() {
                       <div className="flex flex-wrap items-start gap-2">
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-medium text-zinc-200">{source.name}</p>
-                          <p className="mt-1 text-[10px] text-zinc-500">{source.license} · {source.formats.join(" · ")}</p>
+                          <p className="mt-1 text-xs text-zinc-400">{source.license} · {source.formats.join(" · ")}</p>
                         </div>
-                        <span className={`rounded-full border px-2 py-1 text-[9px] ${status.className}`}>{status.label}</span>
+                        <span className={`rounded-full border px-2 py-1 text-xs ${status.className}`}>{status.label}</span>
                       </div>
-                      <p className="mt-2 text-[11px] leading-4 text-zinc-400">{source.role}</p>
-                      <p className="mt-1 text-[10px] leading-4 text-zinc-500">{source.decision}</p>
-                      <div className="mt-2 flex flex-wrap gap-3 text-[10px]">
+                      <p className="mt-2 text-xs leading-4 text-zinc-400">{source.role}</p>
+                      <p className="mt-1 text-xs leading-4 text-zinc-400">{source.decision}</p>
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs">
                         <a href={source.repositoryUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sky-300">Repositorio <ExternalLink className="h-3 w-3" /></a>
                         {source.documentationUrl && <a href={source.documentationUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sky-300">Guía <ExternalLink className="h-3 w-3" /></a>}
                       </div>
@@ -818,21 +818,21 @@ export default function AudioCatalogAdmin() {
 
         {tab === "interface" && (
           <section className="space-y-3">
-            <div><h2 className="text-sm font-semibold">Mapa de sonidos de interfaz</h2><p className="mt-1 text-xs text-zinc-500">Cada gesto apunta a un activo publicado. Quitar una asignación activa el fallback silencioso incorporado.</p></div>
+            <div><h2 className="text-sm font-semibold">Mapa de sonidos de interfaz</h2><p className="mt-1 text-xs text-zinc-400">Cada gesto apunta a un activo publicado. Quitar una asignación activa el fallback silencioso incorporado.</p></div>
             {bindingsQuery.isLoading && <Loader2 className="w-5 h-5 animate-spin mx-auto" />}
             {bindingsQuery.data?.events.map(event => {
               const draft = bindingDrafts[event.key] || { assetId: 0, volume: 0.8, cooldownMs: 70, enabled: true }
               const selected = bindingsQuery.data?.assets.find(asset => asset.id === draft.assetId)
               return (
                 <div key={event.key} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 space-y-3">
-                  <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-medium">{event.label}</p><code className="text-[10px] text-zinc-600">{event.key}</code></div>{selected && <button aria-label="Escuchar" onClick={() => sound.preview(selected)} className="p-2 rounded-full bg-white/5"><Headphones className="w-4 h-4" /></button>}</div>
+                  <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-medium">{event.label}</p><code className="text-xs text-zinc-400">{event.key}</code></div>{selected && <button aria-label="Escuchar" onClick={() => sound.preview(selected)} className="p-2 rounded-full bg-white/5"><Headphones className="w-4 h-4" /></button>}</div>
                   <div className="grid sm:grid-cols-[1fr_120px_120px_auto] gap-2 items-center">
                     <select className={inputClass} value={draft.assetId} onChange={e => setBindingDrafts(all => ({ ...all, [event.key]: { ...draft, assetId: Number(e.target.value) } }))}>
                       <option value={0}>Fallback incorporado</option>
                       {bindingsQuery.data.assets.map(asset => <option key={asset.id} value={asset.id}>{asset.title} · {asset.sourceType}</option>)}
                     </select>
-                    <label className="text-[10px] text-zinc-500">Volumen {Math.round(draft.volume * 100)}%<input className="w-full mt-2" type="range" min={0} max={1} step={0.05} value={draft.volume} onChange={e => setBindingDrafts(all => ({ ...all, [event.key]: { ...draft, volume: Number(e.target.value) } }))} /></label>
-                    <label className="text-[10px] text-zinc-500">Cooldown ms<input className={inputClass + " mt-1"} type="number" min={0} max={10000} value={draft.cooldownMs} onChange={e => setBindingDrafts(all => ({ ...all, [event.key]: { ...draft, cooldownMs: Number(e.target.value) } }))} /></label>
+                    <label className="text-xs text-zinc-400">Volumen {Math.round(draft.volume * 100)}%<input className="w-full mt-2" type="range" min={0} max={1} step={0.05} value={draft.volume} onChange={e => setBindingDrafts(all => ({ ...all, [event.key]: { ...draft, volume: Number(e.target.value) } }))} /></label>
+                    <label className="text-xs text-zinc-400">Cooldown ms<input className={inputClass + " mt-1"} type="number" min={0} max={10000} value={draft.cooldownMs} onChange={e => setBindingDrafts(all => ({ ...all, [event.key]: { ...draft, cooldownMs: Number(e.target.value) } }))} /></label>
                     <div className="flex gap-1 justify-end">
                       <button disabled={!draft.assetId || saveBinding.isPending} onClick={() => saveBinding.mutate(event.key)} className="rounded-lg bg-amber-400 text-black px-3 py-2 text-xs disabled:opacity-40">Guardar</button>
                       <button title="Usar fallback" onClick={() => resetBinding.mutate(event.key)} className="rounded-lg bg-white/5 p-2"><RotateCcw className="w-4 h-4" /></button>
@@ -849,11 +849,11 @@ export default function AudioCatalogAdmin() {
           <>
             <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <div><h2 className="text-sm font-semibold">{editingId ? "Editar activo" : "Nuevo activo"}</h2><p className="mt-1 text-[10px] text-zinc-600">Música, ambientes y efectos comparten procedencia; cada dominio conserva su propio reproductor.</p></div>
-                {editingId && <button onClick={() => { setEditingId(null); setForm({ ...EMPTY }) }} className="text-xs text-zinc-500">Cancelar</button>}
+                <div><h2 className="text-sm font-semibold">{editingId ? "Editar activo" : "Nuevo activo"}</h2><p className="mt-1 text-xs text-zinc-400">Música, ambientes y efectos comparten procedencia; cada dominio conserva su propio reproductor.</p></div>
+                {editingId && <button onClick={() => { setEditingId(null); setForm({ ...EMPTY }) }} className="text-xs text-zinc-400">Cancelar</button>}
               </div>
               <div className="rounded-xl border border-white/10 bg-black/20 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
-                <div className="flex-1"><p className="text-xs font-medium">Importar MP3 o WAV desde este dispositivo</p><p className="mt-1 text-[10px] text-zinc-600">Máximo 96 MB. El original se guarda por huella en App Storage; los duplicados no ocupan espacio dos veces.</p></div>
+                <div className="flex-1"><p className="text-xs font-medium">Importar MP3 o WAV desde este dispositivo</p><p className="mt-1 text-xs text-zinc-400">Máximo 96 MB. El original se guarda por huella en App Storage; los duplicados no ocupan espacio dos veces.</p></div>
                 <label className="cursor-pointer rounded-lg bg-white/10 px-3 py-2 text-xs text-center">
                   {uploadAudio.isPending ? <Loader2 className="inline w-4 h-4 animate-spin mr-1" /> : <Upload className="inline w-4 h-4 mr-1" />} Seleccionar audio
                   <input className="sr-only" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" disabled={uploadAudio.isPending} onChange={event => {
@@ -886,11 +886,11 @@ export default function AudioCatalogAdmin() {
 
               {form.kind !== "system" && (
                 <fieldset className="rounded-xl border border-white/10 p-3">
-                  <legend className="px-2 text-[10px] uppercase tracking-widest text-zinc-500">Clasificación musical</legend>
+                  <legend className="px-2 text-xs uppercase tracking-widest text-zinc-400">Clasificación musical</legend>
                   <div className="grid sm:grid-cols-3 gap-3 items-center">
                     <input className={inputClass} placeholder="Emoción" value={form.emotion} onChange={e => setForm(f => ({ ...f, emotion: e.target.value }))} />
                     <input className={inputClass} type="number" min={20} max={300} placeholder="BPM" value={form.bpm ?? ""} onChange={e => setForm(f => ({ ...f, bpm: e.target.value ? Number(e.target.value) : null }))} />
-                    <label className="text-xs text-zinc-500">Energía {Math.round(form.energy * 100)}%<input className="w-full mt-2" type="range" min={0} max={1} step={0.05} value={form.energy} onChange={e => setForm(f => ({ ...f, energy: Number(e.target.value) }))} /></label>
+                    <label className="text-xs text-zinc-400">Energía {Math.round(form.energy * 100)}%<input className="w-full mt-2" type="range" min={0} max={1} step={0.05} value={form.energy} onChange={e => setForm(f => ({ ...f, energy: Number(e.target.value) }))} /></label>
                     <input className={inputClass} placeholder="Tonalidad" value={form.musicalKey} onChange={e => setForm(f => ({ ...f, musicalKey: e.target.value }))} />
                     <input className={inputClass} placeholder="Textura" value={form.texture} onChange={e => setForm(f => ({ ...f, texture: e.target.value }))} />
                     <input className={inputClass} placeholder="Etiquetas, separadas por coma" value={form.tags.join(", ")} onChange={e => setForm(f => ({ ...f, tags: e.target.value.split(",").map(value => value.trim()).filter(Boolean).slice(0, 24) }))} />
@@ -902,7 +902,7 @@ export default function AudioCatalogAdmin() {
 
               {["procedural", "soundfont"].includes(form.sourceType) && (
                 <fieldset className="rounded-xl border border-white/10 p-3 space-y-3">
-                  <legend className="px-2 text-[10px] uppercase tracking-widest text-zinc-500">Receta musical</legend>
+                  <legend className="px-2 text-xs uppercase tracking-widest text-zinc-400">Receta musical</legend>
                   <div className="grid sm:grid-cols-3 gap-3">
                     <select className={inputClass} value={procedural.preset} onChange={e => updateProcedural({ preset: e.target.value as ProceduralRecipe["preset"] })}>
                       <option value="quiet_observatory">Observatorio sereno</option><option value="warm_memory">Memoria cálida</option><option value="cold_suspense">Suspenso frío</option><option value="deep_focus">Concentración</option>
@@ -912,7 +912,7 @@ export default function AudioCatalogAdmin() {
                     </select>
                     <input className={inputClass} type="number" min={32} max={140} value={procedural.bpm} onChange={e => updateProcedural({ bpm: Number(e.target.value) })} />
                   </div>
-                  <div className="grid sm:grid-cols-3 gap-3 text-xs text-zinc-500">
+                  <div className="grid sm:grid-cols-3 gap-3 text-xs text-zinc-400">
                     <label>Raíz MIDI<input className={inputClass + " mt-1"} type="number" min={36} max={72} value={procedural.rootMidi} onChange={e => updateProcedural({ rootMidi: Number(e.target.value) })} /></label>
                     <label>Densidad {Math.round(procedural.density * 100)}%<input className="w-full mt-3" type="range" min={0} max={1} step={0.05} value={procedural.density} onChange={e => updateProcedural({ density: Number(e.target.value) })} /></label>
                     <label>Movimiento {Math.round(procedural.movement * 100)}%<input className="w-full mt-3" type="range" min={0} max={1} step={0.05} value={procedural.movement} onChange={e => updateProcedural({ movement: Number(e.target.value) })} /></label>
@@ -922,13 +922,13 @@ export default function AudioCatalogAdmin() {
 
               {form.sourceType === "sfx" && (
                 <fieldset className="rounded-xl border border-white/10 p-3 space-y-3">
-                  <legend className="px-2 text-[10px] uppercase tracking-widest text-zinc-500">Diseñador de microsonido</legend>
+                  <legend className="px-2 text-xs uppercase tracking-widest text-zinc-400">Diseñador de microsonido</legend>
                   <div className="grid sm:grid-cols-3 gap-3">
                     <select className={inputClass} value={sfx.voices[0].wave} onChange={e => updateSfxVoice({ wave: e.target.value as UiSoundRecipe["voices"][number]["wave"] })}><option value="sine">Seno suave</option><option value="triangle">Triangular</option><option value="square">Cuadrada</option><option value="sawtooth">Sierra</option><option value="noise">Ruido / papel</option></select>
-                    <label className="text-[10px] text-zinc-500">Frecuencia inicial<input className={inputClass + " mt-1"} type="number" min={35} max={8000} value={sfx.voices[0].startHz} onChange={e => updateSfxVoice({ startHz: Number(e.target.value) })} /></label>
-                    <label className="text-[10px] text-zinc-500">Frecuencia final<input className={inputClass + " mt-1"} type="number" min={35} max={8000} value={sfx.voices[0].endHz ?? ""} onChange={e => updateSfxVoice({ endHz: e.target.value ? Number(e.target.value) : null })} /></label>
-                    <label className="text-[10px] text-zinc-500">Duración s<input className={inputClass + " mt-1"} type="number" min={0.02} max={4} step={0.01} value={sfx.voices[0].duration} onChange={e => updateSfxVoice({ duration: Number(e.target.value) })} /></label>
-                    <label className="text-[10px] text-zinc-500">Ganancia {Math.round(sfx.voices[0].gain * 100)}%<input className="w-full mt-3" type="range" min={0.001} max={0.35} step={0.005} value={sfx.voices[0].gain} onChange={e => updateSfxVoice({ gain: Number(e.target.value) })} /></label>
+                    <label className="text-xs text-zinc-400">Frecuencia inicial<input className={inputClass + " mt-1"} type="number" min={35} max={8000} value={sfx.voices[0].startHz} onChange={e => updateSfxVoice({ startHz: Number(e.target.value) })} /></label>
+                    <label className="text-xs text-zinc-400">Frecuencia final<input className={inputClass + " mt-1"} type="number" min={35} max={8000} value={sfx.voices[0].endHz ?? ""} onChange={e => updateSfxVoice({ endHz: e.target.value ? Number(e.target.value) : null })} /></label>
+                    <label className="text-xs text-zinc-400">Duración s<input className={inputClass + " mt-1"} type="number" min={0.02} max={4} step={0.01} value={sfx.voices[0].duration} onChange={e => updateSfxVoice({ duration: Number(e.target.value) })} /></label>
+                    <label className="text-xs text-zinc-400">Ganancia {Math.round(sfx.voices[0].gain * 100)}%<input className="w-full mt-3" type="range" min={0.001} max={0.35} step={0.005} value={sfx.voices[0].gain} onChange={e => updateSfxVoice({ gain: Number(e.target.value) })} /></label>
                     <button type="button" onClick={() => sound.preview({ id: -22, title: form.title || "SFX", sourceType: "sfx", url: "", recipe: sfx })} className="self-end rounded-lg bg-white/10 px-3 py-2 text-sm"><Headphones className="inline w-4 h-4 mr-1" /> Probar</button>
                   </div>
                 </fieldset>
@@ -936,7 +936,7 @@ export default function AudioCatalogAdmin() {
 
               {form.sourceType === "soundfont" && (
                 <fieldset className="rounded-xl border border-white/10 p-3 space-y-3">
-                  <legend className="px-2 text-[10px] uppercase tracking-widest text-zinc-500">Banco instrumental</legend>
+                  <legend className="px-2 text-xs uppercase tracking-widest text-zinc-400">Banco instrumental</legend>
                   <input className={inputClass} placeholder="https://cdn.../banco.sf3" value={form.packUrl} onChange={e => setForm(f => ({ ...f, packUrl: e.target.value }))} />
                   <div className="grid sm:grid-cols-3 gap-3"><input className={inputClass} type="number" min={0} max={127} placeholder="Programa MIDI" value={form.instrumentProgram ?? ""} onChange={e => setForm(f => ({ ...f, instrumentProgram: e.target.value === "" ? null : Number(e.target.value) }))} /><input className={inputClass} type="number" min={1} placeholder="Tamaño en bytes" value={form.packBytes ?? ""} onChange={e => setForm(f => ({ ...f, packBytes: e.target.value === "" ? null : Number(e.target.value) }))} /><input className={inputClass} placeholder="SHA-256" value={form.packSha256} onChange={e => setForm(f => ({ ...f, packSha256: e.target.value }))} /></div>
                 </fieldset>
@@ -954,12 +954,12 @@ export default function AudioCatalogAdmin() {
 
             {isLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : (Object.entries(grouped) as [string, AudioAsset[]][]).map(([area, list]) => (
               <section key={area} className="space-y-2">
-                <h2 className="text-xs uppercase tracking-widest text-zinc-500">{area} · {list.length}</h2>
-                {list.length === 0 && <p className="text-xs text-zinc-600">Todavía no hay activos en esta sección.</p>}
+                <h2 className="text-xs uppercase tracking-widest text-zinc-400">{area} · {list.length}</h2>
+                {list.length === 0 && <p className="text-xs text-zinc-400">Todavía no hay activos en esta sección.</p>}
                 {list.map(asset => (
                   <div key={asset.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 flex gap-3 items-center">
                     <button aria-label={`Escuchar ${asset.title}`} onClick={() => togglePreview(asset)} className="p-2 rounded-full bg-white/5"><Headphones className="w-4 h-4" /></button>
-                    <div className="min-w-0 flex-1"><p className="text-sm font-medium truncate">{asset.title}</p><p className="text-[10px] text-zinc-500 truncate">{asset.status} · {asset.sourceType || "stream"} · {asset.kind} · {asset.bpm ? `${asset.bpm} BPM · ` : ""}{asset.license}</p></div>
+                    <div className="min-w-0 flex-1"><p className="text-sm font-medium truncate">{asset.title}</p><p className="text-xs text-zinc-400 truncate">{asset.status} · {asset.sourceType || "stream"} · {asset.kind} · {asset.bpm ? `${asset.bpm} BPM · ` : ""}{asset.license}</p></div>
                     <button aria-label="Editar" onClick={() => edit(asset)} className="p-2"><Pencil className="w-4 h-4" /></button>
                     {asset.status !== "archived" && <button aria-label="Archivar" onClick={() => archive.mutate(asset.id)} className="p-2 text-red-300"><Trash2 className="w-4 h-4" /></button>}
                   </div>

@@ -163,14 +163,14 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
 
   return (
     <div className="mt-4 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-      <p className="text-[9px] text-zinc-600 uppercase tracking-widest mb-1 font-sans flex items-center gap-1">
+      <p className="text-xs text-zinc-400 uppercase tracking-widest mb-1 font-sans flex items-center gap-1">
         {isLoose ? t("looseCards") : "Tarjetas coleccionables"} 🃏
-        <span className="text-[8px] px-1.5 py-0.5 rounded-full"
+        <span className="text-xs px-1.5 py-0.5 rounded-full"
           style={{ background: `${gc.glow}15`, color: gc.color + "88" }}>
           {cards.length}/{maxCards}
         </span>
       </p>
-      <p className="text-[9px] text-zinc-500 font-sans mb-2 leading-snug">
+      <p className="text-xs text-zinc-400 font-sans mb-2 leading-snug">
         Personajes o escenas de tu obra. Se obtienen mediante mecenazgo con Tinta o por compra individual con precio
         visible — nunca al azar. Con capas, la tarjeta cobra vida al inclinarse.
       </p>
@@ -185,9 +185,9 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
                 className="w-7 h-10 object-cover rounded-md shrink-0" />
             )}
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-sans font-semibold text-white truncate">{card.name}</p>
-              <p className="text-[9px] font-sans flex items-center gap-1"
-                style={{ color: "rgba(255,255,255,0.45)" }}>
+              <p className="text-xs font-sans font-semibold text-white truncate">{card.name}</p>
+              <p className="text-xs font-sans flex items-center gap-1"
+                style={{ color: "rgba(255,255,255,0.65)" }}>
                 {card.unlock === "tinta"
                   ? <><Droplets className="w-2.5 h-2.5" /> {displayTinta(card.priceTinta)} Tintas</>
                   : <><Heart className="w-2.5 h-2.5" /> Mecenazgo con Tinta</>}
@@ -198,7 +198,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
                 <select autoFocus defaultValue=""
                   onChange={e => { const v = Number(e.target.value); if (v) assign.mutate({ cardId: card.id, toBookId: v }) }}
                   onBlur={() => setAssigning(null)}
-                  className="text-[9px] rounded-lg px-1.5 py-1.5 outline-none max-w-[110px]"
+                  className="text-xs rounded-lg px-1.5 py-1.5 outline-none max-w-[110px]"
                   style={{ background: "rgba(255,255,255,0.06)", color: "#fff", border: `1px solid ${gc.color}50` }}>
                   <option value="" disabled>{t("assignToBook")}</option>
                   {assignTargets!.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
@@ -229,7 +229,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
       {!editing && cards.length < maxCards && (
         <motion.button whileTap={{ scale: 0.97 }}
           onClick={() => { setForm(EMPTY); setEditing({}) }}
-          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-sans"
+          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-sans"
           style={{ background: `${gc.glow}10`, color: gc.color, border: `1px dashed ${gc.color}40` }}>
           <Plus className="w-3.5 h-3.5" /> Nueva tarjeta
         </motion.button>
@@ -257,7 +257,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
           {/* Método de obtención — nunca al azar */}
           <div className="flex gap-1.5">
             <button onClick={() => setForm(f => ({ ...f, unlock: "support" }))}
-              className="flex-1 flex items-center justify-center gap-1 text-[10px] font-sans py-2 rounded-lg"
+              className="flex-1 flex items-center justify-center gap-1 text-xs font-sans py-2 rounded-lg"
               style={{
                 background: form.unlock === "support" ? `${gc.glow}20` : "rgba(255,255,255,0.03)",
                 color: form.unlock === "support" ? gc.color : "rgba(255,255,255,0.5)",
@@ -266,7 +266,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
               <Heart className="w-3 h-3" /> Mecenazgo con Tinta
             </button>
             <button onClick={() => setForm(f => ({ ...f, unlock: "tinta" }))}
-              className="flex-1 flex items-center justify-center gap-1 text-[10px] font-sans py-2 rounded-lg"
+              className="flex-1 flex items-center justify-center gap-1 text-xs font-sans py-2 rounded-lg"
               style={{
                 background: form.unlock === "tinta" ? "rgba(201,168,87,0.15)" : "rgba(255,255,255,0.03)",
                 color: form.unlock === "tinta" ? "#c9a857" : "rgba(255,255,255,0.5)",
@@ -281,7 +281,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
                 onChange={e => setForm(f => ({ ...f, priceTinta: Math.max(1, Math.round(Number(e.target.value) / 20)) }))}
                 className="w-20 text-white text-xs outline-none rounded-lg px-3 py-2 font-sans"
                 style={inputStyle} />
-              <span className="text-[10px] font-sans" style={{ color: "rgba(255,255,255,0.5)" }}>
+              <span className="text-xs font-sans" style={{ color: "rgba(255,255,255,0.65)" }}>
                 Tintas (20–2000, pasos de 20) · el precio siempre visible
               </span>
             </div>
@@ -298,11 +298,11 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
             hint="La más cercana, se mueve más" compact />
 
           <div className="rounded-xl border border-amber-200/20 bg-gradient-to-br from-amber-200/5 to-indigo-300/5 p-4 !my-5">
-            <p className="text-[10px] tracking-[.15em] text-amber-200/60">CARD DIRECTOR / 3D</p>
+            <p className="text-xs tracking-[.15em] text-amber-200/60">CARD DIRECTOR / 3D</p>
             <h3 className="text-lg font-display text-zinc-100 mt-1">De ilustración a escena viva.</h3>
             <p className="text-xs text-zinc-400 leading-relaxed my-2">Pon tu fondo y hasta dos capas recortadas. Diseña el marco, añade una mica y sitúa lluvia, nieve o luz entre las imágenes. Gira la tarjeta y personaliza su reverso.</p>
             <button onClick={() => setDirecting(true)} className="min-h-11 w-full rounded-lg bg-amber-100/10 border border-amber-200/25 text-amber-100 text-xs flex items-center justify-center gap-2 disabled:opacity-35"><Clapperboard size={17}/>Diseñar tarjeta, marco y efectos</button>
-            <p className="text-[10px] text-zinc-500 mt-2">{form.scene?.portalCard ? `Portal 360° · ${form.scene.duration} segundos · ${form.layers.back ? "fondo listo" : "añade un fondo para guardar"}` : "Escena anterior · objetos y animaciones 3D conservados"}</p>
+            <p className="text-xs text-zinc-400 mt-2">{form.scene?.portalCard ? `Portal 360° · ${form.scene.duration} segundos · ${form.layers.back ? "fondo listo" : "añade un fondo para guardar"}` : "Escena anterior · objetos y animaciones 3D conservados"}</p>
           </div>
 
           {/* Rareza — material del marco */}
@@ -310,9 +310,9 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
             {/* ── MARCO DE LA GALERÍA ── */}
             <div className="mb-3">
               <div className="flex items-center justify-between mb-1.5">
-                <p className="text-[9px] text-zinc-500 font-sans">{t("cardFrame")}</p>
+                <p className="text-xs text-zinc-400 font-sans">{t("cardFrame")}</p>
                 <button onClick={() => navigate("/marcos")}
-                  className="text-[9px] font-sans" style={{ color: gc.color }}>
+                  className="text-xs font-sans" style={{ color: gc.color }}>
                   {t("getMoreFrames")} →
                 </button>
               </div>
@@ -327,7 +327,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
                     border: `1px solid ${form.frameId === null ? gc.color + "70" : "rgba(255,255,255,0.08)"}`,
                   }}>
                   <span className="text-[13px]">◇</span>
-                  <span className="text-[7px] font-sans" style={{ color: form.frameId === null ? gc.color : "rgba(255,255,255,0.4)" }}>
+                  <span className="text-xs font-sans" style={{ color: form.frameId === null ? gc.color : "rgba(255,255,255,0.4)" }}>
                     {form.scene?.portalCard ? "Mi marco" : t("rarityOnly")}
                   </span>
                 </button>
@@ -349,7 +349,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
                 ))}
                 {myFrames.length === 0 && (
                   <div className="flex items-center px-2">
-                    <p className="text-[8.5px] text-zinc-600 font-sans leading-snug max-w-[150px]">
+                    <p className="text-xs text-zinc-400 font-sans leading-snug max-w-[150px]">
                       {t("noFramesYet")}
                     </p>
                   </div>
@@ -357,7 +357,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
               </div>
             </div>
 
-            <p className="text-[9px] text-zinc-500 font-sans mb-1.5">Rareza (material del marco)</p>
+            <p className="text-xs text-zinc-400 font-sans mb-1.5">Rareza (material del marco)</p>
             <div className="grid grid-cols-4 gap-1.5">
               {RARITY_ORDER.map(r => {
                 const m = MATERIALS[r]
@@ -371,7 +371,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
                              border: `1px solid ${sel ? m.base : "rgba(255,255,255,0.08)"}` }}>
                     <span className="w-6 h-6 rounded-full" style={{ background: frameGradient(m),
                       boxShadow: sel ? `0 0 8px ${m.glow}88` : "none" }} />
-                    <span className="text-[7px] font-sans" style={{ color: sel ? m.base : "rgba(255,255,255,0.45)" }}>{m.label}</span>
+                    <span className="text-xs font-sans" style={{ color: sel ? m.base : "rgba(255,255,255,0.45)" }}>{m.label}</span>
                   </button>
                 )
               })}
@@ -381,7 +381,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
           {/* Previsualización EN VIVO */}
           {(form.layers.back || !!form.scene?.content?.objects.length) && (
             <div className="pt-2">
-              <p className="text-[9px] text-zinc-500 font-sans mb-1.5 text-center">{t("cardPreviewHint")}</p>
+              <p className="text-xs text-zinc-400 font-sans mb-1.5 text-center">{t("cardPreviewHint")}</p>
               <div className="max-w-[160px] mx-auto">
                 <CollectibleCard
                   preview
@@ -399,7 +399,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
           )}
 
           {save.isError && (
-            <p className="text-[10px] font-sans" style={{ color: "#e8a0a0" }}>
+            <p className="text-xs font-sans" style={{ color: "#e8a0a0" }}>
               {(save.error as Error)?.message}
             </p>
           )}
@@ -407,13 +407,13 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
             <motion.button whileTap={{ scale: 0.97 }}
               disabled={save.isPending || !form.name.trim() || (!form.layers.back && !form.scene?.content?.objects.length)}
               onClick={() => save.mutate()}
-              className="flex-1 py-2.5 rounded-lg text-[11px] font-sans font-semibold disabled:opacity-40"
+              className="flex-1 py-2.5 rounded-lg text-xs font-sans font-semibold disabled:opacity-40"
               style={{ background: gc.color, color: "rgba(0,0,0,0.85)" }}>
               {save.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" /> : (editing.id ? "Guardar cambios" : "Crear tarjeta")}
             </motion.button>
             <button onClick={() => { setEditing(null); setForm(EMPTY) }}
-              className="px-3 py-2.5 rounded-lg text-[11px] font-sans"
-              style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.5)" }}>
+              className="px-3 py-2.5 rounded-lg text-xs font-sans"
+              style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.65)" }}>
               Cancelar
             </button>
           </div>

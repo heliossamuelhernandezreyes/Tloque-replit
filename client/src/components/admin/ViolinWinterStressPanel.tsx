@@ -74,12 +74,12 @@ export function ViolinWinterStressPanel() {
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <p className="flex items-center gap-2 text-xs font-medium text-sky-100/75"><Snowflake className="h-3.5 w-3.5" /> Winter Stress v1 · strings.violin</p>
-        <p className="mt-1 max-w-3xl text-[11px] leading-5 text-white/35">Prueba musical extrema, original y determinista: ataques repetidos, repetición tipo tremolo, legato, saltos de registro, p→ff y agudo fuerte. Complementa la matriz 3×3; nunca puede aprobar Master por sí sola.</p>
+        <p className="mt-1 max-w-3xl text-xs leading-5 text-white/65">Prueba musical extrema, original y determinista: ataques repetidos, repetición tipo tremolo, legato, saltos de registro, p→ff y agudo fuerte. Complementa la matriz 3×3; nunca puede aprobar Master por sí sola.</p>
       </div>
-      <span className="rounded-full bg-sky-300/[.06] px-2 py-1 text-[10px] text-sky-100/55">{violinSource.engineVersion}</span>
+      <span className="rounded-full bg-sky-300/[.06] px-2 py-1 text-xs text-sky-100/55">{violinSource.engineVersion}</span>
     </div>
 
-    <div className="mt-3 flex flex-wrap gap-1.5">{VIOLIN_WINTER_STRESS_SEGMENTS.map(segment => <span key={segment.id} className="rounded-full border border-white/[.06] px-2 py-1 text-[9px] text-white/35">{segment.label}</span>)}</div>
+    <div className="mt-3 flex flex-wrap gap-1.5">{VIOLIN_WINTER_STRESS_SEGMENTS.map(segment => <span key={segment.id} className="rounded-full border border-white/[.06] px-2 py-1 text-xs text-white/65">{segment.label}</span>)}</div>
 
     <div className="mt-4 flex flex-wrap gap-2">
       <button onClick={() => void run()} disabled={running} className="inline-flex items-center gap-2 rounded-lg border border-sky-300/15 bg-sky-300/[.06] px-3 py-2 text-xs text-sky-100/75 disabled:opacity-45">{running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Flame className="h-3.5 w-3.5" />}{running ? "Renderizando estrés…" : urls ? "Nueva corrida Winter" : "Generar Winter A/B"}</button>
@@ -89,12 +89,12 @@ export function ViolinWinterStressPanel() {
       </>}
     </div>
 
-    {durationSeconds !== null && <p className="mt-2 text-[10px] text-white/25">Render comparable · {durationSeconds.toFixed(1)} s · misma partitura, seed, sample base y mezcla; sólo cambia la capa física.</p>}
-    {error && <p className="mt-3 rounded-lg border border-red-300/10 bg-red-300/[.04] px-3 py-2 text-[10px] text-red-100/65">{error}</p>}
+    {durationSeconds !== null && <p className="mt-2 text-xs text-white/65">Render comparable · {durationSeconds.toFixed(1)} s · misma partitura, seed, sample base y mezcla; sólo cambia la capa física.</p>}
+    {error && <p className="mt-3 rounded-lg border border-red-300/10 bg-red-300/[.04] px-3 py-2 text-xs text-red-100/65">{error}</p>}
 
-    {assignment && !vote && <div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-[10px] text-white/30">Preferencia musical ciega:</span>{(["A", "B", "tie"] as const).map(value => <button key={value} onClick={() => setVote(value)} className="rounded-md bg-white/[.04] px-2 py-1 text-[10px] text-white/50 hover:bg-white/[.09]">{value === "tie" ? "Empate" : `Prefiero ${value}`}</button>)}</div>}
+    {assignment && !vote && <div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-xs text-white/65">Preferencia musical ciega:</span>{(["A", "B", "tie"] as const).map(value => <button key={value} onClick={() => setVote(value)} className="rounded-md bg-white/[.04] px-2 py-1 text-xs text-white/65 hover:bg-white/[.09]">{value === "tie" ? "Empate" : `Prefiero ${value}`}</button>)}</div>}
 
-    {assignment && vote && <div className="mt-3 rounded-xl border border-white/[.06] bg-black/15 px-3 py-2 text-[10px] leading-5 text-white/45">
+    {assignment && vote && <div className="mt-3 rounded-xl border border-white/[.06] bg-black/15 px-3 py-2 text-xs leading-5 text-white/65">
       <p>Voto Winter bloqueado: {vote === "tie" ? "empate" : `preferiste ${vote}`}.</p>
       <p>Revelación: A = {assignment.A} · B = {assignment.B}.</p>
       <p className={vote !== "tie" && assignment[vote] === "hybrid" ? "text-emerald-200/65" : "text-amber-100/55"}>{vote === "tie" ? "Sin ganador perceptual en esta corrida." : assignment[vote] === "hybrid" ? "Hybrid ganó el stress test perceptual. Aún necesita 3×3 PASS y promoción/versionado para Master." : "Sample ganó el stress test perceptual. No promover Hybrid con esta evidencia."}</p>

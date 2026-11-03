@@ -211,6 +211,7 @@ try {
   await page.getByRole("button", { name: "Apariencia", exact: true }).click()
   await page.getByRole("button", { name: "Explorar el orbe", exact: true }).click()
   await page.locator('[role="dialog"] .tq-visual-slot[data-visual-ready="true"]').waitFor({ timeout: 30000 })
+  assert.equal(await page.evaluate(() => Number(getComputedStyle(document.querySelector(".tq-visual-surface")).zIndex) > Number(getComputedStyle(document.querySelector(".tq-viewer-backdrop")).zIndex)), true, "the orb is painted above its inspection backdrop")
   await page.screenshot({ path: `${output}/singularity-orb.png` })
   await page.getByRole("button", { name: "Activar el orbe", exact: true }).click()
   await page.waitForTimeout(250)

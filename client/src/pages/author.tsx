@@ -271,7 +271,7 @@ export default function AuthorPage() {
             </span>
 
             {totalWords > 0 && (
-              <span className="text-xs text-zinc-600 font-sans">
+              <span className="text-xs text-zinc-400 font-sans">
                 {totalWords >= 1000
                   ? `${Math.round(totalWords / 1000)}k ${t("wordsLabel")}`
                   : `${totalWords} ${t("wordsLabel")}`
@@ -347,7 +347,7 @@ export default function AuthorPage() {
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   whileTap={{ scale: 0.96 }}
                   onClick={() => setPublicView(v => !v)}
-                  className="flex items-center gap-1.5 text-[11px] font-sans px-3 py-1.5 rounded-full mb-4"
+                  className="flex items-center gap-1.5 text-xs font-sans px-3 py-1.5 rounded-full mb-4"
                   style={{
                     background: publicView ? gc.color : "rgba(255,255,255,0.05)",
                     color: publicView ? "rgba(0,0,0,0.85)" : "rgba(255,255,255,0.7)",
@@ -368,8 +368,8 @@ export default function AuthorPage() {
                         style={{ background: `${gc.glow}0d`, border: `1px solid ${gc.color}30` }}
                       >
                         <div className="flex items-center gap-2 mb-3">
-                          <Lock className="w-3 h-3" style={{ color: "rgba(255,255,255,0.5)" }} />
-                          <p className="text-[11px] font-sans font-semibold" style={{ color: "rgba(255,255,255,0.8)" }}>
+                          <Lock className="w-3 h-3" style={{ color: "rgba(255,255,255,0.65)" }} />
+                          <p className="text-xs font-sans font-semibold" style={{ color: "rgba(255,255,255,0.8)" }}>
                             {t("privateStats")}
                           </p>
                           <InfoDot text={t("privateStatsNote")} color={gc.color} size={11} align="left" />
@@ -380,15 +380,15 @@ export default function AuthorPage() {
                               <Heart className="w-3.5 h-3.5" style={{ color: gc.color, fill: gc.color }} />
                               <span className="text-lg font-display font-bold" style={{ color: gc.color }}>{authorStats.totalHearts}</span>
                             </div>
-                            <p className="text-[8px] font-sans mt-0.5" style={{ color: "rgba(255,255,255,0.45)" }}>{t("statHearts")}</p>
+                            <p className="text-xs font-sans mt-0.5" style={{ color: "rgba(255,255,255,0.65)" }}>{t("statHearts")}</p>
                           </div>
                           <div>
                             <span className="text-lg font-display font-bold text-white">{authorStats.totalSupports}</span>
-                            <p className="text-[8px] font-sans mt-0.5" style={{ color: "rgba(255,255,255,0.45)" }}>{t("statSupports")}</p>
+                            <p className="text-xs font-sans mt-0.5" style={{ color: "rgba(255,255,255,0.65)" }}>{t("statSupports")}</p>
                           </div>
                           <div>
                             <span className="text-lg font-display font-bold text-white">{authorStats.totalReaders}</span>
-                            <p className="text-[8px] font-sans mt-0.5" style={{ color: "rgba(255,255,255,0.45)" }}>{t("statReaders")}</p>
+                            <p className="text-xs font-sans mt-0.5" style={{ color: "rgba(255,255,255,0.65)" }}>{t("statReaders")}</p>
                           </div>
                         </div>
                       </motion.div>
@@ -403,7 +403,7 @@ export default function AuthorPage() {
                       >
                         <div className="flex items-center gap-2 mb-1">
                           <TrendingUp className="w-3.5 h-3.5" style={{ color: gc.color }} />
-                          <p className="text-[11px] font-sans font-semibold" style={{ color: "rgba(255,255,255,0.8)" }}>
+                          <p className="text-xs font-sans font-semibold" style={{ color: "rgba(255,255,255,0.8)" }}>
                             {t("earningsTitle")}
                           </p>
                           <InfoDot text={t("earningsPayoutNote")} color={gc.color} size={12} align="left" />
@@ -411,20 +411,20 @@ export default function AuthorPage() {
                         <p className="text-xl font-display font-bold" style={{ color: gc.color }}>
                           ${(payout.availableCents / 100).toFixed(2)} {payout.currency.toUpperCase()}
                         </p>
-                        <p className="text-[10px] font-sans mt-0.5" style={{ color: "rgba(255,255,255,0.45)" }}>
+                        <p className="text-xs font-sans mt-0.5" style={{ color: "rgba(255,255,255,0.65)" }}>
                           {t("payoutAvailable")}
                         </p>
                         {payout.heldCents > 0 && (
-                          <p className="text-[10px] font-sans mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>
+                          <p className="text-xs font-sans mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>
                             ${(payout.heldCents / 100).toFixed(2)} {payout.currency.toUpperCase()} · En espera según la fecha de cada operación
                           </p>
                         )}
                         {payout.payouts[0] && ["requested", "processing", "processing_unknown"].includes(payout.payouts[0].status) ? (
-                          <p className="text-[10px] font-sans mt-2" style={{ color: gc.color }}>{t("payoutPending")}</p>
+                          <p className="text-xs font-sans mt-2" style={{ color: gc.color }}>{t("payoutPending")}</p>
                         ) : payout.enabled && !payout.account.ready ? (
                           <button
                             type="button" disabled={payoutBusy} onClick={beginPayoutOnboarding}
-                            className="mt-3 w-full rounded-xl px-3 py-2 text-[11px] font-sans font-semibold disabled:opacity-50"
+                            className="mt-3 w-full rounded-xl px-3 py-2 text-xs font-sans font-semibold disabled:opacity-50"
                             style={{ background: gc.color, color: "rgba(0,0,0,0.88)" }}
                           >
                             {payoutBusy ? t("processing") : t("payoutVerify")}
@@ -432,17 +432,17 @@ export default function AuthorPage() {
                         ) : payout.enabled && payout.account.ready && payout.availableCents >= payout.minimumCents ? (
                           <button
                             type="button" disabled={payoutBusy} onClick={requestPayout}
-                            className="mt-3 w-full rounded-xl px-3 py-2 text-[11px] font-sans font-semibold disabled:opacity-50"
+                            className="mt-3 w-full rounded-xl px-3 py-2 text-xs font-sans font-semibold disabled:opacity-50"
                             style={{ background: gc.color, color: "rgba(0,0,0,0.88)" }}
                           >
                             {payoutBusy ? t("processing") : t("payoutRequest")}
                           </button>
                         ) : !payout.enabled ? (
-                          <p className="text-[10px] font-sans mt-2" style={{ color: "rgba(255,255,255,0.5)" }}>{t("payoutDisabled")}</p>
+                          <p className="text-xs font-sans mt-2" style={{ color: "rgba(255,255,255,0.65)" }}>{t("payoutDisabled")}</p>
                         ) : null}
                         <a href="/legal/receipts" className="mt-3 block min-h-11 text-xs underline">Acuerdos y estado de cuenta detallado</a>
                         {payoutMessage && (
-                          <p className="text-[10px] font-sans mt-2" role="status" style={{ color: gc.color }}>{payoutMessage}</p>
+                          <p className="text-xs font-sans mt-2" role="status" style={{ color: gc.color }}>{payoutMessage}</p>
                         )}
                       </motion.div>
                     )}
@@ -460,8 +460,8 @@ export default function AuthorPage() {
                 animate={{ opacity: 1 }}
                 className="flex flex-col items-center justify-center py-20 gap-3 text-center"
               >
-                <BookOpen className="w-8 h-8 text-zinc-700" />
-                <p className="text-zinc-600 text-sm font-sans">
+                <BookOpen className="w-8 h-8 text-zinc-400" />
+                <p className="text-zinc-400 text-sm font-sans">
                   Este autor no tiene obras publicadas.
                 </p>
               </motion.div>
@@ -471,7 +471,7 @@ export default function AuthorPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
               >
-                <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-sans mb-4">
+                <p className="text-xs text-zinc-400 uppercase tracking-widest font-sans mb-4">
                   {t("published")}
                 </p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-5">

@@ -43,8 +43,8 @@ export default function LoginScreen() {
           Tloque
         </h1>
         <p
-          className="text-[11px] tracking-[0.3em] uppercase font-sans"
-          style={{ color: "rgba(255,255,255,0.25)" }}
+          className="text-xs tracking-[0.3em] uppercase font-sans"
+          style={{ color: "rgba(255,255,255,0.65)" }}
         >
           narrativas que permanecen
         </p>
@@ -55,7 +55,7 @@ export default function LoginScreen() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.3, duration: 0.6 }}
-        className="text-zinc-500 text-sm font-sans text-center leading-relaxed mb-10 max-w-xs relative z-10"
+        className="text-zinc-400 text-sm font-sans text-center leading-relaxed mb-10 max-w-xs relative z-10"
       >
         Inicia sesión para guardar tus lecturas, publicar historias y personalizar tu experiencia.
       </motion.p>
@@ -92,13 +92,13 @@ export default function LoginScreen() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.8 }}
-        className="mt-6 text-zinc-700 text-[10px] font-sans text-center max-w-xs relative z-10"
+        className="mt-6 text-zinc-400 text-xs font-sans text-center max-w-xs relative z-10"
       >
         Usamos tus datos para operar tu cuenta. Las funciones opcionales de IA y voz pueden usar proveedores externos.
         <span className="mt-2 block">
-          <a className="text-zinc-500 underline underline-offset-2" href="/privacy">Privacidad</a>
+          <a className="text-zinc-400 underline underline-offset-2" href="/privacy">Privacidad</a>
           <span aria-hidden="true"> · </span>
-          <a className="text-zinc-500 underline underline-offset-2" href="/terms">Términos</a>
+          <a className="text-zinc-400 underline underline-offset-2" href="/terms">Términos</a>
         </span>
       </motion.p>
 
