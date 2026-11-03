@@ -76,8 +76,20 @@ async function setup() {
 }
 const navigate = (page, path) => page.evaluate(path => { history.pushState(null, "", path); dispatchEvent(new PopStateEvent("popstate")) }, path)
 const draft = page => page.evaluate(async () => (await import("/src/lib/editor-drafts.ts")).loadDurableEditorDraft(123))
+const failures = []
+async function scenario(name, run) {
+  console.log("UI reliability:", name)
+  try { await run() } catch (error) {
+    failures.push(error)
+    for (const [index, page] of browser.contexts().flatMap(context => context.pages()).entries()) {
+      await page.screenshot({ path: resolve(output, `failure-${failures.length}-${index}.png`) }).catch(() => {})
+      console.error("Failure screen:", (await page.locator("body").innerText().catch(() => "")).slice(0, 2000))
+    }
+    console.error(error)
+  } finally { for (const context of browser.contexts()) await context.close() }
+}
 try {
-  console.log("UI reliability: OAuth destination and claim secret")
+  await scenario("OAuth destination and claim secret", async () => {
   const login = await setup(); login.state.signedIn = false
   await login.page.goto(origin + "/claim/TLQ-FIXTURE#key=ABCD-EFGH")
   await login.page.getByRole("button", { name: "Continuar con Google", exact: true }).click()
@@ -87,8 +99,9 @@ try {
   assert.deepEqual(login.state.oauth, ["/claim/TLQ-FIXTURE"])
   assert.equal(await login.page.evaluate(() => sessionStorage.getItem("tloque_login_return_v1")), null)
   await login.context.close()
+  })
 
-  console.log("UI reliability: immediate editor exit and SPA Back retain the manuscript")
+  await scenario("immediate editor exit and SPA Back retain the manuscript", async () => {
   const editor = await setup()
   await editor.page.goto(origin + "/library")
   await editor.page.getByRole("heading", { name: user.name, exact: true }).waitFor()
@@ -111,8 +124,9 @@ try {
     await editor.page.waitForFunction(async text => (await (await import("/src/lib/editor-drafts.ts")).loadDurableEditorDraft(123))?.value.chapters[0].content === text, second)
   })
   await editor.context.close()
+  })
 
-  console.log("UI reliability: consecutive searches, failed Inbox and visible navigation")
+  await scenario("consecutive searches, failed Inbox and visible navigation", async () => {
   const search = await setup()
   await search.page.goto(origin + "/library?search=alpha")
   await search.page.getByRole("heading", { name: '"alpha"', exact: true }).waitFor()
@@ -124,12 +138,14 @@ try {
   await search.page.locator('input[placeholder]').waitFor()
   await search.page.keyboard.press("Escape")
   search.state.failInbox = true
-  await navigate(search.page, "/inbox")
+  // Reload to exercise a failed request instead of the header's fresh notification cache.
+  await search.page.goto(origin + "/inbox")
   await search.page.getByRole("alert").waitFor()
   await search.page.getByRole("button", { name: "Reintentar", exact: true }).waitFor()
   await search.context.close()
+  })
 
-  console.log("UI reliability: cold reader scrolling and reading settings")
+  await scenario("cold reader scrolling and reading settings", async () => {
   const reader = await setup(); reader.state.bookDelay = 600
   await reader.page.goto(origin + "/read/123/1")
   const scroll = reader.page.getByTestId("reader-scroll")
@@ -143,8 +159,9 @@ try {
   assert.equal(await reader.page.getByRole("button", { name: "Lectura", exact: true }).evaluate(el => el === document.activeElement), true)
   await reader.page.screenshot({ path: resolve(output, "reader-mobile.png") })
   await reader.context.close()
+  })
 
-  console.log("UI reliability: order confirmation follows server state")
+  await scenario("order confirmation follows server state", async () => {
   const checkout = await setup()
   await checkout.page.goto(origin + "/book/123?paid=7")
   await checkout.page.getByRole("status").filter({ hasText: /verificando el pago/ }).waitFor()
@@ -155,12 +172,8 @@ try {
   await checkout.page.getByRole("alert").waitFor()
   assert.equal(await checkout.page.getByText("Pago confirmado. Tu edición está disponible.", { exact: true }).count(), 0)
   await checkout.context.close()
+  })
+  if (failures.length) throw new AggregateError(failures, "UI reliability scenarios failed")
   assert.deepEqual(errors, [])
   console.log("UI reliability gate passed: OAuth/QR, draft exits, searches, errors, reader and payment states; no live services.")
-} catch (error) {
-  for (const [index, page] of browser.contexts().flatMap(context => context.pages()).entries()) {
-    await page.screenshot({ path: resolve(output, `failure-${index}.png`) }).catch(() => {})
-    console.error("Failure screen:", (await page.locator("body").innerText().catch(() => "")).slice(0, 3000))
-  }
-  throw error
 } finally { await browser.close(); await vite.close() }
