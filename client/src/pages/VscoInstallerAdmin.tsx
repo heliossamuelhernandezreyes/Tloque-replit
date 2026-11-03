@@ -182,14 +182,14 @@ export default function VscoInstallerAdmin() {
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/10 bg-zinc-950/95 px-4 py-3">
         <button aria-label="Volver" onClick={() => setLocation("/admin/audio/keyboards")}><ArrowLeft className="h-4 w-4" /></button>
         <Music2 className="h-4 w-4 text-amber-300" />
-        <div><h1 className="font-semibold">{presentation.title}</h1><p className="text-[10px] text-zinc-500">Biblioteca acústica nativa de Tloque</p></div>
+        <div><h1 className="font-semibold">{presentation.title}</h1><p className="text-xs text-zinc-400">Biblioteca acústica nativa de Tloque</p></div>
       </header>
 
       <section className="mx-auto max-w-4xl space-y-4 p-4">
         <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.035] p-4 text-xs leading-5 text-zinc-400">
           <p className="flex items-center gap-2 font-medium text-emerald-200"><ShieldCheck className="h-4 w-4" /> Catálogo curado unificado</p>
           <p className="mt-1">La pantalla ya no depende de una biblioteca concreta. SFZ, WAV curado y PCM institucional pasan por el mismo contrato: procedencia fija, validación física, SHA-256, App Storage y manifest semántico antes de que `native-auto` pueda usarlos.</p>
-          <p className="mt-2 text-zinc-500">{presentation.copy}</p>
+          <p className="mt-2 text-zinc-400">{presentation.copy}</p>
         </div>
 
         <div className="rounded-2xl border border-amber-300/25 bg-amber-300/[0.055] p-4">
@@ -223,24 +223,24 @@ export default function VscoInstallerAdmin() {
                   <div className="rounded-xl bg-amber-300/10 p-3"><Music2 className="h-6 w-6 text-amber-200" /></div>
                   <div className="min-w-0 flex-1">
                     <h2 className="font-semibold">{pack.displayName}</h2>
-                    <p className="mt-1 text-[11px] text-zinc-500">{pack.instrumentId}</p>
-                    <p className="mt-1 truncate text-[10px] text-zinc-600">{pack.libraryName}</p>
+                    <p className="mt-1 text-xs text-zinc-400">{pack.instrumentId}</p>
+                    <p className="mt-1 truncate text-xs text-zinc-400">{pack.libraryName}</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-[10px]">
-                  <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-zinc-500">Licencia</p><p className="mt-1 break-words text-zinc-200">{pack.license}</p></div>
-                  <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-zinc-500">Estimado</p><p className="mt-1 text-zinc-200">~{pack.estimatedMegabytes} MB</p></div>
-                  <div className="col-span-2 rounded-xl bg-white/[0.04] p-3"><p className="text-zinc-500">Módulo Tloque</p><code className="mt-1 block truncate text-zinc-200">{pack.moduleId}</code></div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-zinc-400">Licencia</p><p className="mt-1 break-words text-zinc-200">{pack.license}</p></div>
+                  <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-zinc-400">Estimado</p><p className="mt-1 text-zinc-200">~{pack.estimatedMegabytes} MB</p></div>
+                  <div className="col-span-2 rounded-xl bg-white/[0.04] p-3"><p className="text-zinc-400">Módulo Tloque</p><code className="mt-1 block truncate text-zinc-200">{pack.moduleId}</code></div>
                 </div>
 
                 {published ? (
                   <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-3 text-emerald-100">
                     <p className="flex items-center gap-2 text-sm font-semibold"><CheckCircle2 className="h-5 w-5" /> Publicado en App Storage</p>
                     {result ? (
-                      <p className="mt-2 text-[11px] leading-5 text-emerald-100/75">{result.sampleCount} muestras verificadas · {result.uploadedSamples} nuevas · {(result.bytes / 1024 / 1024).toFixed(1)} MB</p>
+                      <p className="mt-2 text-xs leading-5 text-emerald-100/75">{result.sampleCount} muestras verificadas · {result.uploadedSamples} nuevas · {(result.bytes / 1024 / 1024).toFixed(1)} MB</p>
                     ) : (
-                      <p className="mt-2 text-[11px] leading-5 text-emerald-100/75">Tloque verificó que este módulo ya existe. No se descargará otra vez.</p>
+                      <p className="mt-2 text-xs leading-5 text-emerald-100/75">Tloque verificó que este módulo ya existe. No se descargará otra vez.</p>
                     )}
                   </div>
                 ) : (

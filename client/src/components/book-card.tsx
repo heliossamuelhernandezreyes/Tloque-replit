@@ -1,3 +1,4 @@
+import { readingProgress } from "@shared/reading-progress"
 import { accountStorage as localStorage } from "@/lib/account-context"
 import { Link } from "wouter"
 import { motion } from "framer-motion"
@@ -14,6 +15,8 @@ interface BookCardProps {
   genre?:          string
   isSaved?:        boolean
   isClassic?:      boolean
+  chapterCount?: number
+  chapters?: unknown[]
   publicationYear?: number
   type?:           string
 }
@@ -21,9 +24,10 @@ interface BookCardProps {
 // Color neutro para libros sin género asignado
 const NEUTRAL_CFG = GENRE_CONFIG["todos"]
 
-export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }: BookCardProps) {
+export function BookCard({ id, title, author, coverUrl, genre, isClassic, type, chapterCount, chapters }: BookCardProps) {
   const [imgFailed,     setImgFailed]     = useState(false)
-  const [readProgress,  setReadProgress]  = useState(0)
+  const [readProgress,  setReadProgress]  = useState<number | null>(null)
+  const [readingChapter, setReadingChapter] = useState<number | null>(null)
 
   const gc     = genre ? (GENRE_CONFIG[genre as Genre] || NEUTRAL_CFG) : NEUTRAL_CFG
   const { t, settings }  = useSettings()
@@ -32,11 +36,12 @@ export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }
   // Leer progreso guardado en localStorage
   useEffect(() => {
     try {
-      const savedChapter = Number(localStorage.getItem(`reading_chapter_${id}`) || 0)
-      // No tenemos el total de capítulos aquí, pero si hay progreso lo marcamos
-      if (savedChapter > 0) setReadProgress(Math.min(savedChapter * 12, 92))
+      const raw = localStorage.getItem(`reading_chapter_${id}`)
+      const savedChapter = Number(raw || 0)
+      setReadingChapter(raw !== null ? savedChapter : null)
+      setReadProgress(readingProgress(savedChapter, chapterCount ?? chapters?.length, localStorage.getItem(`reading_completed_${id}`) === "true"))
     } catch {}
-  }, [id])
+  }, [id, chapterCount, chapters?.length])
 
   return (
       <motion.div
@@ -76,7 +81,7 @@ export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }
             >
               <BookOpen className="w-5 h-5 shrink-0" style={{ color: gc.color + "60" }} />
               <span
-                className="text-[9px] tracking-widest uppercase text-center leading-relaxed line-clamp-3 font-sans"
+                className="text-xs tracking-widest uppercase text-center leading-relaxed line-clamp-3 font-sans"
                 style={{ color: gc.color + "50" }}
               >
                 {title}
@@ -90,7 +95,7 @@ export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }
           {/* badge de clásico — etiqueta dorada sutil */}
           {isClassic && (
             <div
-              className="absolute top-1.5 left-1.5 z-20 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-widest font-sans"
+              className="absolute top-1.5 left-1.5 z-20 px-1.5 py-0.5 rounded text-xs uppercase tracking-widest font-sans"
               style={{
                 background: "rgba(0,0,0,0.75)",
                 color:      "rgba(255,210,100,0.85)",
@@ -105,10 +110,10 @@ export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }
           {/* badge de tipo — relato/saga en esquina */}
           {type === "story" && (
             <div
-              className="absolute top-1.5 right-1.5 z-20 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-widest font-sans"
+              className="absolute top-1.5 right-1.5 z-20 px-1.5 py-0.5 rounded text-xs uppercase tracking-widest font-sans"
               style={{
                 background:     "rgba(0,0,0,0.7)",
-                color:          "rgba(255,255,255,0.4)",
+                color:          "rgba(255,255,255,0.65)",
                 backdropFilter: "blur(4px)",
               }}
             >
@@ -117,7 +122,7 @@ export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }
           )}
           {type === "saga" && (
             <div
-              className="absolute top-1.5 right-1.5 z-20 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-widest font-sans"
+              className="absolute top-1.5 right-1.5 z-20 px-1.5 py-0.5 rounded text-xs uppercase tracking-widest font-sans"
               style={{
                 background:     "rgba(0,0,0,0.7)",
                 color:          "rgba(180,160,255,0.6)",
@@ -129,7 +134,7 @@ export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }
           )}
 
           {/* barra de progreso de lectura — siempre visible si hay progreso */}
-          {readProgress > 0 && (
+          {readProgress !== null && readProgress > 0 && (
             <div
               className="absolute bottom-0 left-0 right-0 h-[3px] z-20"
               style={{ background: "rgba(255,255,255,0.08)" }}
@@ -151,7 +156,7 @@ export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }
           <motion.div
             className="absolute bottom-0 left-0 right-0 h-[2px] z-20"
             initial={{ opacity: 0 }}
-            whileHover={{ opacity: readProgress > 0 ? 0 : 1 }}
+            whileHover={{ opacity: (readProgress ?? 0) > 0 ? 0 : 1 }}
             transition={{ duration: 0.3 }}
             style={{ background: `linear-gradient(90deg, transparent, ${gc.color}cc, transparent)` }}
           />
@@ -169,6 +174,7 @@ export function BookCard({ id, title, author, coverUrl, genre, isClassic, type }
 
         {/* TEXTO */}
         <div className="px-0.5 space-y-0.5">
+          {readingChapter !== null && <p className="text-xs text-zinc-300">{readProgress === null ? `${t("chapter")} ${readingChapter + 1}` : `${Math.round(readProgress)}%`}</p>}
           <Link href={`/book/${id}`} tabIndex={-1}>
           <h3 className="font-display font-bold text-white/90 text-sm leading-snug line-clamp-2 group-hover:text-white transition-colors duration-200">
             {title}

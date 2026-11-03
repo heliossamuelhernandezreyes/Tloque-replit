@@ -377,8 +377,8 @@ export default function ParallaxCover({
             {!hasImage && !layered && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
                 <BookOpen className="w-8 h-8" style={{ color: accentColor, opacity: 0.35 }} />
-                <p className="text-[11px] font-sans px-6 text-center"
-                  style={{ color: "rgba(255,255,255,0.35)" }}>
+                <p className="text-xs font-sans px-6 text-center"
+                  style={{ color: "rgba(255,255,255,0.65)" }}>
                   {title}
                 </p>
               </div>
@@ -436,7 +436,7 @@ export default function ParallaxCover({
         (window as any).DeviceOrientationEvent?.requestPermission && (
         <button
           onClick={(e) => { e.stopPropagation(); pedirGyro() }}
-          className="absolute bottom-2 right-2 z-10 text-[9px] font-sans px-2 py-1 rounded-lg"
+          className="absolute bottom-2 right-2 z-10 text-xs font-sans px-2 py-1 rounded-lg"
           style={{
             background: "rgba(0,0,0,0.78)",
             border: `1px solid ${accentColor}40`,

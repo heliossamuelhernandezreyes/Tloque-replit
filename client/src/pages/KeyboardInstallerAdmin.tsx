@@ -188,7 +188,7 @@ export default function KeyboardInstallerAdmin() {
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/10 bg-zinc-950/95 px-4 py-3">
         <button aria-label="Volver" onClick={() => setLocation("/admin/fonoteca")}><ArrowLeft className="h-4 w-4" /></button>
         <Music2 className="h-4 w-4 text-amber-300" />
-        <div><h1 className="font-semibold">Instrumentos acústicos premium</h1><p className="text-[10px] text-zinc-500">Centro de instalación · native-auto · CC0</p></div>
+        <div><h1 className="font-semibold">Instrumentos acústicos premium</h1><p className="text-xs text-zinc-400">Centro de instalación · native-auto · CC0</p></div>
       </header>
 
       <section className="mx-auto max-w-4xl space-y-4 p-4">
@@ -199,11 +199,11 @@ export default function KeyboardInstallerAdmin() {
             {PREMIUM_FAMILIES.map(family => (
               <button key={family.route} onClick={() => setLocation(family.route)} className="rounded-xl border border-white/10 bg-white/[0.035] p-3 text-left transition hover:bg-white/[0.065]">
                 <span className="block text-sm font-medium text-white">{family.label}</span>
-                <span className="mt-1 block text-[10px] leading-4 text-zinc-500">{family.detail}</span>
+                <span className="mt-1 block text-xs leading-4 text-zinc-400">{family.detail}</span>
               </button>
             ))}
           </div>
-          <p className="mt-3 text-[10px] text-zinc-500">Piano, órgano por capas, ocarina, recorder y clave se instalan más abajo en esta misma pantalla.</p>
+          <p className="mt-3 text-xs text-zinc-400">Piano, órgano por capas, ocarina, recorder y clave se instalan más abajo en esta misma pantalla.</p>
         </div>
 
         <div className="rounded-2xl border border-amber-300/25 bg-amber-300/[0.055] p-4">
@@ -212,20 +212,20 @@ export default function KeyboardInstallerAdmin() {
             <div className="min-w-0 flex-1">
               <p className="font-semibold text-amber-100">Barroco Premium · Vivaldi</p>
               <p className="mt-1 text-xs leading-5 text-zinc-400">Set acústico completo para <code>module native-auto</code>: VSCO 2 CE Solo Violin + Viola Section + Cello Section, y VCSL Italian Harpsichord Stop 1. Con los cuatro publicados, escuchar y exportar usan muestras reales en lugar del fallback sintetizado.</p>
-              <p className="mt-2 text-[10px] text-zinc-500">{baroqueInstalledCount}/{BAROQUE_PACKS.length} módulos disponibles · ~{baroqueTotalMb} MB estimados en origen · App Storage deduplica WAV repetidos.</p>
+              <p className="mt-2 text-xs text-zinc-400">{baroqueInstalledCount}/{BAROQUE_PACKS.length} módulos disponibles · ~{baroqueTotalMb} MB estimados en origen · App Storage deduplica WAV repetidos.</p>
             </div>
           </div>
 
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {BAROQUE_PACKS.map(pack => (
-              <div key={pack.moduleId} className="flex items-center gap-2 rounded-xl bg-black/25 px-3 py-2 text-[11px]">
+              <div key={pack.moduleId} className="flex items-center gap-2 rounded-xl bg-black/25 px-3 py-2 text-xs">
                 {installed[pack.moduleId]
                   ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-300" />
                   : busyId === pack.id
                     ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-200" />
-                    : <Download className="h-4 w-4 shrink-0 text-zinc-500" />}
+                    : <Download className="h-4 w-4 shrink-0 text-zinc-400" />}
                 <span className="min-w-0 flex-1 truncate">{pack.displayName}</span>
-                <span className={installed[pack.moduleId] ? "text-emerald-300" : "text-zinc-600"}>{installed[pack.moduleId] ? "listo" : "falta"}</span>
+                <span className={installed[pack.moduleId] ? "text-emerald-300" : "text-zinc-400"}>{installed[pack.moduleId] ? "listo" : "falta"}</span>
               </div>
             ))}
           </div>
@@ -248,7 +248,7 @@ export default function KeyboardInstallerAdmin() {
         <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.035] p-4 text-xs leading-5 text-zinc-400">
           <p className="flex items-center gap-2 font-medium text-emerald-200"><ShieldCheck className="h-4 w-4" /> WAV curados, fijados y verificados</p>
           <p className="mt-1">Tloque usa únicamente listas o índices fijados a commits concretos, valida cada archivo RIFF/WAVE, calcula SHA-256 y copia las muestras a App Storage. El navegador nunca reproduce directamente desde GitHub.</p>
-          <p className="mt-2 text-zinc-500">El importador genera un SFZ inerte interno sólo para reutilizar el mismo TloqueSamplePack y el mismo Performance Engine de la orquesta.</p>
+          <p className="mt-2 text-zinc-400">El importador genera un SFZ inerte interno sólo para reutilizar el mismo TloqueSamplePack y el mismo Performance Engine de la orquesta.</p>
         </div>
 
         <div className="rounded-2xl border border-violet-300/15 bg-violet-300/[0.035] p-4">
@@ -268,16 +268,16 @@ export default function KeyboardInstallerAdmin() {
                   <div className="rounded-xl bg-amber-300/10 p-3"><Music2 className="h-6 w-6 text-amber-200" /></div>
                   <div className="min-w-0 flex-1">
                     <h2 className="font-semibold">{pack.displayName}</h2>
-                    <p className="mt-1 text-[11px] text-zinc-500">{pack.instrumentId} · {sourceKindCopy(pack)}</p>
+                    <p className="mt-1 text-xs text-zinc-400">{pack.instrumentId} · {sourceKindCopy(pack)}</p>
                   </div>
                 </div>
 
-                <p className="text-[11px] leading-5 text-zinc-400">{capabilityCopy(pack)}</p>
+                <p className="text-xs leading-5 text-zinc-400">{capabilityCopy(pack)}</p>
 
-                <div className="grid grid-cols-2 gap-2 text-[10px]">
-                  <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-zinc-500">Licencia</p><p className="mt-1 text-zinc-200">{pack.license}</p></div>
-                  <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-zinc-500">Estimado</p><p className="mt-1 text-zinc-200">~{pack.estimatedMegabytes} MB</p></div>
-                  <div className="col-span-2 rounded-xl bg-white/[0.04] p-3"><p className="text-zinc-500">Módulo Tloque</p><code className="mt-1 block truncate text-zinc-200">{pack.moduleId}</code></div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-zinc-400">Licencia</p><p className="mt-1 text-zinc-200">{pack.license}</p></div>
+                  <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-zinc-400">Estimado</p><p className="mt-1 text-zinc-200">~{pack.estimatedMegabytes} MB</p></div>
+                  <div className="col-span-2 rounded-xl bg-white/[0.04] p-3"><p className="text-zinc-400">Módulo Tloque</p><code className="mt-1 block truncate text-zinc-200">{pack.moduleId}</code></div>
                 </div>
 
                 {!published ? (
@@ -288,15 +288,15 @@ export default function KeyboardInstallerAdmin() {
                   <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-3 text-emerald-100">
                     <p className="flex items-center gap-2 text-sm font-semibold"><CheckCircle2 className="h-5 w-5" /> Publicado en App Storage</p>
                     {result && <>
-                      <p className="mt-2 text-[11px] leading-5 text-emerald-100/75">{result.sampleCount} muestras verificadas · {result.uploadedSamples} nuevas · {(result.bytes / 1024 / 1024).toFixed(1)} MB</p>
-                      <p className="mt-1 text-[10px] text-zinc-400">SHA {result.sha256.slice(0, 12)}…</p>
+                      <p className="mt-2 text-xs leading-5 text-emerald-100/75">{result.sampleCount} muestras verificadas · {result.uploadedSamples} nuevas · {(result.bytes / 1024 / 1024).toFixed(1)} MB</p>
+                      <p className="mt-1 text-xs text-zinc-400">SHA {result.sha256.slice(0, 12)}…</p>
                     </>}
-                    <code className="mt-2 block rounded bg-black/30 px-2 py-1.5 text-[10px]">module {pack.moduleId}</code>
+                    <code className="mt-2 block rounded bg-black/30 px-2 py-1.5 text-xs">module {pack.moduleId}</code>
                   </div>
                 )}
 
                 {error && <p role="alert" className="rounded-xl border border-red-400/20 bg-red-950/30 p-3 text-xs text-red-200">{error}</p>}
-                <a href={pack.repositoryUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-[10px] text-sky-300">Procedencia <ExternalLink className="h-3.5 w-3.5" /></a>
+                <a href={pack.repositoryUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-xs text-sky-300">Procedencia <ExternalLink className="h-3.5 w-3.5" /></a>
               </article>
             )
           })}

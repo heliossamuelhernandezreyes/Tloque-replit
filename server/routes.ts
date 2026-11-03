@@ -2259,6 +2259,19 @@ export async function registerRoutes(
   })
 
   // Libros desbloqueados del usuario (no cuentan para el límite; re-descargables)
+  app.get("/api/tokens/orders/:id", async (req, res, next) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
+    const id = Number(req.params.id)
+    if (!Number.isSafeInteger(id) || id < 1) return res.status(404).json({ message: "Orden no disponible" })
+    try {
+      const [order] = await db.select({ id: tokenOrders.id, bookId: tokenOrders.bookId, status: tokenOrders.status, tokenId: tokenOrders.tokenId })
+        .from(tokenOrders).where(and(eq(tokenOrders.id, id), eq(tokenOrders.userId, (req.user as any).id)))
+      res.setHeader("Cache-Control", "private, no-store")
+      if (!order) return res.status(404).json({ message: "Orden no disponible" })
+      res.json(order)
+    } catch (error) { next(error) }
+  })
+
   app.get("/api/tokens/receipts", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Inicia sesión" })
     try {

@@ -85,6 +85,8 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Exercise the real interface against an isolated fixture API
         run: npm run test:visual:browser
+      - name: Verify UI reliability on mobile
+        run: node --import tsx scripts/ui-reliability-browser-qa.mjs
       - name: Gutenberg catalogue, mobile reading and import
         run: npm run test:gutenberg:browser
       - name: Account storage and multiple tabs in Chromium
@@ -97,4 +99,5 @@ jobs:
             .tloque_cache/visual-qa/
             .tloque_cache/gutenberg-qa/
             .tloque_cache/account-qa/
+            .tloque_cache/ui-reliability/
           retention-days: 7

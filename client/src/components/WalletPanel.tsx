@@ -1,8 +1,10 @@
+import AccessibleDialog from "./AccessibleDialog"
+import QueryNotice from "./QueryNotice"
 import type { LegalDocument } from "@shared/legal"
 import { displayTinta } from "@shared/tinta"
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useState } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { X, Loader2, Sparkles, Droplets, ScrollText, BadgeCheck } from "lucide-react"
 import InfoDot from "@/components/InfoDot"
@@ -39,21 +41,21 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
     queryFn: async()=>{ const response=await fetch("/api/legal/documents",{cache:"no-store"}); if(!response.ok) throw new Error("No se pudieron cargar las condiciones"); return response.json() } })
   const [credited, setCredited] = useState<number | null>(null)
 
-  const { data: wallet } = useQuery<{ tinta: number; papel: number }>({
+  const { data: wallet, isPending: walletLoading, isError: walletError, refetch: retryWallet } = useQuery<{ tinta: number; papel: number }>({
     queryKey: ["/api/wallet"],
     queryFn: async () => {
       const res = await fetch("/api/wallet", { credentials: "include" })
-      if (!res.ok) return { tinta: 0, papel: 0 }
+      if (!res.ok) throw new Error("No se pudo cargar el saldo")
       return res.json()
     },
     enabled: open,
   })
 
-  const { data: packsData } = useQuery<{ enabled: boolean; beta: boolean; commerceVersion?: string; tintaCents: number; packs: Pack[] }>({
+  const { data: packsData, isPending: packsLoading, isError: packsError, refetch: retryPacks } = useQuery<{ enabled: boolean; beta: boolean; commerceVersion?: string; tintaCents: number; packs: Pack[] }>({
     queryKey: ["/api/wallet/packs"],
     queryFn: async () => {
       const res = await fetch("/api/wallet/packs")
-      if (!res.ok) return { enabled: false, beta: false, tintaCents: 200, packs: [] }
+      if (!res.ok) throw new Error("No se pudieron cargar los paquetes")
       return res.json()
     },
     enabled: open,
@@ -108,31 +110,18 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
     },
   })
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          onClick={onClose}
-          className="fixed inset-0 z-[700] flex items-end sm:items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}
-        >
-          <motion.div
-            initial={{ y: 40, opacity: 0, scale: 0.96 }}
-            animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: 40, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 260, damping: 24 }}
-            onClick={e => e.stopPropagation()}
-            className="w-full max-w-sm rounded-3xl p-5"
-            style={{ background: "rgba(18,18,24,0.99)", border: `1px solid ${accentColor}30` }}
-          >
-            <div className="flex items-center justify-between mb-4">
+  return <AccessibleDialog open={open} onClose={onClose} title={t("walletTitle")} className="max-w-sm" style={{ background: "#121218", border: `1px solid ${accentColor}50` }}>
+            <div className="flex shrink-0 items-center justify-between px-5 pt-5 pb-4">
               <h2 className="text-base font-display font-bold text-white">{t("walletTitle")}</h2>
-              <button onClick={onClose} className="p-1.5 rounded-full"
-                style={{ color: "rgba(255,255,255,0.5)" }}>
+              <button onClick={onClose} aria-label={t("closeAction")} className="grid min-h-11 min-w-11 place-items-center rounded-full"
+                style={{ color: "rgba(255,255,255,0.65)" }}>
                 <X className="w-4 h-4" />
               </button>
             </div>
+<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5" data-testid="wallet-scroll">
+<QueryNotice loading={walletLoading} error={walletError} onRetry={() => { void retryWallet() }} />
+<QueryNotice loading={packsLoading} error={packsError} onRetry={() => { void retryPacks() }} />
+
 
             {(wallet?.tinta ?? 0) < 0 && (
               <p role="status" className="mb-3 rounded-xl border border-amber-300/20 p-3 text-xs text-amber-100">
@@ -145,44 +134,46 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
                 style={{ background: `${accentGlow}12`, border: `1px solid ${accentColor}30` }}>
                 <div className="flex items-center gap-1.5">
                   <Droplets className="w-3.5 h-3.5" style={{ color: accentColor }} />
-                  <p className="text-[10px] font-sans" style={{ color: "rgba(255,255,255,0.55)" }}>{t("tintaName")}</p>
+                  <p className="text-xs font-sans" style={{ color: "rgba(255,255,255,0.55)" }}>{t("tintaName")}</p>
                 </div>
                 <p className="text-xl font-display font-bold mt-0.5" style={{ color: accentColor }}>
-                  {displayTinta(wallet?.tinta ?? 0)}
+                  {wallet ? displayTinta(wallet.tinta) : "—"}
                 </p>
               </div>
               <div className="rounded-2xl px-3.5 py-3"
                 style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)" }}>
                 <div className="flex items-center gap-1.5">
-                  <ScrollText className="w-3.5 h-3.5" style={{ color: "rgba(255,255,255,0.45)" }} />
-                  <p className="text-[10px] font-sans" style={{ color: "rgba(255,255,255,0.55)" }}>{t("papelName")}</p>
+                  <ScrollText className="w-3.5 h-3.5" style={{ color: "rgba(255,255,255,0.65)" }} />
+                  <p className="text-xs font-sans" style={{ color: "rgba(255,255,255,0.55)" }}>{t("papelName")}</p>
                   <InfoDot text={t("papelNote")} color="rgba(255,255,255,0.4)" size={12} align="left" />
                 </div>
                 <p className="text-xl font-display font-bold mt-0.5" style={{ color: "rgba(255,255,255,0.72)" }}>
-                  {wallet?.papel ?? 0}
+                  {wallet?.papel ?? "—"}
                 </p>
               </div>
             </div>
 
+            <details className="mb-4 text-sm text-zinc-300"><summary className="min-h-11 cursor-pointer py-3">Papel · IA y voz</summary>
             <div className="rounded-2xl px-3.5 py-3 mb-4"
               style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
-              <p className="text-[11px] font-sans font-semibold text-white/70 mb-2">{t("paperUsageTitle")}</p>
+              <p className="text-xs font-sans font-semibold text-white/70 mb-2">{t("paperUsageTitle")}</p>
               <div className="grid grid-cols-3 gap-1.5 mb-2.5">
                 {(paperCatalog?.plans || []).map(plan => (
                   <div key={plan.key} className="rounded-xl py-2 px-1 text-center bg-white/[0.025] border border-white/[0.06]">
-                    <p className="text-[8px] font-sans text-white/40 mb-0.5">
+                    <p className="text-xs font-sans text-white/65 mb-0.5">
                       {t(plan.key === "reader" ? "planFree" : plan.key === "aesthetic" ? "planEstetic" : "planAudio")}
                     </p>
                     <p className="text-sm font-display font-semibold text-white/75 tabular-nums">{plan.monthlyPaper}</p>
-                    <p className="text-[8px] font-sans text-white/30">{t("paperPerMonth")}</p>
+                    <p className="text-xs font-sans text-white/65">{t("paperPerMonth")}</p>
                   </div>
                 ))}
               </div>
-              <p className="text-[9px] font-sans leading-relaxed text-white/35">{t("paperRateOracle")}</p>
-              <p className="text-[9px] font-sans leading-relaxed text-white/35">{t("paperRateVoice")}</p>
-              <p className="text-[8px] font-sans leading-relaxed text-white/25 mt-1.5">{t("paperBeta")}</p>
+              <p className="text-xs font-sans leading-relaxed text-white/65">{t("paperRateOracle")}</p>
+              <p className="text-xs font-sans leading-relaxed text-white/65">{t("paperRateVoice")}</p>
+              <p className="text-xs font-sans leading-relaxed text-white/65 mt-1.5">{t("paperBeta")}</p>
             </div>
 
+            </details>
             {/* Acreditación reciente */}
             {credited !== null && (
               <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
@@ -200,10 +191,10 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
             {legal.isError && <button className="mb-3 underline" onClick={()=>void legal.refetch()}>Reintentar carga de condiciones</button>}
             <label className="mb-4 flex min-h-11 items-start gap-2 text-xs text-white/70"><input type="checkbox" checked={!!legal.data && acceptedPackKey===packKey} disabled={!legal.data || !packsData?.commerceVersion} onChange={event=>setAcceptedPackKey(event.target.checked?packKey:"")} />Acepto las condiciones y los precios de los paquetes mostrados, en MXN.</label>
             {/* Paquetes */}
-            <p className="text-[11px] font-sans font-semibold mb-2" style={{ color: "rgba(255,255,255,0.7)" }}>
+            <p className="text-xs font-sans font-semibold mb-2" style={{ color: "rgba(255,255,255,0.7)" }}>
               {t("getTinta")}
               {!payOn && (
-                <span className="ml-2 text-[9px] font-normal px-1.5 py-0.5 rounded-full"
+                <span className="ml-2 text-xs font-normal px-1.5 py-0.5 rounded-full"
                   style={{ background: `${accentGlow}18`, color: accentColor }}>
                   {t("tokenBeta")}
                 </span>
@@ -233,7 +224,7 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
                     }}
                   >
                     {(p.recommended || isBestValue) && (
-                      <span className="absolute -top-2 right-3 rounded-full px-2 py-0.5 text-[8px] font-sans font-semibold uppercase tracking-wide"
+                      <span className="absolute -top-2 right-3 rounded-full px-2 py-0.5 text-xs font-sans font-semibold uppercase tracking-wide"
                         style={{ background: p.recommended ? accentColor : "rgba(255,255,255,0.16)", color: p.recommended ? "#09090d" : "white" }}>
                         {t(p.recommended ? "recommended" : "bestValue")}
                       </span>
@@ -241,7 +232,7 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4" style={{ color: accentColor }} />
                       <div className="text-left">
-                        <p className="text-[9px] font-sans uppercase tracking-wide text-white/35">{["entrada", "biblioteca"].includes(p.id) ? p.label : t(packKey)}</p>
+                        <p className="text-xs font-sans uppercase tracking-wide text-white/65">{["entrada", "biblioteca"].includes(p.id) ? p.label : t(packKey)}</p>
                         <p className="text-sm font-sans font-semibold text-white">{displayTinta(p.tinta)} {t("tintaName")}</p>
 
                       </div>
@@ -252,23 +243,21 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
                         {buy.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> :
                           payOn ? totalPrice : betaOn ? t("tokenBeta").split("·")[0].trim() : t("comingSoon")}
                       </span>
-                      {payOn && <span className="text-[8px] font-sans text-white/25">{formattedUnitPrice} / {t("tintaName")}</span>}
+                      {payOn && <span className="text-xs font-sans text-white/65">{formattedUnitPrice} / {t("tintaName")}</span>}
                     </div>
                   </button>
                 )
               })}
             </div>
             {buy.isError && (
-              <p className="text-[10px] font-sans mt-2" style={{ color: "#e8a0a0" }}>
+              <p className="text-xs font-sans mt-2" style={{ color: "#e8a0a0" }}>
                 {(buy.error as Error)?.message}
               </p>
             )}
-            <p className="text-[9px] font-sans mt-3 text-center" style={{ color: "rgba(255,255,255,0.3)" }}>
+            <p className="text-xs font-sans mt-3 text-center" style={{ color: "rgba(255,255,255,0.65)" }}>
               {t("oneTimePayment")} · {t("tintaNeverExpires")}
             </p>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
+
+</div>
+</AccessibleDialog>
 }

@@ -1,3 +1,4 @@
+import QueryNotice from "@/components/QueryNotice"
 import { displayTinta } from "@shared/tinta"
 import { accountFetch as fetch } from "@/lib/account-context"
 import { useState } from "react"
@@ -78,11 +79,11 @@ export default function GachaScreen() {
     },
   })
 
-  const { data: wallet } = useQuery<{ tinta: number; papel: number }>({
+  const { data: wallet, isError: walletError, refetch: retryWallet } = useQuery<{ tinta: number; papel: number }>({
     queryKey: ["/api/wallet"],
     queryFn: async () => {
       const res = await fetch("/api/wallet", { credentials: "include" })
-      if (!res.ok) return { tinta: 0, papel: 0 }
+      if (!res.ok) throw new Error("No se pudo cargar el saldo")
       return res.json()
     },
     enabled: !!isLoggedIn,
@@ -127,6 +128,8 @@ export default function GachaScreen() {
   const rar = result ? (RARITY_COLOR[result.rarity] ?? RARITY_COLOR.common) : RARITY_COLOR.common
   const isBig = result ? RARITY_ORDER.indexOf(result.rarity) >= 4 : false
 
+  if (walletError) return <main className="min-h-screen bg-zinc-950 p-5 text-white"><button className="min-h-11 underline" onClick={() => setLocation("/library")}>Volver a la biblioteca</button><QueryNotice error onRetry={() => { void retryWallet() }} /></main>
+
   // ── El sistema aún duerme ──
   if (status && !status.enabled) {
     return (
@@ -134,10 +137,10 @@ export default function GachaScreen() {
         <Header onBack={() => setLocation("/library")} title={t("gachaTitle")} />
         <div className="flex-1 flex flex-col items-center justify-center gap-4 px-8 text-center">
           <div className="p-4 rounded-full bg-zinc-900 border border-zinc-800">
-            <Lock className="w-6 h-6 text-zinc-600" />
+            <Lock className="w-6 h-6 text-zinc-400" />
           </div>
           <p className="text-[15px] font-display text-zinc-300">{t("gachaSoon")}</p>
-          <p className="text-[12px] text-zinc-600 font-sans max-w-[280px] leading-relaxed">
+          <p className="text-[12px] text-zinc-400 font-sans max-w-[280px] leading-relaxed">
             {t("gachaSoonHint")}
           </p>
         </div>
@@ -150,9 +153,9 @@ export default function GachaScreen() {
       <Header onBack={() => setLocation("/library")} title={t("gachaTitle")}
         right={isLoggedIn && (
           <button onClick={() => setShowWallet(true)}
-            className="flex items-center gap-1 text-[11px] font-sans font-semibold px-2.5 py-1.5 rounded-lg"
+            className="flex items-center gap-1 text-xs font-sans font-semibold px-2.5 py-1.5 rounded-lg"
             style={{ background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.3)", color: "#c9a84c" }}>
-            <Droplets className="w-3 h-3" />{displayTinta(tinta)}
+            <Droplets className="w-3 h-3" />{wallet ? displayTinta(tinta) : "—"}
           </button>
         )} />
 
@@ -162,7 +165,7 @@ export default function GachaScreen() {
           <span className="flex-1">{error.text}</span>
           {error.missing != null && (
             <button onClick={() => { setShowWallet(true); setError(null) }}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-semibold flex-shrink-0"
+              className="px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0"
               style={{ background: "#c9a84c", color: "#1a1508" }}>
               {t("getTinta")}
             </button>
@@ -187,7 +190,7 @@ export default function GachaScreen() {
               </motion.div>
               <div className="text-center">
                 <p className="text-[13px] font-display text-zinc-300">{t("gachaOneBook")}</p>
-                <p className="text-[10.5px] text-zinc-600 font-sans mt-1">{t("gachaOneCard")}</p>
+                <p className="text-xs text-zinc-400 font-sans mt-1">{t("gachaOneCard")}</p>
               </div>
             </motion.div>
           )}
@@ -221,7 +224,7 @@ export default function GachaScreen() {
                 />
               </div>
               </VisualSlot>
-              <p className="text-[11px] text-zinc-500 font-sans tracking-wide"
+              <p className="text-xs text-zinc-400 font-sans tracking-wide"
                 style={{ fontVariant: "small-caps" }}>{t("gachaOpening")}</p>
             </motion.div>
           )}
@@ -240,12 +243,12 @@ export default function GachaScreen() {
                 className="flex items-center gap-1.5 px-3 py-1 rounded-full"
                 style={{ background: `${rar.c}18`, border: `1px solid ${rar.c}60` }}>
                 {isBig && <Sparkles className="w-3 h-3" style={{ color: rar.glow }} />}
-                <span className="text-[11px] font-display font-bold tracking-wide"
+                <span className="text-xs font-display font-bold tracking-wide"
                   style={{ color: rar.c, fontVariant: "small-caps" }}>
                   {t(rar.labelKey)}
                 </span>
                 {result.pityApplied && (
-                  <span className="text-[8px] font-sans px-1 rounded" style={{ color: rar.glow, opacity: 0.8 }}>
+                  <span className="text-xs font-sans px-1 rounded" style={{ color: rar.glow, opacity: 0.8 }}>
                     {t("gachaPityHit")}
                   </span>
                 )}
@@ -278,12 +281,12 @@ export default function GachaScreen() {
                   <p className="text-[12px] font-display font-semibold text-zinc-200 truncate">
                     {result.book.title}
                   </p>
-                  <p className="text-[9.5px] text-zinc-500 font-sans truncate">
+                  <p className="text-xs text-zinc-400 font-sans truncate">
                     {result.bookGranted ? t("gachaBookAdded") : t("gachaBookOwned")}
                   </p>
                 </div>
                 <button onClick={() => setLocation(`/book/${result.book.id}`)}
-                  className="text-[10px] font-sans px-2 py-1 rounded-lg flex-shrink-0"
+                  className="text-xs font-sans px-2 py-1 rounded-lg flex-shrink-0"
                   style={{ background: `${rar.c}20`, color: rar.c }}>
                   {t("gachaRead")}
                 </button>
@@ -293,7 +296,7 @@ export default function GachaScreen() {
               {result.isDuplicate && (
                 <motion.div
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.65 }}
-                  className="flex items-center gap-1.5 text-[10.5px] font-sans"
+                  className="flex items-center gap-1.5 text-xs font-sans"
                   style={{ color: "#7fb3d5" }}>
                   <Copy className="w-3 h-3" />
                   {t("gachaDuplicate")}
@@ -301,7 +304,7 @@ export default function GachaScreen() {
               )}
 
               <button onClick={() => { setPhase("idle"); setResult(null) }}
-                className="text-[11px] text-zinc-500 font-sans hover:text-zinc-300">
+                className="text-xs text-zinc-400 font-sans hover:text-zinc-300">
                 {t("gachaAgain")}
               </button>
             </motion.div>
@@ -315,7 +318,7 @@ export default function GachaScreen() {
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={() => isLoggedIn ? draw.mutate() : setLocation("/")}
-            disabled={draw.isPending}
+            disabled={!wallet || draw.isPending}
             className="w-full py-3.5 rounded-2xl font-display font-bold text-[15px] flex items-center justify-center gap-2 disabled:opacity-60"
             style={{
               background: tinta >= price
@@ -332,7 +335,7 @@ export default function GachaScreen() {
 
           {/* La piedad, visible: es un seguro, y saberlo retiene */}
           {status?.pity && (
-            <div className="mt-3 flex items-center justify-center gap-4 text-[10px] font-sans text-zinc-600">
+            <div className="mt-3 flex items-center justify-center gap-4 text-xs font-sans text-zinc-400">
               <span>
                 <span style={{ color: RARITY_COLOR.golden.c }}>◆</span>{" "}
                 {t("gachaPityGolden").replace("{n}", String(status.pity.toGolden))}
@@ -377,16 +380,16 @@ export default function GachaScreen() {
                         </span>
                         {/* El jackpot progresivo: si el pozo no la banca, se ve */}
                         {!tier.poolUnlocked ? (
-                          <span className="text-[9px] font-sans flex items-center gap-1" style={{ color: "#71717a" }}>
+                          <span className="text-xs font-sans flex items-center gap-1" style={{ color: "#71717a" }}>
                             <Lock className="w-2.5 h-2.5" />
                             {(tier.poolProgress * 100).toFixed(0)}%
                           </span>
                         ) : (
-                          <span className="text-[9px] font-sans text-zinc-600">
+                          <span className="text-xs font-sans text-zinc-400">
                             {tier.obras} {tier.obras === 1 ? t("gachaWork") : t("gachaWorks")}
                           </span>
                         )}
-                        <span className="text-[11px] font-sans font-semibold tabular-nums w-14 text-right"
+                        <span className="text-xs font-sans font-semibold tabular-nums w-14 text-right"
                           style={{ color: rc.c }}>
                           {(tier.probability * 100).toFixed(tier.probability < 0.01 ? 3 : 2)}%
                         </span>
@@ -394,7 +397,7 @@ export default function GachaScreen() {
                     )
                   })}
                 </div>
-                <p className="text-[9.5px] text-zinc-600 font-sans mt-2.5 px-1 leading-relaxed">
+                <p className="text-xs text-zinc-400 font-sans mt-2.5 px-1 leading-relaxed">
                   {t("gachaOddsNote")}
                 </p>
               </motion.div>

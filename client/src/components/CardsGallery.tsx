@@ -61,7 +61,7 @@ export default function CardsGallery({ bookId, accentColor, accentGlow }: Props)
         <p className="text-xs font-sans font-semibold" style={{ color: "rgba(255,255,255,0.85)" }}>
           🃏 {t("cardsTitle")}
         </p>
-        <span className="text-[10px] font-sans" style={{ color: accentColor }}>
+        <span className="text-xs font-sans" style={{ color: accentColor }}>
           {t("cardsOwnedCount").replace("{a}", String(ownedCount)).replace("{b}", String(cards.length))}
         </span>
       </div>
@@ -80,12 +80,12 @@ export default function CardsGallery({ bookId, accentColor, accentGlow }: Props)
       </div>
 
       {buy.isError && (
-        <p className="text-[10px] font-sans" style={{ color: "#e8a0a0" }}>
+        <p className="text-xs font-sans" style={{ color: "#e8a0a0" }}>
           {(buy.error as Error)?.message}
         </p>
       )}
       {buy.isSuccess && (
-        <p className="text-[10px] font-sans" style={{ color: accentColor }}>
+        <p className="text-xs font-sans" style={{ color: accentColor }}>
           {t("cardGotIt")}
         </p>
       )}

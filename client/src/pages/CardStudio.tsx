@@ -64,7 +64,7 @@ export default function CardStudio() {
         </h1>
         {/* La galería de marcos, a un toque del estudio */}
         <button onClick={() => setLocation("/marcos")}
-          className="ml-auto flex items-center gap-1.5 text-[11px] font-sans px-2.5 py-1.5 rounded-lg"
+          className="ml-auto flex items-center gap-1.5 text-xs font-sans px-2.5 py-1.5 rounded-lg"
           style={{ background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.3)", color: "#c9a84c" }}>
           <Frame className="w-3 h-3" />
           {t("frames")}
@@ -77,7 +77,7 @@ export default function CardStudio() {
           <div className="pt-2">
             <CardsEditor bookId={focused.id} gc={GC} />
             <button onClick={() => setLocation("/tarjetas")}
-              className="mt-4 text-[11px] font-sans text-zinc-500 hover:text-zinc-300">
+              className="mt-4 text-xs font-sans text-zinc-400 hover:text-zinc-300">
               {t("viewAllCards")} →
             </button>
           </div>
@@ -85,7 +85,7 @@ export default function CardStudio() {
           <>
             {/* Tarjetas sueltas: nacen aquí, se asignan al publicar */}
             <div className="pt-2">
-              <p className="text-[10px] text-zinc-500 font-sans leading-snug mt-3 mb-1">
+              <p className="text-xs text-zinc-400 font-sans leading-snug mt-3 mb-1">
                 {t("looseCardsHint")}
               </p>
               <CardsEditor bookId={null} gc={GC} assignTargets={assignTargets} />
@@ -95,7 +95,7 @@ export default function CardStudio() {
             {myBooks.map(b => (
               <div key={b.id} className="mt-6">
                 <div className="flex items-center gap-2 mb-1">
-                  <BookOpen className="w-3.5 h-3.5 text-zinc-600" />
+                  <BookOpen className="w-3.5 h-3.5 text-zinc-400" />
                   <p className="text-[12px] font-display font-semibold text-zinc-300 truncate">{b.title}</p>
                 </div>
                 <CardsEditor bookId={b.id} gc={GC} />
@@ -103,7 +103,7 @@ export default function CardStudio() {
             ))}
 
             {myBooks.length === 0 && (
-              <p className="text-[11px] text-zinc-600 font-sans text-center mt-8 leading-relaxed px-6">
+              <p className="text-xs text-zinc-400 font-sans text-center mt-8 leading-relaxed px-6">
                 {t("noBooksYetCards")}
               </p>
             )}

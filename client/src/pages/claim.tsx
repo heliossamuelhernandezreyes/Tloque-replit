@@ -1,11 +1,13 @@
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRoute, useLocation } from "wouter"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { motion } from "framer-motion"
 import { Loader2, KeyRound, ShieldAlert, BadgeCheck, BookOpen, ArrowLeft } from "lucide-react"
 import { Layout } from "@/components/layout"
 import { useSettings } from "@/context/SettingsContext"
+import { loginClaimKey, clearLoginClaimKey } from "@/lib/auth-return"
+import QueryNotice from "@/components/QueryNotice"
 
 interface ClaimInfo {
   folio:    string
@@ -29,16 +31,20 @@ export default function ClaimPage() {
       // Compatibilidad con PDFs beta; la URL antigua se limpia antes de
       // efectuar cualquier otra navegación o solicitud.
       const legacyKey = new URLSearchParams(window.location.search).get("key")
-      const value = (fragmentKey || legacyKey || "").toUpperCase()
-      if (value) window.history.replaceState(null, "", window.location.pathname)
+      const value = (fragmentKey || legacyKey || loginClaimKey(folio) || "").toUpperCase()
       return value
     } catch {
       return ""
     }
   })
+  useEffect(() => {
+    if (!key) return
+    window.history.replaceState(null, "", window.location.pathname)
+    clearLoginClaimKey(folio)
+  }, [folio, key])
   const [claimed, setClaimed] = useState(false)
 
-  const { data, isLoading, error } = useQuery<ClaimInfo>({
+  const { data, isLoading, error, refetch } = useQuery<ClaimInfo>({
     queryKey: [`/api/claim/${folio}`],
     queryFn: async () => {
       const res = await fetch(`/api/claim/${encodeURIComponent(folio)}`, { credentials: "include" })
@@ -80,21 +86,21 @@ export default function ClaimPage() {
     <Layout>
       <div className="max-w-md mx-auto px-5 pt-20 pb-32">
         <button onClick={() => setLocation("/")} className="flex items-center gap-1.5 text-xs font-sans mb-8"
-          style={{ color: "rgba(255,255,255,0.5)" }}>
+          style={{ color: "rgba(255,255,255,0.65)" }}>
           <ArrowLeft className="w-3.5 h-3.5" /> Tloque
         </button>
 
         {isLoading ? (
-          <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-white/40" /></div>
-        ) : error || !data ? (
+          <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-white/65" /></div>
+        ) : error && error.message !== "notfound" ? <QueryNotice error onRetry={() => { void refetch() }} /> : error || !data ? (
           <p className="text-center text-sm font-sans py-16" style={{ color: "rgba(255,255,255,0.55)" }}>
             {t("claimNotFound")}
           </p>
         ) : (
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
             {/* Encabezado del ejemplar */}
-            <p className="text-[10px] font-sans tracking-[0.22em] uppercase text-center mb-6"
-              style={{ color: "rgba(255,255,255,0.4)" }}>
+            <p className="text-xs font-sans tracking-[0.22em] uppercase text-center mb-6"
+              style={{ color: "rgba(255,255,255,0.65)" }}>
               {t("claimTitle")}
             </p>
 
@@ -106,7 +112,7 @@ export default function ClaimPage() {
               <div className="min-w-0">
                 <h1 className="text-lg font-display font-bold text-white leading-snug">{data.title}</h1>
                 <p className="text-sm font-sans mt-1" style={{ color: "rgba(255,255,255,0.6)" }}>{data.author}</p>
-                <p className="text-[11px] font-mono mt-3 px-2.5 py-1 rounded-lg inline-block"
+                <p className="text-xs font-mono mt-3 px-2.5 py-1 rounded-lg inline-block"
                   style={{ background: "rgba(201,168,87,0.12)", color: "#c9a857", border: "1px solid rgba(201,168,87,0.3)" }}>
                   {data.folio}
                 </p>
@@ -161,7 +167,7 @@ export default function ClaimPage() {
                 <p className="text-xs font-sans mb-4" style={{ color: "rgba(255,255,255,0.6)" }}>
                   {t("claimFree")}
                 </p>
-                <label htmlFor="claim-key" className="text-[11px] font-sans font-semibold block mb-2"
+                <label htmlFor="claim-key" className="text-xs font-sans font-semibold block mb-2"
                   style={{ color: "rgba(255,255,255,0.7)" }}>
                   {t("claimKeyLabel")}
                 </label>
@@ -178,7 +184,7 @@ export default function ClaimPage() {
                   />
                 </div>
                 {claim.isError && (
-                  <p className="text-[11px] font-sans mb-3" style={{ color: "#e8a0a0" }}>
+                  <p className="text-xs font-sans mb-3" style={{ color: "#e8a0a0" }}>
                     {(claim.error as Error)?.message === "taken" ? t("claimTakenDesc") : (claim.error as Error)?.message || t("claimWrongKey")}
                   </p>
                 )}

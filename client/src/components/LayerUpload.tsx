@@ -59,11 +59,11 @@ function LayerUpload({
   return (
     <div>
       {error && <p role="alert" className="text-xs text-red-300 mb-2">{error}</p>}
-      {prepared?.url === url && <p className="text-[10px] text-zinc-400 mb-2">{prepared.width} × {prepared.height} · {Math.ceil(prepared.bytes / 1024)} KB · {prepared.transparent ? "Transparencia conservada" : "Imagen opaca · recorta el sujeto para ver el fondo"}</p>}
+      {prepared?.url === url && <p className="text-xs text-zinc-400 mb-2">{prepared.width} × {prepared.height} · {Math.ceil(prepared.bytes / 1024)} KB · {prepared.transparent ? "Transparencia conservada" : "Imagen opaca · recorta el sujeto para ver el fondo"}</p>}
       {label && (
         <div className="flex items-center justify-between mb-1">
-          <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-sans">{label}</p>
-          {hint && <p className="text-[9px] text-zinc-700 font-sans italic">{hint}</p>}
+          <p className="text-xs text-zinc-400 uppercase tracking-widest font-sans">{label}</p>
+          {hint && <p className="text-xs text-zinc-400 font-sans italic">{hint}</p>}
         </div>
       )}
 
@@ -87,7 +87,7 @@ function LayerUpload({
             style={{ background: gc.color, color: "rgba(0,0,0,0.8)" }}>OK</motion.button>
           <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowUrl(false)}
             className="px-2 py-2 rounded-lg"
-            style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.4)" }}>
+            style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.65)" }}>
             <X className="w-3 h-3" />
           </motion.button>
         </motion.div>
@@ -114,13 +114,13 @@ function LayerUpload({
             <>
               <img loading="lazy" src={url} alt=""
                 className="w-10 object-cover rounded-lg shrink-0" style={{ height: compact ? 32 : 60 }} />
-              <p className="text-xs text-zinc-500 font-sans">Toca para cambiar</p>
+              <p className="text-xs text-zinc-400 font-sans">Toca para cambiar</p>
               <div className="ml-auto"><Check className="w-3 h-3" style={{ color: gc.color }} /></div>
             </>
           ) : (
             <>
-              <Image className="w-4 h-4 shrink-0" style={{ color: "rgba(255,255,255,0.2)" }} />
-              <p className="text-xs text-zinc-600 font-sans">{t("galleryOrFiles")}</p>
+              <Image className="w-4 h-4 shrink-0" style={{ color: "rgba(255,255,255,0.65)" }} />
+              <p className="text-xs text-zinc-400 font-sans">{t("galleryOrFiles")}</p>
             </>
           )}
         </motion.button>
@@ -128,7 +128,7 @@ function LayerUpload({
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => setShowUrl(v => !v)}
-          className="shrink-0 flex items-center justify-center rounded-xl text-[10px] font-sans"
+          className="shrink-0 flex items-center justify-center rounded-xl text-xs font-sans"
           style={{
             width:      36,
             height:     compact ? 40 : url ? 72 : 52,

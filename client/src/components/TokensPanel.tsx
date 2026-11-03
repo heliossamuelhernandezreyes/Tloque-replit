@@ -1,3 +1,4 @@
+import QueryNotice from "@/components/QueryNotice"
 import { displayTinta } from "@shared/tinta"
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useState } from "react"
@@ -71,11 +72,11 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
   })
 
   // Saldo de Tinta del lector
-  const { data: wallet } = useQuery<{ tinta: number; papel: number }>({
+  const { data: wallet, isError: walletError, refetch: retryWallet } = useQuery<{ tinta: number; papel: number }>({
     queryKey: ["/api/wallet"],
     queryFn: async () => {
       const res = await fetch("/api/wallet", { credentials: "include" })
-      if (!res.ok) return { tinta: 0, papel: 0 }
+      if (!res.ok) throw new Error("No se pudo cargar el saldo")
       return res.json()
     },
   })
@@ -152,23 +153,23 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
   // Opciones de método de pago para un tipo de token
   function PayOptions({ kind }: { kind: "support" | "sale" }) {
     const need = tintaOf(kind)
-    const enough = myTinta >= need
+    const enough = !!wallet && myTinta >= need
     const p = payCfg?.prices?.[kind]
     return (
       <div className="grid grid-cols-2 gap-1.5">
         <button
           disabled={acquire.isPending || !conditionsAccepted || !moneyQuote.data?.canPay}
           onClick={() => acquire.mutate({ kind, payWith: "money" })}
-          className="flex items-center justify-center gap-1.5 text-[10px] font-sans px-2 py-2.5 rounded-lg disabled:opacity-40"
+          className="flex items-center justify-center gap-1.5 text-xs font-sans px-2 py-2.5 rounded-lg disabled:opacity-40"
           style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.8)", border: "1px solid rgba(255,255,255,0.12)" }}
         >
           <CreditCard className="w-3 h-3" />
           {payOn ? `${t("payWithCard")} · $${((p?.cents ?? 0) / 100).toFixed(0)}` : t("tokenBeta").split("·")[0].trim()}
         </button>
         <button
-          disabled={acquire.isPending || !enough || !conditionsAccepted || !tintaQuote.data?.canPay}
+          disabled={!wallet || acquire.isPending || !enough || !conditionsAccepted || !tintaQuote.data?.canPay}
           onClick={() => enough ? acquire.mutate({ kind, payWith: "tinta" }) : setShowWallet(true)}
-          className="flex items-center justify-center gap-1.5 text-[10px] font-sans px-2 py-2.5 rounded-lg disabled:opacity-40"
+          className="flex items-center justify-center gap-1.5 text-xs font-sans px-2 py-2.5 rounded-lg disabled:opacity-40"
           style={{ background: `${accentGlow}15`, color: accentColor, border: `1px solid ${accentColor}35` }}
         >
           <Droplets className="w-3 h-3" />
@@ -193,19 +194,20 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
           {t("tokensTitle")}
         </p>
         <button onClick={() => setShowWallet(true)}
-          className="flex items-center gap-1.5 text-[10px] font-sans px-2.5 py-1 rounded-full"
+          className="flex items-center gap-1.5 text-xs font-sans px-2.5 py-1 rounded-full"
           style={{ background: `${accentGlow}15`, color: accentColor, border: `1px solid ${accentColor}30` }}>
-          <Droplets className="w-3 h-3" /> {displayTinta(myTinta)} · {t("getTinta")}
+          <Droplets className="w-3 h-3" /> {wallet ? displayTinta(myTinta) : "—"} · {t("getTinta")}
         </button>
       </div>
+      <QueryNotice error={walletError} onRetry={() => { void retryWallet() }} />
       <p className="text-xs text-white/65">La lectura es gratuita. Puedes apoyar al autor o adquirir una licencia para producir un ejemplar comercial.</p>
       {!payOn && (
-        <p className="text-[9px] font-sans -mt-1" style={{ color: "rgba(255,255,255,0.35)" }}>
+        <p className="text-xs font-sans -mt-1" style={{ color: "rgba(255,255,255,0.65)" }}>
           {payCfg?.beta ? t("tokenBeta") : "Las compras requieren habilitación comercial."}
         </p>
       )}
       {premiumUnlocked && (
-        <p className="text-[10px] font-sans flex items-center gap-1" style={{ color: accentColor }}>
+        <p className="text-xs font-sans flex items-center gap-1" style={{ color: accentColor }}>
           ✦ {t("premiumUnlockedNote")}
         </p>
       )}
@@ -225,7 +227,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
               <p className="text-xs font-sans font-semibold" style={{ color: "rgba(255,255,255,0.9)" }}>
                 {t("tokenSupportBtn")}{priceOf("support")}
               </p>
-              <p className="text-[10px] font-sans leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.5)" }}>
+              <p className="text-xs font-sans leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.65)" }}>
                 {t("tokenSupportDesc")}
               </p>
             </div>
@@ -247,7 +249,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
             <p className="text-xs font-sans font-semibold" style={{ color: "rgba(255,255,255,0.85)" }}>
               {t("tokenSaleBtn")}{priceOf("sale")}
             </p>
-            <p className="text-[10px] font-sans leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.5)" }}>
+            <p className="text-xs font-sans leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.65)" }}>
               {t("tokenSaleDesc")}
             </p>
           </div>
@@ -257,7 +259,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
           <PayOptions kind="sale" />
         )}
         {acquire.isError && (
-          <p className="text-[10px] font-sans px-1" style={{ color: "#e8a0a0" }}>
+          <p className="text-xs font-sans px-1" style={{ color: "#e8a0a0" }}>
             {(acquire.error as Error)?.message === "tinta_insuficiente"
               ? t("notEnoughTinta").replace("{n}", String(displayTinta(Math.max(0, tintaOf(payMenu || "sale") - myTinta))))
               : (acquire.error as Error)?.message}
@@ -281,7 +283,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
       {allCopies.length > 0 && (
         <div className="space-y-1.5 pt-1">
           <div className="flex items-center justify-between px-1">
-            <p className="text-[10px] font-sans" style={{ color: "rgba(255,255,255,0.45)" }}>
+            <p className="text-xs font-sans" style={{ color: "rgba(255,255,255,0.65)" }}>
               {allCopies.length} · {t("tokensTitle").toLowerCase()}
             </p>
 
@@ -298,15 +300,15 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
                     {isMineClaim
                       ? <UserCheck className="w-3.5 h-3.5" style={{ color: "rgba(120,220,160,0.9)" }} />
                       : isFree
-                        ? <CircleDashed className="w-3.5 h-3.5" style={{ color: "rgba(255,255,255,0.4)" }} />
+                        ? <CircleDashed className="w-3.5 h-3.5" style={{ color: "rgba(255,255,255,0.65)" }} />
                         : <BadgeCheck className="w-3.5 h-3.5" style={{ color: accentColor }} />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-mono truncate" style={{ color: "rgba(255,255,255,0.8)" }}>
+                    <p className="text-xs font-mono truncate" style={{ color: "rgba(255,255,255,0.8)" }}>
                       {copy.folio}
-                      {kind === "sale" && <span className="ml-1.5 text-[8px] font-sans" style={{ color: accentColor + "aa" }}>venta</span>}
+                      {kind === "sale" && <span className="ml-1.5 text-xs font-sans" style={{ color: accentColor + "aa" }}>venta</span>}
                     </p>
-                    <p className="text-[9px] font-sans" style={{ color: "rgba(255,255,255,0.4)" }}>
+                    <p className="text-xs font-sans" style={{ color: "rgba(255,255,255,0.65)" }}>
                       {licenseStatus === "revoked" ? "Permiso reembolsado" : licenseStatus === "suspended" ? "Permiso suspendido: pago en revisión" : copy.digitalClaimAllowed === false ? "Impresión personal · sin canje adicional" : isMineClaim ? t("tokenYourCopy") : isFree ? t("tokenFreeCopy") : t("tokenClaimedCopy")}
                     </p>
                   </div>
@@ -314,7 +316,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
                     disabled={isDownloading || preparePrint.isPending || licenseStatus !== "active" || !copy.canPrint}
                     onClick={() => preparePrint.mutate(copy.id)}
                     aria-label={t("tokenPdfBtn") + " " + copy.folio}
-                    className="flex items-center gap-1 text-[10px] font-sans px-2.5 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-40"
+                    className="flex items-center gap-1 text-xs font-sans px-2.5 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-40"
                     style={{ background: `${accentGlow}15`, color: accentColor, border: `1px solid ${accentColor}30` }}
                   >
                     {isDownloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Printer className="w-3 h-3" />}

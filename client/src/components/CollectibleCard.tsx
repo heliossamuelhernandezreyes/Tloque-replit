@@ -86,14 +86,14 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 px-3"
           style={{ background: "radial-gradient(circle at 50% 40%, rgba(8,8,12,0.35), rgba(8,8,12,0.72))" }}>
           <div className="p-2.5 rounded-full" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <Lock className="w-3.5 h-3.5" style={{ color: "rgba(255,255,255,0.4)" }} />
+            <Lock className="w-3.5 h-3.5" style={{ color: "rgba(255,255,255,0.65)" }} />
           </div>
-          <p className="text-[11px] font-display font-semibold text-center leading-snug"
+          <p className="text-xs font-display font-semibold text-center leading-snug"
             style={{ color: "rgba(255,255,255,0.7)" }}>
             {card.name}
           </p>
           {card.unlock === "support" ? (
-            <span className="flex items-center gap-1 text-[8.5px] font-sans px-2 py-1 rounded-full"
+            <span className="flex items-center gap-1 text-xs font-sans px-2 py-1 rounded-full"
               style={{ background: `${accentGlow}18`, color: accentColor, border: `1px solid ${accentColor}30` }}>
               <Heart className="w-2.5 h-2.5" /> {t("cardBySupport")}
             </span>
@@ -102,7 +102,7 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
               whileTap={{ scale: 0.95 }}
               disabled={buying}
               onClick={() => onBuy?.(card)}
-              className="flex items-center gap-1 text-[10px] font-sans font-semibold px-3 py-1.5 rounded-full disabled:opacity-50"
+              className="flex items-center gap-1 text-xs font-sans font-semibold px-3 py-1.5 rounded-full disabled:opacity-50"
               style={{ background: "linear-gradient(135deg, #e6cd82, #d4af5a)", color: "rgba(0,0,0,0.85)" }}
             >
               {buying ? <Loader2 className="w-3 h-3 animate-spin" /> : <Droplets className="w-3 h-3" />}
@@ -198,13 +198,13 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
                     )}
                   </div>
                   {card.subtitle && (
-                    <p className="text-[9.5px] font-sans italic leading-tight mt-0.5"
+                    <p className="text-xs font-sans italic leading-tight mt-0.5"
                       style={{ color: "rgba(255,255,255,0.7)" }}>
                       {card.subtitle}
                     </p>
                   )}
                   {card.description && (
-                    <p className="text-[8.5px] font-sans leading-snug mt-1.5"
+                    <p className="text-xs font-sans leading-snug mt-1.5"
                       style={{
                         color: "rgba(255,255,255,0.52)",
                         display: "-webkit-box", WebkitLineClamp: 2,
@@ -231,15 +231,15 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
                     boxShadow: tier >= 5 ? `0 0 12px ${mat.glow}36` : undefined,
                   }}>
                   {collectionRarity && (
-                    <span className="text-[7px] tracking-[-0.08em]" style={{ color: mat.light }}>
+                    <span className="text-xs tracking-[-0.08em]" style={{ color: mat.light }}>
                       {"◆".repeat(Math.min(3, Math.max(1, Math.ceil((tier + 1) / 3))))}
                     </span>
                   )}
-                  <span className="font-mono text-[7px] tracking-[0.08em] text-white/45">{serial}</span>
+                  <span className="font-mono text-xs tracking-[0.08em] text-white/65">{serial}</span>
                 </div>
 
                 {collectionRarity && (
-                  <div className="absolute bottom-2.5 right-2.5 font-mono text-[6px] uppercase tracking-[0.2em]"
+                  <div className="absolute bottom-2.5 right-2.5 font-mono text-xs uppercase tracking-[0.2em]"
                     style={{ color: `${mat.light}80`, writingMode: "vertical-rl" }}>
                     {collectionRarity.replace("_", "-")}
                   </div>

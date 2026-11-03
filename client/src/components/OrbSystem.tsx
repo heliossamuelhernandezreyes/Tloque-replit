@@ -442,6 +442,14 @@ export default function OrbSystem() {
     setSearchMode(false); setQuery(""); setSuggestions([]); setShowSuggestions(false)
   }
 
+  useEffect(() => {
+    const search = () => { setSearchMode(true); setTimeout(() => inputRef.current?.focus(), 120) }
+    const config = () => setShowConfig(true)
+    window.addEventListener("tloque:search-open", search)
+    window.addEventListener("tloque:settings-open", config)
+    return () => { window.removeEventListener("tloque:search-open", search); window.removeEventListener("tloque:settings-open", config) }
+  }, [])
+
   // Historia aleatoria — todos los libros disponibles
   // Incluye los del servidor desde el caché de React Query
   function goToRandomBook() {
@@ -605,7 +613,7 @@ export default function OrbSystem() {
               transition={{ type: "spring", stiffness: 280, damping: 24 }}
               className="absolute -top-11 left-1/2 -translate-x-1/2 whitespace-nowrap pointer-events-none"
             >
-              <span className="inline-block px-3 py-1 rounded-full text-[10px] tracking-[0.2em] uppercase font-medium font-sans"
+              <span className="inline-block px-3 py-1 rounded-full text-xs tracking-[0.2em] uppercase font-medium font-sans"
                 style={{
                   background:     cfg.bg,
                   color:          cfg.color,
@@ -625,7 +633,7 @@ export default function OrbSystem() {
               transition={{ type: "spring", stiffness: 280, damping: 24 }}
               className="absolute -top-11 left-1/2 -translate-x-1/2 whitespace-nowrap pointer-events-none"
             >
-              <span className="inline-block px-3 py-1 rounded-full text-[10px] tracking-[0.2em] uppercase font-medium font-sans"
+              <span className="inline-block px-3 py-1 rounded-full text-xs tracking-[0.2em] uppercase font-medium font-sans"
                 style={{
                   background:     "rgba(255,255,255,0.07)",
                   color:          "rgba(255,255,255,0.55)",
@@ -748,7 +756,7 @@ export default function OrbSystem() {
                       if (e.key === "Escape") closeSearch()
                     }}
                     placeholder={t("search")}
-                    className="min-w-0 flex-1 bg-transparent text-white text-sm outline-none placeholder:text-zinc-600 font-sans"
+                    className="min-w-0 flex-1 bg-transparent text-white text-sm outline-none placeholder:text-zinc-400 font-sans"
                   />
                   <AnimatePresence>
                     {query.trim() ? (
@@ -757,7 +765,7 @@ export default function OrbSystem() {
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.7 }}
                         onClick={doSearch}
-                        className="min-h-11 shrink-0 rounded-full px-3 text-[11px] font-semibold font-sans"
+                        className="min-h-11 shrink-0 rounded-full px-3 text-xs font-semibold font-sans"
                         style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}40` }}
                       >
                         {t("searchAction")}
@@ -769,7 +777,7 @@ export default function OrbSystem() {
                         exit={{ opacity: 0, scale: 0.7 }}
                         onClick={closeSearch}
                         className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
-                        style={{ color: "rgba(255,255,255,0.25)" }}
+                        style={{ color: "rgba(255,255,255,0.65)" }}
                         aria-label={t("closeAction")}
                       >
                         <X className="w-3 h-3" />
@@ -814,12 +822,12 @@ export default function OrbSystem() {
                             <p className="text-white text-xs font-medium truncate font-sans">
                               {highlightMatch(book.title || "", query)}
                             </p>
-                            <p className="text-zinc-600 text-[10px] truncate font-sans mt-0.5">
+                            <p className="text-zinc-400 text-xs truncate font-sans mt-0.5">
                               {book.author}
                             </p>
                           </div>
                           {book.genre && book.genre !== "todos" && (
-                            <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-full font-sans uppercase tracking-wide"
+                            <span className="shrink-0 text-xs px-1.5 py-0.5 rounded-full font-sans uppercase tracking-wide"
                               style={{ background: cfg.bg, color: cfg.color + "99" }}>
                               {book.genre}
                             </span>
@@ -827,7 +835,7 @@ export default function OrbSystem() {
                         </motion.button>
                       ))}
                       <button onClick={doSearch}
-                        className="min-h-11 w-full px-4 py-2.5 text-center text-[11px] font-sans transition-colors"
+                        className="min-h-11 w-full px-4 py-2.5 text-center text-xs font-sans transition-colors"
                         style={{ color: cfg.color + "88", borderTop: `1px solid ${cfg.color}15` }}
                       >
                         {t("seeAllResults")} →

@@ -10,6 +10,8 @@ import {
   Shield,
   UserRound,
   X,
+  Search,
+  Settings,
   type LucideIcon,
 } from "lucide-react"
 import { useLocation } from "wouter"
@@ -29,7 +31,7 @@ export default function AppHeader() {
   const [location, setLocation] = useLocation()
   const { user, isAdmin } = useAuth()
   const { cfg } = useGenre()
-  const { settings } = useSettings()
+  const { settings, t } = useSettings()
   const copy = (key: ExperienceKey) => experienceText(settings.language, key)
   const { data } = useQuery<NotificationPayload>({
     queryKey: ["/api/notifications"],
@@ -87,6 +89,10 @@ export default function AppHeader() {
         })}
       </nav>
 
+      <div className="flex items-center gap-1">
+        <button className="tloque-header-action" aria-label={t("searchAction")} onClick={() => window.dispatchEvent(new Event("tloque:search-open"))}><Search className="h-4 w-4" /><span className="hidden lg:inline">{t("searchAction")}</span></button>
+        <button className="tloque-header-action" aria-label={t("configTitle")} onClick={() => window.dispatchEvent(new Event("tloque:settings-open"))}><Settings className="h-4 w-4" /><span className="hidden lg:inline">{t("configTitle")}</span></button>
+      </div>
       <div className="flex items-center gap-1 md:hidden">
         <button
           type="button"

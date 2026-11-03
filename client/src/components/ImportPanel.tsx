@@ -21,7 +21,7 @@ function Cover({ url, title, large = false }: { url?: string; title: string; lar
   useEffect(() => setFailed(false), [url])
   return <div className={"relative aspect-[2/3] shrink-0 overflow-hidden rounded-lg border border-amber-200/15 bg-gradient-to-br from-[#29251c] to-[#11141a] shadow-lg " + (large ? "w-28 sm:w-36" : "w-16 sm:w-20")}>
     {url && !failed ? <img src={url} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="h-full w-full object-cover" />
-      : <div className="flex h-full flex-col items-center justify-center gap-2 px-2 text-center text-amber-100/65"><BookOpen className="h-5 w-5" /><span className="line-clamp-3 font-display text-[10px] leading-snug">{title}</span></div>}
+      : <div className="flex h-full flex-col items-center justify-center gap-2 px-2 text-center text-amber-100/65"><BookOpen className="h-5 w-5" /><span className="line-clamp-3 font-display text-xs leading-snug">{title}</span></div>}
   </div>
 }
 
@@ -169,7 +169,7 @@ function GutenbergExplorer({ onClose }: { onClose: () => void }) {
   return <div className="flex min-h-0 flex-1 flex-col" dir={settings.language === "ar" ? "rtl" : "ltr"}>
     <header className="relative shrink-0 border-b border-white/10 bg-gradient-to-r from-amber-100/[.06] to-transparent px-4 py-4 sm:px-6 sm:py-5">
       <div className="flex items-start justify-between gap-3">
-        <div><p className="mb-1 text-[10px] uppercase tracking-[.3em] text-amber-100/60">Project Gutenberg · Tloque</p>
+        <div><p className="mb-1 text-xs uppercase tracking-[.3em] text-amber-100/60">Project Gutenberg · Tloque</p>
           <Dialog.Title className="font-display text-xl text-amber-50 sm:text-3xl">{copy.explore}</Dialog.Title>
           <Dialog.Description className="mt-1 max-w-xl text-xs leading-relaxed text-zinc-400 sm:text-sm">{copy.lead}</Dialog.Description>
         </div>
@@ -185,26 +185,26 @@ function GutenbergExplorer({ onClose }: { onClose: () => void }) {
           else editFilters({ query: query.trim() })
         }} className="space-y-3">
           <div className="flex gap-2"><label className="relative min-w-0 flex-1"><span className="sr-only">{copy.search}</span>
-            <Search className="pointer-events-none absolute start-3 top-3 h-4 w-4 text-zinc-500" />
+            <Search className="pointer-events-none absolute start-3 top-3 h-4 w-4 text-zinc-400" />
             <input value={query} onChange={event => setQuery(event.target.value)} maxLength={120} placeholder={copy.search} className={field + " ps-9"} />
           </label><button type="submit" className={button + " shrink-0 border-transparent px-4"} style={accent} aria-label={t("search")}><Search className="h-4 w-4" /></button></div>
           <div className="grid grid-cols-2 gap-2">
-            <label className="min-w-0 space-y-1 text-[11px] text-zinc-400">{copy.language}
+            <label className="min-w-0 space-y-1 text-xs text-zinc-400">{copy.language}
               <select aria-label={copy.language} className={field} value={filters.lang} onChange={event => editFilters({ lang: event.target.value })}>
                 {GUTENBERG_LANGUAGES.map(([value, label]) => <option key={value} value={value} className="bg-zinc-900">{label}</option>)}
                 <option value="all" className="bg-zinc-900">{copy.all}</option>
               </select></label>
-            <label className="min-w-0 space-y-1 text-[11px] text-zinc-400">{copy.sort}
+            <label className="min-w-0 space-y-1 text-xs text-zinc-400">{copy.sort}
               <select aria-label={copy.sort} className={field} value={filters.sort} onChange={event => editFilters({ sort: event.target.value as GutenbergSort })}>
                 {(["popular", "descending", "ascending"] as const).map(value => <option key={value} value={value} className="bg-zinc-900">{copy[value]}</option>)}
               </select></label>
           </div>
-          <label className="block space-y-1 text-[11px] text-zinc-400">{copy.topic}<select aria-label={copy.topic} className={field} value={filters.topic} onChange={event => editFilters({ topic: event.target.value as GutenbergTopic })}>
+          <label className="block space-y-1 text-xs text-zinc-400">{copy.topic}<select aria-label={copy.topic} className={field} value={filters.topic} onChange={event => editFilters({ topic: event.target.value as GutenbergTopic })}>
             {GUTENBERG_TOPICS.map((value, i) => <option key={value} value={value} className="bg-zinc-900">{copy.topics[i]}</option>)}
           </select></label>
         </form>
 
-        <div className="my-4 flex min-h-5 items-center justify-between gap-2 text-[11px] text-zinc-400" role="status" aria-live="polite">
+        <div className="my-4 flex min-h-5 items-center justify-between gap-2 text-xs text-zinc-400" role="status" aria-live="polite">
           <span>{catalog.isFetching ? t("searching") : catalog.data && !catalog.isError ? copy.results.replace("{n}", catalog.data.count.toLocaleString(settings.language)) : ""}</span>
           {catalog.data && <span>{copy.page} {catalog.data.page}</span>}
         </div>
@@ -221,11 +221,11 @@ function GutenbergExplorer({ onClose }: { onClose: () => void }) {
           {catalog.data?.results.map(book => <button key={book.id} type="button" onClick={event => { lastResult.current = event.currentTarget; void openEdition(book) }} aria-label={book.title} aria-pressed={requested?.id === book.id}
             className={"group flex w-full items-start gap-4 rounded-2xl border p-3 text-start transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-200 " + (requested?.id === book.id ? "border-amber-200/45 bg-amber-100/[.065]" : "border-white/10 bg-white/[.02] hover:border-amber-200/30 hover:bg-white/[.045]")}>
             <Cover url={book.coverUrl} title={book.title} />
-            <div className="min-w-0 flex-1 py-1"><p className="mb-1 text-[10px] uppercase tracking-widest text-amber-100/50">#{book.id} · {book.languages.map(gutenbergLanguageName).join(" / ")}</p>
+            <div className="min-w-0 flex-1 py-1"><p className="mb-1 text-xs uppercase tracking-widest text-amber-100/50">#{book.id} · {book.languages.map(gutenbergLanguageName).join(" / ")}</p>
               <h3 className="line-clamp-2 break-words font-display text-base leading-snug text-zinc-100">{book.title}</h3>
               <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{book.authors.map(author => author.name).join(" · ")}</p>
-              {book.alreadyImported ? <p className="mt-2 flex items-center gap-1 text-[11px] text-amber-100/80"><Check className="h-3 w-3" />{copy.existing}{book.existingStatus === "draft" ? " · " + t("drafts") : ""}</p>
-                : <p className="mt-2 text-[11px] text-zinc-500">{Number(book.download_count || 0).toLocaleString(settings.language)} {t("downloads")}</p>}
+              {book.alreadyImported ? <p className="mt-2 flex items-center gap-1 text-xs text-amber-100/80"><Check className="h-3 w-3" />{copy.existing}{book.existingStatus === "draft" ? " · " + t("drafts") : ""}</p>
+                : <p className="mt-2 text-xs text-zinc-400">{Number(book.download_count || 0).toLocaleString(settings.language)} {t("downloads")}</p>}
             </div>
           </button>)}
         </div>
@@ -245,23 +245,23 @@ function GutenbergExplorer({ onClose }: { onClose: () => void }) {
         {previewError && <div role="alert" className="rounded-2xl border border-amber-100/20 p-5"><p className="text-sm text-zinc-300">{previewError}</p><button className={button + " mt-4"} onClick={() => requested && void openEdition(requested)}>{copy.retry}</button></div>}
         {selected && <div className="space-y-5">
           <div className="flex items-start gap-4"><Cover url={selected.coverUrl} title={selected.title} large /><div className="min-w-0 pt-1">
-            <p className="text-[10px] uppercase tracking-widest text-amber-100/60">{selected.languages.map(gutenbergLanguageName).join(" / ")}</p>
+            <p className="text-xs uppercase tracking-widest text-amber-100/60">{selected.languages.map(gutenbergLanguageName).join(" / ")}</p>
             <h3 className="mt-2 break-words font-display text-xl leading-tight text-amber-50 sm:text-2xl">{selected.title}</h3><p className="mt-2 text-sm text-zinc-400">{selected.author}</p>
             {selected.translators.length > 0 && <p className="mt-2 text-xs text-zinc-400">{copy.translators}: {selected.translators.join(" · ")}</p>}
             <a href={selected.sourceUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-amber-100/75 underline underline-offset-4">Gutenberg #{selected.gutenbergId}<ExternalLink className="h-3 w-3" /></a>
           </div></div>
           <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-white/[.025] p-3 text-center">
-            {[[selected.chapterCount, t("chapters")], [selected.wordCount.toLocaleString(settings.language), copy.words], [selected.readingMinutes, copy.minutes]].map(([number, label]) => <div key={label} className="min-w-0"><p className="font-display text-lg text-amber-50">{number}</p><p className="mt-1 text-[10px] leading-tight text-zinc-400">{label}</p></div>)}
+            {[[selected.chapterCount, t("chapters")], [selected.wordCount.toLocaleString(settings.language), copy.words], [selected.readingMinutes, copy.minutes]].map(([number, label]) => <div key={label} className="min-w-0"><p className="font-display text-lg text-amber-50">{number}</p><p className="mt-1 text-xs leading-tight text-zinc-400">{label}</p></div>)}
           </div>
-          <div><p className="mb-2 text-[10px] uppercase tracking-widest text-amber-100/60">{selected.synopsisSource === "gutendex" ? copy.sourceSummary : copy.metadataSummary}</p><p dir="auto" className="whitespace-pre-line text-sm leading-relaxed text-zinc-300">{selected.synopsis}</p></div>
-          <p className="text-xs leading-relaxed text-zinc-500">{copy.original}</p>
+          <div><p className="mb-2 text-xs uppercase tracking-widest text-amber-100/60">{selected.synopsisSource === "gutendex" ? copy.sourceSummary : copy.metadataSummary}</p><p dir="auto" className="whitespace-pre-line text-sm leading-relaxed text-zinc-300">{selected.synopsis}</p></div>
+          <p className="text-xs leading-relaxed text-zinc-400">{copy.original}</p>
           <section className="rounded-2xl border border-amber-100/15 bg-amber-50/[.025] p-4">
             <h4 className="mb-3 font-display text-lg text-amber-50">{copy.sample}</h4>
             <label className="block space-y-2 text-xs text-zinc-400">{t("chapters")}<select aria-label={t("chapters")} className={field} value={chapter} onChange={event => setChapter(Number(event.target.value))}>
               {selected.chapters.map((item, i) => <option key={i} value={i} className="bg-zinc-900">{i + 1}. {item.title.slice(0, 150)}</option>)}
             </select></label>
             <div dir="auto" data-testid="gutenberg-sample" className="mt-4 max-h-80 overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-black/20 p-4 font-serif text-base leading-8 text-[#d5d0c5]">{currentChapter?.content.slice(0, 4_000)}</div>
-            <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">{copy.sampleHint}</p>
+            <p className="mt-3 text-xs leading-relaxed text-zinc-400">{copy.sampleHint}</p>
           </section>
           <p className="text-xs leading-relaxed text-zinc-400">{selected.chapterStrategy === "full-text" ? copy.full : copy.detected}</p>
           {isAdmin && <details className="rounded-2xl border border-white/10 p-4"><summary className="cursor-pointer text-sm text-amber-100/80">{copy.ready}</summary><div className="mt-4 space-y-3">
@@ -269,7 +269,7 @@ function GutenbergExplorer({ onClose }: { onClose: () => void }) {
             <label className="block space-y-1 text-xs text-zinc-400">{t("genre_label")}<input className={field} value={genre} maxLength={60} onChange={event => setGenre(event.target.value)} /></label>
             <label className="block space-y-1 text-xs text-zinc-400">{t("synopsis")}<textarea className={field + " min-h-32"} value={synopsis} maxLength={8000} onChange={event => setSynopsis(event.target.value)} /></label>
           </div></details>}
-          <p className="text-[11px] leading-relaxed text-zinc-500">{t("gutenbergRightsNotice")}</p>
+          <p className="text-xs leading-relaxed text-zinc-400">{t("gutenbergRightsNotice")}</p>
           <p className="text-xs leading-relaxed text-zinc-400">La descarga requiere una edición revisada y publicada con permiso offline. La disponibilidad en Gutenberg no acredita por sí sola los derechos para México.</p>
           {saveError && <p role="alert" className="rounded-xl border border-amber-200/20 p-3 text-sm text-amber-100">{saveError}</p>}
           {isAdmin && <p className="text-xs leading-relaxed text-zinc-400">Se importará como borrador. Antes de publicar, revisa la edición, traducción y derechos territoriales y confirma sus permisos en el editor.</p>}

@@ -62,8 +62,8 @@ export default function AudiobookChapterControl({ bookId, chapterIndex, accent }
       <div className="flex items-center gap-2">
         <Headphones className="w-4 h-4 shrink-0" style={{ color: accent }} />
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-sans font-semibold" style={{ color: accent }}>{copy.listen}</p>
-          <p className="text-[9px] text-zinc-500 font-sans">
+          <p className="text-xs font-sans font-semibold" style={{ color: accent }}>{copy.listen}</p>
+          <p className="text-xs text-zinc-400 font-sans">
             {availability.cached ? (availability.playbackUrl ? copy.cached : copy.audioSubscription)
               : availability.generating ? copy.generating
                 : availability.subscriptionRequired ? copy.audioSubscription
@@ -75,12 +75,12 @@ export default function AudiobookChapterControl({ bookId, chapterIndex, accent }
         <audio controls preload="none" className="mt-3 w-full h-9" src={availability.playbackUrl} />
       )}
       {!availability.cached && !availability.generating && !availability.subscriptionRequired && (
-        <button type="button" onClick={requestAudiobook} disabled={requesting || !availability.canRequest || !enoughPaper} className="mt-3 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-sans font-semibold disabled:opacity-40" style={{ color: accent, background: `${accent}16`, border: `1px solid ${accent}32` }}>
+        <button type="button" onClick={requestAudiobook} disabled={requesting || !availability.canRequest || !enoughPaper} className="mt-3 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-sans font-semibold disabled:opacity-40" style={{ color: accent, background: `${accent}16`, border: `1px solid ${accent}32` }}>
           {requesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
           {!enoughPaper ? copy.insufficient : availability.canRequest ? `${copy.request} · ${availability.estimatedPaper} ${copy.paper}` : copy.generationOff}
         </button>
       )}
-      {notice && <p role="status" className="mt-2 text-[9px] text-red-300/70 font-sans">{notice}</p>}
+      {notice && <p role="status" className="mt-2 text-xs text-red-300/70 font-sans">{notice}</p>}
     </section>
   )
 }

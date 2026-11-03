@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { fetchCurrentUser, type AuthUser } from "@/lib/authClient"
 import { accountContext } from "@/lib/account-context"
 import { ACCOUNT_HEADER } from "@shared/account-context"
+import { loginReturnPath } from "@/lib/auth-return"
 import type { AdminCapability } from "@shared/admin-permissions"
 
 export type { AuthUser } from "@/lib/authClient"
@@ -35,7 +36,7 @@ export function useAuth() {
     can:             (capability: AdminCapability) => user?.capabilities?.[capability] === true,
     refreshAuth:     () => queryClient.invalidateQueries({ queryKey: AUTH_KEY }),
     retryAuth:       () => refetch(),
-    loginWithGoogle: () => { window.location.href = "/api/auth/google" },
+    loginWithGoogle: () => { window.location.href = `/api/auth/google?returnTo=${encodeURIComponent(loginReturnPath())}` },
     logout:          async () => {
       const id = accountContext.requireId()
       // Freeze background sync before ending the session. The raw logout

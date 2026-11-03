@@ -1,11 +1,13 @@
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
-import { useRoute, useLocation } from "wouter"
+import { useRoute, useLocation, useSearch } from "wouter"
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { Layout } from "@/components/layout"
 import { useBook } from "@/hooks/use-books"
 import { Loader2, ArrowLeft, Bookmark, BookmarkCheck, BookOpen, Clock, Pencil, Download, Maximize2, Minimize2, EyeOff, Eye, Shield, ChevronRight } from "lucide-react"
 import { lazy, Suspense, useState, useEffect } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { purchaseState } from "@shared/purchase-state"
+import QueryNotice from "@/components/QueryNotice"
 import UserAvatar from "@/components/UserAvatar"
 import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/hooks/use-toast"
@@ -101,20 +103,32 @@ export default function BookPage() {
   const showAdmin   = isAdmin && settings.adminMode
   const isClassic = !!(book?.isClassic)
 
-  // Al volver del pago (Stripe redirige con ?paid=orderId): agradecer y refrescar
+  const search = useSearch()
+  const orderId = new URLSearchParams(search).get("paid") || ""
+  const order = useQuery<{ id: number; bookId: number; status: string; tokenId: number | null }>({
+    queryKey: ["/api/tokens/orders", orderId, numericId],
+    enabled: /^[1-9]\d*$/.test(orderId) && !!numericId,
+    retry: false,
+    queryFn: async () => {
+      const response = await fetch(`/api/tokens/orders/${orderId}`, { cache: "no-store" })
+      if (!response.ok) throw new Error("No se pudo verificar esta orden")
+      const value = await response.json()
+      if (value.bookId !== numericId) throw new Error("La orden corresponde a otra obra")
+      return value
+    },
+    refetchInterval: query => query.state.data && purchaseState(query.state.data) === "pending" ? 2000 : false,
+  })
+  const paidState = purchaseState(order.data)
+  // Refresh entitlements only after an authenticated, delivered order is confirmed.
   useEffect(() => {
-    const sp = new URLSearchParams(window.location.search)
-    if (sp.get("paid")) {
-      toast({ title: t("paySuccess"), description: t("paySuccessDesc") })
+    if (order.data && paidState === "confirmed") {
       queryClient.invalidateQueries({ queryKey: ["/api/tokens/mine"] })
       fetch("/api/tokens/unlocked", { credentials: "include" })
         .then(r => r.ok ? r.json() : null)
         .then(d => d && localStorage.setItem("novareads_unlocked", JSON.stringify((d.bookIds || []).map(String))))
         .catch(() => {})
-      window.history.replaceState({}, "", window.location.pathname)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [order.data?.id, paidState, queryClient])
 
   // Sincronizar el estado de visibilidad cuando carga el libro
   useEffect(() => {
@@ -234,7 +248,7 @@ export default function BookPage() {
     return (
       <Layout>
         <div className="flex justify-center items-center h-screen">
-          <Loader2 className="w-7 h-7 animate-spin text-white/30" />
+          <Loader2 className="w-7 h-7 animate-spin text-white/65" />
         </div>
       </Layout>
     )
@@ -244,9 +258,9 @@ export default function BookPage() {
     return (
       <Layout>
         <div className="flex flex-col items-center justify-center h-screen gap-5 px-8 text-center">
-          <p className="text-zinc-500 font-sans text-sm">{t("noResults")}</p>
+          <p className="text-zinc-400 font-sans text-sm">{t("noResults")}</p>
           <button onClick={() => setLocation("/")}
-            className="text-xs text-zinc-600 underline underline-offset-4 font-sans">
+            className="text-xs text-zinc-400 underline underline-offset-4 font-sans">
             Volver al inicio
           </button>
         </div>
@@ -256,6 +270,10 @@ export default function BookPage() {
 
   return (
     <Layout>
+      {orderId && <section className="relative z-20 mx-auto my-4 max-w-2xl rounded-xl border border-white/25 bg-zinc-950 p-4 text-sm text-zinc-200" aria-label="Estado de la compra">
+        <QueryNotice error={order.isError} onRetry={() => { void order.refetch() }} />
+        {!order.isError && <p role="status">{paidState === "confirmed" ? "Pago confirmado. Tu edición está disponible." : paidState === "refunded" ? "Esta compra tiene una devolución o disputa. Consulta tus comprobantes." : paidState === "failed" ? "La compra no se completó." : "Estamos verificando el pago y la entrega. Tus derechos aparecerán cuando se confirme."}</p>}
+      </section>}
       <div className="relative min-h-screen pb-36 overflow-x-hidden">
 
         {/* Quiet ambient backdrop; the cover itself is presented as an object. */}
@@ -282,7 +300,7 @@ export default function BookPage() {
             transition={{ duration: 7.5, repeat: Infinity, ease: "easeInOut" }}
           />
           {isPremiumView && (
-            <div className="absolute top-20 right-4 px-2.5 py-1 rounded-full text-[10px] font-sans tracking-wide"
+            <div className="absolute top-20 right-4 px-2.5 py-1 rounded-full text-xs font-sans tracking-wide"
               style={{ background: "rgba(0,0,0,0.45)", color: "#e0c878", border: "1px solid rgba(201,168,87,0.4)", backdropFilter: "blur(4px)" }}>
               {t("premiumBadge")}
             </div>
@@ -373,7 +391,7 @@ export default function BookPage() {
               <motion.div key="unsaved"
                 initial={{ scale: 0.5 }} animate={{ scale: 1 }} exit={{ scale: 0.5 }}
               >
-                <Bookmark className="w-4 h-4 text-white/50" />
+                <Bookmark className="w-4 h-4 text-white/65" />
               </motion.div>
             )}
           </AnimatePresence>
@@ -395,7 +413,7 @@ export default function BookPage() {
           <div className="flex items-center gap-2 flex-wrap">
             {isClassic && (
               <span
-                className="inline-block px-3 py-0.5 rounded-full text-[10px] tracking-[0.18em] uppercase font-medium font-sans"
+                className="inline-block px-3 py-0.5 rounded-full text-xs tracking-[0.18em] uppercase font-medium font-sans"
                 style={{
                   background:     "rgba(255,210,100,0.1)",
                   color:          "rgba(255,210,100,0.85)",
@@ -408,7 +426,7 @@ export default function BookPage() {
             )}
             {book.genre && (
               <span
-                className="inline-block px-3 py-0.5 rounded-full text-[10px] tracking-[0.18em] uppercase font-medium font-sans"
+                className="inline-block px-3 py-0.5 rounded-full text-xs tracking-[0.18em] uppercase font-medium font-sans"
                 style={{
                   background:     `${gc.glow}20`,
                   color:          gc.color,
@@ -499,7 +517,7 @@ export default function BookPage() {
             >
               {hasSavedProgress ? t("resumeBook") : t("readBook")}
               {hasSavedProgress && readProgress > 0 && (
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[11px] font-sans opacity-70">
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-sans opacity-70">
                   {readProgress}%
                 </span>
               )}
@@ -515,7 +533,7 @@ export default function BookPage() {
             {/* Print proofs for classics/authors, or a licensed copy below. */}
             {(isClassic || isMine || showAdmin) && <div className="space-y-2">
               {isClassic && <div className="flex items-center justify-center gap-1.5">
-                <span className="text-[10px] font-sans uppercase tracking-widest text-amber-200/60">{t("domainPublicShort")}</span>
+                <span className="text-xs font-sans uppercase tracking-widest text-amber-200/60">{t("domainPublicShort")}</span>
                 <InfoDot text={t("domainPublic") + " " + t("audioCtaText")} color="rgba(255,210,100,0.6)" size={13} />
               </div>}
               <button disabled={isDownloading} onClick={() => void openPrintStudio()}
@@ -555,7 +573,7 @@ export default function BookPage() {
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-sans"
                 style={{
                   background: "rgba(255,255,255,0.05)",
-                  color:      "rgba(255,255,255,0.5)",
+                  color:      "rgba(255,255,255,0.65)",
                   border:     "1px solid rgba(255,255,255,0.1)",
                 }}
               >
@@ -575,12 +593,12 @@ export default function BookPage() {
               >
                 <div className="flex items-center gap-1.5 px-1">
                   <Shield className="w-3 h-3" style={{ color: "rgba(255,210,100,0.7)" }} />
-                  <span className="text-[10px] tracking-[0.15em] uppercase font-sans"
+                  <span className="text-xs tracking-[0.15em] uppercase font-sans"
                     style={{ color: "rgba(255,210,100,0.7)" }}>
                     Administrador
                   </span>
                   {bookStatus === "review" && (
-                    <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-sans"
+                    <span className="ml-auto text-xs px-2 py-0.5 rounded-full font-sans"
                       style={{ background: "rgba(255,150,80,0.15)", color: "rgba(255,170,100,0.9)" }}>
                       En revisión
                     </span>
@@ -641,7 +659,7 @@ export default function BookPage() {
                 border:     isClassic ? "1px solid rgba(255,210,100,0.3)" : `1px solid ${gc.color}50`,
               } : {
                 background: "rgba(255,255,255,0.05)",
-                color:      "rgba(255,255,255,0.45)",
+                color:      "rgba(255,255,255,0.65)",
                 border:     "1px solid rgba(255,255,255,0.1)",
               }}
             >
@@ -683,7 +701,7 @@ export default function BookPage() {
               <p className="text-[13px] font-sans leading-relaxed mb-3" style={{ color: "rgba(255,255,255,0.65)" }}>
                 {t("libraryFullBefore")}<span style={{ color: gc.color }}>{FREE_SAVE_LIMIT}</span>{t("libraryFullAfter")}
               </p>
-              <p className="text-[11px] font-sans leading-relaxed mb-5" style={{ color: "rgba(255,255,255,0.4)" }}>
+              <p className="text-xs font-sans leading-relaxed mb-5" style={{ color: "rgba(255,255,255,0.65)" }}>
                 {t("libraryFullNote")}
               </p>
               <div className="flex gap-3">

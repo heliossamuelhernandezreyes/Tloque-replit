@@ -352,14 +352,14 @@ export default function ManualDirectionPanel({
   }
 
   if (busy === "load" || !project) return (
-    <div className="flex min-h-40 items-center justify-center gap-2 text-xs text-white/35">
+    <div className="flex min-h-40 items-center justify-center gap-2 text-xs text-white/65">
       <Loader2 className="h-4 w-4 animate-spin" /> Preparando edición manual…
     </div>
   )
 
   const narratorVoices = voices.filter(voice => voice.role !== "dialogue")
   const dialogueVoices = voices.filter(voice => voice.role !== "narrator")
-  const inputClass = "min-h-10 w-full rounded-lg border border-white/[.07] bg-zinc-950 px-2.5 text-[11px] text-white/60 outline-none focus:border-violet-200/25"
+  const inputClass = "min-h-10 w-full rounded-lg border border-white/[.07] bg-zinc-950 px-2.5 text-xs text-white/60 outline-none focus:border-violet-200/25"
 
   return (
     <section className="space-y-4">
@@ -368,23 +368,23 @@ export default function ManualDirectionPanel({
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl" style={{ color: accent, background: `${accent}14` }}><EyeOff className="h-4 w-4" /></span>
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold text-white/80">Dirección manual</h2>
-            <p className="mt-1 text-[11px] leading-relaxed text-white/35">Edita actuación y música en la misma partitura. No usa IA ni consume Papel.</p>
+            <p className="mt-1 text-xs leading-relaxed text-white/65">Edita actuación y música en la misma partitura. No usa IA ni consume Papel.</p>
           </div>
-          <span className="rounded-lg border border-white/[.07] px-2 py-1 text-[9px] text-white/30">r{currentRevision}</span>
+          <span className="rounded-lg border border-white/[.07] px-2 py-1 text-xs text-white/65">r{currentRevision}</span>
         </div>
-        {staleRecovered && <p className="mt-3 rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-[11px] text-amber-100/60">La versión anterior se conservará hasta que guardes esta nueva partitura.</p>}
+        {staleRecovered && <p className="mt-3 rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-xs text-amber-100/60">La versión anterior se conservará hasta que guardes esta nueva partitura.</p>}
       </div>
 
       <section className="space-y-3 rounded-2xl border border-white/[.07] bg-white/[.018] p-3.5 sm:p-4">
         <div className="flex items-center gap-2">
           <Mic2 className="h-4 w-4" style={{ color: accent }} />
-          <div className="min-w-0 flex-1"><h3 className="text-xs font-semibold text-white/70">Audiolibro</h3><p className="text-[10px] text-white/25">Voces, actuación y pausas</p></div>
-          {project.voiceProject.spans.length === 0 && <button type="button" onClick={addBaseNarration} className="min-h-9 rounded-lg px-2.5 text-[10px]" style={{ color: accent, background: `${accent}12` }}>Crear base</button>}
+          <div className="min-w-0 flex-1"><h3 className="text-xs font-semibold text-white/70">Audiolibro</h3><p className="text-xs text-white/65">Voces, actuación y pausas</p></div>
+          {project.voiceProject.spans.length === 0 && <button type="button" onClick={addBaseNarration} className="min-h-9 rounded-lg px-2.5 text-xs" style={{ color: accent, background: `${accent}12` }}>Crear base</button>}
         </div>
 
         <div className="grid gap-2 sm:grid-cols-2">
-          <label className="text-[9px] uppercase tracking-wider text-white/30">Voz del narrador<select className={`${inputClass} mt-1`} value={project.voiceProject.narratorVoiceProfileId ?? ""} onChange={event => change(current => ({ ...current, voiceProject: { ...current.voiceProject, narratorVoiceProfileId: event.target.value ? Number(event.target.value) : null } }))}><option value="">Seleccionar voz</option>{narratorVoices.map(voice => <option key={voice.id} value={voice.id}>{voice.label} · {voice.language.toUpperCase()}</option>)}</select></label>
-          <label className="text-[9px] uppercase tracking-wider text-white/30">Pausa entre párrafos<input className={`${inputClass} mt-1`} type="number" min={0} max={5000} value={project.voiceProject.paragraphPauseMs} onChange={event => change(current => ({ ...current, voiceProject: { ...current.voiceProject, paragraphPauseMs: Number(event.target.value) } }))} /></label>
+          <label className="text-xs uppercase tracking-wider text-white/65">Voz del narrador<select className={`${inputClass} mt-1`} value={project.voiceProject.narratorVoiceProfileId ?? ""} onChange={event => change(current => ({ ...current, voiceProject: { ...current.voiceProject, narratorVoiceProfileId: event.target.value ? Number(event.target.value) : null } }))}><option value="">Seleccionar voz</option>{narratorVoices.map(voice => <option key={voice.id} value={voice.id}>{voice.label} · {voice.language.toUpperCase()}</option>)}</select></label>
+          <label className="text-xs uppercase tracking-wider text-white/65">Pausa entre párrafos<input className={`${inputClass} mt-1`} type="number" min={0} max={5000} value={project.voiceProject.paragraphPauseMs} onChange={event => change(current => ({ ...current, voiceProject: { ...current.voiceProject, paragraphPauseMs: Number(event.target.value) } }))} /></label>
         </div>
 
         <div className="space-y-2">
@@ -395,7 +395,7 @@ export default function ManualDirectionPanel({
               <button type="button" onClick={() => removeCharacter(character.id)} className="grid min-h-10 place-items-center rounded-lg px-3 text-red-200/35" aria-label="Eliminar personaje"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
           ))}
-          <button type="button" onClick={() => change(current => ({ ...current, voiceProject: { ...current.voiceProject, characters: [...current.voiceProject.characters, nextCharacter(current)] } }))} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-white/[.07] px-3 text-[10px] text-white/40"><Plus className="h-3.5 w-3.5" /><UserRound className="h-3.5 w-3.5" />Personaje</button>
+          <button type="button" onClick={() => change(current => ({ ...current, voiceProject: { ...current.voiceProject, characters: [...current.voiceProject.characters, nextCharacter(current)] } }))} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-white/[.07] px-3 text-xs text-white/65"><Plus className="h-3.5 w-3.5" /><UserRound className="h-3.5 w-3.5" />Personaje</button>
         </div>
 
         <div className="max-h-[38rem] space-y-2 overflow-y-auto pr-1">
@@ -404,16 +404,16 @@ export default function ManualDirectionPanel({
             const excerpt = paragraphs[span.paragraphIndex]?.slice(span.startOffset, span.endOffset) || ""
             return (
               <div key={span.id} className="space-y-2 rounded-xl border border-white/[.06] bg-black/20 p-3">
-                <div className="flex items-start gap-2"><p className="min-w-0 flex-1 line-clamp-3 font-serif text-xs leading-relaxed text-white/50">{excerpt}</p><button type="button" onClick={() => updateVoiceNote(span.id, { locked: !note.locked })} className="p-1.5 text-white/30" aria-label="Proteger indicación">{note.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}</button></div>
+                <div className="flex items-start gap-2"><p className="min-w-0 flex-1 line-clamp-3 font-serif text-xs leading-relaxed text-white/65">{excerpt}</p><button type="button" onClick={() => updateVoiceNote(span.id, { locked: !note.locked })} className="p-1.5 text-white/65" aria-label="Proteger indicación">{note.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}</button></div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <select className={inputClass} value={span.speakerId} onChange={event => updateSpan(span.id, { speakerId: event.target.value, kind: event.target.value === "narrator" ? "narration" : "dialogue" })}><option value="narrator">Narrador</option>{project.voiceProject.characters.map(character => <option key={character.id} value={character.id}>{character.name}</option>)}</select>
                   <select className={inputClass} value={span.delivery} onChange={event => updateSpan(span.id, { delivery: event.target.value as SpeechDelivery })}>{speechDeliverySchema.options.map(value => <option key={value} value={value}>{value}</option>)}</select>
-                  <label className="text-[9px] text-white/25">Pausa antes<input className={`${inputClass} mt-1`} type="number" min={0} max={5000} value={span.pauseBeforeMs} onChange={event => updateSpan(span.id, { pauseBeforeMs: Number(event.target.value) })} /></label>
-                  <label className="text-[9px] text-white/25">Pausa después<input className={`${inputClass} mt-1`} type="number" min={0} max={5000} value={span.pauseAfterMs} onChange={event => updateSpan(span.id, { pauseAfterMs: Number(event.target.value) })} /></label>
+                  <label className="text-xs text-white/65">Pausa antes<input className={`${inputClass} mt-1`} type="number" min={0} max={5000} value={span.pauseBeforeMs} onChange={event => updateSpan(span.id, { pauseBeforeMs: Number(event.target.value) })} /></label>
+                  <label className="text-xs text-white/65">Pausa después<input className={`${inputClass} mt-1`} type="number" min={0} max={5000} value={span.pauseAfterMs} onChange={event => updateSpan(span.id, { pauseAfterMs: Number(event.target.value) })} /></label>
                   <select className={inputClass} value={note.emotion} onChange={event => updateVoiceNote(span.id, { emotion: event.target.value as DirectionVoiceNoteV2["emotion"] })}>{directionEmotionSchema.options.map(value => <option key={value} value={value}>{value}</option>)}</select>
                   <select className={inputClass} value={note.projection} onChange={event => updateVoiceNote(span.id, { projection: event.target.value as DirectionVoiceNoteV2["projection"] })}>{directionProjectionSchema.options.map(value => <option key={value} value={value}>{value}</option>)}</select>
                   <select className={inputClass} value={note.vocalState} onChange={event => updateVoiceNote(span.id, { vocalState: event.target.value as DirectionVoiceNoteV2["vocalState"] })}>{directionVocalStateSchema.options.map(value => <option key={value} value={value}>{value}</option>)}</select>
-                  <label className="text-[9px] text-white/25">Intensidad {Math.round(note.intensity * 100)}%<input className="mt-2 w-full" type="range" min={0} max={1} step={0.05} value={note.intensity} onChange={event => updateVoiceNote(span.id, { intensity: Number(event.target.value) })} /></label>
+                  <label className="text-xs text-white/65">Intensidad {Math.round(note.intensity * 100)}%<input className="mt-2 w-full" type="range" min={0} max={1} step={0.05} value={note.intensity} onChange={event => updateVoiceNote(span.id, { intensity: Number(event.target.value) })} /></label>
                 </div>
               </div>
             )
@@ -424,28 +424,28 @@ export default function ManualDirectionPanel({
       <section className="space-y-3 rounded-2xl border border-white/[.07] bg-white/[.018] p-3.5 sm:p-4">
         <div className="flex items-center gap-2">
           <Music2 className="h-4 w-4" style={{ color: accent }} />
-          <div className="min-w-0 flex-1"><h3 className="text-xs font-semibold text-white/70">Música instrumental</h3><p className="text-[10px] text-white/25">Regiones, silencios, intensidad y fonoteca</p></div>
-          <button type="button" onClick={addMusicRegion} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-[10px]" style={{ color: accent, background: `${accent}12` }}><Plus className="h-3.5 w-3.5" />Región</button>
+          <div className="min-w-0 flex-1"><h3 className="text-xs font-semibold text-white/70">Música instrumental</h3><p className="text-xs text-white/65">Regiones, silencios, intensidad y fonoteca</p></div>
+          <button type="button" onClick={addMusicRegion} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs" style={{ color: accent, background: `${accent}12` }}><Plus className="h-3.5 w-3.5" />Región</button>
         </div>
 
         <div className="space-y-2">
-          {project.musicProject.regions.length === 0 && <p className="rounded-xl border border-dashed border-white/[.07] p-4 text-center text-[10px] text-white/25">Sin regiones: el capítulo conservará silencio musical.</p>}
+          {project.musicProject.regions.length === 0 && <p className="rounded-xl border border-dashed border-white/[.07] p-4 text-center text-xs text-white/65">Sin regiones: el capítulo conservará silencio musical.</p>}
           {project.musicProject.regions.map(region => {
             const node = project.musicNodes.find(candidate => candidate.regionId === region.id) ?? defaultMusicNode(region)
             return (
               <div key={region.id} className="space-y-2 rounded-xl border border-white/[.06] bg-black/20 p-3">
-                <div className="flex items-center gap-2"><input className={`${inputClass} min-w-0 flex-1`} value={region.name} onChange={event => updateRegion(region.id, { name: event.target.value })} /><button type="button" onClick={() => updateMusicNode(region.id, { locked: !node.locked })} className="p-2 text-white/30" aria-label="Proteger región">{node.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}</button><button type="button" onClick={() => removeRegion(region.id)} className="p-2 text-red-200/35" aria-label="Eliminar región"><Trash2 className="h-3.5 w-3.5" /></button></div>
+                <div className="flex items-center gap-2"><input className={`${inputClass} min-w-0 flex-1`} value={region.name} onChange={event => updateRegion(region.id, { name: event.target.value })} /><button type="button" onClick={() => updateMusicNode(region.id, { locked: !node.locked })} className="p-2 text-white/65" aria-label="Proteger región">{node.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}</button><button type="button" onClick={() => removeRegion(region.id)} className="p-2 text-red-200/35" aria-label="Eliminar región"><Trash2 className="h-3.5 w-3.5" /></button></div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <label className="text-[9px] text-white/25">Inicio<input className={`${inputClass} mt-1`} type="number" min={0} max={paragraphs.length - 1} value={region.startParagraph} onChange={event => updateRegion(region.id, { startParagraph: Number(event.target.value) })} /></label>
-                  <label className="text-[9px] text-white/25">Final<input className={`${inputClass} mt-1`} type="number" min={0} max={paragraphs.length - 1} value={region.endParagraph} onChange={event => updateRegion(region.id, { endParagraph: Number(event.target.value) })} /></label>
-                  <label className="text-[9px] text-white/25">Intención<select className={`${inputClass} mt-1`} value={region.mood} onChange={event => updateRegion(region.id, { mood: event.target.value as NarrativeMood })}>{MOODS.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-                  <label className="text-[9px] text-white/25">Partitura<select className={`${inputClass} mt-1`} disabled={region.mood === "silence"} value={region.scoreId ?? ""} onChange={event => updateRegion(region.id, { scoreId: event.target.value ? Number(event.target.value) : null })}><option value="">Music Brain procedural</option>{scores.map(score => <option key={score.id} value={score.id}>{score.title} · {score.bpm} BPM</option>)}</select></label>
-                  <label className="text-[9px] text-white/25">Intensidad {Math.round(region.targetIntensity * 100)}%<input className="mt-2 w-full" type="range" min={0} max={0.8} step={0.05} value={region.targetIntensity} onChange={event => updateRegion(region.id, { targetIntensity: Number(event.target.value) })} /></label>
-                  <label className="text-[9px] text-white/25">Tensión {Math.round(region.tension * 100)}%<input className="mt-2 w-full" type="range" min={0} max={1} step={0.05} value={region.tension} onChange={event => updateRegion(region.id, { tension: Number(event.target.value) })} /></label>
-                  <label className="text-[9px] text-white/25">Calidez {Math.round(region.warmth * 100)}%<input className="mt-2 w-full" type="range" min={0} max={1} step={0.05} value={region.warmth} onChange={event => updateRegion(region.id, { warmth: Number(event.target.value) })} /></label>
-                  <label className="text-[9px] text-white/25">Densidad {Math.round(region.density * 100)}%<input className="mt-2 w-full" type="range" min={0} max={1} step={0.05} value={region.density} onChange={event => updateRegion(region.id, { density: Number(event.target.value) })} /></label>
-                  <label className="text-[9px] text-white/25">Crossfade<input className={`${inputClass} mt-1`} type="number" min={0.25} max={30} step={0.25} value={node.crossfadeSeconds} onChange={event => updateMusicNode(region.id, { crossfadeSeconds: Number(event.target.value) })} /></label>
-                  <label className="col-span-2 text-[9px] text-white/25 sm:col-span-3">Nota de intención<input className={`${inputClass} mt-1`} value={node.note} onChange={event => updateMusicNode(region.id, { note: event.target.value })} placeholder="Qué debe preservar el DA en futuros análisis" /></label>
+                  <label className="text-xs text-white/65">Inicio<input className={`${inputClass} mt-1`} type="number" min={0} max={paragraphs.length - 1} value={region.startParagraph} onChange={event => updateRegion(region.id, { startParagraph: Number(event.target.value) })} /></label>
+                  <label className="text-xs text-white/65">Final<input className={`${inputClass} mt-1`} type="number" min={0} max={paragraphs.length - 1} value={region.endParagraph} onChange={event => updateRegion(region.id, { endParagraph: Number(event.target.value) })} /></label>
+                  <label className="text-xs text-white/65">Intención<select className={`${inputClass} mt-1`} value={region.mood} onChange={event => updateRegion(region.id, { mood: event.target.value as NarrativeMood })}>{MOODS.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+                  <label className="text-xs text-white/65">Partitura<select className={`${inputClass} mt-1`} disabled={region.mood === "silence"} value={region.scoreId ?? ""} onChange={event => updateRegion(region.id, { scoreId: event.target.value ? Number(event.target.value) : null })}><option value="">Music Brain procedural</option>{scores.map(score => <option key={score.id} value={score.id}>{score.title} · {score.bpm} BPM</option>)}</select></label>
+                  <label className="text-xs text-white/65">Intensidad {Math.round(region.targetIntensity * 100)}%<input className="mt-2 w-full" type="range" min={0} max={0.8} step={0.05} value={region.targetIntensity} onChange={event => updateRegion(region.id, { targetIntensity: Number(event.target.value) })} /></label>
+                  <label className="text-xs text-white/65">Tensión {Math.round(region.tension * 100)}%<input className="mt-2 w-full" type="range" min={0} max={1} step={0.05} value={region.tension} onChange={event => updateRegion(region.id, { tension: Number(event.target.value) })} /></label>
+                  <label className="text-xs text-white/65">Calidez {Math.round(region.warmth * 100)}%<input className="mt-2 w-full" type="range" min={0} max={1} step={0.05} value={region.warmth} onChange={event => updateRegion(region.id, { warmth: Number(event.target.value) })} /></label>
+                  <label className="text-xs text-white/65">Densidad {Math.round(region.density * 100)}%<input className="mt-2 w-full" type="range" min={0} max={1} step={0.05} value={region.density} onChange={event => updateRegion(region.id, { density: Number(event.target.value) })} /></label>
+                  <label className="text-xs text-white/65">Crossfade<input className={`${inputClass} mt-1`} type="number" min={0.25} max={30} step={0.25} value={node.crossfadeSeconds} onChange={event => updateMusicNode(region.id, { crossfadeSeconds: Number(event.target.value) })} /></label>
+                  <label className="col-span-2 text-xs text-white/65 sm:col-span-3">Nota de intención<input className={`${inputClass} mt-1`} value={node.note} onChange={event => updateMusicNode(region.id, { note: event.target.value })} placeholder="Qué debe preservar el DA en futuros análisis" /></label>
                 </div>
               </div>
             )
@@ -455,13 +455,13 @@ export default function ManualDirectionPanel({
 
       <div className="sticky bottom-3 z-20 rounded-2xl border border-white/[.08] bg-zinc-950/95 p-3 shadow-2xl backdrop-blur-xl">
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`text-[10px] ${dirty ? "text-amber-200/55" : "text-emerald-200/45"}`}>{dirty ? "Cambios sin guardar" : "Partitura sincronizada"}</span>
+          <span className={`text-xs ${dirty ? "text-amber-200/55" : "text-emerald-200/45"}`}>{dirty ? "Cambios sin guardar" : "Partitura sincronizada"}</span>
           <span className="flex-1" />
-          <button type="button" disabled={!!busy || currentRevision === 0 || dirty} onClick={compileProjects} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-white/[.08] px-3 text-[10px] text-white/45 disabled:opacity-30"><Check className="h-3.5 w-3.5" />Preparar</button>
-          <button type="button" disabled={!!busy || currentRevision === 0 || dirty} onClick={publishProjects} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-white/[.08] px-3 text-[10px] text-white/45 disabled:opacity-30"><UploadCloud className="h-3.5 w-3.5" />Publicar</button>
-          <button type="button" disabled={!!busy || !dirty} onClick={saveProject} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl px-4 text-[11px] font-semibold disabled:opacity-35" style={{ color: "#050505", background: accent }}>{busy === "save" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}Guardar</button>
+          <button type="button" disabled={!!busy || currentRevision === 0 || dirty} onClick={compileProjects} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-white/[.08] px-3 text-xs text-white/65 disabled:opacity-30"><Check className="h-3.5 w-3.5" />Preparar</button>
+          <button type="button" disabled={!!busy || currentRevision === 0 || dirty} onClick={publishProjects} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-white/[.08] px-3 text-xs text-white/65 disabled:opacity-30"><UploadCloud className="h-3.5 w-3.5" />Publicar</button>
+          <button type="button" disabled={!!busy || !dirty} onClick={saveProject} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl px-4 text-xs font-semibold disabled:opacity-35" style={{ color: "#050505", background: accent }}>{busy === "save" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}Guardar</button>
         </div>
-        {notice && <p role="status" className="mt-2 rounded-lg bg-white/[.025] px-2.5 py-2 text-[10px] leading-relaxed text-white/45">{notice}</p>}
+        {notice && <p role="status" className="mt-2 rounded-lg bg-white/[.025] px-2.5 py-2 text-xs leading-relaxed text-white/65">{notice}</p>}
       </div>
     </section>
   )

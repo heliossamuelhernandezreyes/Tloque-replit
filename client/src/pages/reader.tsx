@@ -1,3 +1,5 @@
+import AccessibleDialog from "@/components/AccessibleDialog"
+import ReadingSettings from "@/components/ReadingSettings"
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useParams, useLocation } from "wouter"
 import { useBook, useBooks } from "@/hooks/use-books"
@@ -84,6 +86,7 @@ export default function Reader() {
   const [dictResult,  setDictResult]  = useState<DictionaryResult | null>(null)
   const [dictLoading, setDictLoading] = useState(false)
   const dictRequestRef = useRef<AbortController | null>(null)
+  const [showReadingSettings, setShowReadingSettings] = useState(false)
   const [headerVisible, setHeaderVisible] = useState(true)
   const [readProgress,  setReadProgress]  = useState(0)
   const [transitioning, setTransitioning] = useState(false)
@@ -318,12 +321,6 @@ export default function Reader() {
     lastScrollY.current = scrollY
   }, [])
 
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    el.addEventListener("scroll", handleScroll, { passive: true })
-    return () => el.removeEventListener("scroll", handleScroll)
-  }, [handleScroll])
 
   function changeChapter(newIndex: number) {
     if (transitioning) return
@@ -450,7 +447,7 @@ export default function Reader() {
 
   if (isLoading) return (
     <div className="h-screen flex items-center justify-center" style={{ background: bgColor }}>
-      <Loader2 className="animate-spin text-white/30 w-7 h-7" />
+      <Loader2 className="animate-spin text-white/65 w-7 h-7" />
     </div>
   )
 
@@ -476,7 +473,9 @@ export default function Reader() {
   return (
     <div
       ref={scrollRef}
-      className="h-screen overflow-y-auto"
+      onScroll={handleScroll}
+      data-testid="reader-scroll"
+      className="h-[100dvh] overflow-y-auto"
       style={{ background: bgColor, scrollBehavior: "auto",
                transition: "background 0.5s ease" }}
     >
@@ -548,6 +547,7 @@ export default function Reader() {
         style={{ background: "rgba(255,255,255,0.06)" }}>
         <motion.div
           className="h-full rounded-full"
+          data-testid="reader-progress"
           style={{
             width:      `${readProgress}%`,
             background: `linear-gradient(to right, ${gc.glow}, ${gc.color})`,
@@ -561,7 +561,7 @@ export default function Reader() {
       <motion.div
         animate={{ y: headerVisible ? 0 : -60 }}
         transition={{ type: "spring", stiffness: 220, damping: 26 }}
-        className="fixed top-[2px] left-0 right-0 z-[150] flex items-center justify-between px-4 py-3"
+        className="fixed top-[calc(2px+env(safe-area-inset-top))] left-0 right-0 z-[150] flex flex-wrap items-center justify-between gap-1 px-4 py-3"
         style={{
           background:     headerBg,
           borderBottom:   "1px solid rgba(255,255,255,0.05)",
@@ -570,8 +570,9 @@ export default function Reader() {
         }}
       >
         <button
+          aria-label={t("backToSynopsis")}
           onClick={() => setLocation(`/book/${bookId}`)}
-          className="p-2 transition-colors"
+          className="grid min-h-11 min-w-11 place-items-center transition-colors"
           style={{ color: headerText }}
         >
           <ArrowLeft className="w-4 h-4" />
@@ -579,27 +580,29 @@ export default function Reader() {
 
         <div className="flex flex-col items-center min-w-0 px-2">
           <p
-            className="text-[10px] tracking-[0.18em] uppercase font-sans truncate max-w-[140px]"
+            className="text-xs tracking-[0.18em] uppercase font-sans truncate max-w-[140px]"
             style={{ color: gc.color + "99" }}
           >
             {hasChapters ? (cap.title || `${t("chapter")} ${activeChapter + 1}`) : book.title}
           </p>
           {hasChapters && (
-            <p className="text-[9px] font-sans mt-0.5 truncate max-w-[140px]"
+            <p className="text-xs font-sans mt-0.5 truncate max-w-[140px]"
               style={{ color: headerText + "80" }}>
               {book.title}
             </p>
           )}
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex max-w-full flex-wrap items-center gap-1">
+          <button className="min-h-11 min-w-11 rounded-lg border border-current/30 px-2 text-base" style={{ color: headerText }} aria-label={t("sectionReading")} onClick={() => setShowReadingSettings(true)}>Aa</button>
           {(soundtrack || experienceData?.musicBrain || book?.spotifyLink) && <ReaderAudioMenu bookId={bookId || "book"} soundtrack={soundtrack} musicBrain={experienceData?.musicBrain ?? null} audioLayers={experienceData?.audioLayers ?? []} spotifyLink={book?.spotifyLink || ""} accent={gc.color} iconColor={headerText} />}
           {/* Botón de lectura en voz alta */}
           {ttsSupported && (
             <motion.button
               whileTap={{ scale: 0.9 }}
+              aria-label={isSpeaking ? "Detener lectura en voz alta" : "Escuchar lectura en voz alta"}
               onClick={() => toggleSpeech(cap.content)}
-              className="p-2 transition-colors"
+              className="grid min-h-11 min-w-11 place-items-center transition-colors"
               style={{ color: isSpeaking ? gc.color : headerText }}
             >
               <AnimatePresence mode="wait">
@@ -624,14 +627,15 @@ export default function Reader() {
 
           {isMine ? (
             <button
+              aria-label={t("editStory")}
               onClick={() => setLocation(`/editor?id=${book.id}&status=published`)}
-              className="p-2 transition-colors"
+              className="grid min-h-11 min-w-11 place-items-center transition-colors"
               style={{ color: headerText }}
             >
               <Pencil className="w-4 h-4" />
             </button>
           ) : (
-            <button onClick={toggleSave} className="p-2 transition-colors">
+            <button onClick={toggleSave} aria-label={isSaved ? t("removedFromLibrary") : t("saveBook")} className="grid min-h-11 min-w-11 place-items-center transition-colors">
               <AnimatePresence mode="wait">
                 {isSaved ? (
                   <motion.div key="s" initial={{scale:0.6}} animate={{scale:1}} exit={{scale:0.6}}>
@@ -673,7 +677,7 @@ export default function Reader() {
               >
                 {book.title}
               </h1>
-              <p className="text-[10px] uppercase tracking-[0.25em] font-sans"
+              <p className="text-xs uppercase tracking-[0.25em] font-sans"
                 style={{ color: textColor + "60" }}>
                 {book.author}
               </p>
@@ -696,7 +700,7 @@ export default function Reader() {
               <div className="mb-10 flex items-center gap-4">
                 <div className="flex-1 h-px"
                   style={{ background: `linear-gradient(to right, ${gc.color}35, transparent)` }} />
-                <h2 className="text-[10px] uppercase tracking-[0.22em] font-sans shrink-0"
+                <h2 className="text-xs uppercase tracking-[0.22em] font-sans shrink-0"
                   style={{ color: gc.color + "bb" }}>
                   {cap.title}
                 </h2>
@@ -731,11 +735,11 @@ export default function Reader() {
                     />
                   ))}
                 </div>
-                <span className="text-[11px] font-sans" style={{ color: gc.color + "cc" }}>
+                <span className="text-xs font-sans" style={{ color: gc.color + "cc" }}>
                   Leyendo en voz alta...
                 </span>
                 <button onClick={() => { window.speechSynthesis.cancel(); setIsSpeaking(false); music.duck(false) }}
-                  className="ml-auto text-[10px] font-sans"
+                  className="ml-auto text-xs font-sans"
                   style={{ color: gc.color + "70" }}>
                   Detener
                 </button>
@@ -928,7 +932,7 @@ export default function Reader() {
                 ✦
               </motion.div>
 
-              <p className="text-[9px] tracking-[0.35em] uppercase font-sans mb-3"
+              <p className="text-xs tracking-[0.35em] uppercase font-sans mb-3"
                 style={{ color: gc.color + "77" }}>
                 {t("finish")}
               </p>
@@ -960,7 +964,7 @@ export default function Reader() {
                         <p className="text-lg font-display font-bold" style={{ color: gc.color }}>
                           {totalW.toLocaleString()}
                         </p>
-                        <p className="text-[9px] uppercase tracking-widest font-sans"
+                        <p className="text-xs uppercase tracking-widest font-sans"
                           style={{ color: gc.color + "60" }}>
                           {t("wordsLabel")}
                         </p>
@@ -970,7 +974,7 @@ export default function Reader() {
                         <p className="text-lg font-display font-bold" style={{ color: gc.color }}>
                           {mins < 60 ? `${mins}m` : `${Math.floor(mins/60)}h ${mins%60}m`}
                         </p>
-                        <p className="text-[9px] uppercase tracking-widest font-sans"
+                        <p className="text-xs uppercase tracking-widest font-sans"
                           style={{ color: gc.color + "60" }}>
                           {t("readingTime")}
                         </p>
@@ -982,7 +986,7 @@ export default function Reader() {
                             <p className="text-lg font-display font-bold" style={{ color: gc.color }}>
                               {book.chapters.length}
                             </p>
-                            <p className="text-[9px] uppercase tracking-widest font-sans"
+                            <p className="text-xs uppercase tracking-widest font-sans"
                               style={{ color: gc.color + "60" }}>
                               {t("chapters")}
                             </p>
@@ -997,7 +1001,7 @@ export default function Reader() {
               {/* Sugerencias del mismo autor o género */}
               {endSuggestions.length > 0 && (
                 <div className="px-4 pb-4 space-y-2 text-left">
-                  <p className="text-[9px] tracking-[0.25em] uppercase font-sans mb-3"
+                  <p className="text-xs tracking-[0.25em] uppercase font-sans mb-3"
                     style={{ color: gc.color + "66" }}>
                     {t("explore")}
                   </p>
@@ -1027,7 +1031,7 @@ export default function Reader() {
                           <p className="text-white text-xs font-sans font-medium line-clamp-1">
                             {s.title}
                           </p>
-                          <p className="text-[10px] font-sans mt-0.5" style={{ color: sg.color + "77" }}>
+                          <p className="text-xs font-sans mt-0.5" style={{ color: sg.color + "77" }}>
                             {s.author}
                           </p>
                         </div>
@@ -1053,7 +1057,8 @@ export default function Reader() {
                 </motion.button>
                 <motion.button
                   whileTap={{ scale: 0.97 }}
-                  onClick={() => setLocation(`/book/${bookId}`)}
+                  aria-label={t("backToSynopsis")}
+          onClick={() => setLocation(`/book/${bookId}`)}
                   className="w-full py-3 rounded-2xl font-sans text-sm"
                   style={{
                     background: "rgba(255,255,255,0.04)",
@@ -1070,32 +1075,8 @@ export default function Reader() {
 
       </div>
 
-    {/* ── DICCIONARIO ─────────────────────────────────── */}
-    <AnimatePresence>
-      {dictWord && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[500]"
-            onClick={closeDictionary}
-          />
-          <motion.div
-            initial={{ y: "100%", opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: "100%", opacity: 0 }}
-            transition={{ type: "spring", stiffness: 320, damping: 30 }}
-            className="fixed bottom-0 left-0 right-0 z-[501] mx-auto max-h-[calc(100dvh-var(--tloque-safe-top))] max-w-md overflow-hidden"
-            role="dialog"
-            aria-modal="true"
-            aria-label={`${t("dictionary")}: ${dictWord}`}
-            style={{
-              background:   "rgba(14,12,20,0.98)",
-              borderTop:    `1px solid ${gc.color}30`,
-              borderRadius: "24px 24px 0 0",
-              boxShadow:    `0 -16px 64px ${gc.glow}25, 0 -4px 16px rgba(0,0,0,0.8)`,
-              paddingBottom:"env(safe-area-inset-bottom)",
-            }}
-          >
+    <ReadingSettings open={showReadingSettings} onClose={() => setShowReadingSettings(false)} />
+    <AccessibleDialog open={!!dictWord} onClose={closeDictionary} title={`${t("dictionary")}: ${dictWord || ""}`} sheet style={{ maxWidth: 448, background: "#0e0c14" }}>
             <div className="flex justify-center pt-3 pb-1">
               <div className="w-8 h-1 rounded-full" style={{ background: "rgba(255,255,255,0.15)" }} />
             </div>
@@ -1106,7 +1087,7 @@ export default function Reader() {
                     className="break-words font-display text-lg font-semibold text-white leading-tight"
                     dir={languageDirection(dictResult?.sourceLanguage || bookLangRef.current)}
                   >{dictWord}</h3>
-                  <p className="text-[10px] uppercase tracking-widest font-sans mt-0.5" style={{ color: gc.color + "66" }}>
+                  <p className="text-xs uppercase tracking-widest font-sans mt-0.5" style={{ color: gc.color + "66" }}>
                     {t("dictionary")}
                   </p>
                 </div>
@@ -1116,7 +1097,7 @@ export default function Reader() {
                   style={{ background: "rgba(255,255,255,0.06)" }}
                   aria-label={t("closeAction")}
                 >
-                  <span className="text-zinc-500 text-sm leading-none">✕</span>
+                  <span className="text-zinc-400 text-sm leading-none">✕</span>
                 </button>
               </div>
               <div
@@ -1127,12 +1108,12 @@ export default function Reader() {
                 {dictLoading ? (
                   <div className="flex items-center gap-2 min-h-10">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: gc.color + "80" }} />
-                    <span className="text-zinc-500 text-sm font-sans">{t("searching")}...</span>
+                    <span className="text-zinc-400 text-sm font-sans">{t("searching")}...</span>
                   </div>
                 ) : dictResult && (dictResult.senses.length > 0 || dictResult.translation) ? (
                   <div className="space-y-3" dir={LANGUAGE_META[settings.language].dir}>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[9px] uppercase tracking-wider px-2 py-1 rounded-full font-sans"
+                      <span className="text-xs uppercase tracking-wider px-2 py-1 rounded-full font-sans"
                         style={{ color: gc.color, background: `${gc.color}12`, border: `1px solid ${gc.color}24` }}>
                         {dictResult.sourceLanguage.toUpperCase()} → {dictResult.targetLanguage.toUpperCase()}
                       </span>
@@ -1144,12 +1125,12 @@ export default function Reader() {
                     </div>
                     {dictResult.senses.map((sense, index) => (
                       <div key={`${sense.definition}-${index}`} className="flex gap-2.5">
-                        <span className="text-[10px] font-sans mt-0.5 tabular-nums" style={{ color: gc.color + "88" }}>
+                        <span className="text-xs font-sans mt-0.5 tabular-nums" style={{ color: gc.color + "88" }}>
                           {index + 1}
                         </span>
                         <div className="min-w-0">
                           {sense.partOfSpeech && (
-                            <p className="text-[9px] uppercase tracking-wider font-sans mb-0.5" style={{ color: gc.color + "99" }}>
+                            <p className="text-xs uppercase tracking-wider font-sans mb-0.5" style={{ color: gc.color + "99" }}>
                               {sense.partOfSpeech}
                             </p>
                           )}
@@ -1157,7 +1138,7 @@ export default function Reader() {
                             {sense.definition}
                           </p>
                           {sense.example && (
-                            <p className="text-[11px] italic font-serif leading-relaxed mt-1" style={{ color: "rgba(255,255,255,0.48)" }}>
+                            <p className="text-xs italic font-serif leading-relaxed mt-1" style={{ color: "rgba(255,255,255,0.65)" }}>
                               “{sense.example}”
                             </p>
                           )}
@@ -1167,28 +1148,26 @@ export default function Reader() {
                   </div>
                 ) : (
                   <p className="text-sm font-sans leading-relaxed min-h-10 flex items-center"
-                    style={{ color: "rgba(255,255,255,0.35)" }}>
+                    style={{ color: "rgba(255,255,255,0.65)" }}>
                     {t("dictionaryUnavailable")}
                   </p>
                 )}
               </div>
-              <p className="text-[9px] text-zinc-700 font-sans text-center mt-2.5 tracking-wide">
+              <p className="text-xs text-zinc-400 font-sans text-center mt-2.5 tracking-wide">
                 {dictResult?.source && dictResult.sourceUrl ? (
                   <a
                     href={dictResult.sourceUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex min-h-11 items-center justify-center underline decoration-white/10 underline-offset-2 hover:text-zinc-500"
+                    className="inline-flex min-h-11 items-center justify-center underline decoration-white/10 underline-offset-2 hover:text-zinc-400"
                   >
                     {t("dictionarySource")}: {dictResult.source.replace("wiktionary-", "Wiktionary · ")}
                   </a>
                 ) : t("dictionarySourceHint")}
               </p>
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+
+    </AccessibleDialog>
 
     {/* Modal: biblioteca gratuita llena */}
     <AnimatePresence>
@@ -1219,7 +1198,7 @@ export default function Reader() {
             <p className="text-[13px] font-sans leading-relaxed mb-3" style={{ color: "rgba(255,255,255,0.65)" }}>
               {t("libraryFullBefore")}<span style={{ color: gc.color }}>{FREE_SAVE_LIMIT}</span>{t("libraryFullAfter")}
             </p>
-            <p className="text-[11px] font-sans leading-relaxed mb-5" style={{ color: "rgba(255,255,255,0.4)" }}>
+            <p className="text-xs font-sans leading-relaxed mb-5" style={{ color: "rgba(255,255,255,0.65)" }}>
               {t("libraryFullNote")}
             </p>
             <div className="flex gap-3">

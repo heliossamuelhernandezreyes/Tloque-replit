@@ -88,7 +88,7 @@ export default function SupportInvite({
             <p className="text-sm font-sans font-semibold" style={{ color: textColor }}>
               {moment === "mid" ? t("supportInviteTitleMid") : t("supportInviteTitleEnd")}
             </p>
-            <p className="text-[11px] font-sans mt-1 leading-relaxed" style={{ color: textColor, opacity: 0.65 }}>
+            <p className="text-xs font-sans mt-1 leading-relaxed" style={{ color: textColor, opacity: 0.65 }}>
               {t("supportInviteBody")}
             </p>
             <div className="flex items-center gap-3 mt-3 flex-wrap">
@@ -101,7 +101,7 @@ export default function SupportInvite({
                 <Heart className="w-3.5 h-3.5" />
                 {t("supportInviteBtn").replace("{x}", authorName)}{canTinta ? ` · ${displayTinta(needTinta)} 💧` : ""}
               </motion.button>
-              <button onClick={dismiss} className="text-[11px] font-sans"
+              <button onClick={dismiss} className="text-xs font-sans"
                 style={{ color: textColor, opacity: 0.5 }}>
                 {t("notNow")}
               </button>

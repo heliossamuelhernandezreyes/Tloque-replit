@@ -1,3 +1,6 @@
+import { useQueryClient } from "@tanstack/react-query"
+import { useToast } from "@/hooks/use-toast"
+import { isServerBookId } from "@/lib/editor-workspace"
 import { accountStorage as localStorage, accountSessionStorage as sessionStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useState, useEffect, useMemo , useRef, useCallback, type CSSProperties } from "react"
 import { useBooks } from "../hooks/use-books"
@@ -49,6 +52,9 @@ function getOpeningLine(book: Book): string {
 function OwnBookCard({ book }: { book: any }) {
   const [, setLocation]  = useLocation()
   const [showMenu, setShowMenu] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pressing = useRef(false)
   const { cfg }  = useGenre()
@@ -74,20 +80,26 @@ function OwnBookCard({ book }: { book: any }) {
   }, [showMenu, book.id, setLocation])
 
   const handleDelete = useCallback(async () => {
-    setShowMenu(false)
-    // 1. Borrar de localStorage
-    const authored = JSON.parse(localStorage.getItem("novareads_authored") || "[]")
-    const updated  = authored.filter((b: any) => String(b.id) !== String(book.id))
-    localStorage.setItem("novareads_authored", JSON.stringify(updated))
-    window.dispatchEvent(new Event("novareads_authored_changed"))
-    // 2. Si el libro está en el servidor (ID numérico), borrarlo también
-    //    para que no reaparezca en los carruseles
-    if (/^\d+$/.test(String(book.id))) {
-      try {
-        await fetch(`/api/books/${book.id}`, { method: "DELETE", credentials: "include" })
-      } catch { /* si falla, al menos ya no está en local */ }
-    }
-  }, [book.id])
+    if (deleting || !window.confirm(`¿Eliminar “${book.title || "esta obra"}”? Esta acción no se puede deshacer.`)) return
+    setDeleting(true)
+    try {
+      if (isServerBookId(Number(book.id))) {
+        const response = await fetch(`/api/books/${book.id}`, { method: "DELETE", credentials: "include" })
+        if (!response.ok) {
+          const failure = await response.json().catch(() => ({}))
+          throw new Error(failure.message || "No se pudo eliminar la obra. Sigue en tu biblioteca.")
+        }
+      }
+      const authored = JSON.parse(localStorage.getItem("novareads_authored") || "[]")
+      localStorage.setItem("novareads_authored", JSON.stringify(authored.filter((item: any) => String(item.id) !== String(book.id))))
+      window.dispatchEvent(new Event("novareads_authored_changed"))
+      void queryClient.invalidateQueries({ queryKey: ["/api/books"] })
+      void queryClient.invalidateQueries({ queryKey: ["/api/books/mine"] })
+      setShowMenu(false)
+    } catch (error) {
+      toast({ title: "No se eliminó la obra", description: error instanceof Error ? error.message : "Reintenta cuando tengas conexión.", variant: "destructive" })
+    } finally { setDeleting(false) }
+  }, [book.id, book.title, deleting, queryClient, toast])
 
   return (
     <div className="relative">
@@ -101,6 +113,7 @@ function OwnBookCard({ book }: { book: any }) {
         <BookCard {...book} coverUrl={coverFor(book)} />
       </div>
 
+      <button aria-label={`Opciones de ${book.title}`} className="absolute right-1 top-1 z-20 grid min-h-11 min-w-11 place-items-center rounded-full bg-black/80 text-white" onClick={() => setShowMenu(true)}>•••</button>
       <AnimatePresence>
         {showMenu && (
           <>
@@ -122,7 +135,7 @@ function OwnBookCard({ book }: { book: any }) {
               }}
             >
               <div className="p-1.5 space-y-0.5">
-                <p className="text-[9px] text-zinc-700 uppercase tracking-widest font-sans px-2 py-1 truncate">
+                <p className="text-xs text-zinc-400 uppercase tracking-widest font-sans px-2 py-1 truncate">
                   {book.title?.slice(0, 18)}{book.title?.length > 18 ? "…" : ""}
                 </p>
                 <motion.button whileTap={{ scale: 0.97 }}
@@ -138,7 +151,7 @@ function OwnBookCard({ book }: { book: any }) {
                   <Edit3 className="w-3.5 h-3.5" /> {t("editStory")}
                 </motion.button>
                 <motion.button whileTap={{ scale: 0.97 }}
-                  onClick={handleDelete}
+                  onClick={handleDelete} disabled={deleting}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-sans"
                   style={{ color: "rgba(255,80,80,0.8)" }}>
                   <Trash2 className="w-3.5 h-3.5" /> {t("deleteBtn")}
@@ -155,8 +168,10 @@ function OwnBookCard({ book }: { book: any }) {
 export default function Home() {
   const { data: apiBooks, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useBooks()
   const { activeGenre, lobbyFilter, cfg, isFiltered } = useGenre()
-  const { t } = useSettings()
+  const { t, settings } = useSettings()
   const [, setLocation] = useLocation()
+  const [spotlightPaused, setSpotlightPaused] = useState(false)
+  const [spotlightInteracting, setSpotlightInteracting] = useState(false)
 
   const [authoredBooks,    setAuthoredBooks]    = useState<Book[]>([])
   const ownedIds = useMemo(
@@ -232,10 +247,11 @@ export default function Home() {
 
   // ── SPOTLIGHT ROTATIVO ───────────────────────────────
   useEffect(() => {
-    if (!spotlightPool.length) return
+    if (!spotlightPool.length || spotlightPaused || spotlightInteracting || settings.reduceMotion) return
+    let swap: ReturnType<typeof setTimeout> | undefined
     const interval = setInterval(() => {
       setSpotlightVisible(false)
-      setTimeout(() => {
+      swap = setTimeout(() => {
         setSpotlightIndex(prev => {
           let next = Math.floor(Math.random() * spotlightPool.length)
           if (spotlightPool.length > 1 && next === prev) {
@@ -246,8 +262,8 @@ export default function Home() {
         setSpotlightVisible(true)
       }, 400)
     }, 7000)
-    return () => clearInterval(interval)
-  }, [spotlightPool.length, activeGenre])
+    return () => { clearInterval(interval); if (swap) clearTimeout(swap); setSpotlightVisible(true) }
+  }, [spotlightPool.length, activeGenre, spotlightPaused, spotlightInteracting, settings.reduceMotion])
 
   useEffect(() => {
     setSpotlightIndex(Math.floor(Math.random() * Math.max(1, 8)))
@@ -311,7 +327,7 @@ export default function Home() {
                     : t("soloRelatos")
                   }
                 </span>
-                <span className="ml-auto text-zinc-700 text-[10px]">
+                <span className="ml-auto text-zinc-400 text-xs">
                   {filteredBooks.length}{" "}
                   {filteredBooks.length === 1 ? t("stories").slice(0,-1) : t("stories")}
                 </span>
@@ -320,6 +336,9 @@ export default function Home() {
           )}
         </AnimatePresence>
 
+        {spotlightBook && <div className="mx-4 flex items-center justify-between text-sm text-zinc-300 sm:mx-6">
+          <span>Descubrir lecturas</span><button className="min-h-11 rounded-lg border border-white/25 px-3" aria-pressed={spotlightPaused || settings.reduceMotion} disabled={settings.reduceMotion} onClick={() => setSpotlightPaused(value => !value)}>{spotlightPaused || settings.reduceMotion ? "Rotación pausada" : "Pausar rotación"}</button>
+        </div>}
         {/* ── SPOTLIGHT ── */}
         {spotlightBook && (
           <AnimatePresence mode="wait">
@@ -336,6 +355,10 @@ export default function Home() {
                   background: "rgba(0,0,0,0.4)",
                   border:     `1px solid ${cfg.color}18`,
                 }}
+                role="link" tabIndex={0} aria-label={spotlightBook.title}
+                onMouseEnter={() => setSpotlightInteracting(true)} onMouseLeave={() => setSpotlightInteracting(false)}
+                onFocus={() => setSpotlightInteracting(true)} onBlur={() => setSpotlightInteracting(false)}
+                onKeyDown={event => { if (event.key === "Enter") setLocation(`/book/${spotlightBook.id}`) }}
                 onClick={() => setLocation(`/book/${spotlightBook.id}`)}
               >
                 {spotlightBook.coverUrl && (
@@ -386,7 +409,7 @@ export default function Home() {
                     <div className="flex items-center gap-2 flex-wrap">
                       {/* badge principal */}
                       <span
-                        className="text-[9px] tracking-[0.22em] uppercase font-sans px-2 py-0.5 rounded-full"
+                        className="text-xs tracking-[0.22em] uppercase font-sans px-2 py-0.5 rounded-full"
                         style={{
                           background: spotlightBook.isClassic
                             ? "rgba(255,210,100,0.12)" : `${cfg.glow}18`,
@@ -403,7 +426,7 @@ export default function Home() {
                       </span>
                       {/* badge de género */}
                       {spotlightBook.genre && (
-                        <span className="text-[9px] text-zinc-600 font-sans uppercase tracking-wider">
+                        <span className="text-xs text-zinc-400 font-sans uppercase tracking-wider">
                           {t(GENRE_CONFIG[spotlightBook.genre as Genre]?.tKey || "")}
                         </span>
                       )}
@@ -414,7 +437,7 @@ export default function Home() {
                       {spotlightBook.title}
                     </h3>
 
-                    <p className="text-zinc-500 text-xs font-sans">
+                    <p className="text-zinc-400 text-xs font-sans">
                       {spotlightBook.author}
                     </p>
 
@@ -463,11 +486,11 @@ export default function Home() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="flex flex-col items-center justify-center py-24 gap-3 px-8 text-center"
           >
-            <p className="text-zinc-600 text-sm font-sans">
+            <p className="text-zinc-400 text-sm font-sans">
               No hay historias de{" "}
               {activeGenre !== "todos" ? t(cfg.tKey).toLowerCase() : t("relatosCortosFilter")} aún.
             </p>
-            <p className="text-zinc-700 text-xs font-sans">
+            <p className="text-zinc-400 text-xs font-sans">
               {t("exploreButton")}.
             </p>
           </motion.div>
@@ -634,17 +657,17 @@ function LiteraryQuote() {
       className="mx-4 my-8 py-8 px-6 text-center"
     >
       <motion.p
-        className="text-zinc-500 text-[10px] tracking-[0.3em] uppercase font-sans mb-4"
+        className="text-zinc-400 text-xs tracking-[0.3em] uppercase font-sans mb-4"
         style={{ color: cfg.color + "55" }}
       >
         ✦
       </motion.p>
       <p className="font-display italic text-sm leading-relaxed mb-3"
-        style={{ color: "rgba(255,255,255,0.35)" }}>
+        style={{ color: "rgba(255,255,255,0.65)" }}>
         &ldquo;{quote.text}&rdquo;
       </p>
-      <p className="text-[10px] tracking-widest uppercase font-sans"
-        style={{ color: "rgba(255,255,255,0.18)" }}>
+      <p className="text-xs tracking-widest uppercase font-sans"
+        style={{ color: "rgba(255,255,255,0.65)" }}>
         — {quote.author}
       </p>
     </motion.div>
@@ -765,7 +788,7 @@ function Carousel({
     <motion.section aria-label={title} aria-roledescription="carousel" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: settings.reduceMotion ? 0 : 0.4 }}>
       <div className="flex items-center gap-2 px-4 sm:px-6 mb-3 sm:mb-4">
         {isClassicCarousel && (
-          <span className="text-[10px]" style={{ color: "rgba(255,210,100,0.6)" }}>✦</span>
+          <span className="text-xs" style={{ color: "rgba(255,210,100,0.6)" }}>✦</span>
         )}
         <h2
           className="text-xs sm:text-sm tracking-[0.16em] font-sans uppercase"

@@ -1,3 +1,4 @@
+import { DEFAULT_PRICES } from "@shared/pricing"
 // Pagos de tokens — Stripe Checkout SIN SDK (API REST directa).
 // El modo beta gratuito exige una decisión explícita en producción. La ausencia
 // accidental de Stripe nunca debe convertirse en moneda o tokens gratis.
@@ -10,13 +11,7 @@ import { splitCents, TINTA_UNIT_CENTS } from "@shared/commerce"
 // One internal accounting unit = 20 visible Tintas. Historical ledger rows stay intact.
 // New packages contain paid credits only; volume changes their unit price.
 export const TINTA_CENTS = TINTA_UNIT_CENTS
-export const TINTA_PACKS = [
-  { id: "entrada", tinta: 5, cents: 2_000, label: "Entrada", recommended: false },
-  { id: "gota", tinta: 10, cents: 3_000, label: "Gota", recommended: false },
-  { id: "tintero", tinta: 20, cents: 5_500, label: "Tintero", recommended: true },
-  { id: "biblioteca", tinta: 50, cents: 12_000, label: "Biblioteca", recommended: false },
-  { id: "archivo", tinta: 100, cents: 22_000, label: "Archivo", recommended: false },
-] as const
+export { TINTA_PACKS } from "@shared/pricing"
 
 function configuredPrice(name: string, fallback: number) {
   const raw = process.env[name]
@@ -39,16 +34,13 @@ export function isStory(book: any): boolean {
 export function priceFor(kind: "support" | "sale", book: any) {
   const story = isStory(book)
   const tinta = kind === "sale" ? 12 : (story ? 5 : 10)
-  const cents = kind === "sale" ? configuredPrice("COMMERCIAL_LICENSE_MXN_CENTS", 3000)
-    : configuredPrice(story ? "PATRONAGE_STORY_MXN_CENTS" : "PATRONAGE_BOOK_MXN_CENTS", story ? 2000 : 3500)
+  const cents = kind === "sale" ? configuredPrice("COMMERCIAL_LICENSE_MXN_CENTS", DEFAULT_PRICES.sale.cents)
+    : configuredPrice(story ? "PATRONAGE_STORY_MXN_CENTS" : "PATRONAGE_BOOK_MXN_CENTS", story ? 2000 : DEFAULT_PRICES.support.cents)
   return { tinta, cents, currency: "mxn" as const, isStory: story }
 }
 
 // Compatibilidad: precios máximos (libro) para vistas sin obra concreta
-export const PRICES = {
-  support: { cents: 3500, currency: "mxn", tinta: 10 },
-  sale:    { cents: 3000, currency: "mxn", tinta: 12 },
-} as const
+export { DEFAULT_PRICES as PRICES } from "@shared/pricing"
 
 export const AUTHOR_SHARE_BOOK  = 0.90         // libros: 90% al autor
 export const AUTHOR_SHARE_STORY = 0.50         // cuentos: 50/50

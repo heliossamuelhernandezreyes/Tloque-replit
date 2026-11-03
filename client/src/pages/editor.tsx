@@ -6,12 +6,7 @@ import { useToast } from "@/hooks/use-toast"
 import { BookConflictError, useCreateBook, useUpdateBook } from "@/hooks/use-books"
 import { useAuth } from "@/hooks/useAuth"
 import { useSettings } from "@/context/SettingsContext"
-import {
-  ArrowLeft, Plus, Trash2, BookOpen, FileText,
-  Upload, Save, Globe, EyeOff, ChevronDown, ChevronUp,
-  Check, AlertCircle, Layers, ListChecks,
-  Maximize2, Minimize2, Bot,
-} from "lucide-react"
+import { ArrowLeft, Plus, Trash2, BookOpen, FileText, Upload, Save, Globe, EyeOff, ChevronDown, ChevronUp, Check, Layers, ListChecks, Maximize2, Minimize2, Bot } from "lucide-react"
 import ParallaxCover from "@/components/ParallaxCover"
 import { type CoverFxConfig } from "@/lib/cover-effects"
 import { LayerUpload } from "@/components/LayerUpload"
@@ -82,7 +77,7 @@ function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length
 }
 
-type SaveStatus = "idle" | "saving" | "saved" | "recovered" | "error"
+type SaveStatus = "idle" | "saving" | "local" | "saved" | "recovered" | "error"
 
 // ── PANEL DE PORTADA ─────────────────────────────────────
 function CoverPanel({
@@ -147,7 +142,7 @@ function CoverPanel({
 
       {/* Selector de modo */}
       <div>
-        <p className="text-[9px] text-zinc-600 uppercase tracking-widest mb-2 font-sans">
+        <p className="text-xs text-zinc-400 uppercase tracking-widest mb-2 font-sans">
           Modo de portada
         </p>
         <div className="grid grid-cols-3 gap-1.5">
@@ -163,11 +158,11 @@ function CoverPanel({
               } : {
                 background: "rgba(255,255,255,0.03)",
                 border:     "1px solid rgba(255,255,255,0.07)",
-                color:      "rgba(255,255,255,0.3)",
+                color:      "rgba(255,255,255,0.65)",
               }}
             >
-              <p className="text-[10px] font-semibold font-sans">{m.label}</p>
-              <p className="text-[9px] opacity-60 font-sans">{m.desc}</p>
+              <p className="text-xs font-semibold font-sans">{m.label}</p>
+              <p className="text-xs opacity-60 font-sans">{m.desc}</p>
             </button>
           ))}
         </div>
@@ -236,9 +231,9 @@ function CoverPanel({
 
       {/* Contraportada — futura impresión física */}
       <div>
-        <p className="text-[9px] text-zinc-600 uppercase tracking-widest mb-1 font-sans flex items-center gap-1">
+        <p className="text-xs text-zinc-400 uppercase tracking-widest mb-1 font-sans flex items-center gap-1">
           Contraportada
-          <span className="text-[8px] px-1.5 py-0.5 rounded-full"
+          <span className="text-xs px-1.5 py-0.5 rounded-full"
             style={{ background: `${gc.glow}15`, color: gc.color + "88" }}>
             Para impresión física
           </span>
@@ -256,14 +251,14 @@ function CoverPanel({
 
       {/* ── Vestido PREMIUM (regalo para quienes apoyan la obra) ── */}
       <div className="mt-4 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-        <p className="text-[9px] text-zinc-600 uppercase tracking-widest mb-1 font-sans flex items-center gap-1">
+        <p className="text-xs text-zinc-400 uppercase tracking-widest mb-1 font-sans flex items-center gap-1">
           Portada premium ✦
-          <span className="text-[8px] px-1.5 py-0.5 rounded-full"
+          <span className="text-xs px-1.5 py-0.5 rounded-full"
             style={{ background: "rgba(201,168,87,0.12)", color: "#c9a857cc" }}>
             Se desbloquea al apoyar
           </span>
         </p>
-        <p className="text-[9px] text-zinc-500 font-sans mb-2 leading-snug">
+        <p className="text-xs text-zinc-400 font-sans mb-2 leading-snug">
           Un vestido alterno de tu obra —colores distintos, otro acabado— como
           regalo para quienes la apoyan. Opcional; si lo dejas vacío, todos ven la portada normal.
         </p>
@@ -304,6 +299,13 @@ export default function Editor() {
   const updateBook      = useUpdateBook()
   const autoSaveTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const durableSaveQueue = useRef<Promise<void>>(Promise.resolve())
+  const localSaveQueue = useRef<Promise<void>>(Promise.resolve())
+  const draftIdentity = useRef<number | null>(null)
+  const pendingVersion = useRef(0)
+  const savedVersion = useRef(0)
+  const [saveError, setSaveError] = useState("")
+  const [savedAt, setSavedAt] = useState<number | null>(null)
+  const [leaving, setLeaving] = useState(false)
   const cloudDraftRevision = useRef(0)
   const createdDrafts = useRef(new Map<number, { id: number; revision: number }>())
 
@@ -342,10 +344,8 @@ export default function Editor() {
   })
   const formRef = useRef(form)
   const manuscriptDirtyRef = useRef(manuscriptDirty)
-  useEffect(() => {
-    formRef.current = form
-    manuscriptDirtyRef.current = manuscriptDirty
-  }, [form, manuscriptDirty])
+  formRef.current = form
+  manuscriptDirtyRef.current = manuscriptDirty
 
   // Las obras nuevas heredan el nombre autenticado; no se presenta un campo
   // editable que sugiera la posibilidad de publicar como otra persona.
@@ -452,6 +452,7 @@ export default function Editor() {
     const found = loadAll(source).find((b: any) => String(b.id) === editId) as EditableBook | undefined
     if (found) {
       setForm(found)
+      savedVersion.current = pendingVersion.current
       setManuscriptDirty(false)
       setMetaOpen(false)
       configureCover(found)
@@ -473,7 +474,8 @@ export default function Editor() {
         }
         const book = await res.json() as EditableBook & Record<string, any>
         setForm(book)
-        setManuscriptDirty(false)
+        savedVersion.current = pendingVersion.current
+      setManuscriptDirty(false)
         setMetaOpen(false)
         configureCover(book)
         if (editSource === "server") {
@@ -526,10 +528,13 @@ export default function Editor() {
         if (!canonical || !Number.isInteger(canonical.id)) throw new Error("Respuesta de borrador inválida")
         createdDrafts.current.set(localId, canonical)
       }
-      const mapped = { ...currentForm, id: canonical.id, revision: canonical.revision }
+      // A slow creation response must retain the edits typed while it was in flight.
+      const latest = formRef.current
+      const source = latest.id === localId || latest.id === canonical.id ? latest : currentForm
+      const mapped = { ...source, id: canonical.id, revision: canonical.revision }
       await saveDurableEditorDraft(canonical.id, mapped)
       setForm(current => current.id === localId ? { ...current, id: canonical!.id, revision: canonical!.revision } : current)
-      saveAll(STORAGE_DRAFTS, loadAll(STORAGE_DRAFTS).filter((draft: any) => draft.id !== localId))
+      saveAll(STORAGE_DRAFTS, [...loadAll(STORAGE_DRAFTS).filter((draft: any) => draft.id !== localId && draft.id !== canonical!.id), mapped])
       currentForm = mapped
     }
     if (!isServerBookId(currentForm.id) || !Number.isInteger(currentForm.revision)) return
@@ -554,108 +559,90 @@ export default function Editor() {
     cloudDraftRevision.current = payload.draft?.draftRevision ?? cloudDraftRevision.current
   }
 
-  // ── AUTOGUARDADO ─────────────────────────────────────
-  const triggerAutoSave = useCallback(() => {
+  // Local writes are serialized independently of the network, including route cleanup.
+  function recoveryCopy(snapshot: EditableBook) {
+    const id = snapshot.id || draftIdentity.current || Date.now()
+    draftIdentity.current = id
+    const record = { ...snapshot, id, localSavedAt: Date.now() }
+    const fallback = !isServerBookId(id) && saveAll(STORAGE_DRAFTS,
+      [...loadAll(STORAGE_DRAFTS).filter((item: any) => item.id !== id), { ...record, status: "draft" }])
+    const local = localSaveQueue.current.catch(() => undefined)
+      .then(() => saveDurableEditorDraft(id, record))
+      .catch(error => { if (!fallback) throw error })
+    localSaveQueue.current = local
+    return { record, local }
+  }
+  const recoveryRef = useRef(recoveryCopy)
+  recoveryRef.current = recoveryCopy
+
+  function doSaveDraft(snapshot: EditableBook, isAuto = false): Promise<void> {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-    setSaveStatus("idle")
-    autoSaveTimer.current = setTimeout(() => {
-      setForm(current => {
-        doSaveDraft(current, true)
-        return current
-      })
-    }, 2000)
-  }, [])
-
-  function doSaveDraft(currentForm: EditableBook, isAuto = false) {
-    // Las obras de servidor no se duplican en localStorage porque pueden ser
-    // enormes. Sí reciben una copia durable en IndexedDB para recuperación.
-    if (isServerBookId(currentForm.id)) {
-      if (!currentForm.id) return
-      setSaveStatus("saving")
-      const durableSave = durableSaveQueue.current
-        .catch(() => undefined)
-        .then(() => saveDurableEditorDraft(currentForm.id!, currentForm))
-        .then(() => saveCloudDraft(currentForm))
-      durableSaveQueue.current = durableSave
-      void durableSave.then(async () => {
-        setSaveStatus("saved")
-        if (!isAuto) toast({ title: "Copia de recuperación guardada ✓" })
-        setTimeout(() => setSaveStatus("idle"), 2500)
-      }).catch(error => {
-        console.warn("No se pudo respaldar la edición de servidor", error)
-        setSaveStatus("error")
-        setTimeout(() => setSaveStatus("idle"), 3000)
-      })
-      return
-    }
+    const version = pendingVersion.current
+    const { record, local } = recoveryCopy(snapshot)
+    if (!snapshot.id) setForm(current => ({ ...current, id: record.id }))
     setSaveStatus("saving")
-    try {
-      const id   = currentForm.id || Date.now()
-      const book = { ...currentForm, id, status: "draft" as const, localSavedAt: Date.now() }
-      const drafts = loadAll(STORAGE_DRAFTS)
-      const existingDraft = drafts.some((draft: any) => draft.id === id)
-      const fallbackSaved = saveAll(STORAGE_DRAFTS,
-        existingDraft
-          ? drafts.map((b: any) => b.id === id ? book : b)
-          : [...drafts, book]
-      )
-      setForm(f => ({ ...f, id }))
-
-      const durableSave = durableSaveQueue.current
-        .catch(() => undefined)
-        .then(() => saveDurableEditorDraft(id, book))
-        .then(() => saveCloudDraft(book))
-      durableSaveQueue.current = durableSave
-      void durableSave.then(async () => {
-        setSaveStatus("saved")
-        if (!isAuto) toast({ title: "Borrador guardado ✓" })
-        setTimeout(() => setSaveStatus("idle"), 2500)
-      }).catch(error => {
-        console.warn("No se pudo crear la copia durable del manuscrito", error)
-        if (fallbackSaved && !isServerBookId(id)) {
-          setSaveStatus("saved")
-          if (!isAuto) toast({ title: "Borrador guardado localmente" })
-          setTimeout(() => setSaveStatus("idle"), 2500)
-          return
-        }
-        if (error instanceof BookConflictError) {
-          toast({
-            title: "Conflicto de edición",
-            description: "Hay una copia más reciente en otra sesión. Tu borrador local sigue intacto.",
-          })
-        }
-        setSaveStatus("error")
-        setTimeout(() => setSaveStatus("idle"), 3000)
-      })
-    } catch {
+    const synced = durableSaveQueue.current.catch(() => undefined).then(async () => {
+      await local
+      await saveCloudDraft(record)
+    })
+    durableSaveQueue.current = synced
+    void local.then(() => {
+      savedVersion.current = Math.max(savedVersion.current, version)
+      if (version === pendingVersion.current) { setSaveStatus("local"); setSavedAt(Date.now()) }
+    }).catch(error => {
       setSaveStatus("error")
-      setTimeout(() => setSaveStatus("idle"), 3000)
-    }
+      setSaveError(error instanceof Error ? error.message : "No se pudo guardar. Mantén el editor abierto y reintenta.")
+    })
+    void synced.then(() => {
+      if (version !== pendingVersion.current) return
+      setSaveStatus(!isServerBookId(record.id) && !record.title.trim() ? "local" : "saved"); setSaveError(""); setSavedAt(Date.now())
+      if (!isAuto) toast({ title: "Borrador sincronizado" })
+    }).catch(error => {
+      if (version !== pendingVersion.current) return
+      setSaveStatus(savedVersion.current >= version ? "local" : "error")
+      setSaveError(error instanceof Error ? error.message : "La nube no confirmó el guardado. Reintenta la sincronización.")
+    })
+    return local
   }
 
+  const triggerAutoSave = useCallback(() => {
+    pendingVersion.current += 1
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    setSaveStatus("idle")
+    autoSaveTimer.current = setTimeout(() => { void doSaveDraft(formRef.current, true) }, 2000)
+  }, [])
+
   function saveDraft() {
-    if (!form.title.trim()) {
-      toast({ title: "Escribe un título primero" })
-      return
-    }
-    doSaveDraft(form)
+    void doSaveDraft(formRef.current).catch(() => undefined)
+  }
+
+  async function leaveEditor(path: string) {
+    if (leaving) return
+    setLeaving(true)
+    try {
+      if (pendingVersion.current > savedVersion.current) await doSaveDraft(formRef.current, true)
+      setLocation(path)
+    } catch { setLeaving(false) }
   }
 
   useEffect(() => {
-    const persistPendingChanges = () => {
-      if (document.visibilityState === "hidden" && manuscriptDirtyRef.current) {
-        doSaveDraft(formRef.current, true)
-      }
+    const persist = () => {
+      if (pendingVersion.current > savedVersion.current) void recoveryRef.current(formRef.current).local.catch(() => undefined)
     }
-    const persistBeforePageExit = () => {
-      if (manuscriptDirtyRef.current) doSaveDraft(formRef.current, true)
+    const hidden = () => { if (document.visibilityState === "hidden") persist() }
+    document.addEventListener("visibilitychange", hidden)
+    window.addEventListener("pagehide", persist)
+    const warn = (event: BeforeUnloadEvent) => {
+      if (pendingVersion.current > savedVersion.current) { persist(); event.preventDefault(); event.returnValue = "" }
     }
-    document.addEventListener("visibilitychange", persistPendingChanges)
-    window.addEventListener("pagehide", persistBeforePageExit)
+    window.addEventListener("beforeunload", warn)
     return () => {
-      document.removeEventListener("visibilitychange", persistPendingChanges)
-      window.removeEventListener("pagehide", persistBeforePageExit)
+      document.removeEventListener("visibilitychange", hidden)
+      window.removeEventListener("pagehide", persist)
+      window.removeEventListener("beforeunload", warn)
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+      // SPA Back/Forward and other route exits do not fire pagehide.
+      persist()
     }
   }, [])
 
@@ -753,7 +740,8 @@ export default function Editor() {
       // Edición de servidor (admin/clásico): NO se guarda en la lista local
       // del admin; vive en el servidor. Solo confirmar y volver.
       if (serverMeta) {
-        setManuscriptDirty(false)
+        savedVersion.current = pendingVersion.current
+      setManuscriptDirty(false)
         if (form.id) void removeDurableEditorDraft(form.id).catch(() => undefined)
         setSaveStatus("saved")
         toast({
@@ -784,6 +772,7 @@ export default function Editor() {
         ? current.map((b: any) => (b.id === localId || b.id === finalId) ? book : b)
         : [...current, book])
       setForm(book)
+      savedVersion.current = pendingVersion.current
       setManuscriptDirty(false)
       if (localId) void removeDurableEditorDraft(localId).catch(() => undefined)
       setSaveStatus("saved")
@@ -850,6 +839,7 @@ export default function Editor() {
         await saveDurableEditorDraft(id, book)
       }
       setForm(book)
+      savedVersion.current = pendingVersion.current
       setManuscriptDirty(false)
       setSaveStatus("saved")
       toast({ title: "Historia despublicada", description: "Ya no aparece en el catálogo público." })
@@ -911,12 +901,16 @@ export default function Editor() {
       })
       return
     }
-    setLocation(directionUrl)
+    void leaveEditor(directionUrl)
   }
 
   return (
     <div className="min-h-screen bg-black text-zinc-300 overflow-x-hidden">
       {showRights && <PublicationConsent category={form.type} onConfirm={resolveRights} onCancel={() => resolveRights(null)} />}
+
+      {saveError && <div role="alert" className="fixed bottom-4 left-4 right-4 z-[100] mx-auto max-w-xl rounded-xl border border-amber-200/40 bg-zinc-950 p-4 text-sm text-amber-100">
+        <p>{saveError}</p><button className="mt-2 min-h-11 rounded-lg border border-white/30 px-4 text-white" onClick={saveDraft}>Reintentar guardado</button>
+      </div>}
 
       {/* ── BARRA SUPERIOR ── */}
       <div
@@ -930,46 +924,18 @@ export default function Editor() {
         <div className="flex items-center gap-2">
           <motion.button
             whileTap={{ scale: 0.92 }}
-            onClick={() => setLocation("/library")}
+            onClick={() => { void leaveEditor("/library") }} disabled={leaving}
             className="grid min-h-11 min-w-11 place-items-center rounded-lg"
-            style={{ color: "rgba(255,255,255,0.4)" }}
+            style={{ color: "rgba(255,255,255,0.65)" }}
             aria-label="Volver a la biblioteca"
           >
             <ArrowLeft className="w-4 h-4" />
           </motion.button>
 
-          {/* Indicador de guardado */}
-          <AnimatePresence mode="wait">
-            {saveStatus === "saving" && (
-              <motion.span key="saving"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="text-[10px] font-sans text-zinc-600">
-                Guardando...
-              </motion.span>
-            )}
-            {saveStatus === "saved" && (
-              <motion.span key="saved"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="flex items-center gap-1 text-[10px] font-sans"
-                style={{ color: gc.color + "aa" }}>
-                <Check className="w-3 h-3" /> Guardado
-              </motion.span>
-            )}
-            {saveStatus === "recovered" && (
-              <motion.span key="recovered"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="flex items-center gap-1 text-[10px] font-sans text-violet-200/70">
-                <Check className="w-3 h-3" /> Borrador recuperado
-              </motion.span>
-            )}
-            {saveStatus === "error" && (
-              <motion.span key="error"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="flex items-center gap-1 text-[10px] font-sans text-red-400">
-                <AlertCircle className="w-3 h-3" /> Error
-              </motion.span>
-            )}
-          </AnimatePresence>
+          <div className="min-w-0 text-xs text-zinc-300" role="status" aria-live="polite" data-testid="editor-save-state">
+            <span>{saveStatus === "saving" ? "Guardando…" : saveStatus === "saved" ? "Sincronizado" : saveStatus === "local" ? "Guardado en este dispositivo" : saveStatus === "error" ? "Sin guardar" : saveStatus === "recovered" ? "Borrador recuperado" : pendingVersion.current > savedVersion.current ? "Cambios sin guardar" : "Borrador"}</span>
+            {savedAt && <time className="hidden sm:inline"> · {new Date(savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -983,7 +949,7 @@ export default function Editor() {
           </button>
           <button
             onClick={() => setFocusMode(value => !value)}
-            className="hidden sm:flex p-2 rounded-lg text-white/40 border border-white/[.07] bg-white/[.03]"
+            className="hidden sm:flex p-2 rounded-lg text-white/65 border border-white/[.07] bg-white/[.03]"
             aria-label={focusMode ? "Salir del modo enfoque" : "Modo enfoque"}
           >
             {focusMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
@@ -999,7 +965,7 @@ export default function Editor() {
             } : {
               borderColor: "rgba(255,255,255,.06)",
               background: "rgba(255,255,255,.025)",
-              color: "rgba(255,255,255,.25)",
+              color: "rgba(255,255,255,0.65)",
             }}
             title={manuscriptDirty ? "Sincroniza el manuscrito antes de abrir Dirección" : "Abrir Dirección avanzada"}
             aria-label="Abrir Dirección avanzada"
@@ -1014,7 +980,7 @@ export default function Editor() {
             style={{
               background: "rgba(255,255,255,0.05)",
               border:     "1px solid rgba(255,255,255,0.1)",
-              color:      "rgba(255,255,255,0.5)",
+              color:      "rgba(255,255,255,0.65)",
             }}
             aria-label="Guardar borrador"
           >
@@ -1052,8 +1018,8 @@ export default function Editor() {
       <AnimatePresence>
         {showChecklist && (
           <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="fixed right-4 top-16 z-[70] w-64 rounded-2xl border border-white/10 bg-zinc-950/95 p-4 shadow-2xl backdrop-blur-xl">
-            <p className="mb-3 text-[10px] uppercase tracking-[.2em] text-white/35">Publicación</p>
-            <div className="space-y-2">{publishingChecks.map(item => <div key={item.label} className="flex items-center gap-2 text-xs"><span className={`grid h-4 w-4 place-items-center rounded-full ${item.done ? "bg-emerald-300/20 text-emerald-200" : "bg-white/5 text-white/20"}`}>{item.done && <Check className="h-3 w-3" />}</span><span className={item.done ? "text-white/65" : "text-white/30"}>{item.label}</span></div>)}</div>
+            <p className="mb-3 text-xs uppercase tracking-[.2em] text-white/65">Publicación</p>
+            <div className="space-y-2">{publishingChecks.map(item => <div key={item.label} className="flex items-center gap-2 text-xs"><span className={`grid h-4 w-4 place-items-center rounded-full ${item.done ? "bg-emerald-300/20 text-emerald-200" : "bg-white/5 text-white/65"}`}>{item.done && <Check className="h-3 w-3" />}</span><span className={item.done ? "text-white/65" : "text-white/65"}>{item.label}</span></div>)}</div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1083,12 +1049,12 @@ export default function Editor() {
             </div>
             <div className="flex-1 text-left min-w-0">
               <p className="text-white text-xs font-medium truncate">{form.title || "Sin título"}</p>
-              <p className="text-zinc-600 text-[10px] font-sans mt-0.5">
+              <p className="text-zinc-400 text-xs font-sans mt-0.5">
                 {form.author || "Sin autor"} · {totalWords} palabras
               </p>
             </div>
-            {metaOpen ? <ChevronUp className="w-3.5 h-3.5 text-zinc-600" />
-                      : <ChevronDown className="w-3.5 h-3.5 text-zinc-600" />}
+            {metaOpen ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
+                      : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
           </button>
 
           <AnimatePresence>
@@ -1116,7 +1082,7 @@ export default function Editor() {
                           color:        gc.color,
                           borderBottom: `2px solid ${gc.color}`,
                         } : {
-                          color:        "rgba(255,255,255,0.3)",
+                          color:        "rgba(255,255,255,0.65)",
                           borderBottom: "2px solid transparent",
                         }}
                       >
@@ -1145,7 +1111,7 @@ export default function Editor() {
                             className="w-full aspect-[2/3]"
                           />
                           <div className="absolute inset-0 flex items-end justify-center pb-2 opacity-0 hover:opacity-100 transition-opacity">
-                            <span className="text-[9px] font-sans px-2 py-0.5 rounded-full"
+                            <span className="text-xs font-sans px-2 py-0.5 rounded-full"
                               style={{ background: "rgba(0,0,0,0.8)", color: gc.color }}>
                               Editar portada
                             </span>
@@ -1159,7 +1125,7 @@ export default function Editor() {
                           { label: "Spotify",  field: "spotifyLink" as const, placeholder: "https://open.spotify.com/playlist/..." },
                         ].map(({ label, field, placeholder }) => (
                           <div key={field}>
-                            <label className="text-[9px] text-zinc-600 uppercase tracking-widest mb-1 block font-sans">
+                            <label className="text-xs text-zinc-400 uppercase tracking-widest mb-1 block font-sans">
                               {label}
                             </label>
                             <input
@@ -1181,7 +1147,7 @@ export default function Editor() {
 
                         {/* Tipo */}
                         <div>
-                          <label className="text-[9px] text-zinc-600 uppercase tracking-widest mb-1.5 block font-sans">
+                          <label className="text-xs text-zinc-400 uppercase tracking-widest mb-1.5 block font-sans">
                             Tipo
                           </label>
                           <div className="grid grid-cols-2 gap-2">
@@ -1197,7 +1163,7 @@ export default function Editor() {
                                 } : {
                                   background: "rgba(255,255,255,0.03)",
                                   border:     "1px solid rgba(255,255,255,0.07)",
-                                  color:      "rgba(255,255,255,0.35)",
+                                  color:      "rgba(255,255,255,0.65)",
                                 }}
                               >
                                 {tp === "book"
@@ -1211,7 +1177,7 @@ export default function Editor() {
 
                         {/* Género */}
                         <div>
-                          <label className="text-[9px] text-zinc-600 uppercase tracking-widest mb-1.5 block font-sans">
+                          <label className="text-xs text-zinc-400 uppercase tracking-widest mb-1.5 block font-sans">
                             Género
                           </label>
                           <div className="grid grid-cols-3 gap-1.5">
@@ -1219,7 +1185,7 @@ export default function Editor() {
                               <button
                                 key={g.key}
                                 onClick={() => update("genre", g.key)}
-                                className="py-1.5 rounded-lg text-[10px] font-sans transition-all"
+                                className="py-1.5 rounded-lg text-xs font-sans transition-all"
                                 style={form.genre === g.key ? {
                                   background: `${g.glow}20`,
                                   border:     `1px solid ${g.color}55`,
@@ -1228,7 +1194,7 @@ export default function Editor() {
                                 } : {
                                   background: "rgba(255,255,255,0.03)",
                                   border:     "1px solid rgba(255,255,255,0.07)",
-                                  color:      "rgba(255,255,255,0.3)",
+                                  color:      "rgba(255,255,255,0.65)",
                                 }}
                               >
                                 {t(g.tKey)}
@@ -1239,7 +1205,7 @@ export default function Editor() {
 
                         {/* Sinopsis */}
                         <div>
-                          <label className="text-[9px] text-zinc-600 uppercase tracking-widest mb-1 block font-sans">
+                          <label className="text-xs text-zinc-400 uppercase tracking-widest mb-1 block font-sans">
                             Sinopsis
                           </label>
                           <textarea
@@ -1260,7 +1226,7 @@ export default function Editor() {
 
                         {/* Status */}
                         <div
-                          className="text-center py-1.5 rounded-lg text-[10px] font-sans font-medium"
+                          className="text-center py-1.5 rounded-lg text-xs font-sans font-medium"
                           style={form.status === "published" ? {
                             background: "rgba(52,211,153,0.1)",
                             border:     "1px solid rgba(52,211,153,0.25)",
@@ -1268,7 +1234,7 @@ export default function Editor() {
                           } : {
                             background: "rgba(255,255,255,0.03)",
                             border:     "1px solid rgba(255,255,255,0.07)",
-                            color:      "rgba(255,255,255,0.25)",
+                            color:      "rgba(255,255,255,0.65)",
                           }}
                         >
                           {form.status === "published" ? "✦ Publicada" : "◌ Borrador"}
@@ -1315,10 +1281,10 @@ export default function Editor() {
                     )}
 
                     {/* Tarjetas coleccionables: ahora viven en su propio estudio */}
-                    {typeof form.id === "number" && (
+                    {isServerBookId(form.id) && (
                       <motion.button whileTap={{ scale: 0.97 }}
-                        onClick={() => setLocation(`/tarjetas/${form.id}`)}
-                        className="mt-4 w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-sans"
+                        onClick={() => { void leaveEditor(`/tarjetas/${form.id}`) }}
+                        className="mt-4 w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-sans"
                         style={{ background: `${gc.glow}10`, color: gc.color, border: `1px dashed ${gc.color}40` }}>
                         🃏 {t("cardsOfWork")}
                       </motion.button>
@@ -1352,7 +1318,7 @@ export default function Editor() {
                     } : {
                       background: "rgba(255,255,255,0.04)",
                       border:     "1px solid rgba(255,255,255,0.07)",
-                      color:      "rgba(255,255,255,0.35)",
+                      color:      "rgba(255,255,255,0.65)",
                     }}
                   >
                     {ch.title || `Cap. ${i + 1}`}
@@ -1360,6 +1326,7 @@ export default function Editor() {
                   {form.chapters.length > 1 && (
                     <button
                       onClick={() => removeChapter(i)}
+                      aria-label={`Eliminar capítulo ${i + 1}`}
                       className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                       style={{ background: "rgba(180,50,50,0.8)" }}
                     >
@@ -1374,7 +1341,7 @@ export default function Editor() {
                 style={{
                   background: "transparent",
                   border:     "1px dashed rgba(255,255,255,0.12)",
-                  color:      "rgba(255,255,255,0.25)",
+                  color:      "rgba(255,255,255,0.65)",
                 }}
               >
                 <Plus className="w-3 h-3" /> Capítulo
@@ -1405,6 +1372,7 @@ export default function Editor() {
               <textarea
                 value={form.chapters[activeChapter]?.content || ""}
                 onChange={e => updateChapter(activeChapter, "content", e.target.value)}
+                aria-label={t("chapterContentPlaceholder")}
                 placeholder={t("chapterContentPlaceholder")}
                 className="flex-1 resize-none bg-transparent font-serif leading-[2] text-zinc-300 outline-none"
                 style={{ fontSize: focusMode ? "18px" : "16px", minHeight: focusMode ? "78vh" : "60vh", caretColor: gc.color, maxWidth: focusMode ? 760 : undefined, width: "100%", marginInline: focusMode ? "auto" : undefined }}
@@ -1417,10 +1385,10 @@ export default function Editor() {
               {/* Pie */}
               <div className="flex items-center justify-between py-1 border-t"
                 style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-                <span className="text-[10px] text-zinc-700 font-sans">
+                <span className="text-xs text-zinc-400 font-sans">
                   {chapterWords} palabras en este capítulo
                 </span>
-                <span className="text-[10px] text-zinc-700 font-sans">
+                <span className="text-xs text-zinc-400 font-sans">
                   {totalWords} total
                 </span>
               </div>

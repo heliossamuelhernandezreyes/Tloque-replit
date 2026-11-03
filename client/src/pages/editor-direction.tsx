@@ -110,7 +110,7 @@ export default function EditorDirection() {
         <section className="max-w-sm text-center" role="alert">
           <FileLock2 className="mx-auto h-7 w-7 text-violet-200/60" />
           <h1 className="mt-4 font-serif text-xl">Dirección no disponible</h1>
-          <p className="mt-3 text-sm leading-6 text-white/45">{error || "La obra no contiene este capítulo."}</p>
+          <p className="mt-3 text-sm leading-6 text-white/65">{error || "La obra no contiene este capítulo."}</p>
           <button
             type="button"
             onClick={() => setLocation("/library")}
@@ -137,9 +137,9 @@ export default function EditorDirection() {
           </button>
           <div className="min-w-0 text-center">
             <p className="truncate font-serif text-sm text-white/85 sm:text-base">{book.title}</p>
-            <p className="mt-0.5 text-[10px] uppercase tracking-[.18em] text-violet-200/45">Dirección avanzada</p>
+            <p className="mt-0.5 text-xs uppercase tracking-[.18em] text-violet-200/45">Dirección avanzada</p>
           </div>
-          <div className="flex min-h-11 items-center gap-1.5 rounded-xl border border-violet-200/10 bg-violet-200/[.04] px-3 text-[10px] text-violet-100/55">
+          <div className="flex min-h-11 items-center gap-1.5 rounded-xl border border-violet-200/10 bg-violet-200/[.04] px-3 text-xs text-violet-100/55">
             <FileLock2 className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Manuscrito protegido</span>
           </div>
@@ -161,7 +161,7 @@ export default function EditorDirection() {
               } : {
                 borderColor: "rgba(255,255,255,.07)",
                 background: "rgba(255,255,255,.025)",
-                color: "rgba(255,255,255,.38)",
+                color: "rgba(255,255,255,0.65)",
               }}
             >
               {item.title || `Capítulo ${index + 1}`}
@@ -174,7 +174,7 @@ export default function EditorDirection() {
             <div className="flex items-center justify-between border-b border-white/[.06] px-4 py-3">
               <div>
                 <p className="text-xs font-medium text-white/70">{chapter.title || `Capítulo ${chapterIndex + 1}`}</p>
-                <p className="mt-1 text-[10px] text-white/30">Referencia de solo lectura</p>
+                <p className="mt-1 text-xs text-white/65">Referencia de solo lectura</p>
               </div>
               <FileLock2 className="h-4 w-4 text-violet-200/35" />
             </div>
@@ -182,7 +182,7 @@ export default function EditorDirection() {
               {chapter.content.trim() ? chapter.content.split(/\n\s*\n/).map((paragraph, index) => (
                 <p key={index} className="mb-5 whitespace-pre-wrap">{paragraph}</p>
               )) : (
-                <p className="font-sans text-sm text-white/30">Este capítulo todavía está vacío.</p>
+                <p className="font-sans text-sm text-white/65">Este capítulo todavía está vacío.</p>
               )}
             </article>
           </aside>
@@ -204,7 +204,7 @@ export default function EditorDirection() {
                     color: accent,
                   } : {
                     borderColor: "transparent",
-                    color: "rgba(255,255,255,.35)",
+                    color: "rgba(255,255,255,0.65)",
                   }}
                 >
                   <Icon className="h-4 w-4" />

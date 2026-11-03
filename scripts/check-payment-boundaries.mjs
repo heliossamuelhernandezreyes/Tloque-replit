@@ -228,6 +228,13 @@ try {
     assert.equal(missing.status, 428);
     const owned = await paidToken('reader', 'support');
     assert.equal(owned.token.copies.length, 3);
+    const orderStatus = await request('/api/tokens/orders/' + owned.id, { role: 'reader' });
+    assert.equal(orderStatus.status, 200); assert.equal(orderStatus.data.status, 'paid');
+    assert.equal(orderStatus.data.tokenId, owned.tokenId); assert.equal(orderStatus.data.bookId, book.id);
+    assert.match(orderStatus.headers.get('cache-control'), /no-store/);
+    assert.equal((await request('/api/tokens/orders/' + owned.id, { role: 'second' })).status, 404);
+    assert.equal((await request('/api/tokens/orders/' + owned.id, { role: null })).status, 401);
+
     for (const copy of owned.token.copies) {
       assert.equal((await request('/api/claim/' + copy.folio, { role: null })).data.status, 'personal');
       assert.equal((await claim(copy, 'second')).status, 409);

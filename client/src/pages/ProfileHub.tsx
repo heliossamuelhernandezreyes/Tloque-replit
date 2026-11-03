@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { BookOpen, Check, Layers3, Pencil, ShieldCheck, Sparkles } from "lucide-react"
-import { useLocation } from "wouter"
+import { useLocation, useSearch } from "wouter"
 import { Layout } from "@/components/layout"
 import ProfileEditor from "@/components/ProfileEditor"
 import UserAvatar from "@/components/UserAvatar"
@@ -15,7 +15,8 @@ export default function ProfileHub() {
   const { cfg } = useGenre()
   const { settings } = useSettings()
   const [, setLocation] = useLocation()
-  const [editing, setEditing] = useState(false)
+  const search = useSearch()
+  const [editing, setEditing] = useState(() => new URLSearchParams(search).get("edit") === "1")
   const copy = (key: Parameters<typeof experienceText>[1]) => experienceText(settings.language, key)
   const completion = useMemo(() => {
     if (!user) return 0
@@ -37,7 +38,7 @@ export default function ProfileHub() {
             <UserAvatar src={user.avatar} name={user.name} size={104} frame={user.frame} accentColor={cfg.color} />
             <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="mb-1 text-[10px] uppercase tracking-[.22em] text-white/40">{copy("accountMode")} · {personaLabel}</p>
+                <p className="mb-1 text-xs uppercase tracking-[.22em] text-white/65">{copy("accountMode")} · {personaLabel}</p>
                 <h1 className="text-2xl text-white">{user.name}</h1>
                 <p className="mt-2 max-w-xl whitespace-pre-wrap text-sm leading-relaxed text-zinc-400">{user.bio || copy("profileHint")}</p>
               </div>
@@ -53,14 +54,14 @@ export default function ProfileHub() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-white">{completion >= 100 ? copy("profileComplete") : copy("completeProfile")}</p>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{copy("profileHint")}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-400">{copy("profileHint")}</p>
               </div>
               <span className="text-lg font-semibold" style={{ color: cfg.color }}>{completion}%</span>
             </div>
             <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/5">
               <motion.div className="h-full rounded-full" initial={{ width: 0 }} animate={{ width: `${completion}%` }} style={{ background: cfg.color }} />
             </div>
-            <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-white/45">
+            <div className="mt-4 flex flex-wrap gap-2 text-xs text-white/65">
               {[user.avatar, user.banner, user.bio?.trim().length >= 40, Object.values(user.socialLinks || {}).some(Boolean)].map((done, index) => (
                 <span key={index} className="rounded-full border border-white/10 px-2.5 py-1">{done && <Check className="mr-1 inline h-3 w-3" />} {index === 0 ? "Avatar" : index === 1 ? "Banner" : index === 2 ? "Bio" : "Links"}</span>
               ))}

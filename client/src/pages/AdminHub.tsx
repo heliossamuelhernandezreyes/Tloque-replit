@@ -118,7 +118,7 @@ export default function AdminHub() {
     return (
       <Layout>
         <div className="mx-auto max-w-xl px-5 py-24 text-center">
-          <Shield className="mx-auto h-8 w-8 text-white/20" />
+          <Shield className="mx-auto h-8 w-8 text-white/65" />
           <h1 className="mt-4 text-xl text-white">{copy("noAccess")}</h1>
         </div>
       </Layout>
@@ -143,7 +143,7 @@ export default function AdminHub() {
       <section className="mx-auto w-full max-w-5xl px-4 pb-24 pt-8 sm:px-6">
         <p className="tloque-eyebrow">Tloque · Admin</p>
         <h1 className="mt-1 text-2xl text-white">{copy("adminCenter")}</h1>
-        <p className="mt-2 text-sm text-zinc-500">{copy("adminCenterHint")}</p>
+        <p className="mt-2 text-sm text-zinc-400">{copy("adminCenterHint")}</p>
 
         <div className="my-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
           {tools.filter(tool => can(tool.capability)).map(({ label, Icon, action }) => (
@@ -158,7 +158,7 @@ export default function AdminHub() {
               <span className="min-w-0 flex-1 text-xs font-medium leading-snug text-white/70 group-hover:text-white">
                 {label}
               </span>
-              <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-white/15 xl:block" />
+              <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-white/65 xl:block" />
             </button>
           ))}
         </div>
@@ -168,7 +168,7 @@ export default function AdminHub() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-medium text-white">{copy("adminOverlay")}</p>
-                <p className="mt-1 text-xs text-zinc-600">{copy("adminOverlayHint")}</p>
+                <p className="mt-1 text-xs text-zinc-400">{copy("adminOverlayHint")}</p>
               </div>
               <button
                 role="switch"
@@ -185,14 +185,14 @@ export default function AdminHub() {
             <div className="flex items-center justify-between gap-3">
               <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => loadAdmins()}>
                 <span className="text-sm font-medium text-white">{copy("admins")}</span>
-                {!loaded && <UserPlus className="h-4 w-4 text-white/35" />}
+                {!loaded && <UserPlus className="h-4 w-4 text-white/65" />}
               </button>
               {loaded && (
                 <button
                   onClick={() => loadAdmins(true)}
                   disabled={working}
                   aria-label={copy("admins")}
-                  className="rounded-lg p-1.5 text-white/30 transition-colors hover:bg-white/5 hover:text-white/60 disabled:opacity-40"
+                  className="rounded-lg p-1.5 text-white/65 transition-colors hover:bg-white/5 hover:text-white/60 disabled:opacity-40"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${working ? "animate-spin" : ""}`} />
                 </button>
@@ -200,7 +200,7 @@ export default function AdminHub() {
             </div>
 
             {working && !loaded && (
-              <div className="flex items-center gap-2 pt-4 text-xs text-white/35">
+              <div className="flex items-center gap-2 pt-4 text-xs text-white/65">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 {copy("admins")}
               </div>
@@ -218,7 +218,7 @@ export default function AdminHub() {
                   <div key={admin.id} className="flex items-center gap-2 rounded-xl bg-white/[.03] px-3 py-2">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-xs text-white/70">{admin.email}</p>
-                      <p className="text-xs text-white/50">{admin.isFounder ? copy("founder") : admin.addedBy}</p>
+                      <p className="text-xs text-white/65">{admin.isFounder ? copy("founder") : admin.addedBy}</p>
                       {!admin.isFounder && <select
                         aria-label={`Permisos de ${admin.email}`} value={admin.role}
                         disabled={working} onChange={event => void changeRole(admin.email, event.target.value as AdminRole)}

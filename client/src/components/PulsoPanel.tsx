@@ -1,5 +1,6 @@
+import AccessibleDialog from "./AccessibleDialog"
 import { accountStorage as localStorage, accountSessionStorage as sessionStorage } from "@/lib/account-context"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 import { X, BookOpen, Flame, Clock, Star, TrendingUp, Zap } from "lucide-react"
 import { useGenre, GENRE_CONFIG, type Genre } from "@/context/GenreContext"
 import { useSettings } from "@/context/SettingsContext"
@@ -92,7 +93,7 @@ function StatCard({ icon: Icon, value, label, color }: {
     >
       <Icon className="w-4 h-4 shrink-0" style={{ color }} />
       <span className="text-xl font-bold font-display" style={{ color }}>{value}</span>
-      <span className="text-[10px] text-zinc-600 font-sans text-center leading-tight">{label}</span>
+      <span className="text-xs text-zinc-400 font-sans text-center leading-tight">{label}</span>
     </motion.div>
   )
 }
@@ -120,11 +121,11 @@ function BookCard({ book, onClose }: { book: any; onClose: () => void }) {
         }
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[10px] uppercase tracking-widest font-sans mb-0.5" style={{ color: gc.color + "88" }}>
+        <p className="text-xs uppercase tracking-widest font-sans mb-0.5" style={{ color: gc.color + "88" }}>
           {t(gc.tKey)}
         </p>
         <p className="text-white text-sm font-medium font-sans line-clamp-1">{book.title}</p>
-        <p className="text-zinc-500 text-xs font-sans">{book.author}</p>
+        <p className="text-zinc-400 text-xs font-sans">{book.author}</p>
       </div>
       <Star className="w-3.5 h-3.5 shrink-0" style={{ color: gc.color + "60" }} />
     </motion.button>
@@ -172,42 +173,17 @@ export default function PulsoPanel({ open, onClose }: Props) {
 
   const topGenreCfg = stats.topGenre ? GENRE_CONFIG[stats.topGenre] : null
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[200]"
-            style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)" }}
-            onClick={onClose}
-          />
-
-          <motion.div
-            initial={{ y: "100%", opacity: 0.8 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: "100%", opacity: 0 }}
-            transition={{ type: "spring", stiffness: 320, damping: 36 }}
-            className="fixed bottom-0 left-0 right-0 z-[210] rounded-t-3xl overflow-hidden"
-            style={{
-              background:   "rgba(8,8,12,0.98)",
-              border:       `1px solid ${cfg.color}20`,
-              borderBottom: "none",
-              boxShadow:    `0 -8px 64px rgba(0,0,0,0.8)`,
-              maxHeight:    "85vh",
-            }}
-          >
+  return <AccessibleDialog open={open} onClose={onClose} title={t("yourPulse")} sheet style={{ background: "#08080c", border: `1px solid ${cfg.color}40` }}>
             <div className="flex justify-center pt-3 pb-1">
               <div className="w-10 h-1 rounded-full bg-white/15" />
             </div>
 
-            <div className="flex items-center justify-between px-5 py-3">
+            <div className="flex shrink-0 items-center justify-between px-5 py-3">
               <div>
                 <h2 className="text-base font-display font-bold text-white tracking-wide">
                   {t("yourPulse")}
                 </h2>
-                <p className="text-[11px] text-zinc-600 font-sans mt-0.5">
+                <p className="text-xs text-zinc-400 font-sans mt-0.5">
                   {t("yourActivity")}
                 </p>
               </div>
@@ -217,8 +193,7 @@ export default function PulsoPanel({ open, onClose }: Props) {
               </motion.button>
             </div>
 
-            <div className="overflow-y-auto px-5 space-y-6 pb-36"
-              style={{ maxHeight: "calc(85vh - 80px)" }}>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 space-y-6 pb-8">
 
               {stats.totalBooks === 0 ? (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -287,7 +262,7 @@ export default function PulsoPanel({ open, onClose }: Props) {
 
                   {/* ── ESTADÍSTICAS ── */}
                   <div>
-                    <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-sans mb-3">
+                    <p className="text-xs text-zinc-400 uppercase tracking-widest font-sans mb-3">
                       {t("yourActivity")}
                     </p>
                     <div className="grid grid-cols-2 gap-2.5">
@@ -301,7 +276,7 @@ export default function PulsoPanel({ open, onClose }: Props) {
                   {/* ── GÉNERO ── */}
                   {topGenreCfg && stats.topGenre && (
                     <div>
-                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-sans mb-3">
+                      <p className="text-xs text-zinc-400 uppercase tracking-widest font-sans mb-3">
                         Tu género
                       </p>
                       <motion.div
@@ -332,7 +307,7 @@ export default function PulsoPanel({ open, onClose }: Props) {
 
                   {/* ── SEÑALES — ahora con datos reales ── */}
                   <div>
-                    <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-sans mb-3">
+                    <p className="text-xs text-zinc-400 uppercase tracking-widest font-sans mb-3">
                       {t("signals")}
                     </p>
                     <div className="space-y-2">
@@ -373,7 +348,7 @@ export default function PulsoPanel({ open, onClose }: Props) {
                   {/* ── PARA EXPLORAR ── */}
                   {discoveries.length > 0 && (
                     <div>
-                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-sans mb-3">
+                      <p className="text-xs text-zinc-400 uppercase tracking-widest font-sans mb-3">
                         Para explorar
                       </p>
                       <div className="space-y-2">
@@ -387,7 +362,7 @@ export default function PulsoPanel({ open, onClose }: Props) {
                   {/* ── RETOMAR ── */}
                   {localStorage.getItem("lastReading") && (
                     <div>
-                      <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-sans mb-3">
+                      <p className="text-xs text-zinc-400 uppercase tracking-widest font-sans mb-3">
                         Retomar
                       </p>
                       <motion.button
@@ -403,16 +378,13 @@ export default function PulsoPanel({ open, onClose }: Props) {
                         <span className="text-sm font-sans" style={{ color: cfg.color + "cc" }}>
                           Continuar lectura anterior
                         </span>
-                        <span className="ml-auto text-zinc-600 text-xs font-sans">→</span>
+                        <span className="ml-auto text-zinc-400 text-xs font-sans">→</span>
                       </motion.button>
                     </div>
                   )}
                 </>
               )}
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  )
+
+</AccessibleDialog>
 }
