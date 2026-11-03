@@ -3,10 +3,10 @@
 Estado: preparatorio, sin firma ni habilitación comercial. No publicar como
 contrato definitivo ni completar datos o porcentajes ocultos unilateralmente.
 
-Desde 2026-11-01.1 el anexo operativo por edición se prepara con los datos
+Desde 2026-11-03.1 el anexo operativo por edición se prepara con los datos
 configurados en `shared/commerce.ts`, se muestra al titular en **Mis comprobantes**
 y se guarda íntegro al aceptarlo. La revisión administrativa exige esa aceptación
-exacta. [COMMERCIAL-ACCOUNTING.md](COMMERCIAL-ACCOUNTING.md) describe las reglas
+exacta. [PATRONAGE-POLICY.md](PATRONAGE-POLICY.md) describe las reglas
 implementadas y las revisiones externas pendientes; este archivo sigue siendo
 una guía de revisión, no una firma ni autorización ficticia.
 
@@ -23,8 +23,8 @@ No transmite derechos morales ni toda la producción futura del creador.
 
 | Modalidad | Condiciones que deben cerrarse |
 |---|---|
-| Apoyo con copias personales | Tres ejemplares nuevos; definir regalos y terceros impresores. |
-| Fabricación comercial | Un ejemplar nuevo por permiso; identificar edición, vendedor y garantías. |
+| Apoyo con copias personales | Tres ejemplares nuevos en total; regalos gratuitos solo con permiso expreso `personalGifts`, sin archivos ni canjes adicionales. |
+| Fabricación comercial | Un ejemplar nuevo y primera distribución por licencia independiente del mecenazgo; identificar edición, editor/impresor, precio público, depósito legal, vendedor y garantías. |
 | Descarga | Archivo entregado, copia personal, continuidad y fin del servicio. |
 | Audiolibro | Texto, voz/proveedor, síntesis, almacenamiento, distribución y coste. |
 | Traducción | Idiomas, titular de traducción, revisión, aprobación y reparto aplicable. |

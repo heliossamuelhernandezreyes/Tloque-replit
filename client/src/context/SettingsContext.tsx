@@ -74,7 +74,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "Tarjetas", collectionTitle: "Mi colección", collectionTotal: "{n} en total", collectionEmptyTitle: "Tu colección te espera", collectionEmptyBody: "Apoya obras o consigue tarjetas con Tinta para empezar a coleccionar los personajes de tus historias favoritas.", cardZoomHint: "Inclina el teléfono para verla cobrar vida",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "Tarjetas de la obra", cardsOwnedCount: "{a}/{b} en tu colección", cardBySupport: "Al apoyar", cardBuyFor: "Obtener · {n} 🪙", cardGotIt: "✦ Tarjeta añadida a tu colección",
+    cardsTitle: "Tarjetas de la obra", cardsOwnedCount: "{a}/{b} en tu colección", cardBySupport: "Al apoyar con Tinta", cardBuyFor: "Obtener · {n} 🪙", cardGotIt: "✦ Tarjeta añadida a tu colección",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "Desbloqueaste el vestido premium de esta obra.",
     // ── i18n: monedero ──
@@ -124,7 +124,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "Cards", collectionTitle: "My collection", collectionTotal: "{n} total", collectionEmptyTitle: "Your collection awaits", collectionEmptyBody: "Support works or get cards with Ink to start collecting the characters from your favorite stories.", cardZoomHint: "Tilt your phone to see it come alive",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "Story cards", cardsOwnedCount: "{a}/{b} in your collection", cardBySupport: "By supporting", cardBuyFor: "Get · {n} 🪙", cardGotIt: "✦ Card added to your collection",
+    cardsTitle: "Story cards", cardsOwnedCount: "{a}/{b} in your collection", cardBySupport: "By supporting with Ink", cardBuyFor: "Get · {n} 🪙", cardGotIt: "✦ Card added to your collection",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "You unlocked this work's premium edition.",
     // ── i18n: monedero ──
@@ -163,7 +163,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "Cartes", collectionTitle: "Ma collection", collectionTotal: "{n} au total", collectionEmptyTitle: "Votre collection vous attend", collectionEmptyBody: "Soutenez des œuvres ou obtenez des cartes avec de l'Encre pour collectionner les personnages de vos histoires préférées.", cardZoomHint: "Inclinez votre téléphone pour la voir s'animer",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "Cartes de l'œuvre", cardsOwnedCount: "{a}/{b} dans votre collection", cardBySupport: "En soutenant", cardBuyFor: "Obtenir · {n} 🪙", cardGotIt: "✦ Carte ajoutée à votre collection",
+    cardsTitle: "Cartes de l'œuvre", cardsOwnedCount: "{a}/{b} dans votre collection", cardBySupport: "En soutenant avec de l’Encre", cardBuyFor: "Obtenir · {n} 🪙", cardGotIt: "✦ Carte ajoutée à votre collection",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "Vous avez débloqué l'édition premium de cette œuvre.",
     // ── i18n: monedero ──
@@ -200,7 +200,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "Karten", collectionTitle: "Meine Sammlung", collectionTotal: "{n} insgesamt", collectionEmptyTitle: "Deine Sammlung wartet", collectionEmptyBody: "Unterstütze Werke oder hole Karten mit Tinte, um die Figuren deiner Lieblingsgeschichten zu sammeln.", cardZoomHint: "Neige dein Handy, um sie lebendig zu sehen",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "Karten des Werks", cardsOwnedCount: "{a}/{b} in deiner Sammlung", cardBySupport: "Beim Unterstützen", cardBuyFor: "Holen · {n} 🪙", cardGotIt: "✦ Karte zu deiner Sammlung hinzugefügt",
+    cardsTitle: "Karten des Werks", cardsOwnedCount: "{a}/{b} in deiner Sammlung", cardBySupport: "Mit Tinte unterstützen", cardBuyFor: "Holen · {n} 🪙", cardGotIt: "✦ Karte zu deiner Sammlung hinzugefügt",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "Du hast die Premium-Ausgabe dieses Werks freigeschaltet.",
     // ── i18n: monedero ──
@@ -237,7 +237,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "Carte", collectionTitle: "La mia collezione", collectionTotal: "{n} in totale", collectionEmptyTitle: "La tua collezione ti aspetta", collectionEmptyBody: "Sostieni opere o ottieni carte con Inchiostro per collezionare i personaggi delle tue storie preferite.", cardZoomHint: "Inclina il telefono per vederla prendere vita",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "Carte dell'opera", cardsOwnedCount: "{a}/{b} nella tua collezione", cardBySupport: "Sostenendo", cardBuyFor: "Ottieni · {n} 🪙", cardGotIt: "✦ Carta aggiunta alla tua collezione",
+    cardsTitle: "Carte dell'opera", cardsOwnedCount: "{a}/{b} nella tua collezione", cardBySupport: "Con sostegno in Inchiostro", cardBuyFor: "Ottieni · {n} 🪙", cardGotIt: "✦ Carta aggiunta alla tua collezione",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "Hai sbloccato l'edizione premium di quest'opera.",
     // ── i18n: monedero ──
@@ -274,7 +274,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "Cartas", collectionTitle: "Minha coleção", collectionTotal: "{n} no total", collectionEmptyTitle: "Sua coleção espera", collectionEmptyBody: "Apoie obras ou obtenha cartas com Tinta para colecionar os personagens das suas histórias favoritas.", cardZoomHint: "Incline o celular para vê-la ganhar vida",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "Cartas da obra", cardsOwnedCount: "{a}/{b} na sua coleção", cardBySupport: "Ao apoiar", cardBuyFor: "Obter · {n} 🪙", cardGotIt: "✦ Carta adicionada à sua coleção",
+    cardsTitle: "Cartas da obra", cardsOwnedCount: "{a}/{b} na sua coleção", cardBySupport: "Ao apoiar com Tinta", cardBuyFor: "Obter · {n} 🪙", cardGotIt: "✦ Carta adicionada à sua coleção",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "Você desbloqueou a edição premium desta obra.",
     // ── i18n: monedero ──
@@ -385,7 +385,7 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "بطاقات", collectionTitle: "مجموعتي", collectionTotal: "{n} إجمالاً", collectionEmptyTitle: "مجموعتك بانتظارك", collectionEmptyBody: "ادعم الأعمال أو احصل على بطاقات بالحبر لتبدأ بجمع شخصيات قصصك المفضلة.", cardZoomHint: "أمِل هاتفك لتراها تنبض بالحياة",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "بطاقات العمل", cardsOwnedCount: "{a}/{b} في مجموعتك", cardBySupport: "بالدعم", cardBuyFor: "احصل · {n} 🪙", cardGotIt: "✦ أُضيفت البطاقة إلى مجموعتك",
+    cardsTitle: "بطاقات العمل", cardsOwnedCount: "{a}/{b} في مجموعتك", cardBySupport: "بالدعم بالحبر", cardBuyFor: "احصل · {n} 🪙", cardGotIt: "✦ أُضيفت البطاقة إلى مجموعتك",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "لقد فتحت النسخة المميزة من هذا العمل.",
     // ── i18n: monedero ──

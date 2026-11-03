@@ -171,7 +171,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
         </span>
       </p>
       <p className="text-[9px] text-zinc-500 font-sans mb-2 leading-snug">
-        Personajes o escenas de tu obra. Se obtienen al apoyarla o con Tinta a precio
+        Personajes o escenas de tu obra. Se obtienen mediante mecenazgo con Tinta o por compra individual con precio
         visible — nunca al azar. Con capas, la tarjeta cobra vida al inclinarse.
       </p>
 
@@ -190,7 +190,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
                 style={{ color: "rgba(255,255,255,0.45)" }}>
                 {card.unlock === "tinta"
                   ? <><Droplets className="w-2.5 h-2.5" /> {displayTinta(card.priceTinta)} Tintas</>
-                  : <><Heart className="w-2.5 h-2.5" /> Al apoyar</>}
+                  : <><Heart className="w-2.5 h-2.5" /> Mecenazgo con Tinta</>}
               </p>
             </div>
             {isLoose && (assignTargets?.length ?? 0) > 0 && (
@@ -263,7 +263,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
                 color: form.unlock === "support" ? gc.color : "rgba(255,255,255,0.5)",
                 border: `1px solid ${form.unlock === "support" ? gc.color + "50" : "rgba(255,255,255,0.1)"}`,
               }}>
-              <Heart className="w-3 h-3" /> Al apoyar
+              <Heart className="w-3 h-3" /> Mecenazgo con Tinta
             </button>
             <button onClick={() => setForm(f => ({ ...f, unlock: "tinta" }))}
               className="flex-1 flex items-center justify-center gap-1 text-[10px] font-sans py-2 rounded-lg"

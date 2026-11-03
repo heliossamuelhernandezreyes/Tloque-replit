@@ -375,6 +375,9 @@ test("avisos y contraavisos aislados por rol y autor; bloqueo persistente y rest
 test("el permiso de regalos debe ser nuevo y conserva intacta la licencia anterior del mismo manuscrito", async () => {
   const { freezeLicensedEdition } = await import("../server/tokenEditions")
   const [work] = await database.insert(schema.books).values({title:"Dos autorizaciones",author:"Author",authorId:1,status:"published",content:"MISMO TEXTO"}).returning()
+  const publicationText=legal.publicLegalBundle().documents.find(document=>document.id === "publication")!.text
+  assert.ok(publicationText.includes("personalGifts"))
+  assert.ok(!publicationText.includes("ni permiso de regalo a terceros"))
   const oldChoices={...acceptance.choices,offline:true,monetization:true,permanentDigital:true,personalGifts:false}
   await legal.recordPublicationAcceptance(database as any,work,1,{...acceptance,choices:oldChoices})
   const first=(await legal.bookAcceptance(work,database as any))!

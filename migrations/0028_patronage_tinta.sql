@@ -21,3 +21,7 @@ DO $$ BEGIN
     ALTER TABLE licensed_editions ADD CONSTRAINT licensed_editions_acceptance_unique UNIQUE(book_id,book_revision,acceptance_id);
   END IF;
 END $$;
+
+-- Author permission may be renewed without rewriting a manuscript or old receipt.
+ALTER TABLE legal_acceptances DROP CONSTRAINT IF EXISTS legal_acceptances_book_id_book_revision_key;
+CREATE INDEX IF NOT EXISTS legal_acceptances_work_latest_idx ON legal_acceptances(book_id,work_hash,id DESC);
