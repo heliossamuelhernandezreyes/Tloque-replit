@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises"
 import { resolve } from "node:path"
 import { createServer } from "vite"
 import { DEFAULT_PRICES } from "../shared/pricing.ts"
+import { legalDocuments } from "../shared/legal.ts"
 
 if (process.env.CI !== "true") throw new Error("Use isolated CI fixtures")
 const { chromium } = createRequire(import.meta.url)("playwright")
@@ -47,9 +48,9 @@ async function setup() {
       if (method === "DELETE") return route.fulfill({ status: state.failDelete ? 500 : 204, ...(state.failDelete ? { json: { message: "Fallo de prueba" } } : {}) })
       if (state.bookDelay) await new Promise(r => setTimeout(r, state.bookDelay))
       data = work
-    } else if (url.pathname.endsWith("/comments")) data = []
-    else if (url.pathname === "/api/books/123/audio") data = { chapters: [] }
-    else if (url.pathname.includes("/experience/")) data = { musicBrain: null, audioLayers: [] }
+    } else if (url.pathname.endsWith("/comments")) data = { commentsEnabled: true, canModerate: false, comments: [] }
+    else if (url.pathname === "/api/books/123/audio") data = { assignments: [] }
+    else if (url.pathname.includes("/experience/")) data = { profile: null, musicBrain: null, audioLayers: [] }
     else if (url.pathname.includes("/audiobook/")) data = { status: "unavailable" }
     else if (url.pathname === "/api/notifications") {
       if (state.failInbox) return route.fulfill({ status: 503, json: { message: "Prueba sin conexión" } })
@@ -60,6 +61,7 @@ async function setup() {
     else if (url.pathname === "/api/tokens/mine") data = { tokens: [] }
     else if (url.pathname === "/api/tokens/unlocked") data = { bookIds: [] }
     else if (url.pathname === "/api/payments/config") data = { enabled: false, beta: false, prices: DEFAULT_PRICES, offers: { support: null, sale: null } }
+    else if (url.pathname === "/api/legal/documents") data = { hash: "a".repeat(64), publicationReady: true, documents: legalDocuments({ name: "Operador simulado", address: "Domicilio simulado", privacyEmail: "qa@fixture.test", phone: "8180000000" }) }
     else if (url.pathname === "/api/wallet") data = { tinta: 0, papel: 0 }
     else if (url.pathname === "/api/tokens/orders/7") data = { id: 7, bookId: 123, status: state.order, tokenId: state.order === "paid" ? 77 : null }
     else if (url.pathname === "/api/tokens/orders/999") return route.fulfill({ status: 404, json: { message: "Orden no disponible" } })
@@ -68,10 +70,11 @@ async function setup() {
       else data = { folio: "TLQ-FIXTURE", status: "free", kind: "sale", bookId: 123, title: work.title, author: user.name, coverUrl: "" }
     } else if (url.pathname === "/api/sync/state") data = { library: [], progress: [], streak: null }
     else if (url.pathname.includes("/cards")) data = { cards: [] }
+    else return route.fulfill({ status: 404, json: { message: "Endpoint no incluido en esta prueba" } })
     return route.fulfill({ json: data })
   })
   const page = await context.newPage()
-  page.on("pageerror", error => errors.push(error.message))
+  page.on("pageerror", error => { errors.push(error.message); console.error("App runtime:", error.stack || error.message) })
   return { page, context, state }
 }
 const navigate = (page, path) => page.evaluate(path => { history.pushState(null, "", path); dispatchEvent(new PopStateEvent("popstate")) }, path)

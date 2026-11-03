@@ -32,4 +32,3 @@ export function clearLoginClaimKey(folio: string): void {
   if (!loginClaimKey(folio)) return
   try { sessionStorage.removeItem(KEY) } catch { /* best effort */ }
 }
-

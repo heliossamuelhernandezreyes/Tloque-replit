@@ -37,7 +37,8 @@ export default function AppHeader() {
     queryKey: ["/api/notifications"],
     queryFn: async () => {
       const response = await fetch("/api/notifications", { credentials: "include" })
-      return response.ok ? response.json() : { notifications: [], unread: 0 }
+      if (!response.ok) throw new Error("No se pudieron cargar las notificaciones")
+      return response.json()
     },
     enabled: !!user,
     staleTime: 30_000,

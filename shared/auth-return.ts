@@ -12,4 +12,3 @@ export function safeAuthReturn(value: unknown): string {
 }
 
 export const AUTH_RETURN_TTL = 15 * 60 * 1000
-

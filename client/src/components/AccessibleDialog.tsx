@@ -18,4 +18,3 @@ export default function AccessibleDialog({ open, onClose, title, children, class
     </Dialog.Content>
   </Dialog.Portal></Dialog.Root>
 }
-
