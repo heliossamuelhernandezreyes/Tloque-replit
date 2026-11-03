@@ -3,8 +3,9 @@
 @tailwind utilities;
 
 /* Dialog bounds and scroll behavior are shared across product surfaces. */
-.tloque-dialog-backdrop { position:fixed; inset:0; z-index:2400; background:#000b; backdrop-filter:blur(6px); }
-.tloque-dialog-panel { position:fixed; z-index:2401; top:50%; left:50%; transform:translate(-50%,-50%); width:calc(100vw - 2rem); max-height:calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)); display:flex; flex-direction:column; overflow:hidden; border:1px solid #ffffff30; border-radius:24px; background:#121218; color:#f4f4f5; box-shadow:0 20px 80px #000a; }
+/* Product dialogs stay below the visual inspector and its shared WebGL surface. */
+.tloque-dialog-backdrop { position:fixed; inset:0; z-index:800; background:#000b; backdrop-filter:blur(6px); }
+.tloque-dialog-panel { position:fixed; z-index:810; top:50%; left:50%; transform:translate(-50%,-50%); width:calc(100vw - 2rem); max-height:calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)); display:flex; flex-direction:column; overflow:hidden; border:1px solid #ffffff30; border-radius:24px; background:#121218; color:#f4f4f5; box-shadow:0 20px 80px #000a; }
 .tloque-dialog-panel.is-sheet { top:auto; bottom:max(1rem,env(safe-area-inset-bottom)); transform:translateX(-50%); max-width:56rem; }
 .tloque-dialog-panel:not(.is-sheet) { max-width:32rem; }
 .tloque-dialog-panel > .sr-only { position:absolute; }

@@ -12,9 +12,8 @@
 .tq-frame-profile { aspect-ratio: 1; }
 .tq-reveal-visual { width: min(70vw, 320px); height: 320px; margin-inline: auto; }
 .tq-reveal-visual > .tq-visual-fallback { display: grid; place-items: center; }
-/* The visual inspector can open from the settings or printing dialogs. */
-.tq-viewer-backdrop { position: fixed; inset: 0; z-index: 2600; background: rgb(3 4 9 / 96%); }
-.tq-viewer-content { position: fixed; inset: 0; z-index: 2610; overflow-y: auto; overscroll-behavior: contain; padding: max(64px, env(safe-area-inset-top)) 24px max(40px, env(safe-area-inset-bottom)); display: grid; align-items: center; outline: none; }
+.tq-viewer-backdrop { position: fixed; inset: 0; z-index: 900; background: rgb(3 4 9 / 96%); }
+.tq-viewer-content { position: fixed; inset: 0; z-index: 910; overflow-y: auto; overscroll-behavior: contain; padding: max(64px, env(safe-area-inset-top)) 24px max(40px, env(safe-area-inset-bottom)); display: grid; align-items: center; outline: none; }
 .tq-viewer-content > .tq-viewer-layout { width: min(100%, 760px); margin: auto; display: grid; gap: 28px; }
 .tq-viewer-close { position: fixed; z-index: 920; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #ffffff26; border-radius: 50%; background: #161821; color: #f5f3ed; }
 .tq-viewer-close:focus-visible, .tq-carousel-control:focus-visible { outline: 2px solid #e8cc88; outline-offset: 4px; }
