@@ -36,9 +36,10 @@ export function economicQuote(input: Omit<EconomicQuote, "version" | "allocation
   const cashBasisCents = terms.provider === "stripe" ? terms.nominalCents : terms.provider === "beta" ? 0 : funding ? funding.paidCents + funding.legacyCents : 0
   const paidBase = funding ? proportionalCents(terms.nominalCents, funding.paidUnits, terms.units) : 0
   // A disputed/underfunded new wallet cannot silently reduce a promised royalty.
-  if (funding && funding.paidCents < paidBase) throw new Error("El respaldo de Tinta requiere conciliación")
+  if (funding && funding.paidCents < splitCents(paidBase, terms.authorShareBps).authorCents) throw new Error("El respaldo de Tinta requiere conciliación")
   const royaltyBaseCents = terms.provider === "stripe" ? terms.nominalCents : funding ? paidBase + funding.legacyCents : 0
   const authorCents = splitCents(royaltyBaseCents, terms.authorShareBps).authorCents
+  if (authorCents > cashBasisCents) throw new Error("El respaldo de Tinta requiere conciliación")
   return { ...terms, version: COMMERCE_VERSION, allocation: TINTA_ALLOCATION, displayScale: 20,
     chargedCents: terms.provider === "stripe" ? terms.nominalCents : 0,
     cashBasisCents, royaltyBaseCents, authorCents, platformCents: cashBasisCents - authorCents,

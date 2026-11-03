@@ -218,7 +218,7 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
                   style: "currency", currency: "MXN", maximumFractionDigits: 0,
                 }).format(p.cents / 100)
                 const formattedUnitPrice = new Intl.NumberFormat(locale, {
-                  style: "currency", currency: "MXN", minimumFractionDigits: 2, maximumFractionDigits: 2,
+                  style: "currency", currency: "MXN", minimumFractionDigits: 2, maximumFractionDigits: 4,
                 }).format(unitPrice)
                 const packKey = p.id === "gota" ? "tintaPackDrop" : p.id === "tintero" ? "tintaPackInkwell" : "tintaPackArchive"
                 return (

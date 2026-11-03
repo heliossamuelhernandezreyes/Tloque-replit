@@ -53,3 +53,14 @@ test("direct patronage and commercial licences use their own accepted price and 
   const licence = economicQuote({ ...terms, kind: "sale", units: 12, nominalCents: 2400, authorShareBps: 7500, walletFunding: paidFunding(100, 20000) })
   assert.equal(licence.authorCents, 1800); assert.equal(licence.platformCents, 600)
 })
+
+
+test("a recharge after a premium-package chargeback pays the fixed royalty whenever remaining cash covers it", () => {
+  // A spent 200-Tinta/$30 recharge was refunded, then 2,000/$200 were bought.
+  const state=paidFunding(90,17000)
+  const quote=economicQuote({...terms,walletFunding:state})
+  assert.equal(quote.authorCents,1800)
+  assert.equal(quote.cashBasisCents,1888)
+  assert.equal(quote.platformCents,88)
+  assert.throws(()=>economicQuote({...terms,walletFunding:paidFunding(90,15000)}),/conciliación/)
+})
