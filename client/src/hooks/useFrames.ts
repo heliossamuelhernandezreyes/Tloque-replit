@@ -15,11 +15,11 @@ export interface GalleryFrame {
 // La galería de marcos, en una sola consulta compartida por toda la app
 // (TanStack cachea por clave: la carta, el editor y la galería la reusan).
 export function useFrames() {
-  const { data, isLoading } = useQuery<{ frames: GalleryFrame[] }>({
+  const { data, isLoading, isError, refetch } = useQuery<{ frames: GalleryFrame[] }>({
     queryKey: ["/api/frames"],
     queryFn: async () => {
       const res = await fetch("/api/frames", { credentials: "include" })
-      if (!res.ok) return { frames: [] }
+      if (!res.ok) throw new Error("No se pudieron cargar los marcos")
       return res.json()
     },
     staleTime: 60_000,
@@ -28,7 +28,7 @@ export function useFrames() {
   const frames = allFrames.filter(frame => frame.available !== false)
   return {
     frames,
-    isLoading,
+    isLoading, isError, refetch,
     byId: (id?: number | null) => (id ? allFrames.find(f => f.id === id) : undefined),
     // Los que el autor puede usar ya (desbloqueados o gratis)
     usable: (target: "card" | "profile") =>

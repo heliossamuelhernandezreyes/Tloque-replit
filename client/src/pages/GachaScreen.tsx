@@ -70,7 +70,7 @@ export default function GachaScreen() {
   const [showWallet, setShowWallet] = useState(false)
   const [error, setError] = useState<{ text: string; missing?: number } | null>(null)
 
-  const { data: status } = useQuery<Status>({
+  const { data: status, isError: statusError, isLoading: statusLoading, refetch: retryStatus } = useQuery<Status>({
     queryKey: ["/api/gacha/status"],
     queryFn: async () => {
       const res = await fetch("/api/gacha/status", { credentials: "include" })
@@ -128,7 +128,9 @@ export default function GachaScreen() {
   const rar = result ? (RARITY_COLOR[result.rarity] ?? RARITY_COLOR.common) : RARITY_COLOR.common
   const isBig = result ? RARITY_ORDER.indexOf(result.rarity) >= 4 : false
 
-  if (walletError) return <main className="min-h-screen bg-zinc-950 p-5 text-white"><button className="min-h-11 underline" onClick={() => setLocation("/library")}>Volver a la biblioteca</button><QueryNotice error onRetry={() => { void retryWallet() }} /></main>
+  if (walletError || statusError) return <main className="min-h-screen bg-zinc-950 p-5 text-white"><button className="min-h-11 underline" onClick={() => setLocation("/library")}>Volver a la biblioteca</button><QueryNotice error onRetry={() => { void retryWallet(); void retryStatus() }} /></main>
+
+  if (statusLoading) return <main className="min-h-screen bg-zinc-950 p-5"><QueryNotice loading onRetry={() => { void retryStatus() }} /></main>
 
   // ── El sistema aún duerme ──
   if (status && !status.enabled) {

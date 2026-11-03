@@ -35,7 +35,7 @@ export default function FrameGallery() {
   const { t } = useSettings()
   const { isLoggedIn } = useAuth()
   const queryClient = useQueryClient()
-  const { frames, isLoading } = useFrames()
+  const { frames, isLoading, isError: framesError, refetch: retryFrames } = useFrames()
   const [showWallet, setShowWallet] = useState(false)
   const [previewFrame, setPreviewFrame] = useState<GalleryFrame | null>(null)
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string; missing?: number } | null>(null)
@@ -87,7 +87,7 @@ export default function FrameGallery() {
   const targetLabel = (tg: string) =>
     tg === "card" ? t("targetCards") : tg === "profile" ? t("targetProfile") : t("targetBoth")
 
-  if (walletError) return <main className="min-h-screen bg-zinc-950 p-5 text-white"><button className="min-h-11 underline" onClick={() => setLocation("/library")}>Volver a la biblioteca</button><QueryNotice error onRetry={() => { void retryWallet() }} /></main>
+  if (walletError || framesError) return <main className="min-h-screen bg-zinc-950 p-5 text-white"><button className="min-h-11 underline" onClick={() => setLocation("/library")}>Volver a la biblioteca</button><QueryNotice error onRetry={() => { void retryWallet(); void retryFrames() }} /></main>
 
   return (
     <div className="min-h-screen bg-zinc-950 pb-10">

@@ -51,21 +51,21 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
     queryFn: async () => { const response = await fetch("/api/legal/documents", { cache: "no-store" }); if (!response.ok) throw new Error("No se pudieron cargar las condiciones"); return response.json() },
   })
 
-  const { data } = useQuery<{ tokens: TokenWithCopies[] }>({
+  const { data, isError: tokensError, refetch: retryTokens } = useQuery<{ tokens: TokenWithCopies[] }>({
     queryKey: [`/api/tokens/mine`, bookId],
     queryFn: async () => {
       const res = await fetch(`/api/tokens/mine?bookId=${bookId}`, { credentials: "include" })
-      if (!res.ok) return { tokens: [] }
+      if (!res.ok) throw new Error("No se pudieron cargar tus licencias")
       return res.json()
     },
   })
 
   // Configuración de pagos: si Stripe está activo, mostrar precios reales
-  const { data: payCfg } = useQuery<{ enabled: boolean; beta?: boolean; offers?: { support: string | null; sale: string | null }; prices: Record<string, { cents: number; currency: string; tinta: number }> }>({
+  const { data: payCfg, isError: payError, refetch: retryPay } = useQuery<{ enabled: boolean; beta?: boolean; offers?: { support: string | null; sale: string | null }; prices: Record<string, { cents: number; currency: string; tinta: number }> }>({
     queryKey: ["/api/payments/config", bookId],
     queryFn: async () => {
       const res = await fetch(`/api/payments/config?bookId=${bookId}`)
-      if (!res.ok) return { enabled: false, prices: {} as any }
+      if (!res.ok) throw new Error("No se pudieron cargar las ofertas")
       return res.json()
     },
     staleTime: 60_000,
@@ -199,7 +199,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
           <Droplets className="w-3 h-3" /> {wallet ? displayTinta(myTinta) : "—"} · {t("getTinta")}
         </button>
       </div>
-      <QueryNotice error={walletError} onRetry={() => { void retryWallet() }} />
+      <QueryNotice error={walletError || tokensError || payError} onRetry={() => { void retryWallet(); void retryTokens(); void retryPay() }} />
       <p className="text-xs text-white/65">La lectura es gratuita. Puedes apoyar al autor o adquirir una licencia para producir un ejemplar comercial.</p>
       {!payOn && (
         <p className="text-xs font-sans -mt-1" style={{ color: "rgba(255,255,255,0.65)" }}>
@@ -217,7 +217,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
         {!hasSupport && !isAuthor && (
           <motion.button
             whileTap={{ scale: 0.97 }}
-            disabled={acquire.isPending || !payCfg?.offers || !!supportReason}
+            disabled={tokensError || !data || acquire.isPending || !payCfg?.offers || !!supportReason}
             onClick={() => setPayMenu(payMenu === "support" ? null : "support")}
             className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-left disabled:opacity-50"
             style={{ background: `${accentGlow}14`, border: `1px solid ${accentColor}35` }}
@@ -239,7 +239,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
         )}
         <motion.button
           whileTap={{ scale: 0.97 }}
-          disabled={acquire.isPending || !payCfg?.offers || !!saleReason}
+          disabled={tokensError || !data || acquire.isPending || !payCfg?.offers || !!saleReason}
           onClick={() => setPayMenu(payMenu === "sale" ? null : "sale")}
           className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-left disabled:opacity-50"
           style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.12)" }}

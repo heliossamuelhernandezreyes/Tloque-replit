@@ -1,3 +1,4 @@
+import QueryNotice from "@/components/QueryNotice"
 import AccessibleDialog from "@/components/AccessibleDialog"
 import ReadingSettings from "@/components/ReadingSettings"
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
@@ -69,7 +70,7 @@ export default function Reader() {
   const music = useMusic()
 
   const numericBookId = /^\d+$/.test(String(bookId)) ? Number(bookId) : null
-  const { data: apiBook, isLoading: apiLoading } = useBook(numericBookId as number)
+  const { data: apiBook, isLoading: apiLoading, isError: bookError, refetch: retryBook } = useBook(numericBookId as number)
   const { data: allBooks } = useBooks()
   const [localBook,     setLocalBook]     = useState<any>(null)
   const [isSaved,       setIsSaved]       = useState(false)
@@ -444,6 +445,8 @@ export default function Reader() {
   const headerText   = READING_MODE_HEADER_TEXT[settings.readingMode]
   const fontSizePx   = FONT_SIZE_PX[settings.fontSize]
   const lineHeight   = LINE_SPACING_VALUE[settings.lineSpacing]
+
+  if (bookError && !localBook) return <main className="min-h-screen bg-zinc-950 p-5"><QueryNotice error onRetry={() => { void retryBook() }} /></main>
 
   if (isLoading) return (
     <div className="h-screen flex items-center justify-center" style={{ background: bgColor }}>

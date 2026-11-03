@@ -55,7 +55,7 @@ export default function BookPage() {
   const numericId = /^\d+$/.test(rawId) ? Number(rawId) : null
   const id        = rawId  // keep as string for localStorage lookups
 
-  const { data: apiBook, isLoading } = useBook(numericId as number)
+  const { data: apiBook, isLoading, isError: bookError, refetch: retryBook } = useBook(numericId as number)
   const [localBook, setLocalBook]   = useState<any>(null)
   const [isSaved,   setIsSaved]     = useState(false)
   const [isMine,    setIsMine]      = useState(false)
@@ -243,6 +243,8 @@ export default function BookPage() {
   const shownCover = coverFor(book, user?.id)
   const isPremiumView = showingPremium(book, user?.id)
   const hasImage = !!shownCover && !imgFailed
+
+  if (bookError && !localBook) return <Layout><div className="mx-auto max-w-xl p-5"><QueryNotice error onRetry={() => { void retryBook() }} /></div></Layout>
 
   if (isLoading && !localBook) {
     return (

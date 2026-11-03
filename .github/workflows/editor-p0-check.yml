@@ -83,10 +83,10 @@ jobs:
         run: |
           npm install --no-save --package-lock=false --ignore-scripts playwright@1.62.1
           npx playwright install --with-deps chromium
-      - name: Exercise the real interface against an isolated fixture API
-        run: npm run test:visual:browser
       - name: Verify UI reliability on mobile
         run: node --import tsx scripts/ui-reliability-browser-qa.mjs
+      - name: Exercise the real interface against an isolated fixture API
+        run: npm run test:visual:browser
       - name: Gutenberg catalogue, mobile reading and import
         run: npm run test:gutenberg:browser
       - name: Account storage and multiple tabs in Chromium
