@@ -52,7 +52,7 @@ export function composeEdition(book: PrintBook, input: EditionSettings, metrics:
   const missing = new Set<string>(), checked = new Set<string>()
   const credits = printSourceCredits(book, labels)
   const claimText = copy?.digitalClaimAllowed === false
-    ? "Impresión personal autorizada. Sin permiso de venta ni canje digital adicional."
+    ? copy.personalGiftsAllowed ? "Ejemplar personal. Puede regalarse gratuitamente con permiso del titular. Sin fabricación para venta ni canje digital adicional." : "Impresión personal autorizada. Sin permiso de venta ni canje digital adicional."
     : labels.claim
   const values: [string, FontStyle][] = [[book.title, "normal"], [book.title, "bold"], [book.author, "normal"], [book.author, "italic"],
     ...Object.values(labels).map(v => [v, "normal"] as [string, FontStyle]), [labels.end, "italic"],

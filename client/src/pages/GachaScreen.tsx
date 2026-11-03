@@ -1,3 +1,4 @@
+import { displayTinta } from "@shared/tinta"
 import { accountFetch as fetch } from "@/lib/account-context"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -116,7 +117,7 @@ export default function GachaScreen() {
     onError: (e: any) => {
       setPhase("idle")
       if (e.status === 402) {
-        setError({ text: t("notEnoughTinta").replace("{n}", String(e.missing ?? price)), missing: e.missing })
+        setError({ text: t("notEnoughTinta").replace("{n}", String(displayTinta(e.missing ?? price))), missing: e.missing })
       } else {
         setError({ text: e.message || t("gachaError") })
       }
@@ -151,7 +152,7 @@ export default function GachaScreen() {
           <button onClick={() => setShowWallet(true)}
             className="flex items-center gap-1 text-[11px] font-sans font-semibold px-2.5 py-1.5 rounded-lg"
             style={{ background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.3)", color: "#c9a84c" }}>
-            <Droplets className="w-3 h-3" />{tinta}
+            <Droplets className="w-3 h-3" />{displayTinta(tinta)}
           </button>
         )} />
 
@@ -326,7 +327,7 @@ export default function GachaScreen() {
             {draw.isPending
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : <Droplets className="w-4 h-4" />}
-            {t("gachaOpen")} · {price}
+            {t("gachaOpen")} · {displayTinta(price)}
           </motion.button>
 
           {/* La piedad, visible: es un seguro, y saberlo retiene */}

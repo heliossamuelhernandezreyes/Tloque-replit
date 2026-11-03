@@ -36,7 +36,7 @@ before(async () => {
   }
   await pg.exec("INSERT INTO users (id,google_id,email,name) VALUES (1,'author','author@fixture.mx','Author'),(2,'other','other@fixture.mx','Other');")
   ;[book] = await database.insert(schema.books).values({ title: "Novela de un capítulo", author: "Author", authorId: 1, type: "book", status: "published", content: "Una versión original", chapters: [{ title: "Único", content: "Una versión original" }] }).returning()
-  acceptance = { documentHash: legal.publicLegalBundle().hash, accepted: true, adultAndAuthorized: true, hasRights: true, origin: "original", evidence: "", choices: { offline: false, personalPrint: true, commercialPrint: false, audio: false, translation: false, collectibles: false, monetization: false, permanentDigital: false } }
+  acceptance = { documentHash: legal.publicLegalBundle().hash, accepted: true, adultAndAuthorized: true, hasRights: true, origin: "original", evidence: "", choices: { offline: false, personalPrint: true, personalGifts: true, commercialPrint: false, audio: false, translation: false, collectibles: false, monetization: false, permanentDigital: false } }
 })
 after(async () => {
   await pg?.close()
@@ -234,9 +234,10 @@ test("el sorteo excluye obras sin permiso y nunca cobra cuando no queda stock au
 
 test("un permiso histórico no autoriza implícitamente monetización ni acceso permanente", () => {
   const legacy: any = { ...acceptance, choices: { ...acceptance.choices } }
-  delete legacy.choices.monetization; delete legacy.choices.permanentDigital
+  delete legacy.choices.monetization; delete legacy.choices.permanentDigital; delete legacy.choices.personalGifts
   const parsed = publicationAcceptanceSchema.parse(legacy)
   assert.equal(parsed.choices.monetization, false)
+  assert.equal(parsed.choices.personalGifts, false)
   assert.match(tokenRightsFailure(parsed.choices, "support")!, /monetización/)
   assert.match(tokenRightsFailure({ monetization: true, permanentDigital: true, offline: false }, "sale")!, /sin conexión/)
   assert.equal(tokenRightsFailure({ monetization: true, permanentDigital: true, offline: true, commercialPrint: true }, "sale"), null)
@@ -368,4 +369,22 @@ test("avisos y contraavisos aislados por rol y autor; bloqueo persistente y rest
       if (n === 1) assert.equal(current.status, "published", "the last case restores the original status")
     }
   } finally { await new Promise<void>(resolve => server.close(() => resolve())) }
+})
+
+
+test("el permiso de regalos debe ser nuevo y conserva intacta la licencia anterior del mismo manuscrito", async () => {
+  const { freezeLicensedEdition } = await import("../server/tokenEditions")
+  const [work] = await database.insert(schema.books).values({title:"Dos autorizaciones",author:"Author",authorId:1,status:"published",content:"MISMO TEXTO"}).returning()
+  const oldChoices={...acceptance.choices,offline:true,monetization:true,permanentDigital:true,personalGifts:false}
+  await legal.recordPublicationAcceptance(database as any,work,1,{...acceptance,choices:oldChoices})
+  const first=(await legal.bookAcceptance(work,database as any))!
+  const firstEdition=await freezeLicensedEdition(database,work,first.receipt.id,first.choices)
+  assert.match(tokenRightsFailure(first.choices,"support")!,/regalos/)
+  await legal.recordPublicationAcceptance(database as any,work,1,{...acceptance,choices:{...oldChoices,personalGifts:true}})
+  const second=(await legal.bookAcceptance(work,database as any))!
+  const secondEdition=await freezeLicensedEdition(database,work,second.receipt.id,second.choices)
+  assert.notEqual(firstEdition.id,secondEdition.id)
+  assert.equal(firstEdition.rights.personalGifts,false)
+  assert.equal(secondEdition.rights.personalGifts,true)
+  assert.equal(tokenRightsFailure(second.choices,"support"),null)
 })

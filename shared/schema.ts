@@ -287,7 +287,7 @@ export const licensedEditions = pgTable("licensed_editions", {
   snapshot: jsonb("snapshot").$type<Book>().notNull(),
   rights: jsonb("rights").$type<Record<string, boolean>>().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-}, table => [unique("licensed_editions_revision_unique").on(table.bookId, table.bookRevision)])
+}, table => [unique("licensed_editions_acceptance_unique").on(table.bookId, table.bookRevision, table.acceptanceId)])
 
 export const bookTokens = pgTable("book_tokens", {
   id:          serial("id").primaryKey(),
@@ -470,6 +470,7 @@ export const walletLedger = pgTable("wallet_ledger", {
   // crear dinero: las compras suman y cada gasto resta como máximo lo que
   // quedaba respaldado.
   cashBackingCents: integer("cash_backing_cents").default(0).notNull(),
+  funding: jsonb("funding").$type<import("./tinta").TintaFunding>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
@@ -480,6 +481,7 @@ export const walletOrders = pgTable("wallet_orders", {
   currency:    text("currency").notNull().default("tinta"),
   amount:      integer("amount").notNull(),                 // unidades de moneda
   amountCents: integer("amount_cents").notNull(),           // precio en centavos MXN
+  fundingPolicy: text("funding_policy"), // null preserves historical cash-first credits
   status:      text("status").notNull().default("pending"), // pending|paid|failed
   provider:    text("provider").notNull().default("beta"),  // "stripe" | "beta"
   providerRef: text("provider_ref").default(""),

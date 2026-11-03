@@ -1,3 +1,4 @@
+import { displayTinta } from "@shared/tinta"
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { lazy, Suspense, useRef, useState } from "react"
 import { motion } from "framer-motion"
@@ -188,7 +189,7 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
               <p className="text-[9px] font-sans flex items-center gap-1"
                 style={{ color: "rgba(255,255,255,0.45)" }}>
                 {card.unlock === "tinta"
-                  ? <><Droplets className="w-2.5 h-2.5" /> {card.priceTinta} Tinta</>
+                  ? <><Droplets className="w-2.5 h-2.5" /> {displayTinta(card.priceTinta)} Tintas</>
                   : <><Heart className="w-2.5 h-2.5" /> Al apoyar</>}
               </p>
             </div>
@@ -276,12 +277,12 @@ export default function CardsEditor({ bookId, gc, assignTargets, onAssigned }: P
           </div>
           {form.unlock === "tinta" && (
             <div className="flex items-center gap-2">
-              <input type="number" min={1} max={100} value={form.priceTinta}
-                onChange={e => setForm(f => ({ ...f, priceTinta: Number(e.target.value) }))}
+              <input type="number" min={20} max={2000} step={20} value={displayTinta(form.priceTinta)}
+                onChange={e => setForm(f => ({ ...f, priceTinta: Math.max(1, Math.round(Number(e.target.value) / 20)) }))}
                 className="w-20 text-white text-xs outline-none rounded-lg px-3 py-2 font-sans"
                 style={inputStyle} />
               <span className="text-[10px] font-sans" style={{ color: "rgba(255,255,255,0.5)" }}>
-                Tinta (1–100) · el precio siempre visible
+                Tintas (20–2000, pasos de 20) · el precio siempre visible
               </span>
             </div>
           )}

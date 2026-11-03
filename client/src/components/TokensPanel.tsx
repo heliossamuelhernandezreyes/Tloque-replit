@@ -1,3 +1,4 @@
+import { displayTinta } from "@shared/tinta"
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useState } from "react"
 import { motion } from "framer-motion"
@@ -59,7 +60,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
   })
 
   // Configuración de pagos: si Stripe está activo, mostrar precios reales
-  const { data: payCfg } = useQuery<{ enabled: boolean; offers?: { support: string | null; sale: string | null }; prices: Record<string, { cents: number; currency: string; tinta: number }> }>({
+  const { data: payCfg } = useQuery<{ enabled: boolean; beta?: boolean; offers?: { support: string | null; sale: string | null }; prices: Record<string, { cents: number; currency: string; tinta: number }> }>({
     queryKey: ["/api/payments/config", bookId],
     queryFn: async () => {
       const res = await fetch(`/api/payments/config?bookId=${bookId}`)
@@ -85,7 +86,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
     const p = payCfg?.prices?.[kind]
     if (!p) return ""
     const money = payOn ? `$${(p.cents / 100).toFixed(0)}` : ""
-    return ` · ${money}${money && p.tinta ? " · " : ""}${p.tinta ? `${p.tinta} 🪙` : ""}`
+    return ` · ${money}${money && p.tinta ? " · " : ""}${p.tinta ? `${displayTinta(p.tinta)} 🪙` : ""}`
   }
   const tintaOf = (kind: "support" | "sale") => payCfg?.prices?.[kind]?.tinta ?? 10
 
@@ -171,7 +172,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
           style={{ background: `${accentGlow}15`, color: accentColor, border: `1px solid ${accentColor}35` }}
         >
           <Droplets className="w-3 h-3" />
-          {enough ? `${t("payWithTinta")} · ${need} 🪙` : t("notEnoughTinta").replace("{n}", String(need - myTinta))}
+          {enough ? `${t("payWithTinta")} · ${displayTinta(need)} 🪙` : t("notEnoughTinta").replace("{n}", String(displayTinta(need - myTinta)))}
         </button>
       </div>
     )
@@ -179,14 +180,13 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
 
   const tokens     = data?.tokens || []
   const hasSupport = tokens.some(tk => tk.kind === "support" && tk.licenseStatus !== "revoked")
-  const activeSupport = tokens.some(tk => tk.kind === "support" && tk.licenseStatus === "active")
   const supportReason = isAuthor ? "Esta obra es tuya: ya tienes acceso completo." : payCfg?.offers?.support
-  const saleReason = payCfg?.offers?.sale || (!activeSupport && !isAuthor ? "Necesitas un Token 1 activo antes de adquirir un permiso comercial." : null)
+  const saleReason = payCfg?.offers?.sale
   const allCopies: { copy: Copy; kind: string; licenseStatus: TokenWithCopies["licenseStatus"] }[] = []
   for (const tk of tokens) for (const c of tk.copies) allCopies.push({ copy: c, kind: tk.kind, licenseStatus: tk.licenseStatus })
 
   return (
-    <div className="rounded-2xl p-4 space-y-3"
+    <div id="mecenazgo" className="rounded-2xl p-4 space-y-3"
       style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${accentColor}25` }}>
       <div className="flex items-center justify-between">
         <p className="text-xs font-sans font-semibold" style={{ color: "rgba(255,255,255,0.85)" }}>
@@ -195,12 +195,13 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
         <button onClick={() => setShowWallet(true)}
           className="flex items-center gap-1.5 text-[10px] font-sans px-2.5 py-1 rounded-full"
           style={{ background: `${accentGlow}15`, color: accentColor, border: `1px solid ${accentColor}30` }}>
-          <Droplets className="w-3 h-3" /> {myTinta} · {t("getTinta")}
+          <Droplets className="w-3 h-3" /> {displayTinta(myTinta)} · {t("getTinta")}
         </button>
       </div>
+      <p className="text-xs text-white/65">La lectura es gratuita. Puedes apoyar al autor o adquirir una licencia para producir un ejemplar comercial.</p>
       {!payOn && (
         <p className="text-[9px] font-sans -mt-1" style={{ color: "rgba(255,255,255,0.35)" }}>
-          {t("tokenBeta")}
+          {payCfg?.beta ? t("tokenBeta") : "Las compras requieren habilitación comercial."}
         </p>
       )}
       {premiumUnlocked && (
@@ -258,20 +259,20 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
         {acquire.isError && (
           <p className="text-[10px] font-sans px-1" style={{ color: "#e8a0a0" }}>
             {(acquire.error as Error)?.message === "tinta_insuficiente"
-              ? t("notEnoughTinta").replace("{n}", String(Math.max(0, tintaOf(payMenu || "sale") - myTinta)))
+              ? t("notEnoughTinta").replace("{n}", String(displayTinta(Math.max(0, tintaOf(payMenu || "sale") - myTinta))))
               : (acquire.error as Error)?.message}
           </p>
         )}
       </div>
       {payMenu && <div className="space-y-3 text-xs text-white/70">
-        <p>{payMenu === "support" ? "Token 1: edición digital permanente sin suscripción y tres impresiones personales, sin venta ni accesos digitales adicionales." : "Un ejemplar físico nuevo y su primera distribución comercial. Un canje digital definitivo a la primera cuenta; una reventa no lo renueva."}</p>
+        <p>{payMenu === "support" ? "Mecenazgo voluntario: la lectura es gratuita. Conservas la edición digital y tres ejemplares físicos que puedes guardar o regalar gratuitamente, sin fabricar para venta ni crear canjes digitales adicionales." : "Un ejemplar físico nuevo y su primera distribución comercial. Un canje digital definitivo a la primera cuenta; una reventa no lo renueva."}</p>
         {legal.data?.documents.filter(document => document.id === "terms").map(document => <details key={document.id}><summary className="cursor-pointer underline">Condiciones · {document.version}</summary><p className="mt-2 whitespace-pre-line leading-6">{document.text}</p></details>)}
         {legal.isError && <button onClick={() => void legal.refetch()} className="underline">Reintentar carga de condiciones</button>}
-        <p>El reparto se calcula sobre efectivo respaldado. Los bonos no crean ingresos; se consume primero el respaldo disponible.</p>
+        <p>El mecenazgo con Tinta incluye las tarjetas de recompensa disponibles y autorizadas de esta obra. Con Tinta nueva pagada, la regalía usa la base editorial fija; el sobreprecio del paquete corresponde a Tloque. Los créditos históricos mantienen su cálculo y se identifican en el desglose.</p>
         {([moneyQuote, tintaQuote] as const).map((query, index) => <div key={index}>
           {query.isPending && <p>Cargando desglose {index === 0 ? "con tarjeta" : "con Tinta"}…</p>}
           {query.isError && <button className="underline" onClick={() => void query.refetch()}>{query.error.message} · Reintentar desglose</button>}
-          {query.data && <p className="leading-6" data-testid={index === 0 ? "money-breakdown" : "tinta-breakdown"}>{index === 0 ? "Con tarjeta" : "Con Tinta"}: {query.data.economics.provider === "tinta" ? `${query.data.economics.units} Tintas` : money(query.data.economics.chargedCents)}. Base efectiva {money(query.data.economics.cashBasisCents)}; titular {money(query.data.economics.authorCents)}; Tloque {money(query.data.economics.platformCents)}. {query.data.economics.cashBasisCents === 0 ? "Esta operación no genera ingreso liquidable." : ""}</p>}
+          {query.data && <p className="leading-6" data-testid={index === 0 ? "money-breakdown" : "tinta-breakdown"}>{index === 0 ? "Con tarjeta" : "Con Tinta"}: {query.data.economics.provider === "tinta" ? `${query.data.economics.units * (query.data.economics.displayScale ?? 1)} Tintas` : money(query.data.economics.chargedCents)}. Efectivo atribuido {money(query.data.economics.cashBasisCents)}; base de regalía {money(query.data.economics.royaltyBaseCents ?? query.data.economics.cashBasisCents)}; titular {money(query.data.economics.authorCents)}; Tloque {money(query.data.economics.platformCents)}. {query.data.economics.cashBasisCents === 0 ? "Esta operación no genera ingreso liquidable." : ""}</p>}
         </div>)}
         <label className="flex min-h-11 items-start gap-2"><input type="checkbox" checked={conditionsAccepted} disabled={!legal.data || moneyQuote.isPending || tintaQuote.isPending || (!moneyQuote.data && !tintaQuote.data)} onChange={event => { setAcceptedHash(event.target.checked ? legal.data!.hash : ""); setAcceptedQuoteKey(event.target.checked ? quoteKey : "") }} />Leí y acepto las condiciones y el desglose de esta compra.</label>
       </div>}

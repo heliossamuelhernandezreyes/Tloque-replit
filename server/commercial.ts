@@ -7,7 +7,7 @@ import { COMMERCE_VERSION, commercialText, settlementWindow } from "@shared/comm
 import { bookAcceptance, LegalRequirementError, publicationWorkHash } from "./legal"
 import { legalConfiguration } from "./legalConfig"
 import { payoutHoldDays, payoutMinimumCents } from "./payouts"
-import { priceFor, economySnapshotForBook } from "./payments"
+import { priceFor, economySnapshotForBook, authorShareFor } from "./payments"
 import { db } from "./db"
 import { requireAdmin } from "./auth"
 import { rateLimit } from "./rateLimit"
@@ -23,6 +23,8 @@ export async function commercialOffer(book: typeof books.$inferSelect, tx: any) 
     version: COMMERCE_VERSION, operator: config.operator, bookId: book.id, title: book.title, author: book.author,
     workHash: publicationWorkHash(book), acceptanceId: permission.receipt.id,
     authorShareBps: economySnapshotForBook(book).authorShareBps, supportUnits: priceFor("support", book).tinta,
+    supportMoneyCents: priceFor("support", book).cents, directAuthorShareBps: authorShareFor("support", book, "money") * 10_000,
+    saleUnits: priceFor("sale", book).tinta, saleMoneyCents: priceFor("sale", book).cents, saleAuthorShareBps: authorShareFor("sale", book, "tinta") * 10_000,
     holdDays: payoutHoldDays(), minimumCents: payoutMinimumCents(),
     rights: permission.choices,
   }

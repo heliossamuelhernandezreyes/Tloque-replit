@@ -12,23 +12,23 @@ test("preserva precios y reparto económico actuales", () => {
   assert.equal(economySnapshotForBook({ type: "book", chapters: [{}] }).authorShareBps, 9000)
   assert.equal(economySnapshotForBook({ type: "story", chapters: [{}, {}] }).authorShareBps, 5000)
   assert.deepEqual(priceFor("support", { chapters: [{ content: "cuento" }] }), {
-    tinta: 5, cents: 1_000, currency: "mxn", isStory: true,
+    tinta: 5, cents: 2_000, currency: "mxn", isStory: true,
   })
   assert.deepEqual(priceFor("support", { chapters: [{}, {}] }), {
-    tinta: 10, cents: 2_000, currency: "mxn", isStory: false,
+    tinta: 10, cents: 3_500, currency: "mxn", isStory: false,
   })
-  assert.equal(priceFor("sale", { chapters: [{}] }).tinta, 10)
+  assert.equal(priceFor("sale", { chapters: [{}] }).tinta, 12)
   assert.deepEqual(splitEarnings(1_001, AUTHOR_SHARE_BOOK), { authorCents: 901, platformCents: 100 })
   assert.deepEqual(splitEarnings(1_001, AUTHOR_SHARE_STORY), { authorCents: 501, platformCents: 500 })
 })
 
 test("los paquetes de Tinta son transparentes y el valor mejora por volumen", () => {
   assert.deepEqual(TINTA_PACKS.map(pack => [pack.id, pack.tinta, pack.cents]), [
-    ["gota", 25, 4_900], ["tintero", 55, 9_900], ["archivo", 120, 19_900],
+    ["gota", 10, 3_000], ["tintero", 20, 5_500], ["biblioteca", 50, 12_000], ["archivo", 100, 20_000],
   ])
   assert.equal(TINTA_PACKS.filter(pack => pack.recommended).length, 1)
   const unitPrices = TINTA_PACKS.map(pack => pack.cents / pack.tinta)
-  assert.ok(unitPrices[0] > unitPrices[1] && unitPrices[1] > unitPrices[2])
+  assert.ok(unitPrices[0] > unitPrices[1] && unitPrices[1] > unitPrices[2] && unitPrices[2] > unitPrices[3])
 })
 
 test("el modo beta exige autorización explícita en cualquier entorno", () => {
@@ -39,7 +39,7 @@ test("el modo beta exige autorización explícita en cualquier entorno", () => {
     delete process.env.PAYMENTS_BETA_MODE
     assert.equal(betaPaymentsEnabled(), false)
     process.env.PAYMENTS_BETA_MODE = "true"
-    assert.equal(betaPaymentsEnabled(), true)
+    assert.equal(betaPaymentsEnabled(), false)
     process.env.PAYMENTS_BETA_MODE = "false"
     assert.equal(betaPaymentsEnabled(), false)
     process.env.NODE_ENV = "development"

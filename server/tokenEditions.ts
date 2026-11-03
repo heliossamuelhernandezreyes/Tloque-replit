@@ -10,7 +10,7 @@ export async function freezeLicensedEdition(tx: any, book: Book, acceptanceId: n
     workHash: publicationWorkHash(book), snapshot: book, rights,
   }).onConflictDoNothing().returning()
   const retained = edition ?? (await tx.select().from(licensedEditions).where(and(
-    eq(licensedEditions.bookId, book.id), eq(licensedEditions.bookRevision, book.revision),
+    eq(licensedEditions.bookId, book.id), eq(licensedEditions.bookRevision, book.revision), eq(licensedEditions.acceptanceId, acceptanceId),
   )))[0]
   if (!retained || retained.workHash !== publicationWorkHash(book) || retained.acceptanceId !== acceptanceId) {
     throw new Error("La edición autorizada cambió; vuelve a iniciar la compra.")

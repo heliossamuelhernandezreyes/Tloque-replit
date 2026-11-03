@@ -1,3 +1,4 @@
+import { displayTinta } from "@shared/tinta"
 import { accountFetch as fetch } from "@/lib/account-context"
 import { useState } from "react"
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query"
@@ -74,7 +75,7 @@ export default function FrameGallery() {
     onError: (e: any) => {
       if (e.message === "tinta_insuficiente") {
         setNotice({ kind: "err", missing: e.missing,
-          text: t("notEnoughTinta").replace("{n}", String(e.missing)) })
+          text: t("notEnoughTinta").replace("{n}", String(displayTinta(e.missing))) })
       } else {
         setNotice({ kind: "err", text: e.message || t("frameBuyError") })
         setTimeout(() => setNotice(null), 4000)
@@ -102,7 +103,7 @@ export default function FrameGallery() {
             className="ml-auto flex items-center gap-1 text-[11px] font-sans font-semibold px-2.5 py-1.5 rounded-lg"
             style={{ background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.3)", color: ACCENT }}>
             <Droplets className="w-3 h-3" />
-            {tinta}
+            {displayTinta(tinta)}
           </button>
         )}
       </div>
@@ -178,7 +179,7 @@ export default function FrameGallery() {
                       {isBuying
                         ? <Loader2 className="w-3 h-3 animate-spin" />
                         : canAfford ? <Droplets className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
-                      {f.priceTinta} {t("unlockWord")}
+                      {displayTinta(f.priceTinta)} {t("unlockWord")}
                     </button>
                   )}
                 </div>
