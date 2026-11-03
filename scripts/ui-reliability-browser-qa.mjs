@@ -38,7 +38,7 @@ async function setup() {
       return route.fulfill({ status: 302, headers: { location: url.searchParams.get("returnTo") || "/" } })
     } else if (url.pathname === "/api/books") {
       const query = url.searchParams.get("search"); if (query) state.searches.push(query)
-      data = query ? [{ ...work, title: query === "alpha" ? "Alpha" : "Beta" }] : [work]
+      data = query ? [{ ...work, id: query === "alpha" ? 456 : 789, authorId: 600, title: query === "alpha" ? "Alpha" : "Beta" }] : [work]
     } else if (url.pathname === "/api/books/mine") data = [work]
     else if (url.pathname === "/api/books/123/draft") {
       if (method === "PUT") { const payload = route.request().postDataJSON(); state.cloud.push(payload.data); data = { draft: { draftRevision: state.cloud.length } } }
@@ -157,4 +157,10 @@ try {
   await checkout.context.close()
   assert.deepEqual(errors, [])
   console.log("UI reliability gate passed: OAuth/QR, draft exits, searches, errors, reader and payment states; no live services.")
+} catch (error) {
+  for (const [index, page] of browser.contexts().flatMap(context => context.pages()).entries()) {
+    await page.screenshot({ path: resolve(output, `failure-${index}.png`) }).catch(() => {})
+    console.error("Failure screen:", (await page.locator("body").innerText().catch(() => "")).slice(0, 3000))
+  }
+  throw error
 } finally { await browser.close(); await vite.close() }

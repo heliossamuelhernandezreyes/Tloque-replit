@@ -154,6 +154,9 @@ try {
   await consent.check()
   for (const size of [{ width: 360, height: 640 }, { width: 568, height: 320 }]) {
     await page.setViewportSize(size)
+    await consent.check()
+    await walletDialog.getByRole("heading", { name: "Monedero", exact: true }).scrollIntoViewIfNeeded()
+    await page.screenshot({ path: resolve(output, `legal-wallet-${size.width}x${size.height}.png`) })
     for (const pack of TINTA_PACKS) {
       const button = walletDialog.getByRole("button").filter({ hasText: pack.id === "entrada" ? "Entrada" : pack.id === "biblioteca" ? "Biblioteca" : pack.label })
       await button.scrollIntoViewIfNeeded()
