@@ -75,6 +75,11 @@ async function setup() {
   })
   const page = await context.newPage()
   page.on("pageerror", error => { errors.push(error.message); console.error("App runtime:", error.stack || error.message) })
+  page.on("console", message => {
+    if (message.type() === "error" && message.text().includes("Tloque no pudo renderizar")) {
+      errors.push(message.text()); console.error("App boundary:", message.text())
+    }
+  })
   return { page, context, state }
 }
 const navigate = (page, path) => page.evaluate(path => { history.pushState(null, "", path); dispatchEvent(new PopStateEvent("popstate")) }, path)

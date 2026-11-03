@@ -110,6 +110,7 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
     },
   })
 
+  if (!open) return null
   return <AccessibleDialog open={open} onClose={onClose} title={t("walletTitle")} className="max-w-sm" style={{ background: "#121218", border: `1px solid ${accentColor}50` }}>
             <div className="flex shrink-0 items-center justify-between px-5 pt-5 pb-4">
               <h2 className="text-base font-display font-bold text-white">{t("walletTitle")}</h2>

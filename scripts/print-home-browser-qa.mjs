@@ -7,6 +7,8 @@ import {composeEdition} from '../client/src/print/compose.ts'
 import {editionSettings,printLabels} from '../client/src/print/model.ts'
 import {fontMetrics,pdfDocument} from '../client/src/print/pdfRuntime.ts'
 import {physicalSides,selectPrintSides,printerProfile} from '../client/src/print/homeJob.ts'
+import {DEFAULT_PRICES} from '../shared/pricing.ts'
+import {legalDocuments} from '../shared/legal.ts'
 
 const {chromium}=createRequire(import.meta.url)('playwright')
 const output=resolve('.tloque_cache/print-home-qa');await mkdir(output,{recursive:true})
@@ -41,7 +43,8 @@ await context.route('**/*',async route=>{
  else if(u.pathname.includes('notifications'))data={notifications:[],unread:0}
  else if(u.pathname==='/api/sync/state')data={library:[],progress:[],streak:null}
  else if(u.pathname==='/api/tokens/mine')data={tokens:u.searchParams.get('bookId')==='93'?[{id:3,kind:'support',licenseStatus:'active',copies:[{id:7,folio:'QA-ONLY-SERIAL-7',canPrint:true,digitalClaimed:false,claimedByOwner:false}]}]:[]}
- else if(u.pathname==='/api/payments/config')data={enabled:false,prices:{}}
+ else if(u.pathname==='/api/payments/config')data={enabled:false,prices:DEFAULT_PRICES,offers:{support:null,sale:null}}
+ else if(u.pathname==='/api/legal/documents')data={hash:'a'.repeat(64),publicationReady:true,documents:legalDocuments({name:'Operador simulado',address:'Domicilio simulado',privacyEmail:'qa@fixture.test',phone:'8180000000'})}
  else if(u.pathname==='/api/wallet')data={tinta:0,papel:0}
  return route.fulfill({json:data})
 })
