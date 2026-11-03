@@ -3,11 +3,11 @@ import type { Express } from "express"
 import { and, desc, eq, lt, sql } from "drizzle-orm"
 import { z } from "zod"
 import { authorEarnings, books, tokenOrders } from "@shared/schema"
-import { COMMERCE_VERSION, commercialText, settlementWindow } from "@shared/commerce"
+import { COMMERCE_VERSION, COMMERCIAL_AUTHOR_CENTS, commercialText, settlementWindow } from "@shared/commerce"
 import { bookAcceptance, LegalRequirementError, publicationWorkHash } from "./legal"
 import { legalConfiguration } from "./legalConfig"
 import { payoutHoldDays, payoutMinimumCents } from "./payouts"
-import { priceFor, economySnapshotForBook } from "./payments"
+import { priceFor, economySnapshotForBook, authorShareFor } from "./payments"
 import { db } from "./db"
 import { requireAdmin } from "./auth"
 import { rateLimit } from "./rateLimit"
@@ -23,6 +23,8 @@ export async function commercialOffer(book: typeof books.$inferSelect, tx: any) 
     version: COMMERCE_VERSION, operator: config.operator, bookId: book.id, title: book.title, author: book.author,
     workHash: publicationWorkHash(book), acceptanceId: permission.receipt.id,
     authorShareBps: economySnapshotForBook(book).authorShareBps, supportUnits: priceFor("support", book).tinta,
+    supportMoneyCents: priceFor("support", book).cents, directAuthorShareBps: authorShareFor("support", book, "money") * 10_000,
+    saleUnits: priceFor("sale", book).tinta, saleMoneyCents: priceFor("sale", book).cents, saleAuthorShareBps: authorShareFor("sale", book, "tinta") * 10_000, saleAuthorFixedCents: COMMERCIAL_AUTHOR_CENTS,
     holdDays: payoutHoldDays(), minimumCents: payoutMinimumCents(),
     rights: permission.choices,
   }

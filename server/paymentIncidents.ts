@@ -1,3 +1,4 @@
+import { PAID_TINTA_POLICY, paidFunding } from "@shared/tinta"
 import type { Express } from "express"
 import { and, desc, eq, sql } from "drizzle-orm"
 import { z } from "zod"
@@ -103,6 +104,7 @@ export async function reconcilePayment(executor: any, paymentRef: string): Promi
     if (delta || cashBackingCents) {
       await executor.insert(walletLedger).values({
         userId: walletOrder.userId, currency: "tinta", delta, cashBackingCents,
+        funding: walletOrder.fundingPolicy === PAID_TINTA_POLICY ? paidFunding(delta, cashBackingCents) : null,
         reason: "payment_adjustment", refType: "wallet_order_adjustment", refId: walletOrder.id,
       })
     }

@@ -1,23 +1,24 @@
 # Tokens y reclamaciones autorales
 
-La versión 2026-10-31.1 separa publicación gratuita, monetización y conservación
+La versión 2026-11-03.2 separa publicación gratuita, monetización y conservación
 de la edición adquirida. Ningún indicador de configuración, aceptación o revisión
 administrativa acredita por sí solo titularidad, una autorización de autoridad o
 inmunidad frente a demandas.
 
 ## Compras nuevas
 
-Actualización 2026-11-01.1: el titular acepta un acuerdo económico íntegro por
+Actualización 2026-11-03.2: el titular acepta un acuerdo económico íntegro por
 edición antes de su revisión administrativa. Cada compra confirma un desglose
 vigente de precio, base real y reparto. Los cambios de respaldo o condiciones
-exigen revisar el cálculo antes del débito. Ver [COMMERCIAL-ACCOUNTING.md](COMMERCIAL-ACCOUNTING.md).
+exigen revisar el cálculo antes del débito. Ver [PATRONAGE-POLICY.md](PATRONAGE-POLICY.md); el circuito anterior se conserva en [COMMERCIAL-ACCOUNTING.md](COMMERCIAL-ACCOUNTING.md).
 
 - Token 1: una edición digital personal, sin suscripción, y tres folios para
-  impresiones personales. Los folios nuevos no conceden accesos digitales extra.
+  impresiones personales, que pueden regalarse gratuitamente a compañeros solo
+  cuando el titular autoriza `personalGifts`. El límite total sigue siendo tres. Los folios nuevos no conceden accesos digitales extra.
 - Comercial: un ejemplar nuevo y su primera distribución comercial, con un canje
   digital definitivo a la primera cuenta. Una devolución o reventa no lo renueva.
-- El comprador necesita un Token 1 activo de la obra antes del comercial. El
-  autor titular de la obra puede comprar permisos comerciales sin autoapoyarse.
+- La licencia comercial se adquiere sin mecenazgo previo. Su precio y regalía
+  se acuerdan por separado; cada ejemplar nuevo adicional requiere otra licencia.
 - Antes del débito o checkout se comprueban permisos expresos de monetización,
   permanencia, offline y modalidad de impresión, además del acuerdo comercial
   revisado para la aceptación exacta. Las habilitaciones generales siguen siendo
@@ -87,7 +88,7 @@ o de impresión esté amparada por esa limitación de responsabilidad.
 
 ## Despliegue y conservación
 
-Desplegar el código junto con ambas migraciones, con respaldo y preflight. No
+Desplegar el código con todas las migraciones pendientes, incluida 0028, con respaldo y preflight. No
 revertir el código a una versión que ignore `rights_hold` mientras existan casos
 activos. No editar migraciones ya aplicadas. Validar publicación, compra, canje,
 lectura y retirada con datos de prueba antes de activar cobros reales.

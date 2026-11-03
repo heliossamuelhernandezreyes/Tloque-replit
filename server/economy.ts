@@ -1,12 +1,14 @@
 import { and, eq, sql } from "drizzle-orm"
 import { walletLedger } from "@shared/schema"
 import { cashForTinta } from "@shared/commerce"
+import { negateFunding, planTintaDebit, type TintaFunding } from "@shared/tinta"
 
 type Executor = any
 
 export type TintaDebit = {
   id: number
   cashBackingCents: number
+  funding: TintaFunding
 }
 
 function safeInteger(value: unknown): number {
@@ -20,53 +22,37 @@ export function tintaBackingForDebit(availableBackingCents: number, amount: numb
 }
 
 export async function tintaState(executor: Executor, userId: number) {
-  const result = await executor.execute(sql`select coalesce(sum(delta),0)::bigint as balance,
-    greatest(0,coalesce(sum(cash_backing_cents),0))::bigint as backing from wallet_ledger
-    where user_id=${userId} and currency='tinta'`)
-  const balance = Number(result.rows[0]?.balance || 0), backing = Number(result.rows[0]?.backing || 0)
-  if (!Number.isSafeInteger(balance) || !Number.isSafeInteger(backing)) throw new Error("Saldo fuera de rango")
-  return { balance, backing }
+  const result = await executor.execute(sql`select
+    coalesce(sum(coalesce((funding->>'legacyUnits')::bigint,delta)),0)::bigint as legacy_units,
+    coalesce(sum(coalesce((funding->>'legacyCents')::bigint,cash_backing_cents)),0)::bigint as legacy_cents,
+    coalesce(sum(coalesce((funding->>'paidUnits')::bigint,0)),0)::bigint as paid_units,
+    coalesce(sum(coalesce((funding->>'paidCents')::bigint,0)),0)::bigint as paid_cents
+    from wallet_ledger where user_id=${userId} and currency='tinta'`)
+  const row = result.rows[0]
+  const funding: TintaFunding = { legacyUnits: Number(row?.legacy_units || 0), legacyCents: Number(row?.legacy_cents || 0),
+    paidUnits: Number(row?.paid_units || 0), paidCents: Number(row?.paid_cents || 0) }
+  if (!Object.values(funding).every(Number.isSafeInteger)) throw new Error("Saldo fuera de rango")
+  return { balance: funding.legacyUnits + funding.paidUnits, backing: Math.max(0, funding.legacyCents + funding.paidCents), funding }
 }
 
-/**
- * Debita Tinta y consume primero el efectivo que todavía la respalda.
- *
- * El candado por usuario convierte saldo, respaldo e inserción en una sola
- * decisión serializable aun cuando distintas rutas intenten gastar al mismo
- * tiempo. El respaldo consumido nunca supera ni el efectivo disponible ni el
- * valor nominal del gasto.
- */
+/** One user lock covers both policy buckets, the quote and the immutable debit.
+ * A single row retains the exact funding of mixed spends for idempotent refunds. */
 export async function debitTinta(
   executor: Executor,
   input: { userId: number; amount: number; reason: string; refType: string; refId: number },
 ): Promise<TintaDebit | null> {
   if (!Number.isSafeInteger(input.userId) || input.userId <= 0) throw new Error("Usuario inválido")
-  if (!Number.isSafeInteger(input.amount) || input.amount <= 0) throw new Error("Monto de Tinta inválido")
-
   await executor.execute(sql`select pg_advisory_xact_lock(${input.userId})`)
-  const result: any = await executor.execute(sql`
-    select
-      coalesce(sum(delta), 0)::bigint as balance,
-      greatest(0, coalesce(sum(cash_backing_cents), 0))::bigint as backing
-    from wallet_ledger
-    where user_id = ${input.userId} and currency = 'tinta'
-  `)
-  const balance = safeInteger(result?.rows?.[0]?.balance)
-  const backing = safeInteger(result?.rows?.[0]?.backing)
-  if (balance < input.amount) return null
-
-  const cashBackingCents = tintaBackingForDebit(backing, input.amount)
+  const state = await tintaState(executor, input.userId)
+  const funding = planTintaDebit(state.funding, input.amount)
+  if (!funding) return null
+  const cashBackingCents = funding.legacyCents + funding.paidCents
   const [entry] = await executor.insert(walletLedger).values({
-    userId: input.userId,
-    currency: "tinta",
-    delta: -input.amount,
-    reason: input.reason,
-    refType: input.refType,
-    refId: input.refId,
-    cashBackingCents: -cashBackingCents,
-  }).returning({ id: walletLedger.id, cashBackingCents: walletLedger.cashBackingCents })
-
-  return { id: entry.id, cashBackingCents: Math.abs(entry.cashBackingCents) }
+    userId: input.userId, currency: "tinta", delta: -input.amount,
+    reason: input.reason, refType: input.refType, refId: input.refId,
+    cashBackingCents: -cashBackingCents, funding: negateFunding(funding),
+  }).returning({ id: walletLedger.id })
+  return { id: entry.id, cashBackingCents, funding }
 }
 
 /** Restaura exactamente el respaldo consumido por un débito anterior. */
@@ -97,6 +83,7 @@ export async function refundTintaDebit(
     refType: "wallet_debit",
     refId: debit.id,
     cashBackingCents: Math.max(0, -safeInteger(debit.cashBackingCents)),
+    funding: debit.funding ? negateFunding(debit.funding) : null,
   })
   return true
 }

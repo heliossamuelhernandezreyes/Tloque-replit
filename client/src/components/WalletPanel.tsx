@@ -1,3 +1,5 @@
+import type { LegalDocument } from "@shared/legal"
+import { displayTinta } from "@shared/tinta"
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
@@ -27,11 +29,14 @@ interface Props {
   accentGlow:  string
 }
 
-// El monedero de Tloque: Tinta 🪙 para apoyar historias con un toque,
+// El monedero de Tloque: Tinta 💧 para apoyar historias con un toque,
 // y Papel 📄 (latente) para el Oráculo y los audiolibros del futuro.
 export default function WalletPanel({ open, onClose, accentColor, accentGlow }: Props) {
   const { t, settings } = useSettings()
   const queryClient = useQueryClient()
+  const [acceptedPackKey, setAcceptedPackKey] = useState("")
+  const legal = useQuery<{hash:string; documents:LegalDocument[]}>({ queryKey:["/api/legal/documents"], enabled:open, staleTime:0,
+    queryFn: async()=>{ const response=await fetch("/api/legal/documents",{cache:"no-store"}); if(!response.ok) throw new Error("No se pudieron cargar las condiciones"); return response.json() } })
   const [credited, setCredited] = useState<number | null>(null)
 
   const { data: wallet } = useQuery<{ tinta: number; papel: number }>({
@@ -44,7 +49,7 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
     enabled: open,
   })
 
-  const { data: packsData } = useQuery<{ enabled: boolean; beta: boolean; tintaCents: number; packs: Pack[] }>({
+  const { data: packsData } = useQuery<{ enabled: boolean; beta: boolean; commerceVersion?: string; tintaCents: number; packs: Pack[] }>({
     queryKey: ["/api/wallet/packs"],
     queryFn: async () => {
       const res = await fetch("/api/wallet/packs")
@@ -56,8 +61,8 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
   })
   const payOn = !!packsData?.enabled
   const betaOn = !!packsData?.beta
-  const canAcquire = payOn || betaOn
-  const tintaCents = packsData?.tintaCents || 200
+  const packKey = JSON.stringify([legal.data?.hash, packsData?.commerceVersion, packsData?.packs])
+  const canAcquire = (payOn || betaOn) && !!legal.data && !!packsData?.commerceVersion && acceptedPackKey === packKey
 
   const { data: paperCatalog } = useQuery<PaperCatalog>({
     queryKey: ["/api/paper/catalog"],
@@ -72,7 +77,7 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
 
   const buy = useMutation({
     mutationFn: async (packId: string) => {
-      const intent = `wallet-purchase:${packId}`
+      const intent = `wallet-purchase:${packsData?.commerceVersion}:${packId}`
       let purchaseKey = localStorage.getItem(intent)
       if (!purchaseKey) {
         purchaseKey = crypto.randomUUID()
@@ -82,7 +87,7 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
         method:      "POST",
         headers:     { "Content-Type": "application/json", "Idempotency-Key": purchaseKey },
         credentials: "include",
-        body:        JSON.stringify({ packId }),
+        body:        JSON.stringify({ packId, acceptance: { accepted: canAcquire, documentHash: legal.data?.hash, commerceVersion: packsData?.commerceVersion, packCents: packsData?.packs.find(pack=>pack.id===packId)?.cents, packUnits: packsData?.packs.find(pack=>pack.id===packId)?.tinta } }),
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
@@ -143,7 +148,7 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
                   <p className="text-[10px] font-sans" style={{ color: "rgba(255,255,255,0.55)" }}>{t("tintaName")}</p>
                 </div>
                 <p className="text-xl font-display font-bold mt-0.5" style={{ color: accentColor }}>
-                  {wallet?.tinta ?? 0}
+                  {displayTinta(wallet?.tinta ?? 0)}
                 </p>
               </div>
               <div className="rounded-2xl px-3.5 py-3"
@@ -185,12 +190,15 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
                 style={{ background: "rgba(90,200,130,0.1)", border: "1px solid rgba(90,200,130,0.3)" }}>
                 <BadgeCheck className="w-4 h-4" style={{ color: "rgba(120,220,160,0.9)" }} />
                 <p className="text-xs font-sans text-white">
-                  {t("tintaCredited")} <span style={{ color: accentColor }}>+{credited} 🪙</span>
+                  {t("tintaCredited")} <span style={{ color: accentColor }}>+{displayTinta(credited)} 💧</span>
                 </p>
               </motion.div>
             )}
 
-            <p className="mb-3 text-xs leading-6 text-white/70">El valor de uso de una Tinta es $2.00 MXN. Los bonos no crean efectivo: el reparto al titular consume primero el respaldo real disponible. El desglose aparece antes de cada compra.</p>
+            <p className="mb-3 text-xs leading-6 text-white/70">La lectura es gratuita. Compras la cantidad exacta de Tintas indicada, sin bonos. El precio por Tinta baja con el paquete: 200 Tintas cubren el mecenazgo de un libro y su base editorial es $20 MXN. La base editorial de una Tinta es $0.10 MXN; su precio de compra depende del paquete. Los precios de prestaciones se expresan en Tintas enteras, inicialmente en pasos de 20. El autor acumula ganancias en MXN. Los saldos históricos conservan su poder de compra con numeración ×20.</p>
+            {legal.data?.documents.filter(document=>document.id === "terms").map(document=><details className="mb-3 text-xs text-white/65" key={document.id}><summary>Condiciones de Tinta · {document.version}</summary><p className="mt-2 whitespace-pre-line leading-6">{document.text}</p></details>)}
+            {legal.isError && <button className="mb-3 underline" onClick={()=>void legal.refetch()}>Reintentar carga de condiciones</button>}
+            <label className="mb-4 flex min-h-11 items-start gap-2 text-xs text-white/70"><input type="checkbox" checked={!!legal.data && acceptedPackKey===packKey} disabled={!legal.data || !packsData?.commerceVersion} onChange={event=>setAcceptedPackKey(event.target.checked?packKey:"")} />Acepto las condiciones y los precios de los paquetes mostrados, en MXN.</label>
             {/* Paquetes */}
             <p className="text-[11px] font-sans font-semibold mb-2" style={{ color: "rgba(255,255,255,0.7)" }}>
               {t("getTinta")}
@@ -203,15 +211,14 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
             </p>
             <div className="space-y-2">
               {(packsData?.packs || []).map((p, index, all) => {
-                const bonus = p.tinta - Math.round(p.cents / tintaCents)
-                const unitPrice = p.cents / 100 / p.tinta
+                const unitPrice = p.cents / 100 / displayTinta(p.tinta)
                 const isBestValue = index === all.length - 1
                 const locale = LANGUAGE_META[settings.language].locale
                 const totalPrice = new Intl.NumberFormat(locale, {
                   style: "currency", currency: "MXN", maximumFractionDigits: 0,
                 }).format(p.cents / 100)
                 const formattedUnitPrice = new Intl.NumberFormat(locale, {
-                  style: "currency", currency: "MXN", minimumFractionDigits: 2, maximumFractionDigits: 2,
+                  style: "currency", currency: "MXN", minimumFractionDigits: 2, maximumFractionDigits: 4,
                 }).format(unitPrice)
                 const packKey = p.id === "gota" ? "tintaPackDrop" : p.id === "tintero" ? "tintaPackInkwell" : "tintaPackArchive"
                 return (
@@ -234,13 +241,9 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4" style={{ color: accentColor }} />
                       <div className="text-left">
-                        <p className="text-[9px] font-sans uppercase tracking-wide text-white/35">{t(packKey)}</p>
-                        <p className="text-sm font-sans font-semibold text-white">{p.tinta} {t("tintaName")}</p>
-                        {bonus > 0 && (
-                          <p className="text-[9px] font-sans" style={{ color: accentColor }}>
-                            {t("packBonus").replace("{n}", String(bonus))}
-                          </p>
-                        )}
+                        <p className="text-[9px] font-sans uppercase tracking-wide text-white/35">{["entrada", "biblioteca"].includes(p.id) ? p.label : t(packKey)}</p>
+                        <p className="text-sm font-sans font-semibold text-white">{displayTinta(p.tinta)} {t("tintaName")}</p>
+
                       </div>
                     </div>
                     <div className="text-right">

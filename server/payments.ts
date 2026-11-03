@@ -7,17 +7,24 @@ import { commercialLegalReady } from "./legalConfig"
 import { splitCents, TINTA_UNIT_CENTS } from "@shared/commerce"
 
 // ── Precios y economía de Tinta 🪙 ───────────────────────────
-// 1 Tinta = $2.00 MXN (10 🪙 ≈ 1 USD). Cuento: 5 🪙 · Libro: 10 🪙.
-// Reparto al autor: cuentos 50/50 · libros 90/10 (decisión Tloque:
-// los cuentos sostienen la casa; los libros son casi todos del autor).
+// One internal accounting unit = 20 visible Tintas. Historical ledger rows stay intact.
+// New packages contain paid credits only; volume changes their unit price.
 export const TINTA_CENTS = TINTA_UNIT_CENTS
-
-// Paquetes de Tinta (compra web vía Stripe; con bono por volumen)
 export const TINTA_PACKS = [
-  { id: "gota",     tinta: 25,  cents: 4_900,  label: "Gota",     recommended: false },
-  { id: "tintero",  tinta: 55,  cents: 9_900,  label: "Tintero",  recommended: true  },
-  { id: "archivo",  tinta: 120, cents: 19_900, label: "Archivo",  recommended: false },
+  { id: "entrada", tinta: 5, cents: 2_000, label: "Entrada", recommended: false },
+  { id: "gota", tinta: 10, cents: 3_000, label: "Gota", recommended: false },
+  { id: "tintero", tinta: 20, cents: 5_500, label: "Tintero", recommended: true },
+  { id: "biblioteca", tinta: 50, cents: 12_000, label: "Biblioteca", recommended: false },
+  { id: "archivo", tinta: 100, cents: 22_000, label: "Archivo", recommended: false },
 ] as const
+
+function configuredPrice(name: string, fallback: number) {
+  const raw = process.env[name]
+  if (raw === undefined || raw === "") return fallback
+  const cents = Number(raw)
+  if (!Number.isSafeInteger(cents) || cents < 2000 || cents > 1_000_000) throw new Error(`Precio inválido: ${name}`)
+  return cents
+}
 
 // La categoría editorial manda; una novela de un capítulo sigue siendo libro.
 export function isStory(book: any): boolean {
@@ -31,18 +38,25 @@ export function isStory(book: any): boolean {
 // Precio de un token para una obra concreta, en centavos y en Tinta
 export function priceFor(kind: "support" | "sale", book: any) {
   const story = isStory(book)
-  const tinta = kind === "sale" ? 10 : (story ? 5 : 10)
-  return { tinta, cents: tinta * TINTA_CENTS, currency: "mxn" as const, isStory: story }
+  const tinta = kind === "sale" ? 12 : (story ? 5 : 10)
+  const cents = kind === "sale" ? configuredPrice("COMMERCIAL_LICENSE_MXN_CENTS", 3000)
+    : configuredPrice(story ? "PATRONAGE_STORY_MXN_CENTS" : "PATRONAGE_BOOK_MXN_CENTS", story ? 2000 : 3500)
+  return { tinta, cents, currency: "mxn" as const, isStory: story }
 }
 
 // Compatibilidad: precios máximos (libro) para vistas sin obra concreta
 export const PRICES = {
-  support: { cents: 10 * TINTA_CENTS, currency: "mxn" },
-  sale:    { cents: 10 * TINTA_CENTS, currency: "mxn" },
+  support: { cents: 3500, currency: "mxn", tinta: 10 },
+  sale:    { cents: 3000, currency: "mxn", tinta: 12 },
 } as const
 
 export const AUTHOR_SHARE_BOOK  = 0.90         // libros: 90% al autor
 export const AUTHOR_SHARE_STORY = 0.50         // cuentos: 50/50
+
+export function authorShareFor(kind: "support" | "sale", book: any, payWith: "money" | "tinta") {
+  if (kind === "sale") return 0.75 // legacy-funded fractions only; new funds/card use fixedAuthorCents
+  return payWith === "money" ? (isStory(book) ? 0.30 : 0.50) : (isStory(book) ? AUTHOR_SHARE_STORY : AUTHOR_SHARE_BOOK)
+}
 
 export function splitEarnings(grossCents: number, authorShare = AUTHOR_SHARE_BOOK) {
   return splitCents(grossCents, Math.round(authorShare * 10_000))
@@ -77,7 +91,7 @@ export function stripeEnabled(): boolean {
 export function betaPaymentsEnabled(): boolean {
   // La beta acredita Tinta sin cobrar. Debe ser una decisión explícita incluso
   // en desarrollo: npm run dev también puede estar publicado en replit.dev.
-  return process.env.PAYMENTS_BETA_MODE === "true"
+  return process.env.NODE_ENV !== "production" && process.env.PAYMENTS_BETA_MODE === "true"
 }
 
 // Codifica un objeto anidado al formato form-urlencoded de Stripe

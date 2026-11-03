@@ -28,7 +28,7 @@ export default function PublicationConsent({ category, onConfirm, onCancel }: {
   const [rights, setRights] = useState(false)
   const [origin, setOrigin] = useState<PublicationAcceptance["origin"]>("original")
   const [evidence, setEvidence] = useState("")
-  const [choices, setChoices] = useState<PublicationAcceptance["choices"]>({ offline: false, personalPrint: false, commercialPrint: false, audio: false, translation: false, collectibles: false, monetization: false, permanentDigital: false })
+  const [choices, setChoices] = useState<PublicationAcceptance["choices"]>({ offline: false, personalPrint: false, personalGifts: false, commercialPrint: false, audio: false, translation: false, collectibles: false, monetization: false, permanentDigital: false })
   const query = useQuery<{ hash: string; documents: LegalDocument[]; publicationReady: boolean }>({
     queryKey: ["/api/legal/documents"], staleTime: 0,
     queryFn: async () => {
@@ -42,7 +42,7 @@ export default function PublicationConsent({ category, onConfirm, onCancel }: {
     <section className="mx-auto max-w-2xl rounded-2xl border border-white/15 bg-zinc-950 p-5 text-white sm:p-8">
       <h2 id="publication-rights-title" className="font-serif text-2xl">Permisos de esta versión</h2>
       <p className="mt-3 text-sm leading-6 text-white/65">Conservas tus derechos. Las opciones adicionales empiezan desmarcadas.</p>
-      <p className="mt-3 text-sm">{category === "story" ? "Cuento: reparto propuesto 50% autor / 50% Tloque" : "Libro: reparto propuesto 90% autor / 10% Tloque"}. Cobrar requiere acuerdo comercial adicional.</p>
+      <p className="mt-3 text-sm">{category === "story" ? "Cuento: Tinta nueva sobre base editorial, 50% al autor; pago directo, 30%" : "Libro: Tinta nueva sobre base editorial, 90% al autor; pago directo, 50%"}. Cobrar requiere acuerdo comercial adicional.</p>
       {query.isLoading && <p className="mt-4" role="status">Cargando condiciones…</p>}
       {query.isError && <button type="button" className="mt-4 underline" onClick={() => void query.refetch()}>Reintentar carga de condiciones</button>}
       {query.data && <>

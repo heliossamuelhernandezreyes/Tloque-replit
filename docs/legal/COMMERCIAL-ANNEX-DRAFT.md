@@ -3,10 +3,10 @@
 Estado: preparatorio, sin firma ni habilitación comercial. No publicar como
 contrato definitivo ni completar datos o porcentajes ocultos unilateralmente.
 
-Desde 2026-11-01.1 el anexo operativo por edición se prepara con los datos
+Desde 2026-11-03.2 el anexo operativo por edición se prepara con los datos
 configurados en `shared/commerce.ts`, se muestra al titular en **Mis comprobantes**
 y se guarda íntegro al aceptarlo. La revisión administrativa exige esa aceptación
-exacta. [COMMERCIAL-ACCOUNTING.md](COMMERCIAL-ACCOUNTING.md) describe las reglas
+exacta. [PATRONAGE-POLICY.md](PATRONAGE-POLICY.md) describe las reglas
 implementadas y las revisiones externas pendientes; este archivo sigue siendo
 una guía de revisión, no una firma ni autorización ficticia.
 
@@ -23,8 +23,8 @@ No transmite derechos morales ni toda la producción futura del creador.
 
 | Modalidad | Condiciones que deben cerrarse |
 |---|---|
-| Apoyo con copias personales | Tres ejemplares nuevos; definir regalos y terceros impresores. |
-| Fabricación comercial | Un ejemplar nuevo por permiso; identificar edición, vendedor y garantías. |
+| Apoyo con copias personales | Tres ejemplares nuevos en total; regalos gratuitos solo con permiso expreso `personalGifts`, sin archivos ni canjes adicionales. |
+| Fabricación comercial | Un ejemplar nuevo y primera distribución por licencia independiente del mecenazgo; identificar edición, editor/impresor, precio público, depósito legal, vendedor y garantías. |
 | Descarga | Archivo entregado, copia personal, continuidad y fin del servicio. |
 | Audiolibro | Texto, voz/proveedor, síntesis, almacenamiento, distribución y coste. |
 | Traducción | Idiomas, titular de traducción, revisión, aprobación y reparto aplicable. |
@@ -36,7 +36,11 @@ regla propia. El QR no es un certificado de derechos de una autoridad.
 
 ## Cuenta económica por producto
 
-La propuesta visible actual es libro/saga 90/10 y cuento 50/50. El acuerdo final
+El mecenazgo con Tinta nueva usa libro/saga 90% de la base editorial de $20
+($18) y cuento 50% de la base de $10 ($5). El pago directo es $35/$17.50
+para libro y $20/$6 para cuento. La licencia comercial independiente cuesta
+240 Tintas o $30 directos, con regalía fija de $18 por ejemplar cuando se
+financia íntegramente con Tinta nueva pagada o tarjeta. El acuerdo final
 debe conservar una tabla comprensible que detalle precio final, IVA/tratamiento,
 base exacta del porcentaje, comisiones, costes asumidos por cada parte y
 retenciones. No calcular desde capítulos ni aplicar porcentajes diferentes de
@@ -47,10 +51,13 @@ respalda cada ingreso y qué pagos quedan pendientes de conciliación. La base d
 reparto, facturación, residencia fiscal y retenciones deben revisarse con contador
 antes del primer cargo. Este borrador no los determina por omisión.
 
-La propuesta implementada consume primero el efectivo disponible del monedero,
-hasta el valor nominal del gasto, y luego las unidades sin respaldo. No reparte
-el coste promedio del paquete. Un gasto de bono sin respaldo puede devengar cero;
-esto debe aceptarse expresamente. No se deducen comisiones operativas adicionales
+La política aprobada atribuye proporcionalmente el efectivo del saldo pagado
+nuevo, incluido el sobreprecio del paquete, sin aumentar la regalía editorial.
+No vende bonos nuevos. Solo el fondo histórico mantiene la regla de efectivo
+primero hasta el nominal; una parte histórica sin respaldo puede devengar cero
+y debe identificarse expresamente. En licencia comercial, esa parte conserva
+75% del efectivo histórico, y la nueva su proporción de $18 fijos. Una orden
+aceptada conserva su desglose original. No se deducen comisiones operativas adicionales
 de la parte del titular. No se practican retenciones ni se generan facturas; la
 revisión debe resolver su compatibilidad o exigir su implementación antes de cobrar.
 

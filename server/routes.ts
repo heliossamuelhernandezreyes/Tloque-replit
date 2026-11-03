@@ -6,7 +6,7 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { requireAdmin, hasCapability, FOUNDER_EMAIL } from "./auth";
 import { db } from "./db";
-import { admins, books, bookDrafts, bookRevisions, users, comments, authorProfiles, userState, readingProgress, savedBooks, bookTokens, printCopies, printCopyEvents, notifications, unlockedBooks, tokenOrders, authorEarnings, walletLedger, walletOrders, paperUsageEvents, bookCards, userCards, frames, userFrames, gachaConfig, gachaPity, gachaDraws, insertCommentSchema } from "@shared/schema";
+import { admins, books, licensedEditions, bookDrafts, bookRevisions, users, comments, authorProfiles, userState, readingProgress, savedBooks, bookTokens, printCopies, printCopyEvents, notifications, unlockedBooks, tokenOrders, authorEarnings, walletLedger, walletOrders, paperUsageEvents, bookCards, userCards, frames, userFrames, gachaConfig, gachaPity, gachaDraws, insertCommentSchema } from "@shared/schema";
 import { randomBytes, createHash } from "crypto";
 import { ADMIN_ROLES } from "../shared/admin-permissions";
 import { rateLimit } from "./rateLimit";
@@ -24,6 +24,8 @@ import { computeAllScores, canUseRarity, quotasFor, rungFor, LADDER, TYPE_SCALE 
 import { RARITIES, TICKET, PITY, pityCountdown, poolStatus } from "@shared/gacha";
 import { PRICES, TINTA_PACKS, TINTA_CENTS, AUTHOR_SHARE_STORY, AUTHOR_SHARE_BOOK, priceFor, isStory, stripeEnabled, betaPaymentsEnabled, createCheckoutSession, economySnapshotForBook, refundStripePayment, verifyStripeWebhook, splitEarnings } from "./payments";
 import { debitTinta } from "./economy";
+import { COMMERCE_VERSION } from "@shared/commerce";
+import { displayTinta, TINTA_CURRENCY, PAID_TINTA_POLICY, paidFunding } from "@shared/tinta";
 import { registerPayoutRoutes } from "./payouts";
 import { isProtectedClaimKey, protectClaimKey, revealClaimKey, verifyClaimKey } from "./claimKeys";
 import { lockPayment, reconcilePayment, recordPaymentIncident, registerPaymentIncidentRoutes } from "./paymentIncidents";
@@ -1286,13 +1288,6 @@ export async function registerRoutes(
         .where(and(eq(bookTokens.bookId, bookId), eq(bookTokens.ownerUserId, userId), eq(bookTokens.kind, "support"), sql`${bookTokens.licenseStatus} <> 'revoked'`))
       if (mine.length > 0) return { error: "Ya tienes el token de apoyo de esta obra", code: 409, book: null }
     }
-    if (kind === "sale" && book.authorId !== userId) {
-      const [support] = await executor.select().from(bookTokens).where(and(
-        eq(bookTokens.bookId, bookId), eq(bookTokens.ownerUserId, userId),
-        eq(bookTokens.kind, "support"), eq(bookTokens.licenseStatus, "active"),
-      )).limit(1)
-      if (!support) return { error: "Necesitas un Token 1 activo de esta obra antes de adquirir un permiso comercial.", code: 428, book: null }
-    }
     return { error: null, code: 200, book }
   }
 
@@ -1331,7 +1326,8 @@ export async function registerRoutes(
     const economic = order.purchaseTerms?.economics
     if (economic && (economic.cashBasisCents !== grossCents || economic.authorShareBps !== Math.round((share ?? 0) * 10_000))) throw new Error("La entrega no coincide con el cálculo económico aceptado")
     if (grossCents <= 0 && !economic) return
-    const { authorCents, platformCents } = splitEarnings(grossCents, share)
+    const { authorCents, platformCents } = economic ?? splitEarnings(grossCents, share)
+    if (![authorCents, platformCents].every(Number.isSafeInteger) || authorCents < 0 || platformCents < 0 || authorCents + platformCents !== grossCents) throw new Error("El reparto aceptado no conserva el efectivo")
     await executor.insert(authorEarnings).values({
       authorUserId, orderId: order.id, bookId: order.bookId,
       grossCents, authorCents, platformCents,
@@ -1441,11 +1437,11 @@ export async function registerRoutes(
         }
         const [order] = await tx.insert(tokenOrders).values({
           userId, bookId, kind, amountCents: provider === "beta" ? 0 : price.cents, currency: price.currency,
-          status: "pending", provider, purchaseKey, purchaseFingerprint, ...economySnapshotForBook(book),
+          status: "pending", provider, purchaseKey, purchaseFingerprint, ...economySnapshotForBook(book, quoted.economics.authorShareBps / 10_000),
           editionId: edition.id,
           purchaseTerms: { accepted: true, documentHash: bundle.hash, version: bundle.version,
             documents: bundle.documents, editionId: edition.id, workHash: edition.workHash,
-            kind, price, acceptedAt: new Date().toISOString(), economics: quoted.economics, quoteHash: quoted.hash, commercialAgreement: quoted.agreement },
+            rewardPolicy: "tinta-patronage-only-v1", kind, price, acceptedAt: new Date().toISOString(), economics: quoted.economics, quoteHash: quoted.hash, commercialAgreement: quoted.agreement },
         }).returning()
         if (provider === "stripe") {
           const checkoutRequest = {
@@ -1463,7 +1459,7 @@ export async function registerRoutes(
           await tx.update(tokenOrders).set({ status: "failed" }).where(eq(tokenOrders.id, order.id))
           return { reply: { code: 402, body: { message: "tinta_insuficiente", needed: price.tinta } } }
         }
-        if (debit && debit.cashBackingCents !== quoted.economics.cashBasisCents) throw new Error("El respaldo cambió durante la compra")
+        if (debit && (debit.cashBackingCents !== quoted.economics.cashBasisCents || JSON.stringify(debit.funding) !== JSON.stringify(quoted.economics.tintaFunding))) throw new Error("El respaldo cambió durante la compra")
         const issued = await issueTokenWith(tx, userId, bookId, kind as "support" | "sale", order.editionId)
         const [paid] = await tx.update(tokenOrders).set({
           status: "paid", paidAt: new Date(), tokenId: issued.token.id,
@@ -1592,6 +1588,7 @@ export async function registerRoutes(
               userId: wo.userId, currency: wo.currency, delta: wo.amount,
               reason: "purchase", refType: "wallet_order", refId: wo.id,
               cashBackingCents: wo.amountCents,
+              funding: wo.fundingPolicy === PAID_TINTA_POLICY ? paidFunding(wo.amount, wo.amountCents) : null,
             })
             await reconcilePayment(tx, paymentRef)
           })
@@ -1623,7 +1620,8 @@ export async function registerRoutes(
           return res.json({
             enabled: stripeEnabled(), beta: betaPaymentsEnabled(),
             offers: { support: unavailable || tokenRightsFailure(permission?.choices, "support"), sale: unavailable || tokenRightsFailure(permission?.choices, "sale") },
-            requiresSupport: !req.isAuthenticated() || book.authorId !== (req.user as any).id,
+            requiresSupport: false,
+            tintaDisplayScale: 20,
             tintaCents: TINTA_CENTS,
             prices: {
               support: priceFor("support", book),
@@ -1632,9 +1630,9 @@ export async function registerRoutes(
           })
         }
       }
-      res.json({ enabled: stripeEnabled(), beta: betaPaymentsEnabled(), tintaCents: TINTA_CENTS, prices: PRICES })
+      res.json({ enabled: stripeEnabled(), beta: betaPaymentsEnabled(), tintaCents: TINTA_CENTS, tintaDisplayScale: 20, prices: PRICES })
     } catch {
-      res.json({ enabled: stripeEnabled(), beta: betaPaymentsEnabled(), tintaCents: TINTA_CENTS, prices: PRICES })
+      res.json({ enabled: stripeEnabled(), beta: betaPaymentsEnabled(), tintaCents: TINTA_CENTS, tintaDisplayScale: 20, prices: PRICES })
     }
   })
 
@@ -1651,7 +1649,7 @@ export async function registerRoutes(
         walletBalance(userId, "tinta"),
         walletBalance(userId, "papel"),
       ])
-      res.json({ tinta, papel })
+      res.json({ tinta, papel, tintaDisplayScale: 20 })
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
     }
@@ -1797,7 +1795,7 @@ export async function registerRoutes(
 
   // Paquetes de Tinta disponibles
   app.get("/api/wallet/packs", (_req, res) => {
-    res.json({ enabled: stripeEnabled(), beta: betaPaymentsEnabled(), tintaCents: TINTA_CENTS, packs: TINTA_PACKS })
+    res.json({ enabled: stripeEnabled(), beta: betaPaymentsEnabled(), currencyDefinition: TINTA_CURRENCY, commerceVersion: COMMERCE_VERSION, tintaCents: TINTA_CENTS, tintaDisplayScale: 20, packs: TINTA_PACKS })
   })
 
   // Catálogo único de Papel. Es informativo hasta conectar suscripciones,
@@ -1836,10 +1834,20 @@ export async function registerRoutes(
         }
         const pack = TINTA_PACKS.find(p => p.id === packId)
         if (!pack) return { reply: { code: 400, body: { message: "Paquete inválido" } } }
+        const accepted = req.body?.acceptance
+        const bundle = publicLegalBundle()
+        if (accepted?.accepted !== true || accepted.documentHash !== bundle.hash || accepted.commerceVersion !== COMMERCE_VERSION
+          || accepted.packCents !== pack.cents || accepted.packUnits !== pack.tinta) {
+          return { reply: { code: 409, body: { message: "Revisa el precio y las condiciones actualizadas del paquete antes de pagar." } } }
+        }
+        const walletTerms = { version: COMMERCE_VERSION, documentHash: bundle.hash, documents: bundle.documents,
+          acceptedAt: new Date().toISOString(), packId: pack.id, units: pack.tinta, displayScale: 20, priceCents: pack.cents,
+          fundingPolicy: PAID_TINTA_POLICY }
         const paid = stripeEnabled()
         if (!paid && !betaPaymentsEnabled()) return { reply: { code: 503, body: { message: "Los pagos no están configurados" } } }
         const [order] = await tx.insert(walletOrders).values({
           userId, currency: "tinta", amount: pack.tinta, amountCents: paid ? pack.cents : 0,
+          fundingPolicy: paid ? PAID_TINTA_POLICY : null, checkoutRequest: { walletTerms },
           provider: paid ? "stripe" : "beta", status: paid ? "pending" : "paid", paidAt: paid ? null : new Date(),
           purchaseKey, purchaseFingerprint,
         }).returning()
@@ -1850,7 +1858,7 @@ export async function registerRoutes(
           return { reply: { code: 201, body: { mode: "free_beta", credited: pack.tinta, orderId: order.id } } }
         }
         const checkoutRequest = {
-          orderId: order.id, bookTitle: `${pack.tinta} Tinta`, kindLabel: "Paquete de Tinta",
+          walletTerms, orderId: order.id, bookTitle: `${displayTinta(pack.tinta)} Tintas`, kindLabel: "Paquete de Tinta",
           cents: pack.cents, currency: "mxn", origin: publicOriginForRequest(req), bookId: 0,
           metaKey: "walletOrderId", successPath: `/?tinta=${order.id}`, cancelPath: "/",
           expiresAt: Math.floor(Date.now() / 1000) + 60 * 60,
@@ -1878,7 +1886,7 @@ export async function registerRoutes(
         .where(eq(walletLedger.userId, userId))
         .orderBy(desc(walletLedger.createdAt))
         .limit(20)
-      res.json({ entries: rows })
+      res.json({ entries: rows, tintaDisplayScale: 20 })
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error" })
     }
@@ -2135,7 +2143,8 @@ export async function registerRoutes(
         if (!current || current.status === "review" || current.rightsHold) throw new PrintPreparationError(409, "Esta obra está en revisión y no admite nuevas impresiones.")
         const edition = await tokenEdition(token, tx)
         if (!edition) throw new PrintPreparationError(409, "No se encuentra la edición autorizada.")
-        return { ...prepared, book: edition, copy: { ...prepared.copy, digitalClaimAllowed: copy.digitalClaimAllowed, licenseKind: token.kind } }
+        const [grant] = token.editionId ? await tx.select().from(licensedEditions).where(eq(licensedEditions.id, token.editionId)) : []
+        return { ...prepared, book: edition, copy: { ...prepared.copy, digitalClaimAllowed: copy.digitalClaimAllowed, licenseKind: token.kind, personalGiftsAllowed: grant?.rights?.personalGifts === true } }
       })
       res.setHeader("Cache-Control", "no-store")
       res.json(result)

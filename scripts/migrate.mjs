@@ -51,6 +51,7 @@ const migrations = [
   "0025_acquired_editions.sql",
   "0026_rights_cases.sql",
   "0027_commercial_agreements.sql",
+  "0028_patronage_tinta.sql",
 ]
 
 const pool = createPool()

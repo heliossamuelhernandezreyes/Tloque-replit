@@ -1,3 +1,4 @@
+import { displayTinta } from "@shared/tinta"
 import { motion } from "framer-motion"
 import { memo, type ReactNode } from "react"
 import { Lock, Droplets, Heart, Loader2, Sparkles } from "lucide-react"
@@ -105,7 +106,7 @@ function CollectibleCard({ card, accentColor, accentGlow, onBuy, buying, preview
               style={{ background: "linear-gradient(135deg, #e6cd82, #d4af5a)", color: "rgba(0,0,0,0.85)" }}
             >
               {buying ? <Loader2 className="w-3 h-3 animate-spin" /> : <Droplets className="w-3 h-3" />}
-              {t("cardBuyFor").replace("{n}", String(card.priceTinta))}
+              {t("cardBuyFor").replace("{n}", String(displayTinta(card.priceTinta)))}
             </motion.button>
           )}
         </div>

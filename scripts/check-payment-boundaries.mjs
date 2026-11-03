@@ -95,8 +95,11 @@ async function buyToken(role = 'buyer', { kind = 'sale', payWith = 'money', purc
   return request('/api/tokens/acquire', { role, instance, method: 'POST',
     headers: { 'Idempotency-Key': purchaseKey }, body: { bookId: book.id, kind, payWith, acceptance: { ...tokenAcceptance, quoteHash: quoted.data?.hash } } });
 }
-async function buyWallet(role = 'buyer', purchaseKey = key(), instance = 0, packId = 'gota') {
-  return request('/api/wallet/buy', { role, instance, method: 'POST', headers: { 'Idempotency-Key': purchaseKey }, body: { packId } });
+async function buyWallet(role = 'buyer', purchaseKey = key(), instance = 0, packId = 'archivo') {
+  const bundle = (await request('/api/legal/documents',{role,instance})).data;
+  const catalog = (await request('/api/wallet/packs',{role,instance})).data;
+  const pack = catalog.packs.find(pack=>pack.id===packId);
+  return request('/api/wallet/buy', { role, instance, method: 'POST', headers: { 'Idempotency-Key': purchaseKey }, body: { packId, acceptance:{accepted:true,documentHash:bundle.hash,commerceVersion:catalog.commerceVersion,packCents:pack.cents,packUnits:pack.tinta} } });
 }
 async function complete(table, orderId, paymentRef = id('pi_'), instance = 0, eventType = 'checkout.session.completed') {
   assert.ok(['wallet_orders', 'token_orders'].includes(table));
@@ -110,7 +113,7 @@ async function complete(table, orderId, paymentRef = id('pi_'), instance = 0, ev
 }
 const refund = (paymentRef, amount, objectId = id('ch_'), created = 1700000000) => ({
   id: id('evt_'), type: 'charge.refunded', created,
-  data: { object: { id: objectId, payment_intent: paymentRef, amount_refunded: amount, refunded: amount >= 4900, currency: 'mxn' } },
+  data: { object: { id: objectId, payment_intent: paymentRef, amount_refunded: amount, refunded: amount >= 22000, currency: 'mxn' } },
 });
 async function balance(role) { return (await request('/api/wallet', { role })).data.tinta; }
 async function copies(role, tokenId) {
@@ -165,7 +168,7 @@ async function claim(copy, role = 'reader', instance = 0) {
 try {
   assert.equal(Number((await client.query('select count(*) from users')).rows[0].count), 0);
   await client.query('create table if not exists user_sessions(sid varchar primary key, sess json not null, expire timestamp(6) not null)');
-  for (const role of ['buyer', 'second', 'refund', 'partial', 'disputed', 'seller', 'supporter', 'reader', 'author', 'finance', 'beta', 'history', 'collector', 'payoutAuthor']) {
+  for (const role of ['buyer', 'second', 'refund', 'partial', 'disputed', 'seller', 'supporter', 'reader', 'author', 'finance', 'beta', 'history', 'collector', 'payoutAuthor', 'mecenas', 'printer', 'entradaReader']) {
     const { rows: [user] } = await client.query('insert into users(google_id,email,name) values($1,$2,$3) returning id,email',
       ['payments-' + role, role + '@payments.example.test', 'Payments ' + role]);
     users[role] = user;
@@ -183,7 +186,7 @@ try {
     JSON.stringify([{ title: 'One', content: 'One' }, { title: 'Two', content: 'Two' }])]));
   for (let instance = 0; instance < 3; instance++) {
     const child = spawn(process.execPath, ['--import', resolve('scripts/fixtures/stripe-preload.mjs'), 'dist/index.cjs'], {
-      env: { ...LEGAL_FIXTURE_ENV, PATH: process.env.PATH, CI: 'true', NODE_ENV: 'production', PORT: String(5292 + instance),
+      env: { ...LEGAL_FIXTURE_ENV, PATH: process.env.PATH, CI: 'true', NODE_ENV: instance === 2 ? 'test' : 'production', SERVE_STATIC:'true', PORT: String(5292 + instance),
         DATABASE_URL: url.href, APP_URL: 'https://payments.example.test', SESSION_SECRET: secret,
         ADMIN_EMAIL: 'founder@payments.example.test',
         CLAIM_KEY_SECRET: claimSecret, STRIPE_WEBHOOK_SECRET: webhookSecret, STRIPE_SECRET_KEY: 'sk_test_fixture',
@@ -218,8 +221,9 @@ try {
   await client.query(`insert into commercial_approvals(book_id,acceptance_id,work_hash,actor_id,action,agreement_ref,evidence_ref,commercial_agreement_id)
     select book_id,id,work_hash,$1,'approve','fixture-commercial-agreement','fixture-holder-evidence',$3
     from legal_acceptances where book_id=$2 order by id desc limit 1`, [users.author.id, book.id, agreement.data.id]);
-  await check('A commercial token requires active support; personal folios do not mint extra digital access', async () => {
-    assert.equal((await buyToken('reader')).status, 428);
+  await check('Commercial licences are independent and patronage never mints extra digital access', async () => {
+    assert.equal((await buyToken('reader')).status, 201, 'no patronage prerequisite');
+    assert.equal((await request('/api/books/' + book.id, { role: null })).status, 200, 'free public reading');
     const missing = await request('/api/tokens/acquire', { role: 'reader', method: 'POST', headers: { 'Idempotency-Key': key() }, body: { bookId: book.id, kind: 'support', payWith: 'money' } });
     assert.equal(missing.status, 428);
     const owned = await paidToken('reader', 'support');
@@ -237,11 +241,11 @@ try {
   }
 
   await check('Accepted economic quote survives retry and rejects a changed cash basis before debit', async () => {
-    await client.query("insert into wallet_ledger(user_id,currency,delta,cash_backing_cents,reason) values($1,'tinta',20,730,'fixture')", [users.author.id]);
+    await client.query("insert into wallet_ledger(user_id,currency,delta,cash_backing_cents,reason) values($1,'tinta',24,730,'fixture')", [users.author.id]);
     const quoted = await request(`/api/tokens/quote?bookId=${book.id}&kind=sale&payWith=tinta`, { role: 'author' });
     assert.equal(quoted.status, 200, JSON.stringify(quoted.data));
     assert.equal(quoted.data.economics.cashBasisCents, 730);
-    assert.equal(quoted.data.economics.authorCents, 657);
+    assert.equal(quoted.data.economics.authorCents, 548);
     await client.query("insert into wallet_ledger(user_id,currency,delta,cash_backing_cents,reason) values($1,'tinta',1,200,'fixture')", [users.author.id]);
     const stale = await request('/api/tokens/acquire', { role: 'author', method: 'POST', headers: { 'Idempotency-Key': key() }, body: { bookId: book.id, kind: 'sale', payWith: 'tinta', acceptance: { ...tokenAcceptance, quoteHash: quoted.data.hash } } });
     assert.equal(stale.status, 409); assert.equal(stale.data.code, 'ECONOMIC_QUOTE_CHANGED');
@@ -251,7 +255,7 @@ try {
     const again = await buyToken('author', { payWith: 'tinta', purchaseKey, instance: 1 });
     assert.equal(again.data.orderId, paid.data.orderId);
     const { rows: [earning] } = await client.query('select * from author_earnings where order_id=$1', [paid.data.orderId]);
-    assert.equal(earning.gross_cents, 930); assert.equal(earning.author_cents, 837);
+    assert.equal(earning.gross_cents, 930); assert.equal(earning.author_cents, 698);
     const statement = await request('/api/commercial/statement', { role: 'author' });
     assert.equal(statement.data.entries.find(row => row.orderId === paid.data.orderId).economics.agreementHash, offer.data.hash);
     assert.ok(!(await request('/api/commercial/statement', { role: 'buyer' })).data.entries.some(row => row.orderId === paid.data.orderId));
@@ -357,6 +361,50 @@ try {
     assert.deepEqual(catalog.data.cards, []);
   });
 
+  await check('Approved currency catalogue, $20 entry recharge and $30 commercial licence retain exact author amounts', async () => {
+    const catalog=(await request('/api/wallet/packs')).data;
+    assert.equal(catalog.currencyDefinition.name,'Tinta');assert.equal(catalog.currencyDefinition.icon,'droplet');
+    assert.deepEqual(catalog.packs.map(pack=>[pack.id,pack.tinta*catalog.tintaDisplayScale,pack.cents]),[
+      ['entrada',100,2000],['gota',200,3000],['tintero',400,5500],['biblioteca',1000,12000],['archivo',2000,22000]]);
+    const entry=await buyWallet('entradaReader',key(),0,'entrada');assert.equal(entry.status,201,JSON.stringify(entry.data));
+    await complete('wallet_orders',entry.data.orderId);assert.equal(await balance('entradaReader'),5);
+    const licence=await paidToken('printer');assert.equal(licence.amount_cents,3000);
+    const {rows:[earning]}=await client.query('select * from author_earnings where order_id=$1',[licence.id]);
+    assert.equal(earning.gross_cents,3000);assert.equal(earning.author_cents,1800);assert.equal(earning.platform_cents,1200);
+    assert.equal(licence.purchase_terms.economics.fixedAuthorCents,1800);
+  });
+  await check('A paid small package assigns its full premium but keeps the author royalty at $18', async () => {
+    const stale=await request('/api/wallet/buy',{role:'mecenas',method:'POST',headers:{'Idempotency-Key':key()},body:{packId:'gota',acceptance:{accepted:true,documentHash:tokenAcceptance.documentHash,commerceVersion:'2026-11-03.2',packCents:2999,packUnits:10}}});
+    assert.equal(stale.status,409,'a stale package price cannot open checkout');
+    const purchase = await buyWallet('mecenas', key(), 0, 'gota');
+    assert.equal(purchase.status, 201, JSON.stringify(purchase.data));
+    await complete('wallet_orders', purchase.data.orderId);
+    const paid = await buyToken('mecenas', {kind:'support',payWith:'tinta'});
+    assert.equal(paid.status,201,JSON.stringify(paid.data));
+    const economics = paid.data.purchaseTerms.economics;
+    assert.equal(economics.cashBasisCents,3000); assert.equal(economics.royaltyBaseCents,2000);
+    assert.equal(economics.authorCents,1800); assert.equal(economics.platformCents,1200);
+    assert.equal(await balance('mecenas'),0);
+    const prepared = await prepare(paid.data.copies[0],'mecenas');
+    assert.equal(prepared.data.copy.personalGiftsAllowed,true);
+    const { rows:[earning] } = await client.query('select * from author_earnings where order_id=$1',[paid.data.orderId]);
+    assert.equal(earning.author_cents,1800); assert.equal(earning.platform_cents,1200);
+    const { refundTintaDebit } = await import('../server/economy.ts');
+    const { db } = await import('../server/db.ts');
+    const { rows:[debit] } = await client.query("select id from wallet_ledger where ref_type='token_order' and ref_id=$1",[paid.data.orderId]);
+    for(let i=0;i<2;i++) await db.transaction(tx=>refundTintaDebit(tx,{userId:users.mecenas.id,debitId:debit.id}));
+    assert.equal(await balance('mecenas'),10);
+    const { rows:[backing] } = await client.query("select sum(cash_backing_cents)::int as cents from wallet_ledger where user_id=$1",[users.mecenas.id]);
+    assert.equal(backing.cents,3000);
+  });
+  await check('New Tinta patronage grants configured reward cards while new direct patronage does not', async () => {
+    const card=await request(`/api/books/${book.id}/cards`,{role:'author',method:'POST',body:{name:'Patronage reward',unlock:'support',priceTinta:0,fx:{layers:{back:'https://example.test/reward.png',mid:'',front:''}}}});
+    assert.equal(card.status,201,JSON.stringify(card.data));
+    const direct=await request('/api/cards/collection',{role:'reader'});
+    const tinta=await request('/api/cards/collection',{role:'mecenas'});
+    assert.ok(!direct.data.groups.flatMap(group=>group.cards).some(item=>item.id===card.data.id));
+    assert.ok(tinta.data.groups.flatMap(group=>group.cards).some(item=>item.id===card.data.id));
+  });
   await check('Tinta purchase retries across two servers issue one token and one debit', async () => {
     await paidWallet('buyer');
     const purchaseKey = key();
@@ -364,13 +412,13 @@ try {
     assert.ok(replies.every(r => r.status === 201), JSON.stringify(replies));
     assert.equal(new Set(replies.map(r => r.data.token.id)).size, 1);
     assert.ok(replies.every(r => r.data.copies[0].claimKey === replies[0].data.copies[0].claimKey));
-    assert.equal(await balance('buyer'), 15);
+    assert.equal(await balance('buyer'), 88);
     const mismatch = await buyToken('buyer', { kind: 'support', payWith: 'tinta', purchaseKey });
     assert.equal(mismatch.status, 409);
     assert.equal((await client.query("select count(*) from wallet_ledger where user_id=$1 and reason='spend_token'", [users.buyer.id])).rows[0].count, '1');
     const another = await buyToken('buyer', { payWith: 'tinta' }); assert.equal(another.status, 201);
     assert.notEqual(another.data.token.id, replies[0].data.token.id);
-    assert.equal(await balance('buyer'), 5);
+    assert.equal(await balance('buyer'), 76);
   });
   await check('Checkout survives a lost provider response without a second order or new parameters', async () => {
     const purchaseKey = key(), before = sessions.size;
@@ -394,7 +442,7 @@ try {
     assert.equal((await buyWallet('second', purchaseKey)).data.mode, 'paid');
     const betaKey = key();
     const beta = await Promise.all([buyWallet('beta', betaKey, 2), buyWallet('beta', betaKey, 2)]);
-    assert.ok(beta.every(r => r.status === 201)); assert.equal(await balance('beta'), 25);
+    assert.ok(beta.every(r => r.status === 201)); assert.equal(await balance('beta'), 100);
     const betaTokenKey = key();
     const tokens = await Promise.all([buyToken('beta', { purchaseKey: betaTokenKey, instance: 2 }), buyToken('beta', { purchaseKey: betaTokenKey, instance: 2 })]);
     assert.equal(tokens[0].data.token.id, tokens[1].data.token.id);
@@ -403,48 +451,48 @@ try {
   await check('Refunded spent credit becomes debt and cannot fund another token', async () => {
     const order = await paidWallet('refund');
     assert.equal((await buyToken('refund', { payWith: 'tinta' })).status, 201);
-    const event = refund(order.paymentRef, 4900);
+    const event = refund(order.paymentRef, 22000);
     await Promise.all([webhook(event), webhook(event, 1)]);
-    assert.equal(await balance('refund'), -10);
+    assert.equal(await balance('refund'), -12);
     assert.equal((await buyToken('refund', { payWith: 'tinta' })).status, 402);
     assert.equal((await client.query("select count(*) from wallet_ledger where ref_type='wallet_order_adjustment' and ref_id=$1", [order.id])).rows[0].count, '1');
     const adjustment = (await client.query("select delta,cash_backing_cents from wallet_ledger where ref_type='wallet_order_adjustment' and ref_id=$1", [order.id])).rows[0];
-    assert.deepEqual(adjustment, { delta: -25, cash_backing_cents: -4900 });
-    await paidWallet('refund'); assert.equal(await balance('refund'), 15);
+    assert.deepEqual(adjustment, { delta: -100, cash_backing_cents: -22000 });
+    await paidWallet('refund'); assert.equal(await balance('refund'), 88);
   });
   await check('Cumulative partial refunds ignore older equal-timestamp deliveries', async () => {
     const order = await paidWallet('partial'), charge = id('ch_');
-    await webhook(refund(order.paymentRef, 2450, charge)); assert.equal(await balance('partial'), 12);
-    await webhook(refund(order.paymentRef, 100, charge)); assert.equal(await balance('partial'), 12);
-    await webhook(refund(order.paymentRef, 4900, charge)); assert.equal(await balance('partial'), 0);
-    await webhook(refund(order.paymentRef, 2450, charge)); assert.equal(await balance('partial'), 0);
+    await webhook(refund(order.paymentRef, 11000, charge)); assert.equal(await balance('partial'), 50);
+    await webhook(refund(order.paymentRef, 100, charge)); assert.equal(await balance('partial'), 50);
+    await webhook(refund(order.paymentRef, 22000, charge)); assert.equal(await balance('partial'), 0);
+    await webhook(refund(order.paymentRef, 11000, charge)); assert.equal(await balance('partial'), 0);
   });
   await check('An incident preceding checkout is applied in the same credit transaction', async () => {
     const purchase = await buyWallet('partial'), paymentRef = id('pi_');
-    await webhook(refund(paymentRef, 4900));
+    await webhook(refund(paymentRef, 22000));
     await complete('wallet_orders', purchase.data.orderId, paymentRef);
     assert.equal(await balance('partial'), 0);
     assert.equal((await client.query('select status from wallet_orders where id=$1', [purchase.data.orderId])).rows[0].status, 'refunded');
   });
   await check('Disputes use current provider state; restores are exact and do not erase refunds', async () => {
     const order = await paidWallet('disputed'), disputeId = id('du_');
-    const current = { id: disputeId, payment_intent: order.paymentRef, amount: 4900, currency: 'mxn', status: 'needs_response', reason: 'fraudulent' };
+    const current = { id: disputeId, payment_intent: order.paymentRef, amount: 22000, currency: 'mxn', status: 'needs_response', reason: 'fraudulent' };
     disputes.set(disputeId, current);
     const event = { id: id('evt_'), type: 'charge.dispute.created', created: 1700000000, data: { object: { ...current } } };
     providerFailure = true; await webhook(event, 0, 500);
     assert.equal(await balance('disputed'), 0, 'Provider outage must reserve disputed funds');
     providerFailure = false; await webhook(event); assert.equal(await balance('disputed'), 0);
-    await webhook(refund(order.paymentRef, 2450)); assert.equal(await balance('disputed'), 0);
+    await webhook(refund(order.paymentRef, 11000)); assert.equal(await balance('disputed'), 0);
     current.status = 'won';
     await webhook({ ...event, id: id('evt_'), type: 'charge.dispute.closed' });
-    assert.equal(await balance('disputed'), 12);
+    assert.equal(await balance('disputed'), 50);
     await webhook({ ...event, id: id('evt_') }, 1); // Stale payload, provider still says won.
-    assert.equal(await balance('disputed'), 12);
+    assert.equal(await balance('disputed'), 50);
     const { rows: [incident] } = await client.query("select id from payment_incidents where payment_ref=$1 and kind='refund'", [order.paymentRef]);
     assert.equal((await request(`/api/admin/payment-incidents/${incident.id}/resolve`, {
       role: 'finance', method: 'POST', body: { outcome: 'liability_reconciled', note: 'Fixture: liability documented' },
     })).status, 200);
-    await webhook({ ...event, id: id('evt_') }); assert.equal(await balance('disputed'), 12);
+    await webhook({ ...event, id: id('evt_') }); assert.equal(await balance('disputed'), 50);
   });
   await check('Preparing a selected copy requires its owner and never charges or issues another copy', async () => {
     const order = await paidToken('seller'), copy = order.token.copies[0];
@@ -459,7 +507,7 @@ try {
       assert.equal(response.status, 200);
       assert.equal(response.data.copy.key, copy.claimKey);
       assert.equal(response.data.bookId, book.id);
-      assert.deepEqual(Object.keys(response.data.copy).sort(), ['digitalClaimAllowed', 'folio', 'key', 'licenseKind']);
+      assert.deepEqual(Object.keys(response.data.copy).sort(), ['digitalClaimAllowed', 'folio', 'key', 'licenseKind', 'personalGiftsAllowed']);
       assert.equal(response.data.copy.digitalClaimAllowed, true);
       assert.equal(response.data.book.id, book.id);
       assert.match(response.headers.get('cache-control'), /no-store/);
@@ -509,7 +557,7 @@ try {
   await check('A token incident before delayed checkout cannot produce an activatable licence', async () => {
     const purchase = await buyToken('seller'); assert.equal(purchase.status, 201);
     const paymentRef = id('pi_');
-    await webhook(refund(paymentRef, 2000));
+    await webhook(refund(paymentRef, 3000));
     await complete('token_orders', purchase.data.orderId, paymentRef, 1, 'checkout.session.async_payment_succeeded');
     const { rows: [order] } = await client.query('select * from token_orders where id=$1', [purchase.data.orderId]);
     assert.equal(order.status, 'refunded');
@@ -520,7 +568,7 @@ try {
   });
   await check('Winning a token dispute reactivates the same licence and its QR', async () => {
     const order = await paidToken('seller'), copy = order.token.copies[0], disputeId = id('du_');
-    const current = { id: disputeId, payment_intent: order.paymentRef, amount: 2000, currency: 'mxn', status: 'needs_response', reason: 'fraudulent' };
+    const current = { id: disputeId, payment_intent: order.paymentRef, amount: 3000, currency: 'mxn', status: 'needs_response', reason: 'fraudulent' };
     disputes.set(disputeId, current);
     const event = { id: id('evt_'), type: 'charge.dispute.created', data: { object: { ...current } } };
     await webhook(event); assert.equal((await claim(copy)).status, 409);
@@ -534,14 +582,15 @@ try {
   });
   await check('Historical reconciliation repairs prior incidents and can be replayed without double adjustment', async () => {
     const order = await paidWallet('history');
+    await client.query("insert into wallet_ledger(user_id,currency,delta,cash_backing_cents,funding,reason) values($1,'tinta',0,0,$2,'fixture_legacy_reclassification')", [users.history.id, JSON.stringify({legacyUnits:100,legacyCents:22000,paidUnits:-100,paidCents:-22000})]);
     await client.query(`insert into payment_incidents(provider_event_id,provider_object_id,kind,payment_ref,wallet_order_id,
-      amount_cents,currency,provider_status,resolution) values($1,$2,'refund',$3,$4,4900,'mxn','refunded','liability_reconciled')`,
+      amount_cents,currency,provider_status,resolution) values($1,$2,'refund',$3,$4,22000,'mxn','refunded','liability_reconciled')`,
       [id('evt_'), id('ch_'), order.paymentRef, order.id]);
     // Simulate old code: status says refunded, but spendable ledger stayed paid.
     await client.query("update wallet_orders set status='refunded' where id=$1", [order.id]);
     const historicalToken = await paidToken('history', 'support');
     await client.query(`insert into payment_incidents(provider_event_id,provider_object_id,kind,payment_ref,token_order_id,
-      amount_cents,currency,provider_status,resolution) values($1,$2,'refund',$3,$4,2000,'mxn','refunded','liability_reconciled')`,
+      amount_cents,currency,provider_status,resolution) values($1,$2,'refund',$3,$4,3500,'mxn','refunded','liability_reconciled')`,
       [id('evt_'), id('ch_'), historicalToken.paymentRef, historicalToken.id]);
     await client.query("update token_orders set status='refunded' where id=$1", [historicalToken.id]);
     assert.ok((await request('/api/tokens/unlocked', { role: 'history' })).data.bookIds.includes(book.id));

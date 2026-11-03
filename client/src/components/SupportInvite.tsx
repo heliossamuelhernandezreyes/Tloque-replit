@@ -1,8 +1,9 @@
+import { displayTinta } from "@shared/tinta"
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Heart, Loader2, X, BadgeCheck } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { Heart, X } from "lucide-react"
 import { useSettings } from "@/context/SettingsContext"
 
 interface Props {
@@ -21,7 +22,6 @@ export default function SupportInvite({
   bookId, authorName, moment, accentColor, accentGlow, textColor = "rgba(255,255,255,0.85)",
 }: Props) {
   const { t } = useSettings()
-  const queryClient = useQueryClient()
   const dismissKey = `support_invite_dismissed_${bookId}`
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem(dismissKey) === "1"
@@ -59,67 +59,9 @@ export default function SupportInvite({
   })
   const hasSupport = (data?.tokens || []).some(tk => tk.kind === "support" && tk.licenseStatus !== "revoked")
 
-  const acquire = useMutation({
-    mutationFn: async () => {
-      const payWith = canTinta ? "tinta" : "money"
-      const intent = `purchase:${bookId}:support:${payWith}`
-      let purchaseKey = localStorage.getItem(intent)
-      if (!purchaseKey) {
-        purchaseKey = crypto.randomUUID()
-        localStorage.setItem(intent, purchaseKey)
-      }
-      const res = await fetch("/api/tokens/acquire", {
-        method:      "POST",
-        headers:     { "Content-Type": "application/json", "Idempotency-Key": purchaseKey },
-        credentials: "include",
-        body:        JSON.stringify({ bookId, kind: "support", payWith }),
-      })
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}))
-        if ([400, 402, 409].includes(res.status)) localStorage.removeItem(intent)
-        throw new Error(e.message || "Error")
-      }
-      const result = await res.json()
-      if (result.mode !== "checkout") localStorage.removeItem(intent)
-      return result
-    },
-    onSuccess: (data: any) => {
-      if (data?.mode === "checkout" && data?.url) {
-        window.location.href = data.url
-        return
-      }
-      queryClient.invalidateQueries({ queryKey: [`/api/tokens/mine`, bookId] })
-      queryClient.invalidateQueries({ queryKey: ["/api/wallet"] })
-      fetch("/api/tokens/unlocked", { credentials: "include" })
-        .then(r => r.ok ? r.json() : null)
-        .then(d => d && localStorage.setItem("novareads_unlocked", JSON.stringify((d.bookIds || []).map(String))))
-        .catch(() => {})
-    },
-  })
-
   function dismiss() {
     localStorage.setItem(dismissKey, "1")
     setDismissed(true)
-  }
-
-  // Tras apoyar, mostrar el agradecimiento (aunque estuviera "dismissed")
-  if (acquire.isSuccess) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="rounded-2xl px-4 py-4 my-8 text-center"
-        style={{ background: `${accentGlow}10`, border: `1px solid ${accentColor}35` }}
-      >
-        <BadgeCheck className="w-5 h-5 mx-auto mb-1.5" style={{ color: accentColor }} />
-        <p className="text-sm font-sans font-semibold" style={{ color: textColor }}>
-          {t("supportThanks")}
-        </p>
-        <p className="text-[11px] font-sans mt-1 leading-relaxed" style={{ color: textColor, opacity: 0.6 }}>
-          {t("supportThanksDesc")}
-        </p>
-      </motion.div>
-    )
   }
 
   if (dismissed || hasSupport) return null
@@ -152,26 +94,19 @@ export default function SupportInvite({
             <div className="flex items-center gap-3 mt-3 flex-wrap">
               <motion.button
                 whileTap={{ scale: 0.96 }}
-                disabled={acquire.isPending}
-                onClick={() => acquire.mutate()}
+                onClick={() => { window.location.href = `/book/${bookId}#mecenazgo` }}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-sans font-semibold disabled:opacity-50"
                 style={{ background: `linear-gradient(135deg, ${accentGlow}cc, ${accentColor})`, color: "rgba(0,0,0,0.85)" }}
               >
-                {acquire.isPending
-                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  : <Heart className="w-3.5 h-3.5" />}
-                {t("supportInviteBtn").replace("{x}", authorName)}{canTinta ? ` · ${needTinta} 🪙` : ""}
+                <Heart className="w-3.5 h-3.5" />
+                {t("supportInviteBtn").replace("{x}", authorName)}{canTinta ? ` · ${displayTinta(needTinta)} 💧` : ""}
               </motion.button>
               <button onClick={dismiss} className="text-[11px] font-sans"
                 style={{ color: textColor, opacity: 0.5 }}>
                 {t("notNow")}
               </button>
             </div>
-            {acquire.isError && (
-              <p className="text-[10px] font-sans mt-2" style={{ color: "#e8a0a0" }}>
-                {(acquire.error as Error)?.message}
-              </p>
-            )}
+
           </div>
         </div>
       </motion.div>
