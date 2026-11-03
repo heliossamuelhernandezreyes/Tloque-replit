@@ -164,7 +164,8 @@ try {
   await reader.page.getByRole("button", { name: "Lectura", exact: true }).click()
   await reader.page.getByRole("dialog").getByRole("button", { name: "Grande", exact: true }).click()
   await reader.page.keyboard.press("Escape")
-  assert.equal(await reader.page.getByRole("button", { name: "Lectura", exact: true }).evaluate(el => el === document.activeElement), true)
+  // Radix restores focus in its unmount cleanup, after Escape has been handled.
+  await reader.page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Lectura")
   await reader.page.screenshot({ path: resolve(output, "reader-mobile.png") })
   await reader.context.close()
   })
