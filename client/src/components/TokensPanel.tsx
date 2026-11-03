@@ -86,7 +86,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
     const p = payCfg?.prices?.[kind]
     if (!p) return ""
     const money = payOn ? `$${(p.cents / 100).toFixed(0)}` : ""
-    return ` · ${money}${money && p.tinta ? " · " : ""}${p.tinta ? `${displayTinta(p.tinta)} 🪙` : ""}`
+    return ` · ${money}${money && p.tinta ? " · " : ""}${p.tinta ? `${displayTinta(p.tinta)} 💧` : ""}`
   }
   const tintaOf = (kind: "support" | "sale") => payCfg?.prices?.[kind]?.tinta ?? 10
 
@@ -172,7 +172,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
           style={{ background: `${accentGlow}15`, color: accentColor, border: `1px solid ${accentColor}35` }}
         >
           <Droplets className="w-3 h-3" />
-          {enough ? `${t("payWithTinta")} · ${displayTinta(need)} 🪙` : t("notEnoughTinta").replace("{n}", String(displayTinta(need - myTinta)))}
+          {enough ? `${t("payWithTinta")} · ${displayTinta(need)} 💧` : t("notEnoughTinta").replace("{n}", String(displayTinta(need - myTinta)))}
         </button>
       </div>
     )
@@ -272,7 +272,7 @@ export default function TokensPanel({ bookId, accentColor, accentGlow, isDownloa
         {([moneyQuote, tintaQuote] as const).map((query, index) => <div key={index}>
           {query.isPending && <p>Cargando desglose {index === 0 ? "con tarjeta" : "con Tinta"}…</p>}
           {query.isError && <button className="underline" onClick={() => void query.refetch()}>{query.error.message} · Reintentar desglose</button>}
-          {query.data && <p className="leading-6" data-testid={index === 0 ? "money-breakdown" : "tinta-breakdown"}>{index === 0 ? "Con tarjeta" : "Con Tinta"}: {query.data.economics.provider === "tinta" ? `${query.data.economics.units * (query.data.economics.displayScale ?? 1)} Tintas` : money(query.data.economics.chargedCents)}. Efectivo atribuido {money(query.data.economics.cashBasisCents)}; base de regalía {money(query.data.economics.royaltyBaseCents ?? query.data.economics.cashBasisCents)}; titular {money(query.data.economics.authorCents)}; Tloque {money(query.data.economics.platformCents)}. {query.data.economics.cashBasisCents === 0 ? "Esta operación no genera ingreso liquidable." : ""}</p>}
+          {query.data && <p className="leading-6" data-testid={index === 0 ? "money-breakdown" : "tinta-breakdown"}>{index === 0 ? "Con tarjeta" : "Con Tinta"}: {query.data.economics.provider === "tinta" ? `${query.data.economics.units * (query.data.economics.displayScale ?? 1)} Tintas` : money(query.data.economics.chargedCents)}. Efectivo atribuido {money(query.data.economics.cashBasisCents)}; {query.data.economics.fixedAuthorCents === undefined ? <>base de regalía {money(query.data.economics.royaltyBaseCents ?? query.data.economics.cashBasisCents)}</> : <>regalía comercial de referencia {money(query.data.economics.fixedAuthorCents)}</>}; titular {money(query.data.economics.authorCents)}; Tloque {money(query.data.economics.platformCents)}. {query.data.economics.cashBasisCents === 0 ? "Esta operación no genera ingreso liquidable." : ""}</p>}
         </div>)}
         <label className="flex min-h-11 items-start gap-2"><input type="checkbox" checked={conditionsAccepted} disabled={!legal.data || moneyQuote.isPending || tintaQuote.isPending || (!moneyQuote.data && !tintaQuote.data)} onChange={event => { setAcceptedHash(event.target.checked ? legal.data!.hash : ""); setAcceptedQuoteKey(event.target.checked ? quoteKey : "") }} />Leí y acepto las condiciones y el desglose de esta compra.</label>
       </div>}

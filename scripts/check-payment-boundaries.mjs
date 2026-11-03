@@ -113,7 +113,7 @@ async function complete(table, orderId, paymentRef = id('pi_'), instance = 0, ev
 }
 const refund = (paymentRef, amount, objectId = id('ch_'), created = 1700000000) => ({
   id: id('evt_'), type: 'charge.refunded', created,
-  data: { object: { id: objectId, payment_intent: paymentRef, amount_refunded: amount, refunded: amount >= 20000, currency: 'mxn' } },
+  data: { object: { id: objectId, payment_intent: paymentRef, amount_refunded: amount, refunded: amount >= 22000, currency: 'mxn' } },
 });
 async function balance(role) { return (await request('/api/wallet', { role })).data.tinta; }
 async function copies(role, tokenId) {
@@ -168,7 +168,7 @@ async function claim(copy, role = 'reader', instance = 0) {
 try {
   assert.equal(Number((await client.query('select count(*) from users')).rows[0].count), 0);
   await client.query('create table if not exists user_sessions(sid varchar primary key, sess json not null, expire timestamp(6) not null)');
-  for (const role of ['buyer', 'second', 'refund', 'partial', 'disputed', 'seller', 'supporter', 'reader', 'author', 'finance', 'beta', 'history', 'collector', 'payoutAuthor', 'mecenas']) {
+  for (const role of ['buyer', 'second', 'refund', 'partial', 'disputed', 'seller', 'supporter', 'reader', 'author', 'finance', 'beta', 'history', 'collector', 'payoutAuthor', 'mecenas', 'printer', 'entradaReader']) {
     const { rows: [user] } = await client.query('insert into users(google_id,email,name) values($1,$2,$3) returning id,email',
       ['payments-' + role, role + '@payments.example.test', 'Payments ' + role]);
     users[role] = user;
@@ -361,8 +361,20 @@ try {
     assert.deepEqual(catalog.data.cards, []);
   });
 
+  await check('Approved currency catalogue, $20 entry recharge and $30 commercial licence retain exact author amounts', async () => {
+    const catalog=(await request('/api/wallet/packs')).data;
+    assert.equal(catalog.currencyDefinition.name,'Tinta');assert.equal(catalog.currencyDefinition.icon,'droplet');
+    assert.deepEqual(catalog.packs.map(pack=>[pack.id,pack.tinta*catalog.tintaDisplayScale,pack.cents]),[
+      ['entrada',100,2000],['gota',200,3000],['tintero',400,5500],['biblioteca',1000,12000],['archivo',2000,22000]]);
+    const entry=await buyWallet('entradaReader',key(),0,'entrada');assert.equal(entry.status,201,JSON.stringify(entry.data));
+    await complete('wallet_orders',entry.data.orderId);assert.equal(await balance('entradaReader'),5);
+    const licence=await paidToken('printer');assert.equal(licence.amount_cents,3000);
+    const {rows:[earning]}=await client.query('select * from author_earnings where order_id=$1',[licence.id]);
+    assert.equal(earning.gross_cents,3000);assert.equal(earning.author_cents,1800);assert.equal(earning.platform_cents,1200);
+    assert.equal(licence.purchase_terms.economics.fixedAuthorCents,1800);
+  });
   await check('A paid small package assigns its full premium but keeps the author royalty at $18', async () => {
-    const stale=await request('/api/wallet/buy',{role:'mecenas',method:'POST',headers:{'Idempotency-Key':key()},body:{packId:'gota',acceptance:{accepted:true,documentHash:tokenAcceptance.documentHash,commerceVersion:'2026-11-03.1',packCents:2999,packUnits:10}}});
+    const stale=await request('/api/wallet/buy',{role:'mecenas',method:'POST',headers:{'Idempotency-Key':key()},body:{packId:'gota',acceptance:{accepted:true,documentHash:tokenAcceptance.documentHash,commerceVersion:'2026-11-03.2',packCents:2999,packUnits:10}}});
     assert.equal(stale.status,409,'a stale package price cannot open checkout');
     const purchase = await buyWallet('mecenas', key(), 0, 'gota');
     assert.equal(purchase.status, 201, JSON.stringify(purchase.data));
@@ -439,38 +451,38 @@ try {
   await check('Refunded spent credit becomes debt and cannot fund another token', async () => {
     const order = await paidWallet('refund');
     assert.equal((await buyToken('refund', { payWith: 'tinta' })).status, 201);
-    const event = refund(order.paymentRef, 20000);
+    const event = refund(order.paymentRef, 22000);
     await Promise.all([webhook(event), webhook(event, 1)]);
     assert.equal(await balance('refund'), -12);
     assert.equal((await buyToken('refund', { payWith: 'tinta' })).status, 402);
     assert.equal((await client.query("select count(*) from wallet_ledger where ref_type='wallet_order_adjustment' and ref_id=$1", [order.id])).rows[0].count, '1');
     const adjustment = (await client.query("select delta,cash_backing_cents from wallet_ledger where ref_type='wallet_order_adjustment' and ref_id=$1", [order.id])).rows[0];
-    assert.deepEqual(adjustment, { delta: -100, cash_backing_cents: -20000 });
+    assert.deepEqual(adjustment, { delta: -100, cash_backing_cents: -22000 });
     await paidWallet('refund'); assert.equal(await balance('refund'), 88);
   });
   await check('Cumulative partial refunds ignore older equal-timestamp deliveries', async () => {
     const order = await paidWallet('partial'), charge = id('ch_');
-    await webhook(refund(order.paymentRef, 10000, charge)); assert.equal(await balance('partial'), 50);
+    await webhook(refund(order.paymentRef, 11000, charge)); assert.equal(await balance('partial'), 50);
     await webhook(refund(order.paymentRef, 100, charge)); assert.equal(await balance('partial'), 50);
-    await webhook(refund(order.paymentRef, 20000, charge)); assert.equal(await balance('partial'), 0);
-    await webhook(refund(order.paymentRef, 10000, charge)); assert.equal(await balance('partial'), 0);
+    await webhook(refund(order.paymentRef, 22000, charge)); assert.equal(await balance('partial'), 0);
+    await webhook(refund(order.paymentRef, 11000, charge)); assert.equal(await balance('partial'), 0);
   });
   await check('An incident preceding checkout is applied in the same credit transaction', async () => {
     const purchase = await buyWallet('partial'), paymentRef = id('pi_');
-    await webhook(refund(paymentRef, 20000));
+    await webhook(refund(paymentRef, 22000));
     await complete('wallet_orders', purchase.data.orderId, paymentRef);
     assert.equal(await balance('partial'), 0);
     assert.equal((await client.query('select status from wallet_orders where id=$1', [purchase.data.orderId])).rows[0].status, 'refunded');
   });
   await check('Disputes use current provider state; restores are exact and do not erase refunds', async () => {
     const order = await paidWallet('disputed'), disputeId = id('du_');
-    const current = { id: disputeId, payment_intent: order.paymentRef, amount: 20000, currency: 'mxn', status: 'needs_response', reason: 'fraudulent' };
+    const current = { id: disputeId, payment_intent: order.paymentRef, amount: 22000, currency: 'mxn', status: 'needs_response', reason: 'fraudulent' };
     disputes.set(disputeId, current);
     const event = { id: id('evt_'), type: 'charge.dispute.created', created: 1700000000, data: { object: { ...current } } };
     providerFailure = true; await webhook(event, 0, 500);
     assert.equal(await balance('disputed'), 0, 'Provider outage must reserve disputed funds');
     providerFailure = false; await webhook(event); assert.equal(await balance('disputed'), 0);
-    await webhook(refund(order.paymentRef, 10000)); assert.equal(await balance('disputed'), 0);
+    await webhook(refund(order.paymentRef, 11000)); assert.equal(await balance('disputed'), 0);
     current.status = 'won';
     await webhook({ ...event, id: id('evt_'), type: 'charge.dispute.closed' });
     assert.equal(await balance('disputed'), 50);
@@ -545,7 +557,7 @@ try {
   await check('A token incident before delayed checkout cannot produce an activatable licence', async () => {
     const purchase = await buyToken('seller'); assert.equal(purchase.status, 201);
     const paymentRef = id('pi_');
-    await webhook(refund(paymentRef, 2400));
+    await webhook(refund(paymentRef, 3000));
     await complete('token_orders', purchase.data.orderId, paymentRef, 1, 'checkout.session.async_payment_succeeded');
     const { rows: [order] } = await client.query('select * from token_orders where id=$1', [purchase.data.orderId]);
     assert.equal(order.status, 'refunded');
@@ -556,7 +568,7 @@ try {
   });
   await check('Winning a token dispute reactivates the same licence and its QR', async () => {
     const order = await paidToken('seller'), copy = order.token.copies[0], disputeId = id('du_');
-    const current = { id: disputeId, payment_intent: order.paymentRef, amount: 2400, currency: 'mxn', status: 'needs_response', reason: 'fraudulent' };
+    const current = { id: disputeId, payment_intent: order.paymentRef, amount: 3000, currency: 'mxn', status: 'needs_response', reason: 'fraudulent' };
     disputes.set(disputeId, current);
     const event = { id: id('evt_'), type: 'charge.dispute.created', data: { object: { ...current } } };
     await webhook(event); assert.equal((await claim(copy)).status, 409);
@@ -570,9 +582,9 @@ try {
   });
   await check('Historical reconciliation repairs prior incidents and can be replayed without double adjustment', async () => {
     const order = await paidWallet('history');
-    await client.query("insert into wallet_ledger(user_id,currency,delta,cash_backing_cents,funding,reason) values($1,'tinta',0,0,$2,'fixture_legacy_reclassification')", [users.history.id, JSON.stringify({legacyUnits:100,legacyCents:20000,paidUnits:-100,paidCents:-20000})]);
+    await client.query("insert into wallet_ledger(user_id,currency,delta,cash_backing_cents,funding,reason) values($1,'tinta',0,0,$2,'fixture_legacy_reclassification')", [users.history.id, JSON.stringify({legacyUnits:100,legacyCents:22000,paidUnits:-100,paidCents:-22000})]);
     await client.query(`insert into payment_incidents(provider_event_id,provider_object_id,kind,payment_ref,wallet_order_id,
-      amount_cents,currency,provider_status,resolution) values($1,$2,'refund',$3,$4,20000,'mxn','refunded','liability_reconciled')`,
+      amount_cents,currency,provider_status,resolution) values($1,$2,'refund',$3,$4,22000,'mxn','refunded','liability_reconciled')`,
       [id('evt_'), id('ch_'), order.paymentRef, order.id]);
     // Simulate old code: status says refunded, but spendable ledger stayed paid.
     await client.query("update wallet_orders set status='refunded' where id=$1", [order.id]);

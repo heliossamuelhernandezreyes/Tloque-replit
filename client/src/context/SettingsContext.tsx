@@ -74,11 +74,11 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "Tarjetas", collectionTitle: "Mi colección", collectionTotal: "{n} en total", collectionEmptyTitle: "Tu colección te espera", collectionEmptyBody: "Apoya obras o consigue tarjetas con Tinta para empezar a coleccionar los personajes de tus historias favoritas.", cardZoomHint: "Inclina el teléfono para verla cobrar vida",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "Tarjetas de la obra", cardsOwnedCount: "{a}/{b} en tu colección", cardBySupport: "Al apoyar con Tinta", cardBuyFor: "Obtener · {n} 🪙", cardGotIt: "✦ Tarjeta añadida a tu colección",
+    cardsTitle: "Tarjetas de la obra", cardsOwnedCount: "{a}/{b} en tu colección", cardBySupport: "Al apoyar con Tinta", cardBuyFor: "Obtener · {n} 💧", cardGotIt: "✦ Tarjeta añadida a tu colección",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "Desbloqueaste el vestido premium de esta obra.",
     // ── i18n: monedero ──
-    walletTitle: "Monedero", tintaName: "Tinta", papelName: "Papel", getTinta: "Conseguir Tinta", payWithCard: "Con tarjeta", payWithTinta: "Con Tinta", notEnoughTinta: "Te faltan {n} 🪙", tintaCredited: "✦ Tinta acreditada", packBonus: "+{n} de bono", papelNote: "Papel llegará con el Oráculo y los audiolibros. Ya vive aquí, esperando.", walletDesc: "Compra Tinta una vez y apoya historias con un toque.",
+    walletTitle: "Monedero", tintaName: "Tinta", papelName: "Papel", getTinta: "Conseguir Tinta", payWithCard: "Con tarjeta", payWithTinta: "Con Tinta", notEnoughTinta: "Te faltan {n} 💧", tintaCredited: "✦ Tinta acreditada", packBonus: "+{n} de bono", papelNote: "Papel llegará con el Oráculo y los audiolibros. Ya vive aquí, esperando.", walletDesc: "Compra Tinta una vez y apoya historias con un toque.",
     halfLetterMark: "½ carta",
     // ── i18n: kit de portada ──
     pdfFormatCover: "Portada · opalina recortable", cutWord: "cortar", foldWord: "doblar", glueHere: "pegar aquí", pdfInnerQrHint: "Escanéalo para reclamar sin teclear la clave.", synopsisFallback: "Una historia te espera entre estas páginas.",
@@ -124,11 +124,11 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "Cards", collectionTitle: "My collection", collectionTotal: "{n} total", collectionEmptyTitle: "Your collection awaits", collectionEmptyBody: "Support works or get cards with Ink to start collecting the characters from your favorite stories.", cardZoomHint: "Tilt your phone to see it come alive",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "Story cards", cardsOwnedCount: "{a}/{b} in your collection", cardBySupport: "By supporting with Ink", cardBuyFor: "Get · {n} 🪙", cardGotIt: "✦ Card added to your collection",
+    cardsTitle: "Story cards", cardsOwnedCount: "{a}/{b} in your collection", cardBySupport: "By supporting with Ink", cardBuyFor: "Get · {n} 💧", cardGotIt: "✦ Card added to your collection",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "You unlocked this work's premium edition.",
     // ── i18n: monedero ──
-    walletTitle: "Wallet", tintaName: "Ink", papelName: "Paper", getTinta: "Get Ink", payWithCard: "With card", payWithTinta: "With Ink", notEnoughTinta: "You need {n} more 🪙", tintaCredited: "✦ Ink credited", packBonus: "+{n} bonus", papelNote: "Paper will arrive with the Oracle and audiobooks. It already lives here, waiting.", walletDesc: "Buy Ink once and support stories with one tap.",
+    walletTitle: "Wallet", tintaName: "Ink", papelName: "Paper", getTinta: "Get Ink", payWithCard: "With card", payWithTinta: "With Ink", notEnoughTinta: "You need {n} more 💧", tintaCredited: "✦ Ink credited", packBonus: "+{n} bonus", papelNote: "Paper will arrive with the Oracle and audiobooks. It already lives here, waiting.", walletDesc: "Buy Ink once and support stories with one tap.",
     halfLetterMark: "½ letter",
     // ── i18n: kit de portada ──
     pdfFormatCover: "Cover · cut-out cardstock", cutWord: "cut", foldWord: "fold", glueHere: "glue here", pdfInnerQrHint: "Scan to claim without typing the key.", synopsisFallback: "A story awaits you within these pages.",
@@ -163,11 +163,11 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "Cartes", collectionTitle: "Ma collection", collectionTotal: "{n} au total", collectionEmptyTitle: "Votre collection vous attend", collectionEmptyBody: "Soutenez des œuvres ou obtenez des cartes avec de l'Encre pour collectionner les personnages de vos histoires préférées.", cardZoomHint: "Inclinez votre téléphone pour la voir s'animer",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "Cartes de l'œuvre", cardsOwnedCount: "{a}/{b} dans votre collection", cardBySupport: "En soutenant avec de l’Encre", cardBuyFor: "Obtenir · {n} 🪙", cardGotIt: "✦ Carte ajoutée à votre collection",
+    cardsTitle: "Cartes de l'œuvre", cardsOwnedCount: "{a}/{b} dans votre collection", cardBySupport: "En soutenant avec de l’Encre", cardBuyFor: "Obtenir · {n} 💧", cardGotIt: "✦ Carte ajoutée à votre collection",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "Vous avez débloqué l'édition premium de cette œuvre.",
     // ── i18n: monedero ──
-    walletTitle: "Portefeuille", tintaName: "Encre", papelName: "Papier", getTinta: "Obtenir de l'Encre", payWithCard: "Par carte", payWithTinta: "Avec Encre", notEnoughTinta: "Il vous manque {n} 🪙", tintaCredited: "✦ Encre créditée", packBonus: "+{n} en bonus", papelNote: "Papier arrivera avec l'Oracle et les livres audio. Il vit déjà ici, en attente.", walletDesc: "Achetez de l'Encre une fois et soutenez des histoires d'un geste.",
+    walletTitle: "Portefeuille", tintaName: "Encre", papelName: "Papier", getTinta: "Obtenir de l'Encre", payWithCard: "Par carte", payWithTinta: "Avec Encre", notEnoughTinta: "Il vous manque {n} 💧", tintaCredited: "✦ Encre créditée", packBonus: "+{n} en bonus", papelNote: "Papier arrivera avec l'Oracle et les livres audio. Il vit déjà ici, en attente.", walletDesc: "Achetez de l'Encre une fois et soutenez des histoires d'un geste.",
     halfLetterMark: "½ lettre",
     // ── i18n: kit de portada ──
     pdfFormatCover: "Couverture · bristol à découper", cutWord: "couper", foldWord: "plier", glueHere: "coller ici", pdfInnerQrHint: "Scannez pour réclamer sans saisir la clé.", synopsisFallback: "Une histoire vous attend entre ces pages.",
@@ -200,11 +200,11 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "Karten", collectionTitle: "Meine Sammlung", collectionTotal: "{n} insgesamt", collectionEmptyTitle: "Deine Sammlung wartet", collectionEmptyBody: "Unterstütze Werke oder hole Karten mit Tinte, um die Figuren deiner Lieblingsgeschichten zu sammeln.", cardZoomHint: "Neige dein Handy, um sie lebendig zu sehen",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "Karten des Werks", cardsOwnedCount: "{a}/{b} in deiner Sammlung", cardBySupport: "Mit Tinte unterstützen", cardBuyFor: "Holen · {n} 🪙", cardGotIt: "✦ Karte zu deiner Sammlung hinzugefügt",
+    cardsTitle: "Karten des Werks", cardsOwnedCount: "{a}/{b} in deiner Sammlung", cardBySupport: "Mit Tinte unterstützen", cardBuyFor: "Holen · {n} 💧", cardGotIt: "✦ Karte zu deiner Sammlung hinzugefügt",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "Du hast die Premium-Ausgabe dieses Werks freigeschaltet.",
     // ── i18n: monedero ──
-    walletTitle: "Geldbörse", tintaName: "Tinte", papelName: "Papier", getTinta: "Tinte holen", payWithCard: "Mit Karte", payWithTinta: "Mit Tinte", notEnoughTinta: "Dir fehlen {n} 🪙", tintaCredited: "✦ Tinte gutgeschrieben", packBonus: "+{n} Bonus", papelNote: "Papier kommt mit dem Orakel und den Hörbüchern. Es wohnt schon hier und wartet.", walletDesc: "Einmal Tinte kaufen, Geschichten mit einem Tipp unterstützen.",
+    walletTitle: "Geldbörse", tintaName: "Tinte", papelName: "Papier", getTinta: "Tinte holen", payWithCard: "Mit Karte", payWithTinta: "Mit Tinte", notEnoughTinta: "Dir fehlen {n} 💧", tintaCredited: "✦ Tinte gutgeschrieben", packBonus: "+{n} Bonus", papelNote: "Papier kommt mit dem Orakel und den Hörbüchern. Es wohnt schon hier und wartet.", walletDesc: "Einmal Tinte kaufen, Geschichten mit einem Tipp unterstützen.",
     halfLetterMark: "½ Letter",
     // ── i18n: kit de portada ──
     pdfFormatCover: "Umschlag · Karton zum Ausschneiden", cutWord: "schneiden", foldWord: "falten", glueHere: "hier kleben", pdfInnerQrHint: "Scannen und ohne Eintippen beanspruchen.", synopsisFallback: "Eine Geschichte erwartet dich auf diesen Seiten.",
@@ -237,11 +237,11 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "Carte", collectionTitle: "La mia collezione", collectionTotal: "{n} in totale", collectionEmptyTitle: "La tua collezione ti aspetta", collectionEmptyBody: "Sostieni opere o ottieni carte con Inchiostro per collezionare i personaggi delle tue storie preferite.", cardZoomHint: "Inclina il telefono per vederla prendere vita",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "Carte dell'opera", cardsOwnedCount: "{a}/{b} nella tua collezione", cardBySupport: "Con sostegno in Inchiostro", cardBuyFor: "Ottieni · {n} 🪙", cardGotIt: "✦ Carta aggiunta alla tua collezione",
+    cardsTitle: "Carte dell'opera", cardsOwnedCount: "{a}/{b} nella tua collezione", cardBySupport: "Con sostegno in Inchiostro", cardBuyFor: "Ottieni · {n} 💧", cardGotIt: "✦ Carta aggiunta alla tua collezione",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "Hai sbloccato l'edizione premium di quest'opera.",
     // ── i18n: monedero ──
-    walletTitle: "Portafoglio", tintaName: "Inchiostro", papelName: "Carta", getTinta: "Ottieni Inchiostro", payWithCard: "Con carta", payWithTinta: "Con Inchiostro", notEnoughTinta: "Ti mancano {n} 🪙", tintaCredited: "✦ Inchiostro accreditato", packBonus: "+{n} di bonus", papelNote: "Carta arriverà con l'Oracolo e gli audiolibri. Vive già qui, in attesa.", walletDesc: "Compra Inchiostro una volta e sostieni storie con un tocco.",
+    walletTitle: "Portafoglio", tintaName: "Inchiostro", papelName: "Carta", getTinta: "Ottieni Inchiostro", payWithCard: "Con carta", payWithTinta: "Con Inchiostro", notEnoughTinta: "Ti mancano {n} 💧", tintaCredited: "✦ Inchiostro accreditato", packBonus: "+{n} di bonus", papelNote: "Carta arriverà con l'Oracolo e gli audiolibri. Vive già qui, in attesa.", walletDesc: "Compra Inchiostro una volta e sostieni storie con un tocco.",
     halfLetterMark: "½ lettera",
     // ── i18n: kit de portada ──
     pdfFormatCover: "Copertina · cartoncino ritagliabile", cutWord: "tagliare", foldWord: "piegare", glueHere: "incollare qui", pdfInnerQrHint: "Scansiona per reclamare senza digitare la chiave.", synopsisFallback: "Una storia ti aspetta tra queste pagine.",
@@ -274,11 +274,11 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "Cartas", collectionTitle: "Minha coleção", collectionTotal: "{n} no total", collectionEmptyTitle: "Sua coleção espera", collectionEmptyBody: "Apoie obras ou obtenha cartas com Tinta para colecionar os personagens das suas histórias favoritas.", cardZoomHint: "Incline o celular para vê-la ganhar vida",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "Cartas da obra", cardsOwnedCount: "{a}/{b} na sua coleção", cardBySupport: "Ao apoiar com Tinta", cardBuyFor: "Obter · {n} 🪙", cardGotIt: "✦ Carta adicionada à sua coleção",
+    cardsTitle: "Cartas da obra", cardsOwnedCount: "{a}/{b} na sua coleção", cardBySupport: "Ao apoiar com Tinta", cardBuyFor: "Obter · {n} 💧", cardGotIt: "✦ Carta adicionada à sua coleção",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "Você desbloqueou a edição premium desta obra.",
     // ── i18n: monedero ──
-    walletTitle: "Carteira", tintaName: "Tinta", papelName: "Papel", getTinta: "Obter Tinta", payWithCard: "Com cartão", payWithTinta: "Com Tinta", notEnoughTinta: "Faltam {n} 🪙", tintaCredited: "✦ Tinta creditada", packBonus: "+{n} de bônus", papelNote: "Papel chegará com o Oráculo e os audiolivros. Já vive aqui, esperando.", walletDesc: "Compre Tinta uma vez e apoie histórias com um toque.",
+    walletTitle: "Carteira", tintaName: "Tinta", papelName: "Papel", getTinta: "Obter Tinta", payWithCard: "Com cartão", payWithTinta: "Com Tinta", notEnoughTinta: "Faltam {n} 💧", tintaCredited: "✦ Tinta creditada", packBonus: "+{n} de bônus", papelNote: "Papel chegará com o Oráculo e os audiolivros. Já vive aqui, esperando.", walletDesc: "Compre Tinta uma vez e apoie histórias com um toque.",
     halfLetterMark: "½ carta",
     // ── i18n: kit de portada ──
     pdfFormatCover: "Capa · cartolina recortável", cutWord: "cortar", foldWord: "dobrar", glueHere: "colar aqui", pdfInnerQrHint: "Escaneie para reivindicar sem digitar a chave.", synopsisFallback: "Uma história espera por você nestas páginas.",
@@ -311,11 +311,11 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "カード", collectionTitle: "マイコレクション", collectionTotal: "合計 {n}", collectionEmptyTitle: "コレクションを待っています", collectionEmptyBody: "作品を応援したりインクでカードを入手して、お気に入りの物語のキャラクターを集めましょう。", cardZoomHint: "スマホを傾けて動きを見よう",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "作品カード", cardsOwnedCount: "コレクション {a}/{b}", cardBySupport: "応援で入手", cardBuyFor: "入手 · {n} 🪙", cardGotIt: "✦ カードをコレクションに追加しました",
+    cardsTitle: "作品カード", cardsOwnedCount: "コレクション {a}/{b}", cardBySupport: "応援で入手", cardBuyFor: "入手 · {n} 💧", cardGotIt: "✦ カードをコレクションに追加しました",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "この作品のプレミアム版をアンロックしました。",
     // ── i18n: monedero ──
-    walletTitle: "ウォレット", tintaName: "インク", papelName: "紙", getTinta: "インクを入手", payWithCard: "カードで", payWithTinta: "インクで", notEnoughTinta: "あと{n} 🪙 必要です", tintaCredited: "✦ インクを追加しました", packBonus: "+{n} ボーナス", papelNote: "紙はオラクルとオーディオブックとともに登場します。すでにここで待っています。", walletDesc: "一度インクを買えば、ワンタップで物語を応援できます。",
+    walletTitle: "ウォレット", tintaName: "インク", papelName: "紙", getTinta: "インクを入手", payWithCard: "カードで", payWithTinta: "インクで", notEnoughTinta: "あと{n} 💧 必要です", tintaCredited: "✦ インクを追加しました", packBonus: "+{n} ボーナス", papelNote: "紙はオラクルとオーディオブックとともに登場します。すでにここで待っています。", walletDesc: "一度インクを買えば、ワンタップで物語を応援できます。",
     halfLetterMark: "レター½",
     // ── i18n: kit de portada ──
     pdfFormatCover: "表紙 · 厚紙カット用", cutWord: "切る", foldWord: "折る", glueHere: "ここに貼る", pdfInnerQrHint: "スキャンすればキー入力なしで登録できます。", synopsisFallback: "この頁のあいだで、物語があなたを待っています。",
@@ -348,11 +348,11 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "卡牌", collectionTitle: "我的收藏", collectionTotal: "共 {n} 张", collectionEmptyTitle: "你的收藏在等待", collectionEmptyBody: "支持作品或用墨水获取卡牌，开始收集你最爱故事中的角色。", cardZoomHint: "倾斜手机看它动起来",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "作品卡牌", cardsOwnedCount: "收藏 {a}/{b}", cardBySupport: "支持即得", cardBuyFor: "获取 · {n} 🪙", cardGotIt: "✦ 卡牌已加入你的收藏",
+    cardsTitle: "作品卡牌", cardsOwnedCount: "收藏 {a}/{b}", cardBySupport: "支持即得", cardBuyFor: "获取 · {n} 💧", cardGotIt: "✦ 卡牌已加入你的收藏",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "你已解锁此作品的高级版。",
     // ── i18n: monedero ──
-    walletTitle: "钱包", tintaName: "墨水", papelName: "纸", getTinta: "获取墨水", payWithCard: "用银行卡", payWithTinta: "用墨水", notEnoughTinta: "还差 {n} 🪙", tintaCredited: "✦ 墨水已到账", packBonus: "+{n} 赠送", papelNote: "纸将随神谕与有声书一同到来。它已在此静候。", walletDesc: "一次购买墨水，一键支持故事。",
+    walletTitle: "钱包", tintaName: "墨水", papelName: "纸", getTinta: "获取墨水", payWithCard: "用银行卡", payWithTinta: "用墨水", notEnoughTinta: "还差 {n} 💧", tintaCredited: "✦ 墨水已到账", packBonus: "+{n} 赠送", papelNote: "纸将随神谕与有声书一同到来。它已在此静候。", walletDesc: "一次购买墨水，一键支持故事。",
     halfLetterMark: "信纸½",
     // ── i18n: kit de portada ──
     pdfFormatCover: "封面 · 卡纸裁切版", cutWord: "裁切", foldWord: "对折", glueHere: "在此粘贴", pdfInnerQrHint: "扫码即可认领，无需输入密钥。", synopsisFallback: "一段故事在书页间等你。",
@@ -385,11 +385,11 @@ export const UI_STRINGS: Record<AppLanguage, Record<string, string>> = {
     // ── i18n: colección de tarjetas ──
     cardsTab: "بطاقات", collectionTitle: "مجموعتي", collectionTotal: "{n} إجمالاً", collectionEmptyTitle: "مجموعتك بانتظارك", collectionEmptyBody: "ادعم الأعمال أو احصل على بطاقات بالحبر لتبدأ بجمع شخصيات قصصك المفضلة.", cardZoomHint: "أمِل هاتفك لتراها تنبض بالحياة",
     // ── i18n: tarjetas coleccionables ──
-    cardsTitle: "بطاقات العمل", cardsOwnedCount: "{a}/{b} في مجموعتك", cardBySupport: "بالدعم بالحبر", cardBuyFor: "احصل · {n} 🪙", cardGotIt: "✦ أُضيفت البطاقة إلى مجموعتك",
+    cardsTitle: "بطاقات العمل", cardsOwnedCount: "{a}/{b} في مجموعتك", cardBySupport: "بالدعم بالحبر", cardBuyFor: "احصل · {n} 💧", cardGotIt: "✦ أُضيفت البطاقة إلى مجموعتك",
     // ── i18n: vestido premium ──
     premiumBadge: "✦ Premium", premiumUnlockedNote: "لقد فتحت النسخة المميزة من هذا العمل.",
     // ── i18n: monedero ──
-    walletTitle: "المحفظة", tintaName: "حبر", papelName: "ورق", getTinta: "احصل على حبر", payWithCard: "بالبطاقة", payWithTinta: "بالحبر", notEnoughTinta: "تنقصك {n} 🪙", tintaCredited: "✦ تمت إضافة الحبر", packBonus: "+{n} مكافأة", papelNote: "سيأتي الورق مع العرّاف والكتب الصوتية. إنه يعيش هنا بالفعل، منتظرًا.", walletDesc: "اشترِ الحبر مرة واحدة وادعم القصص بلمسة.",
+    walletTitle: "المحفظة", tintaName: "حبر", papelName: "ورق", getTinta: "احصل على حبر", payWithCard: "بالبطاقة", payWithTinta: "بالحبر", notEnoughTinta: "تنقصك {n} 💧", tintaCredited: "✦ تمت إضافة الحبر", packBonus: "+{n} مكافأة", papelNote: "سيأتي الورق مع العرّاف والكتب الصوتية. إنه يعيش هنا بالفعل، منتظرًا.", walletDesc: "اشترِ الحبر مرة واحدة وادعم القصص بلمسة.",
     halfLetterMark: "½ رسالة",
     // ── i18n: kit de portada ──
     pdfFormatCover: "غلاف · ورق مقوى للقص", cutWord: "قص", foldWord: "طي", glueHere: "الصق هنا", pdfInnerQrHint: "امسح للمطالبة دون كتابة المفتاح.", synopsisFallback: "قصة تنتظرك بين هذه الصفحات.",

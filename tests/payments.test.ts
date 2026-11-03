@@ -18,17 +18,18 @@ test("preserva precios y reparto económico actuales", () => {
     tinta: 10, cents: 3_500, currency: "mxn", isStory: false,
   })
   assert.equal(priceFor("sale", { chapters: [{}] }).tinta, 12)
+  assert.equal(priceFor("sale", { type:"book" }).cents, 3000)
   assert.deepEqual(splitEarnings(1_001, AUTHOR_SHARE_BOOK), { authorCents: 901, platformCents: 100 })
   assert.deepEqual(splitEarnings(1_001, AUTHOR_SHARE_STORY), { authorCents: 501, platformCents: 500 })
 })
 
 test("los paquetes de Tinta son transparentes y el valor mejora por volumen", () => {
   assert.deepEqual(TINTA_PACKS.map(pack => [pack.id, pack.tinta, pack.cents]), [
-    ["gota", 10, 3_000], ["tintero", 20, 5_500], ["biblioteca", 50, 12_000], ["archivo", 100, 20_000],
+    ["entrada", 5, 2_000], ["gota", 10, 3_000], ["tintero", 20, 5_500], ["biblioteca", 50, 12_000], ["archivo", 100, 22_000],
   ])
   assert.equal(TINTA_PACKS.filter(pack => pack.recommended).length, 1)
   const unitPrices = TINTA_PACKS.map(pack => pack.cents / pack.tinta)
-  assert.ok(unitPrices[0] > unitPrices[1] && unitPrices[1] > unitPrices[2] && unitPrices[2] > unitPrices[3])
+  assert.ok(unitPrices.slice(1).every((price,index) => price < unitPrices[index]))
 })
 
 test("el modo beta exige autorización explícita en cualquier entorno", () => {

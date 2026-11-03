@@ -1,6 +1,6 @@
 # Acuerdo de edición y cálculo económico histórico
 
-> Para operaciones nuevas rige [PATRONAGE-POLICY.md](PATRONAGE-POLICY.md), versión 2026-11-03.1. Este archivo conserva la explicación del circuito anterior, sus unidades originales y los comprobantes históricos; no recomienda regalar Tinta ni aplica su reparto al nuevo pago directo.
+> Para operaciones nuevas rige [PATRONAGE-POLICY.md](PATRONAGE-POLICY.md), versión 2026-11-03.2. Este archivo conserva la explicación del circuito anterior, sus unidades originales y los comprobantes históricos; no recomienda regalar Tinta ni aplica su reparto al nuevo pago directo.
 
 Implementación histórica 2026-11-01.1. El texto operativo se genera en
 `shared/commerce.ts`; el servidor lo identifica por SHA-256. Este documento

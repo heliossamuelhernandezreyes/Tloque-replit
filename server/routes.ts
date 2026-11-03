@@ -25,7 +25,7 @@ import { RARITIES, TICKET, PITY, pityCountdown, poolStatus } from "@shared/gacha
 import { PRICES, TINTA_PACKS, TINTA_CENTS, AUTHOR_SHARE_STORY, AUTHOR_SHARE_BOOK, priceFor, isStory, stripeEnabled, betaPaymentsEnabled, createCheckoutSession, economySnapshotForBook, refundStripePayment, verifyStripeWebhook, splitEarnings } from "./payments";
 import { debitTinta } from "./economy";
 import { COMMERCE_VERSION } from "@shared/commerce";
-import { displayTinta, PAID_TINTA_POLICY, paidFunding } from "@shared/tinta";
+import { displayTinta, TINTA_CURRENCY, PAID_TINTA_POLICY, paidFunding } from "@shared/tinta";
 import { registerPayoutRoutes } from "./payouts";
 import { isProtectedClaimKey, protectClaimKey, revealClaimKey, verifyClaimKey } from "./claimKeys";
 import { lockPayment, reconcilePayment, recordPaymentIncident, registerPaymentIncidentRoutes } from "./paymentIncidents";
@@ -1795,7 +1795,7 @@ export async function registerRoutes(
 
   // Paquetes de Tinta disponibles
   app.get("/api/wallet/packs", (_req, res) => {
-    res.json({ enabled: stripeEnabled(), beta: betaPaymentsEnabled(), commerceVersion: COMMERCE_VERSION, tintaCents: TINTA_CENTS, tintaDisplayScale: 20, packs: TINTA_PACKS })
+    res.json({ enabled: stripeEnabled(), beta: betaPaymentsEnabled(), currencyDefinition: TINTA_CURRENCY, commerceVersion: COMMERCE_VERSION, tintaCents: TINTA_CENTS, tintaDisplayScale: 20, packs: TINTA_PACKS })
   })
 
   // Catálogo único de Papel. Es informativo hasta conectar suscripciones,

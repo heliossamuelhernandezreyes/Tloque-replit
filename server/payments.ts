@@ -11,10 +11,11 @@ import { splitCents, TINTA_UNIT_CENTS } from "@shared/commerce"
 // New packages contain paid credits only; volume changes their unit price.
 export const TINTA_CENTS = TINTA_UNIT_CENTS
 export const TINTA_PACKS = [
+  { id: "entrada", tinta: 5, cents: 2_000, label: "Entrada", recommended: false },
   { id: "gota", tinta: 10, cents: 3_000, label: "Gota", recommended: false },
   { id: "tintero", tinta: 20, cents: 5_500, label: "Tintero", recommended: true },
   { id: "biblioteca", tinta: 50, cents: 12_000, label: "Biblioteca", recommended: false },
-  { id: "archivo", tinta: 100, cents: 20_000, label: "Archivo", recommended: false },
+  { id: "archivo", tinta: 100, cents: 22_000, label: "Archivo", recommended: false },
 ] as const
 
 function configuredPrice(name: string, fallback: number) {
@@ -38,7 +39,7 @@ export function isStory(book: any): boolean {
 export function priceFor(kind: "support" | "sale", book: any) {
   const story = isStory(book)
   const tinta = kind === "sale" ? 12 : (story ? 5 : 10)
-  const cents = kind === "sale" ? configuredPrice("COMMERCIAL_LICENSE_MXN_CENTS", 2400)
+  const cents = kind === "sale" ? configuredPrice("COMMERCIAL_LICENSE_MXN_CENTS", 3000)
     : configuredPrice(story ? "PATRONAGE_STORY_MXN_CENTS" : "PATRONAGE_BOOK_MXN_CENTS", story ? 2000 : 3500)
   return { tinta, cents, currency: "mxn" as const, isStory: story }
 }
@@ -46,14 +47,14 @@ export function priceFor(kind: "support" | "sale", book: any) {
 // Compatibilidad: precios máximos (libro) para vistas sin obra concreta
 export const PRICES = {
   support: { cents: 3500, currency: "mxn", tinta: 10 },
-  sale:    { cents: 2400, currency: "mxn", tinta: 12 },
+  sale:    { cents: 3000, currency: "mxn", tinta: 12 },
 } as const
 
 export const AUTHOR_SHARE_BOOK  = 0.90         // libros: 90% al autor
 export const AUTHOR_SHARE_STORY = 0.50         // cuentos: 50/50
 
 export function authorShareFor(kind: "support" | "sale", book: any, payWith: "money" | "tinta") {
-  if (kind === "sale") return 0.75 // own commercial agreement, separate from patronage
+  if (kind === "sale") return 0.75 // legacy-funded fractions only; new funds/card use fixedAuthorCents
   return payWith === "money" ? (isStory(book) ? 0.30 : 0.50) : (isStory(book) ? AUTHOR_SHARE_STORY : AUTHOR_SHARE_BOOK)
 }
 

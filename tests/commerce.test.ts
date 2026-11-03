@@ -44,5 +44,5 @@ test("la espera y mínimo de una compra aceptada no cambian con la configuració
 test("el acuerdo identifica edición, reparto, costo de promociones y condiciones efectivas", () => {
   const text = commercialText({ operator:{name:"Operador simulado",address:"Domicilio de prueba",privacyEmail:"test@fixture.mx",phone:"8180000000"},
     bookId:1,title:"Edición de prueba",author:"Autor",workHash:input.workHash,authorShareBps:9000,supportUnits:10,holdDays:37,minimumCents:15000 })
-  for (const fragment of ["90% de la base editorial", "tres ejemplares físicos", "No exige adquirir mecenazgo", "sin bonos promocionales", "37 días", "$150.00 MXN", "no calcula ni practica retenciones", "No se ceden derechos morales", input.workHash]) assert.ok(text.includes(fragment),fragment)
+  for (const fragment of ["90% de la base editorial", "regalía fija de $18.00 MXN", "$30.00 MXN con tarjeta", "tres ejemplares físicos", "No exige adquirir mecenazgo", "sin bonos promocionales", "37 días", "$150.00 MXN", "no calcula ni practica retenciones", "No se ceden derechos morales", input.workHash]) assert.ok(text.includes(fragment),fragment)
 })

@@ -99,7 +99,7 @@ export default function SupportInvite({
                 style={{ background: `linear-gradient(135deg, ${accentGlow}cc, ${accentColor})`, color: "rgba(0,0,0,0.85)" }}
               >
                 <Heart className="w-3.5 h-3.5" />
-                {t("supportInviteBtn").replace("{x}", authorName)}{canTinta ? ` · ${displayTinta(needTinta)} 🪙` : ""}
+                {t("supportInviteBtn").replace("{x}", authorName)}{canTinta ? ` · ${displayTinta(needTinta)} 💧` : ""}
               </motion.button>
               <button onClick={dismiss} className="text-[11px] font-sans"
                 style={{ color: textColor, opacity: 0.5 }}>

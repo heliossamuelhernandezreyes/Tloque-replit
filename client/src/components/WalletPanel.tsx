@@ -29,7 +29,7 @@ interface Props {
   accentGlow:  string
 }
 
-// El monedero de Tloque: Tinta 🪙 para apoyar historias con un toque,
+// El monedero de Tloque: Tinta 💧 para apoyar historias con un toque,
 // y Papel 📄 (latente) para el Oráculo y los audiolibros del futuro.
 export default function WalletPanel({ open, onClose, accentColor, accentGlow }: Props) {
   const { t, settings } = useSettings()
@@ -190,12 +190,12 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
                 style={{ background: "rgba(90,200,130,0.1)", border: "1px solid rgba(90,200,130,0.3)" }}>
                 <BadgeCheck className="w-4 h-4" style={{ color: "rgba(120,220,160,0.9)" }} />
                 <p className="text-xs font-sans text-white">
-                  {t("tintaCredited")} <span style={{ color: accentColor }}>+{displayTinta(credited)} 🪙</span>
+                  {t("tintaCredited")} <span style={{ color: accentColor }}>+{displayTinta(credited)} 💧</span>
                 </p>
               </motion.div>
             )}
 
-            <p className="mb-3 text-xs leading-6 text-white/70">La lectura es gratuita. Compras la cantidad exacta de Tintas indicada, sin bonos. El precio por Tinta baja con el paquete: 200 Tintas cubren el mecenazgo de un libro y su base editorial es $20 MXN. El coste efectivo depende de tu recarga. Los saldos históricos conservan su poder de compra con numeración ×20.</p>
+            <p className="mb-3 text-xs leading-6 text-white/70">La lectura es gratuita. Compras la cantidad exacta de Tintas indicada, sin bonos. El precio por Tinta baja con el paquete: 200 Tintas cubren el mecenazgo de un libro y su base editorial es $20 MXN. La base editorial de una Tinta es $0.10 MXN; su precio de compra depende del paquete. Los precios de prestaciones se expresan en Tintas enteras, inicialmente en pasos de 20. El autor acumula ganancias en MXN. Los saldos históricos conservan su poder de compra con numeración ×20.</p>
             {legal.data?.documents.filter(document=>document.id === "terms").map(document=><details className="mb-3 text-xs text-white/65" key={document.id}><summary>Condiciones de Tinta · {document.version}</summary><p className="mt-2 whitespace-pre-line leading-6">{document.text}</p></details>)}
             {legal.isError && <button className="mb-3 underline" onClick={()=>void legal.refetch()}>Reintentar carga de condiciones</button>}
             <label className="mb-4 flex min-h-11 items-start gap-2 text-xs text-white/70"><input type="checkbox" checked={!!legal.data && acceptedPackKey===packKey} disabled={!legal.data || !packsData?.commerceVersion} onChange={event=>setAcceptedPackKey(event.target.checked?packKey:"")} />Acepto las condiciones y los precios de los paquetes mostrados, en MXN.</label>
@@ -241,7 +241,7 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4" style={{ color: accentColor }} />
                       <div className="text-left">
-                        <p className="text-[9px] font-sans uppercase tracking-wide text-white/35">{p.id === "biblioteca" ? p.label : t(packKey)}</p>
+                        <p className="text-[9px] font-sans uppercase tracking-wide text-white/35">{["entrada", "biblioteca"].includes(p.id) ? p.label : t(packKey)}</p>
                         <p className="text-sm font-sans font-semibold text-white">{displayTinta(p.tinta)} {t("tintaName")}</p>
 
                       </div>

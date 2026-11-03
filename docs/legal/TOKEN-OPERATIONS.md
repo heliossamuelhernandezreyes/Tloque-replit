@@ -1,13 +1,13 @@
 # Tokens y reclamaciones autorales
 
-La versión 2026-11-03.1 separa publicación gratuita, monetización y conservación
+La versión 2026-11-03.2 separa publicación gratuita, monetización y conservación
 de la edición adquirida. Ningún indicador de configuración, aceptación o revisión
 administrativa acredita por sí solo titularidad, una autorización de autoridad o
 inmunidad frente a demandas.
 
 ## Compras nuevas
 
-Actualización 2026-11-03.1: el titular acepta un acuerdo económico íntegro por
+Actualización 2026-11-03.2: el titular acepta un acuerdo económico íntegro por
 edición antes de su revisión administrativa. Cada compra confirma un desglose
 vigente de precio, base real y reparto. Los cambios de respaldo o condiciones
 exigen revisar el cálculo antes del débito. Ver [PATRONAGE-POLICY.md](PATRONAGE-POLICY.md); el circuito anterior se conserva en [COMMERCIAL-ACCOUNTING.md](COMMERCIAL-ACCOUNTING.md).

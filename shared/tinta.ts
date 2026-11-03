@@ -1,6 +1,10 @@
 /** Storage units stay unchanged: one historical ledger unit displays as 20 Tintas.
  * This changes no balances, purchase power, receipts or existing ledger rows. */
 export const TINTA_DISPLAY_SCALE = 20
+export const TINTA_CURRENCY = {
+  name: "Tinta", plural: "Tintas", icon: "droplet", displayScale: TINTA_DISPLAY_SCALE,
+  priceStep: 20, editorialCentsPerTinta: 10, settlementCurrency: "mxn",
+} as const
 export const displayTinta = (units: number) => units * TINTA_DISPLAY_SCALE
 export const PAID_TINTA_POLICY = "paid-proportional-v2"
 
