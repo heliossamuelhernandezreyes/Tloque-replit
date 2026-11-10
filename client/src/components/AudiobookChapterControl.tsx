@@ -54,6 +54,13 @@ export default function AudiobookChapterControl({ bookId, chapterIndex, accent }
       requestKey.current = crypto.randomUUID()
       await query.refetch()
     } catch (error) {
+      // A definitive conflict is a different intent/profile, not an uncertain
+      // network result. Let the next explicit attempt use a fresh key.
+      if (error instanceof Error && error.message.startsWith("409:")) {
+        sessionStorage.removeItem(requestStorageKey)
+        requestKey.current = crypto.randomUUID()
+        await query.refetch()
+      }
       setNotice(error instanceof Error ? error.message : copy.error)
     } finally {
       setRequesting(false)
