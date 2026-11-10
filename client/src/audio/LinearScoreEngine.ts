@@ -28,21 +28,30 @@ export class LinearScoreEngine {
   private master = 0.35
   private duckFactor = 1
   private narrativeGain = 1
+  private token = 0
+  private paused = false
+  private loading = false
+  private controller = new AbortController()
 
   constructor(private readonly listener: Listener) {}
 
   async play(cue: MusicCue) {
+    const token = ++this.token
+    this.paused = false; this.loading = true; this.cue = cue
     this.listener("loading", cue)
     try {
       this.stopRuntime()
+      this.controller = new AbortController()
       const recipe = linearScoreRecipeFor(cue.recipe)
       if (cue.packUrl) {
-        await this.playWithModule(cue, recipe)
+        await this.playWithModule(cue, recipe, token)
         return
       }
       const Tone = this.tone ?? await import("tone")
+      if (token !== this.token) return
       this.tone = Tone
       await Tone.start()
+      if (token !== this.token) return
       const render = scoreRenderProfile(recipe.version === 2 ? recipe.plan.quality : "studio")
       const output = new Tone.Gain(0).toDestination()
       const limiter = new Tone.Limiter(-1)
@@ -59,9 +68,10 @@ export class LinearScoreEngine {
       const reverb = new Tone.Reverb({ decay: render.reverbDecay, preDelay: 0.035, wet: render.reverbWet })
       const chorus = new Tone.Chorus({ frequency: 0.16, delayTime: 3.8, depth: 0.22, spread: 150, wet: render.chorusWet }).start()
       chorus.chain(reverb, widener, eq, makeup, compressor, limiter, output)
-      await reverb.generate()
       this.output = output
       this.nodes = [chorus, reverb, widener, eq, makeup, compressor, limiter, output]
+      await reverb.generate()
+      if (token !== this.token) return
       this.cue = cue
 
       const maxPolyphony = Math.max(4, Math.min(32, Math.floor(render.polyphonyBudget / recipe.plan.tracks.length)))
@@ -136,10 +146,13 @@ export class LinearScoreEngine {
           this.listener("paused", this.cue)
         }, totalSeconds)
       }
-      transport.start()
+      if (!this.paused) transport.start()
+      this.loading = false
       output.gain.rampTo(this.targetVolume(), Math.max(0.2, cue.crossfadeSeconds))
-      this.listener("playing", cue)
+      this.listener(this.paused ? "paused" : "playing", cue)
     } catch (error) {
+      if (token !== this.token) return
+      this.loading = false
       console.error("TloqueScore playback failed:", error)
       this.stopRuntime()
       this.listener("error", cue)
@@ -156,21 +169,26 @@ export class LinearScoreEngine {
     } else this.output?.gain.rampTo(this.targetVolume(), Math.max(0.25, seconds))
   }
   pause() {
+    this.paused = true
     if (this.context) void this.context.suspend()
     else this.tone?.getTransport().pause()
     this.listener("paused", this.cue)
   }
   async resume() {
-    if (!this.cue) return
+    this.paused = false
+    if (this.loading || !this.cue) return
+    const token = this.token
     if (this.context) await this.context.resume()
     else {
       if (!this.tone) return
       await this.tone.start()
+      if (token !== this.token || this.paused) return
       this.tone.getTransport().start()
     }
+    if (token !== this.token || this.paused) return
     this.listener("playing", this.cue)
   }
-  stop() { this.stopRuntime(); this.cue = null; this.listener("idle", null) }
+  stop() { ++this.token; this.loading = false; this.paused = false; this.stopRuntime(); this.cue = null; this.listener("idle", null) }
   dispose() { this.stop() }
 
   private createSynth(Tone: typeof import("tone"), track: LinearScoreTrack, maxPolyphony: number) {
@@ -222,30 +240,45 @@ export class LinearScoreEngine {
   private applyVolume() {
     if (this.context && this.output) {
       this.output.gain.cancelScheduledValues(this.context.currentTime)
-      this.output.gain.linearRampToValueAtTime(this.targetVolume(), this.context.currentTime + 0.18)
-    } else this.output?.gain.rampTo(this.targetVolume(), 0.18)
+      if (this.targetVolume() === 0) this.output.gain.setValueAtTime(0, this.context.currentTime)
+      else this.output.gain.linearRampToValueAtTime(this.targetVolume(), this.context.currentTime + 0.18)
+    } else if (this.output) {
+      if (this.targetVolume() === 0) this.output.gain.value = 0
+      else this.output.gain.rampTo(this.targetVolume(), .18)
+    }
   }
 
-  private async playWithModule(cue: MusicCue, recipe: ReturnType<typeof linearScoreRecipeFor>) {
+  private async playWithModule(cue: MusicCue, recipe: ReturnType<typeof linearScoreRecipeFor>, token: number) {
     const context = new AudioContext({ latencyHint: "playback" })
+    this.context = context
     await context.audioWorklet.addModule(processorUrl)
+    if (token !== this.token) return
     const [{ WorkletSynthesizer }, response] = await Promise.all([
       import("spessasynth_lib"),
-      fetchAudioResource(cue.packUrl!),
+      fetchAudioResource(cue.packUrl!, {signal: this.controller.signal, expectedSha256: cue.packSha256}),
     ])
+    if (token !== this.token) return
     if (!response.ok) throw new Error(`Módulo instrumental ${response.status}`)
     const synth = new WorkletSynthesizer(context)
+    this.soundfont = synth
     const mix = createSampledMixMaster(context, 0)
+    this.output = mix.output
     synth.connect(mix.input)
     mix.output.connect(context.destination)
     await synth.soundBankManager.addSoundBank(await response.arrayBuffer(), "tloque-score-module")
+    if (token !== this.token) return
     await synth.isReady
+    if (token !== this.token) return
 
     this.context = context
     this.soundfont = synth
     this.output = mix.output
     this.cue = cue
-    await context.resume()
+    if (!this.paused) await context.resume()
+    if (token !== this.token) return
+    if (this.paused) await context.suspend()
+    if (token !== this.token) return
+    this.loading = false
 
     const beatSeconds = 60 / recipe.plan.bpm
     const totalSeconds = "totalSeconds" in recipe.plan ? recipe.plan.totalSeconds : recipe.plan.totalBeats * beatSeconds
@@ -381,18 +414,21 @@ export class LinearScoreEngine {
         }
       }, Math.max(1_000, Math.min(30_000, totalSeconds * 500)))
     } else {
-      this.completionTimer = window.setTimeout(() => {
-        this.soundfont?.stopAll(false)
+      this.completionTimer = window.setInterval(() => {
+        if (token !== this.token || this.paused || context.currentTime < startAt + totalSeconds + .3) return
+        window.clearInterval(this.completionTimer); this.completionTimer = 0
+        this.soundfont?.stopAll(false); void context.suspend()
         this.listener("paused", this.cue)
-      }, (totalSeconds + 0.3) * 1_000)
+      }, 100)
     }
     mix.output.gain.linearRampToValueAtTime(this.targetVolume(), context.currentTime + Math.max(0.25, cue.crossfadeSeconds))
-    this.listener("playing", cue)
+    this.listener(this.paused ? "paused" : "playing", cue)
   }
 
   private stopRuntime() {
+    this.controller.abort()
     window.clearInterval(this.moduleTimer)
-    window.clearTimeout(this.completionTimer)
+    window.clearInterval(this.completionTimer)
     this.moduleTimer = 0
     this.completionTimer = 0
     const transport = this.tone?.getTransport()

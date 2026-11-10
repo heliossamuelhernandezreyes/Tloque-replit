@@ -130,7 +130,7 @@ test("el cambio de región conserva dos decks, espera al próximo compás y cruz
   assert.match(source, /NativeSampleScoreEngine, NativeSampleScoreEngine/)
   assert.match(source, /secondsUntilNextBar/)
   assert.match(source, /fadeOutAndStop\(seconds, startDelay\)/)
-  assert.match(source, /this\.listener\("crossfading"/)
+  assert.match(source, /"crossfading", resolvedCue/)
 })
 
 test("Winter expone una presión de voces determinista para benchmarks", () => {

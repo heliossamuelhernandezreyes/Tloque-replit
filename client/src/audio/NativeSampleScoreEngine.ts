@@ -73,17 +73,24 @@ export class NativeSampleScoreEngine {
   private duckFactor = 1
   private narrativeGain = 1
   private playToken = 0
+  private paused = false
+  private loading = false
+  private retireTimer = 0
+  private controller = new AbortController()
 
   constructor(private readonly listener: Listener) {}
 
   async play(cue: MusicCue, startDelay?: () => number): Promise<number> {
     const playToken = ++this.playToken
+    this.paused = false; this.loading = true
     this.listener("loading", cue)
     this.stopRuntime()
     try {
       const recipe = linearScoreRecipeFor(cue.recipe)
       if (recipe.version !== 2 || recipe.plan.moduleId === "builtin") throw new Error("La partitura no solicita fuentes acústicas nativas")
+      this.controller = new AbortController()
       const context = createRealtimeAudioContext()
+      this.context = context
       const orchestralSynthesis = recipe.plan.moduleId === ORCHESTRAL_SYNTH_MODULE_ID
       const groups = orchestralSynthesis ? [] : nativeModuleGroupsForRecipe(recipe)
       const sampleGroups: NativeModuleGroup[] = [], physicalGroups: NativeModuleGroup[] = []
@@ -97,7 +104,7 @@ export class NativeSampleScoreEngine {
       const fallbackTrackIds = new Set<string>(orchestralSynthesis ? recipe.plan.tracks.map(track => track.id) : [])
       for (const group of sampleGroups) {
         try {
-          const player = new NativeSamplePackPlayer(context)
+          const player = new NativeSamplePackPlayer(context, undefined, {signal: this.controller.signal})
           const packUrl = `/api/audio/sample-packs/modules/${encodeURIComponent(group.moduleId)}.json`
           const pack = await player.loadPack(packUrl)
           if (playToken !== this.playToken) { void context.close(); return 0 }
@@ -108,6 +115,7 @@ export class NativeSampleScoreEngine {
           })
           loaded.push({ moduleId: group.moduleId, plan, player })
         } catch (error) {
+          if (playToken !== this.playToken) return 0
           group.trackIds.forEach(trackId => fallbackTrackIds.add(trackId))
           console.warn(`Tloque native module ${group.moduleId} unavailable; using per-track fallback`, error)
         }
@@ -135,6 +143,7 @@ export class NativeSampleScoreEngine {
       }
 
       await prepareOrchestralStringDsp(context)
+      if (playToken !== this.playToken) { void context.close(); return 0 }
 
       if (context.state === "running") await context.suspend()
       const fallbackInstruments = [...new Set([...fallbackTrackIds]
@@ -148,6 +157,7 @@ export class NativeSampleScoreEngine {
       }
       this.context = context; this.output = output; this.cue = runtimeCue
       const markFallback = (trackId: string, error: unknown) => {
+        if (playToken !== this.playToken || this.context !== context) return
         fallbackTrackIds.add(trackId)
         const fallbackInstrumentIds = [...new Set([...fallbackTrackIds]
           .map(id => index.trackById.get(id)?.instrument)
@@ -164,7 +174,7 @@ export class NativeSampleScoreEngine {
       const boundaryDelay = Math.max(0, Math.min(4, startDelay?.() ?? 0))
       const startAt = context.currentTime + 0.12 + boundaryDelay
       this.startAtSeconds = startAt
-      this.barSeconds = 60 / recipe.plan.bpm * recipe.plan.meter.numerator
+      this.barSeconds = 60 / recipe.plan.bpm * recipe.plan.meter.numerator * 4 / recipe.plan.meter.denominator
       let naturalEnd = recipe.plan.totalSeconds
       const realtimeTasks: NativeRealtimeTask[] = []
       const shouldLoop = cue.loop && recipe.plan.loop
@@ -381,14 +391,17 @@ export class NativeSampleScoreEngine {
 
       const lookahead = new NativeRealtimeLookahead(realtimeTasks, shouldLoop ? recipe.plan.totalSeconds : 0)
       await Promise.all(lookahead.pump(0))
-      if (playToken !== this.playToken) { this.stopRuntime(); return 0 }
+      if (playToken !== this.playToken) { void context.close(); return 0 }
       const fadeSeconds = Math.max(0.08, Math.min(20, cue.crossfadeSeconds || 0.12))
       output.gain.setValueAtTime(0, startAt); output.gain.linearRampToValueAtTime(this.targetVolume(), startAt + fadeSeconds)
-      await context.resume()
-      if (playToken !== this.playToken) { this.stopRuntime(); return 0 }
+      if (!this.paused) await context.resume()
+      if (playToken !== this.playToken) { void context.close(); return 0 }
 
+      if (this.paused && context.state === "running") await context.suspend()
+      if (playToken !== this.playToken) return 0
+      this.loading = false
       const pump = () => {
-        if (this.context !== context) return
+        if (this.context !== context || this.paused || context.state === "suspended") return
         const elapsed = context.currentTime - startAt
         const pending = lookahead.pump(elapsed)
         for (const promise of pending) promise.catch(error => {
@@ -402,10 +415,11 @@ export class NativeSampleScoreEngine {
         }
       }
       this.schedulerTimer = window.setInterval(pump, NATIVE_REALTIME_TICK_MS)
-      this.listener("playing", runtimeCue)
+      this.listener(this.paused ? "paused" : "playing", runtimeCue)
       return Math.max(0, startAt - context.currentTime)
     } catch (error) {
       if (playToken !== this.playToken) return 0
+      this.loading = false
       console.error("Tloque native acoustic playback failed:", error)
       this.stopRuntime(); this.listener("error", cue)
       return 0
@@ -434,17 +448,25 @@ export class NativeSampleScoreEngine {
     output.gain.cancelScheduledValues(begins)
     output.gain.setValueAtTime(Math.max(0.0001, output.gain.value), begins)
     output.gain.exponentialRampToValueAtTime(0.0001, begins + duration)
-    window.setTimeout(() => {
-      if (this.context === context) this.stopRuntime()
-    }, (delay + duration + 0.15) * 1_000)
+    window.clearInterval(this.retireTimer)
+    this.retireTimer = window.setInterval(() => {
+      if (this.context === context && !this.paused && context.currentTime >= begins + duration + .15) this.stopRuntime()
+    }, 100)
   }
-  pause() { if (this.context) void this.context.suspend(); this.listener("paused", this.cue) }
-  async resume() { if (this.context) await this.context.resume(); if (this.cue) this.listener("playing", this.cue) }
-  stop() { this.playToken += 1; this.stopRuntime(); this.cue = null; this.listener("idle", null) }
+  pause() { this.paused = true; if (this.context) void this.context.suspend(); this.listener("paused", this.cue) }
+  async resume() {
+    this.paused = false
+    if (this.loading) return
+    const token = this.playToken
+    if (this.context) await this.context.resume()
+    if (token === this.playToken && !this.paused && this.cue) this.listener("playing", this.cue)
+  }
+  stop() { this.playToken += 1; this.loading = false; this.paused = false; this.stopRuntime(); this.cue = null; this.listener("idle", null) }
   dispose() { this.stop() }
   private targetVolume() { return scoreMonitorVolume(this.master, this.cue?.volume ?? 1, this.duckFactor, this.narrativeGain, this.cue?.monitoring === "reference") }
-  private applyVolume() { if (!this.context || !this.output) return; const now = this.context.currentTime; this.output.gain.cancelScheduledValues(now); this.output.gain.linearRampToValueAtTime(this.targetVolume(), now + 0.18) }
+  private applyVolume() { if (!this.context || !this.output) return; const now = this.context.currentTime; this.output.gain.cancelScheduledValues(now); if (this.targetVolume() === 0) this.output.gain.setValueAtTime(0, now); else this.output.gain.linearRampToValueAtTime(this.targetVolume(), now + 0.18) }
   private stopRuntime() {
+    this.controller.abort(); window.clearInterval(this.retireTimer); this.retireTimer = 0
     window.clearInterval(this.schedulerTimer); this.schedulerTimer = 0
     this.output?.disconnect(); this.output = null
     if (this.context) void this.context.close(); this.context = null

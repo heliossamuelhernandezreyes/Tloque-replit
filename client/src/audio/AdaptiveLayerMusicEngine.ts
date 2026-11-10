@@ -1,9 +1,10 @@
+import { AudioTransition, waitForMediaReady } from "./AudioTransition"
 import { cachedObjectUrl } from "./AudioResourceCache"
 import type { MusicCue, MusicState } from "./MusicEngine"
 
 type Listener = (state: MusicState, cue: MusicCue | null) => void
 interface LayerDeck { audio: HTMLAudioElement; objectUrl: string | null; gain: number }
-interface LayerGroup { cue: MusicCue; decks: LayerDeck[] }
+interface LayerGroup { cue: MusicCue; decks: LayerDeck[]; mix: number }
 
 /**
  * Drift-corrected stem player for authored Fonoteca scores. Each transition uses
@@ -13,7 +14,9 @@ export class AdaptiveLayerMusicEngine {
   private groups: [LayerGroup | null, LayerGroup | null] = [null, null]
   private active = -1
   private token = 0
-  private fadeRaf = 0
+  private readonly fade = new AudioTransition()
+  private controller = new AbortController()
+  private paused = false
   private directionRaf = 0
   private syncTimer = 0
   private master = 0.35
@@ -26,12 +29,16 @@ export class AdaptiveLayerMusicEngine {
     const layers = cue.adaptiveLayers ?? []
     if (!layers.length) { this.listener("error", cue); return }
     const token = ++this.token
+    this.controller.abort(); this.controller = new AbortController(); this.paused = false
+    const signal = this.controller.signal
     const outgoingIndex = this.active
     const incomingIndex = outgoingIndex === 0 ? 1 : 0
     this.disposeGroup(incomingIndex)
     this.listener("loading", cue)
-    const prepared = await Promise.all(layers.map(async layer => {
+    const prepared: LayerDeck[] = []
+    const attemptsToPrepare = await Promise.allSettled(layers.map(async layer => {
       const objectUrl = await cachedObjectUrl(layer.url)
+      if (signal.aborted) { if (objectUrl) URL.revokeObjectURL(objectUrl); return }
       const audio = new Audio()
       audio.preload = "auto"
       audio.crossOrigin = "anonymous"
@@ -39,18 +46,28 @@ export class AdaptiveLayerMusicEngine {
       audio.loop = cue.loop || layer.loop
       audio.setAttribute("playsinline", "")
       audio.volume = 0
-      return { audio, objectUrl, gain: layer.defaultGain }
+      const deck = { audio, objectUrl, gain: layer.defaultGain }
+      prepared.push(deck)
+      const cancelled = () => this.disposeDeck(deck)
+      signal.addEventListener("abort", cancelled, {once: true})
+      try { audio.load(); await waitForMediaReady(audio, signal) }
+      catch (error) { this.disposeDeck(deck); throw error }
+      finally { signal.removeEventListener("abort", cancelled) }
+      return deck
     }))
     if (token !== this.token) {
       prepared.forEach(deck => this.disposeDeck(deck))
       return
     }
-    const attempts = await Promise.allSettled(prepared.map(deck => deck.audio.play()))
+    const ready = attemptsToPrepare.flatMap(result => result.status === "fulfilled" && result.value ? [result.value] : [])
+    // All resources are ready before any media clock advances.
+    ready.forEach(deck => { deck.audio.currentTime = 0 })
+    const attempts = await Promise.allSettled(ready.map(deck => this.paused ? Promise.resolve() : deck.audio.play()))
     if (token !== this.token) {
       prepared.forEach(deck => this.disposeDeck(deck))
       return
     }
-    const decks = prepared.filter((deck, index) => {
+    const decks = ready.filter((deck, index) => {
       if (attempts[index].status === "fulfilled") return true
       this.disposeDeck(deck)
       return false
@@ -60,17 +77,18 @@ export class AdaptiveLayerMusicEngine {
       ...cue,
       playbackTier: decks.length === layers.length ? "native" : "hybrid",
     }
-    this.groups[incomingIndex] = { cue: runtimeCue, decks }
+    if (this.paused) decks.forEach(deck => deck.audio.pause())
+    this.groups[incomingIndex] = { cue: runtimeCue, decks, mix: 0 }
     this.active = incomingIndex
     this.startSyncMonitor()
 
     const outgoing = outgoingIndex >= 0 ? this.groups[outgoingIndex] : null
     const incoming = this.groups[incomingIndex]!
     const seconds = Math.max(0.25, Math.min(20, cue.crossfadeSeconds))
-    this.listener(outgoing ? "crossfading" : "playing", runtimeCue)
+    this.listener(this.paused ? "paused" : outgoing ? "crossfading" : "playing", runtimeCue)
     this.fadeGroups(incoming, outgoing, seconds, token, () => {
       if (outgoingIndex >= 0) this.disposeGroup(outgoingIndex)
-      if (token === this.token) this.listener("playing", runtimeCue)
+      if (token === this.token && !this.paused) this.listener("playing", runtimeCue)
     })
   }
 
@@ -91,18 +109,21 @@ export class AdaptiveLayerMusicEngine {
     this.directionRaf = requestAnimationFrame(frame)
   }
   pause() {
+    this.paused = true; this.fade.pause()
     this.groups.forEach(group => group?.decks.forEach(deck => deck.audio.pause()))
     this.listener("paused", this.active >= 0 ? this.groups[this.active]?.cue ?? null : null)
   }
   async resume() {
-    const group = this.active >= 0 ? this.groups[this.active] : null
-    if (!group) return
-    const results = await Promise.allSettled(group.decks.map(deck => deck.audio.play()))
-    this.listener(results.some(result => result.status === "fulfilled") ? "playing" : "blocked", group.cue)
+    this.paused = false
+    const token = this.token
+    const attempts = await Promise.allSettled(this.groups.flatMap(group => group?.decks ?? []).map(deck => deck.audio.play()))
+    if (token !== this.token || this.paused || this.active < 0) return
+    this.fade.resume(); this.applyActiveVolume()
+    this.listener(attempts.some(result => result.status === "rejected") ? "blocked" : this.fade.active ? "crossfading" : "playing", this.groups[this.active]?.cue ?? null)
   }
   stop() {
     this.token += 1
-    cancelAnimationFrame(this.fadeRaf)
+    this.controller.abort(); this.fade.stop(); this.paused = false
     cancelAnimationFrame(this.directionRaf)
     window.clearInterval(this.syncTimer); this.syncTimer = 0
     this.disposeGroup(0); this.disposeGroup(1); this.active = -1
@@ -117,21 +138,17 @@ export class AdaptiveLayerMusicEngine {
     group.decks.forEach(deck => { deck.audio.volume = Math.max(0, Math.min(1, base * deck.gain)) })
   }
   private applyActiveVolume() {
-    if (this.active >= 0 && this.groups[this.active]) this.applyGroupVolume(this.groups[this.active]!, 1)
+    this.groups.forEach(group => { if (group) this.applyGroupVolume(group, group.mix) })
   }
   private fadeGroups(incoming: LayerGroup, outgoing: LayerGroup | null, seconds: number, token: number, done: () => void) {
-    cancelAnimationFrame(this.fadeRaf)
-    const began = performance.now(), duration = seconds * 1_000
-    const frame = (now: number) => {
+    const previous = outgoing?.mix ?? 0
+    this.fade.start(seconds, progress => {
       if (token !== this.token) return
-      const progress = Math.min(1, (now - began) / duration)
       const eased = progress * progress * (3 - 2 * progress)
-      this.applyGroupVolume(incoming, eased)
-      if (outgoing) this.applyGroupVolume(outgoing, 1 - eased)
-      if (progress < 1) this.fadeRaf = requestAnimationFrame(frame)
-      else done()
-    }
-    this.fadeRaf = requestAnimationFrame(frame)
+      incoming.mix = eased
+      if (outgoing) outgoing.mix = previous * (1 - eased)
+      this.applyActiveVolume()
+    }, done, this.paused)
   }
   private startSyncMonitor() {
     window.clearInterval(this.syncTimer)

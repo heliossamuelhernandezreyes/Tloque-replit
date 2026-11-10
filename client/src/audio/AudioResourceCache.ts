@@ -112,7 +112,11 @@ export async function cacheNativeSamplePack(aliasUrl: string): Promise<TloqueSam
   const entries = [...sampleByUrl.entries()]
   for (let offset = 0; offset < entries.length; offset += 3) {
     await Promise.all(entries.slice(offset, offset + 3).map(async ([sampleUrl, expectedSha256]) => {
-      if (await cache.match(sampleUrl)) return
+      const existing = await cache.match(sampleUrl)
+      if (existing) {
+        try { await verifiedResponse(existing, expectedSha256); return }
+        catch { await cache.delete(sampleUrl) }
+      }
       const sample = await fetch(sampleUrl, { mode: "cors", credentials: "omit" })
       if (!sample.ok) throw new Error(`No se pudo descargar una muestra nativa (${sample.status})`)
       await cache.put(sampleUrl, await verifiedResponse(sample, expectedSha256))
@@ -203,23 +207,30 @@ export async function removeCachedAudioResource(url: string): Promise<void> {
   await cache.delete(offlineModulePointerUrl(url))
 }
 
-export async function fetchAudioResource(url: string): Promise<Response> {
-  // /modules/<id>.json is a mutable server alias. Reading it from Cache Storage can
-  // bind a new installation to an obsolete manifest indefinitely, so always revalidate.
+export async function fetchAudioResource(url: string, options: {signal?: AbortSignal; expectedSha256?: string} = {}): Promise<Response> {
+  const {signal} = options
+  const expectedSha256 = options.expectedSha256 || /\/([a-f0-9]{64})\.(?:wav|json|sf[23])(?:$|\?)/i.exec(url)?.[1] || ""
+  const verify = async (response: Response) => {
+    signal?.throwIfAborted()
+    const result = response.ok && expectedSha256 ? await verifiedResponse(response, expectedSha256) : response
+    signal?.throwIfAborted(); return result
+  }
+  signal?.throwIfAborted()
   if (isMutableSamplePackAlias(url)) {
     try {
-      const response = await fetch(url, { mode: "cors", credentials: "omit", cache: "no-store" })
-      if (response.ok) return response
-    } catch { /* offline fallback below */ }
-    const cache = await cacheInstance()
-    const pointer = cache ? await readOfflineModulePointer(cache, url) : null
+      const response = await fetch(url, {mode: "cors", credentials: "omit", cache: "no-store", signal})
+      if (response.ok) return await verify(response)
+    } catch (error) { if (signal?.aborted) throw error }
+    const cache = await cacheInstance(), pointer = cache ? await readOfflineModulePointer(cache, url) : null
     const offline = pointer ? await cache?.match(pointer.immutableUrl) : null
-    return offline ?? new Response(null, { status: 503, statusText: "Native module unavailable offline" })
+    return offline ? verify(offline) : new Response(null, {status: 503, statusText: "Native module unavailable offline"})
   }
-  const cache = await cacheInstance()
-  const cached = await cache?.match(url)
-  if (cached) return cached
-  return fetch(url, { mode: "cors", credentials: "omit" })
+  const cache = await cacheInstance(), cached = await cache?.match(url)
+  if (cached) {
+    try { return await verify(cached) }
+    catch (error) { if (signal?.aborted) throw error; await cache?.delete(url) }
+  }
+  return verify(await fetch(url, {mode: "cors", credentials: "omit", signal}))
 }
 
 export async function cachedObjectUrl(url: string): Promise<string | null> {

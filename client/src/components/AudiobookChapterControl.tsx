@@ -1,9 +1,10 @@
 import { accountSessionStorage as sessionStorage, accountFetch as fetch } from "@/lib/account-context"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Headphones, Loader2, Sparkles } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { useSettings } from "@/context/SettingsContext"
 import { apiRequest } from "@/lib/queryClient"
+import { useMusic } from "@/audio/MusicProvider"
 import { speechUi } from "@shared/speech-i18n"
 
 interface Availability {
@@ -21,6 +22,9 @@ interface Availability {
 
 export default function AudiobookChapterControl({ bookId, chapterIndex, accent }: { bookId: number; chapterIndex: number; accent: string }) {
   const { settings } = useSettings()
+  const { duck } = useMusic()
+  const foregroundId = `audiobook:${bookId}:${chapterIndex}`
+  useEffect(() => () => duck(false, foregroundId), [duck, foregroundId])
   const copy = speechUi(settings.language)
   const [requesting, setRequesting] = useState(false)
   const [notice, setNotice] = useState("")
@@ -50,6 +54,13 @@ export default function AudiobookChapterControl({ bookId, chapterIndex, accent }
       requestKey.current = crypto.randomUUID()
       await query.refetch()
     } catch (error) {
+      // A definitive conflict is a different intent/profile, not an uncertain
+      // network result. Let the next explicit attempt use a fresh key.
+      if (error instanceof Error && error.message.startsWith("409:")) {
+        sessionStorage.removeItem(requestStorageKey)
+        requestKey.current = crypto.randomUUID()
+        await query.refetch()
+      }
       setNotice(error instanceof Error ? error.message : copy.error)
     } finally {
       setRequesting(false)
@@ -72,7 +83,7 @@ export default function AudiobookChapterControl({ bookId, chapterIndex, accent }
         </div>
       </div>
       {availability.playbackUrl && (
-        <audio controls preload="none" className="mt-3 w-full h-9" src={availability.playbackUrl} />
+        <audio onPlay={() => duck(true, foregroundId)} onPause={() => duck(false, foregroundId)} onEnded={() => duck(false, foregroundId)} onError={() => duck(false, foregroundId)} controls preload="none" className="mt-3 w-full h-9" src={availability.playbackUrl} />
       )}
       {!availability.cached && !availability.generating && !availability.subscriptionRequired && (
         <button type="button" onClick={requestAudiobook} disabled={requesting || !availability.canRequest || !enoughPaper} className="mt-3 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-sans font-semibold disabled:opacity-40" style={{ color: accent, background: `${accent}16`, border: `1px solid ${accent}32` }}>

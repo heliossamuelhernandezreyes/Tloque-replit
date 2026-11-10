@@ -17,7 +17,8 @@ interface MusicContextValue {
   cue: MusicCue | null
   playCue: (cue: MusicCue | null) => void
   toggle: () => void
-  duck: (active: boolean) => void
+  duck: (active: boolean, source?: string) => void
+  loadExperience: (score: MusicBrainScoreV1 | null, layers: readonly MusicBrainAudioLayer[]) => void
   loadNarrativeScore: (score: MusicBrainScoreV1 | null) => void
   loadAdaptiveLayers: (layers: readonly MusicBrainAudioLayer[]) => void
   direct: (intensity: number, silence: boolean, transitionSeconds: number, regionId?: string) => void
@@ -38,6 +39,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const adaptiveLayersRef = useRef<readonly MusicBrainAudioLayer[]>([])
   const directionRef = useRef({ intensity: 0, silence: false, seconds: 1, regionId: undefined as string | undefined })
   const duckedRef = useRef(false)
+  const foregroundRef = useRef(new Set<string>())
   const volumeRef = useRef(settings.musicVolume)
 
   const ensureEngine = useCallback(async (): Promise<HybridMusicEngine | null> => {
@@ -52,8 +54,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     })
     engine.setMasterVolume(volumeRef.current)
     engine.setDucked(duckedRef.current)
-    engine.setNarrativeScore(narrativeScoreRef.current)
-    engine.setAdaptiveLayers(adaptiveLayersRef.current)
+    engine.setExperience(narrativeScoreRef.current, adaptiveLayersRef.current)
     const direction = directionRef.current
     engine.setNarrativeDirection(direction.intensity, direction.silence, direction.seconds, direction.regionId)
     engineRef.current = engine
@@ -80,14 +81,20 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, [settings.musicVolume])
 
   useEffect(() => {
-    if (!settings.musicEnabled) engineRef.current?.pause()
+    if (!settings.musicEnabled) {
+      generationRef.current += 1
+      engineRef.current?.pause()
+    }
   }, [settings.musicEnabled])
 
-  useEffect(() => () => {
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
     mountedRef.current = false
     generationRef.current += 1
     engineRef.current?.dispose()
     engineRef.current = null
+    }
   }, [])
 
   const playCue = useCallback((next: MusicCue | null) => {
@@ -119,9 +126,15 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     }
   }, [cue, ensureEngine, settings.musicEnabled, state])
 
-  const duck = useCallback((active: boolean) => {
-    duckedRef.current = active
-    engineRef.current?.setDucked(active)
+  const duck = useCallback((active: boolean, source = "tts") => {
+    if (active) foregroundRef.current.add(source)
+    else foregroundRef.current.delete(source)
+    duckedRef.current = foregroundRef.current.size > 0
+    engineRef.current?.setDucked(duckedRef.current)
+  }, [])
+  const loadExperience = useCallback((score: MusicBrainScoreV1 | null, layers: readonly MusicBrainAudioLayer[]) => {
+    narrativeScoreRef.current = score; adaptiveLayersRef.current = layers
+    engineRef.current?.setExperience(score, layers)
   }, [])
   const loadNarrativeScore = useCallback((score: MusicBrainScoreV1 | null) => {
     narrativeScoreRef.current = score
@@ -142,7 +155,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <MusicContext.Provider value={{ state, cue, playCue, toggle, duck, loadNarrativeScore, loadAdaptiveLayers, direct, stop }}>
+    <MusicContext.Provider value={{ state, cue, playCue, toggle, duck, loadExperience, loadNarrativeScore, loadAdaptiveLayers, direct, stop }}>
       {children}
     </MusicContext.Provider>
   )

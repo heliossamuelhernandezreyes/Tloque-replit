@@ -6,7 +6,7 @@ export const readerFixtures={
   '@/hooks/use-toast':'export const useToast=()=>({toast(){}});',
   '@/hooks/useSoundFX':'export const useSoundFX=()=>({play(){}});',
   '@/hooks/useAuth':'export const useAuth=()=>({user:{id:7},isAdmin:false});',
-  '@/audio/MusicProvider':'const music={loadNarrativeScore(){},loadAdaptiveLayers(){},stop(){},duck(){},direct(){}};export const useMusic=()=>music;',
+  '@/audio/MusicProvider':'const music={loadExperience(){},loadNarrativeScore(){},loadAdaptiveLayers(){},stop(){},duck(){},direct(){}};export const useMusic=()=>music;',
   '@/narrative/useReadingAttention':'export const useReadingAttention=()=>({containerRef:null,attention:{progress:0,confidence:0}});',
   '@/context/GenreContext':'export const GENRE_CONFIG={todos:{color:"#c9a84c",glow:"#c9a84c"}};',
   '@/context/SettingsContext':'export const useSettings=()=>({settings:{language:"es",readingMode:"dark",fontSize:"medium",lineSpacing:"normal",haptics:false},t:key=>key});export const LANGUAGE_META={es:{locale:"es-MX"}};export const READING_MODE_BG={dark:"#000000"},READING_MODE_TEXT={dark:"#ffffff"},READING_MODE_HEADER_BG={dark:"#000000"},READING_MODE_HEADER_TEXT={dark:"#ffffff"},FONT_SIZE_PX={medium:18},LINE_SPACING_VALUE={normal:1.8};',

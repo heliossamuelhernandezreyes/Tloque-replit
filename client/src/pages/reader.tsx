@@ -128,10 +128,9 @@ function ReaderForBook() {
   }, [activeChapter, experienceData?.profile?.revision])
 
   useEffect(() => {
-    music.loadNarrativeScore(experienceData?.musicBrain ?? null)
-    music.loadAdaptiveLayers(experienceData?.audioLayers ?? [])
-    return () => { music.loadNarrativeScore(null); music.loadAdaptiveLayers([]) }
-  }, [experienceData?.musicBrain, experienceData?.audioLayers, music.loadNarrativeScore, music.loadAdaptiveLayers])
+    music.loadExperience(experienceData?.musicBrain ?? null, experienceData?.audioLayers ?? [])
+    return () => { music.loadExperience(null, []) }
+  }, [experienceData?.musicBrain, experienceData?.audioLayers, music.loadExperience])
 
   useEffect(() => {
     if (soundtrack || experienceData?.musicBrain) return
@@ -720,7 +719,7 @@ function ReaderForBook() {
             )}
 
             {numericBookId !== null && (
-              <AudiobookChapterControl bookId={numericBookId} chapterIndex={activeChapter} accent={gc.color} />
+              <AudiobookChapterControl key={`${numericBookId}:${activeChapter}`} bookId={numericBookId} chapterIndex={activeChapter} accent={gc.color} />
             )}
 
             {/* Indicador de lectura activa */}

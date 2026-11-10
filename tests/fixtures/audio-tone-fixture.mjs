@@ -1,0 +1,5 @@
+export const transport=globalThis.toneTransport={state:'stopped',timeSignature:4,PPQ:192,ticks:0,bpm:{value:72,rampTo(){}},start(){this.state='started'},stop(){this.state='stopped'},pause(){this.state='paused'},cancel(){},schedule(){},getTicksAtTime(){return 0}}
+class Node{gain={rampTo(){}};bpm={rampTo(){}};chain(){return this}connect(){return this}toDestination(){return this}start(){return this}dispose(){}releaseAll(){}triggerAttackRelease(){}stop(){return this}}
+export class Reverb extends Node{async generate(){globalThis.toneGateEntered=true;await globalThis.toneGate}}
+export class Gain extends Node{};export class Compressor extends Node{};export class Chorus extends Node{};export class Filter extends Node{};export class PolySynth extends Node{};export class FMSynth extends Node{};export class Synth extends Node{};export class AMSynth extends Node{};export class Limiter extends Node{};export class MultibandCompressor extends Node{};export class EQ3 extends Node{};export class StereoWidener extends Node{};export class Part extends Node{}
+export const start=async()=>{};export const getTransport=()=>transport;export const getDestination=()=>({})
