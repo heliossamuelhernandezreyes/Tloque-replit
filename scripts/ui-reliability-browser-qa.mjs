@@ -19,7 +19,7 @@ const chapter = "Un párrafo para verificar la lectura y conservar lo escrito. "
 const work = { id: 123, title: "Obra de prueba", author: user.name, authorId: user.id, status: "published", revision: 1, genre: "fantasia", type: "book", coverUrl: "", synopsis: "Una obra para probar navegación y escritura.", chapterCount: 2, chapters: [{ title: "Uno", content: chapter }, { title: "Dos", content: chapter }], updatedAt: "2026-11-01T12:00:00Z" }
 const errors = []
 async function setup() {
-  const state = { signedIn: true, failDelete: false, failInbox: false, bookDelay: 0, order: "pending", searches: [], cloud: [], claims: [], oauth: [] }
+  const state = { signedIn: true, failDelete: false, failInbox: false, bookDelay: 0, order: "pending", searches: [], cloud: [], claims: [], oauth: [], showCards: false, cardBuys: [], walletStatus: "pending", walletBuys: [] }
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: "es-MX", isMobile: true, hasTouch: true })
   context.setDefaultTimeout(20_000)
   await context.addInitScript(() => {
@@ -62,7 +62,19 @@ async function setup() {
     else if (url.pathname === "/api/tokens/unlocked") data = { bookIds: [] }
     else if (url.pathname === "/api/payments/config") data = { enabled: false, beta: false, prices: DEFAULT_PRICES, offers: { support: null, sale: null } }
     else if (url.pathname === "/api/legal/documents") data = { hash: "a".repeat(64), publicationReady: true, documents: legalDocuments({ name: "Operador simulado", address: "Domicilio simulado", privacyEmail: "qa@fixture.test", phone: "8180000000" }) }
-    else if (url.pathname === "/api/wallet") data = { tinta: 0, papel: 0 }
+    else if (url.pathname === "/api/wallet") data = { tinta: state.cardBuys.length ? 15 : 20, papel: 0 }
+    else if (url.pathname === "/api/wallet/packs") data = { enabled: true, beta: false, commerceVersion: "fixture-commerce", packs: [{ id: "gota", tinta: 10, cents: 3000, label: "Gota", recommended: true }] }
+    else if (url.pathname === "/api/wallet/orders/17") data = { id: 17, status: state.walletStatus, units: 10, packId: "gota", commerceVersion: "fixture-commerce", purchaseKey: "previous-fixture-key" }
+    else if (url.pathname === "/api/wallet/orders/lookup") return route.fulfill({ status: 404, json: { message: "No pending fixture order" } })
+    else if (url.pathname === "/api/wallet/buy") {
+      state.walletBuys.push({ key: route.request().headers()["idempotency-key"], body: route.request().postDataJSON() })
+      data = { mode: "free_beta", credited: 10, orderId: 100 + state.walletBuys.length }
+    }
+    else if (url.pathname === "/api/books/123/cards") data = { cards: state.showCards ? [{ id: 55, bookId: 123, name: "Carta auditada", rarity: "common", unlock: "tinta", priceTinta: 5, owned: !!state.cardBuys.length, isSaga: false, position: 0, fx: { layers: { back: "", mid: "", front: "" } } }] : [] }
+    else if (url.pathname === "/api/cards/55/quote") data = { hash: "b".repeat(64), documentHash: "a".repeat(64), canPay: true, bookTitle: work.title, economics: { units: 5, authorCents: 500, platformCents: 500 }, documents: [] }
+    else if (url.pathname === "/api/cards/55/buy") {
+      state.cardBuys.push(route.request().postDataJSON()); data = { ok: true, cardId: 55, editionId: 1 }
+    }
     else if (url.pathname === "/api/tokens/orders/7") data = { id: 7, bookId: 123, status: state.order, tokenId: state.order === "paid" ? 77 : null }
     else if (url.pathname === "/api/tokens/orders/999") return route.fulfill({ status: 404, json: { message: "Orden no disponible" } })
     else if (url.pathname === "/api/claim/TLQ-FIXTURE") {
@@ -182,7 +194,47 @@ try {
   assert.equal(await checkout.page.getByText("Pago confirmado. Tu edición está disponible.", { exact: true }).count(), 0)
   await checkout.context.close()
   })
+
+  await scenario("card purchase requires a visible quote and explicit acceptance", async () => {
+    const card = await setup(); card.state.showCards = true
+    await card.page.goto(origin + "/book/123")
+    await card.page.getByRole("button", { name: "Obtener · 100 💧", exact: true }).click()
+    const dialog = card.page.getByRole("dialog", { name: "Confirmar compra de tarjeta" })
+    await dialog.getByText(/edición digital permanente/).waitFor()
+    const confirm = dialog.getByRole("button", { name: "Confirmar compra", exact: true })
+    assert.equal(await confirm.isDisabled(), true)
+    assert.deepEqual(card.state.cardBuys, [])
+    await dialog.getByRole("checkbox").check()
+    await card.page.screenshot({ path: resolve(output, "card-purchase-mobile.png") })
+    await Promise.all([card.page.waitForResponse(response => response.url().endsWith("/api/cards/55/buy")), confirm.click()])
+    await dialog.waitFor({ state: "hidden" })
+    assert.deepEqual(card.state.cardBuys, [{ acceptance: { accepted: true, documentHash: "a".repeat(64), quoteHash: "b".repeat(64) } }])
+  })
+
+  await scenario("wallet return verifies payment and two new recharges use distinct intentions", async () => {
+    const wallet = await setup()
+    await wallet.context.addInitScript(() => localStorage.setItem("tloque.account.v1:599:local:wallet-purchase:fixture-commerce:gota", "previous-fixture-key"))
+    await wallet.page.goto(origin + "/?tinta=17")
+    await wallet.page.getByText(/Tu pago sigue pendiente de confirmación/).waitFor()
+    assert.equal(await wallet.page.getByText(/Recarga confirmada:/).count(), 0)
+    wallet.state.walletStatus = "paid"
+    await wallet.page.getByText(/Recarga confirmada: 200 Tintas/).waitFor()
+    await wallet.page.waitForFunction(() => localStorage.getItem("tloque.account.v1:599:local:wallet-purchase:fixture-commerce:gota") === null)
+    await wallet.page.goto(origin + "/book/123")
+    await wallet.page.getByRole("button", { name: /Conseguir Tinta/ }).click()
+    const dialog = wallet.page.getByRole("dialog", { name: "Monedero" })
+    await dialog.getByRole("checkbox").check()
+    const pack = dialog.getByRole("button").filter({ hasText: /200/ }).last()
+    for (let index = 0; index < 2; index++) {
+      await Promise.all([wallet.page.waitForResponse(response => response.url().endsWith("/api/wallet/buy")), pack.click()])
+      await dialog.getByText(/Tinta acreditada/).waitFor()
+    }
+    assert.equal(wallet.state.walletBuys.length, 2)
+    assert.notEqual(wallet.state.walletBuys[0].key, wallet.state.walletBuys[1].key)
+    assert.ok(wallet.state.walletBuys.every(purchase => purchase.key !== "previous-fixture-key" && purchase.body.acceptance.accepted === true))
+    await wallet.page.screenshot({ path: resolve(output, "wallet-recharge-mobile.png") })
+  })
   if (failures.length) throw new AggregateError(failures, "UI reliability scenarios failed")
   assert.deepEqual(errors, [])
-  console.log("UI reliability gate passed: OAuth/QR, draft exits, searches, errors, reader and payment states; no live services.")
+  console.log("UI reliability gate passed: OAuth/QR, drafts, searches, errors, reader, card consent and wallet payment states; no live services.")
 } finally { await browser.close(); await vite.close() }
