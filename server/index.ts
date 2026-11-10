@@ -37,7 +37,7 @@ app.use((req, res, next) => {
 })
 // Primera barrera antes de leer JSON o abrir la sesión. Usa una clave común por
 // IP para que variar rutas inexistentes no permita evadir el límite.
-app.use("/api", rateLimit(60_000, 300, "api-global"))
+app.use("/api", rateLimit(60_000, 3000, "api-ingress", "ip"))
 app.use(express.json({
   limit: "12mb",
   verify: (req, _res, buf) => {
@@ -52,6 +52,13 @@ app.use(express.urlencoded({ extended: false, limit: "1mb" }))
 
 // Auth — debe ir antes de las rutas
 setupAuth(app)
+const accountApiLimit = rateLimit(60_000, 300, "api-account", "account")
+app.use("/api", (req, res, next) => {
+  // Los webhooks tienen firma y control de repetición propios; no consumen
+  // la cuota de una sesión anónima compartida con lectores.
+  if (req.path === "/payments/webhook" || req.path === "/payouts/webhook") return next()
+  return accountApiLimit(req, res, next)
+})
 app.use(sameOriginProtection)
 setupAuthRoutes(app)
 

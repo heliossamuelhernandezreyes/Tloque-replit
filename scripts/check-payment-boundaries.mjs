@@ -90,6 +90,18 @@ async function webhook(event, instance = 0, expected = 200) {
   });
   assert.equal(response.status, expected, JSON.stringify(response.data)); return response;
 }
+async function approveFixtureCommerce(work) {
+  // Synthetic author acceptance and review in a disposable local database only.
+  const offer = await request(`/api/commercial/agreements/${work.id}`, { role: 'author' });
+  assert.equal(offer.status, 200, JSON.stringify(offer.data));
+  const agreement = await request(`/api/commercial/agreements/${work.id}/accept`, { role: 'author', method: 'POST', body: { accepted: true, termsHash: offer.data.hash } });
+  assert.equal(agreement.status, 201, JSON.stringify(agreement.data));
+  await client.query(`insert into commercial_approvals(book_id,acceptance_id,work_hash,actor_id,action,agreement_ref,evidence_ref,commercial_agreement_id)
+    select book_id,id,work_hash,$1,'approve','fixture-commercial-agreement','fixture-holder-evidence',$3
+    from legal_acceptances where book_id=$2 order by id desc limit 1`, [users.author.id, work.id, agreement.data.id]);
+  return offer;
+}
+
 async function buyToken(role = 'buyer', { kind = 'sale', payWith = 'money', purchaseKey = key(), instance = 0 } = {}) {
   const quoted = await request(`/api/tokens/quote?bookId=${book.id}&kind=${kind}&payWith=${payWith}`, { role, instance });
   return request('/api/tokens/acquire', { role, instance, method: 'POST',
@@ -213,14 +225,7 @@ try {
   const authorizedBook = await request('/api/books/' + book.id, { role: 'author', method: 'PUT', body: { expectedRevision: fixtureBook.revision, legalAcceptance } });
   assert.equal(authorizedBook.status, 200, JSON.stringify(authorizedBook.data));
   tokenAcceptance = { accepted: true, documentHash: legalAcceptance.documentHash };
-  // Explicit author acceptance plus synthetic review; never a production approval.
-  const offer = await request(`/api/commercial/agreements/${book.id}`, { role: 'author' });
-  assert.equal(offer.status, 200, JSON.stringify(offer.data));
-  const agreement = await request(`/api/commercial/agreements/${book.id}/accept`, { role: 'author', method: 'POST', body: { accepted: true, termsHash: offer.data.hash } });
-  assert.equal(agreement.status, 201, JSON.stringify(agreement.data));
-  await client.query(`insert into commercial_approvals(book_id,acceptance_id,work_hash,actor_id,action,agreement_ref,evidence_ref,commercial_agreement_id)
-    select book_id,id,work_hash,$1,'approve','fixture-commercial-agreement','fixture-holder-evidence',$3
-    from legal_acceptances where book_id=$2 order by id desc limit 1`, [users.author.id, book.id, agreement.data.id]);
+  const offer = await approveFixtureCommerce(book);
   await check('Commercial licences are independent and patronage never mints extra digital access', async () => {
     assert.equal((await buyToken('reader')).status, 201, 'no patronage prerequisite');
     assert.equal((await request('/api/books/' + book.id, { role: null })).status, 200, 'free public reading');
@@ -316,11 +321,14 @@ try {
     const created = await request('/api/books', { role: 'author', method: 'POST', body: { title: 'Preserved edition', author: 'Fixture', status: 'published', legalAcceptance, chapters: [{ title: 'Only chapter', content: 'Public edition text' }] } });
     assert.equal(created.status, 201, JSON.stringify(created.data));
     const work = created.data;
+    await approveFixtureCommerce(work);
     const { rows: [frame] } = await client.query("insert into frames(name,pkg) values('Frame fixture',$1) returning id", [JSON.stringify({ label: 'Original frame' })]);
     const card = await request(`/api/books/${work.id}/cards`, { role: 'author', method: 'POST', body: { name: 'Original art', unlock: 'tinta', priceTinta: 5, fx: { layers: { back: 'https://example.test/original.png', mid: '', front: '' }, frameId: frame.id } } });
     assert.equal(card.status, 201, JSON.stringify(card.data));
     await client.query("insert into wallet_ledger(user_id,currency,delta,reason) values($1,'tinta',20,'fixture')", [users.collector.id]);
-    const purchase = await request(`/api/cards/${card.data.id}/buy`, { role: 'collector', method: 'POST' });
+    const quote = await request(`/api/cards/${card.data.id}/quote`, { role: 'collector' });
+    assert.equal(quote.status, 200, JSON.stringify(quote.data));
+    const purchase = await request(`/api/cards/${card.data.id}/buy`, { role: 'collector', method: 'POST', body: { acceptance: { ...tokenAcceptance, quoteHash: quote.data.hash } } });
     assert.equal(purchase.status, 201, JSON.stringify(purchase.data));
     await client.query("update book_cards set name='Later art',fx='{}'::jsonb where id=$1", [card.data.id]);
     await client.query("update frames set pkg='{}'::jsonb where id=$1", [frame.id]);

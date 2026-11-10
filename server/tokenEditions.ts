@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
-import { books, bookRevisions, bookTokens, licensedEditions, printCopies, type Book } from "@shared/schema"
+import { books, bookRevisions, bookTokens, licensedEditions, printCopies, userCards, type Book } from "@shared/schema"
 import type { PublicationAcceptance } from "@shared/legal"
 import { publicationWorkHash } from "./editionFingerprint"
 
@@ -39,14 +39,19 @@ export async function tokenEdition(token: { bookId: number; editionId?: number |
 export async function purchasedEditions(userId: number, bookIds: number[], tx: any) {
   const result = new Map<number, typeof licensedEditions.$inferSelect>()
   if (!bookIds.length) return result
-  const rows = await tx.select({ edition: licensedEditions }).from(bookTokens)
+  const rows = await tx.select({ edition: licensedEditions, acquiredAt: bookTokens.createdAt }).from(bookTokens)
     .innerJoin(licensedEditions, eq(bookTokens.editionId, licensedEditions.id))
     .leftJoin(printCopies, eq(printCopies.tokenId, bookTokens.id))
     .where(and(inArray(bookTokens.bookId, bookIds), or(
       and(eq(bookTokens.kind, "support"), eq(bookTokens.ownerUserId, userId), eq(bookTokens.licenseStatus, "active")),
       and(eq(printCopies.claimedByUserId, userId), or(eq(bookTokens.licenseStatus, "active"), sql`${bookTokens.ownerUserId} <> ${userId}`)),
     ))).orderBy(asc(bookTokens.id))
-  for (const { edition } of rows) {
+  const cards = await tx.select({ edition: licensedEditions, acquiredAt: userCards.createdAt }).from(userCards)
+    .innerJoin(licensedEditions, eq(userCards.editionId, licensedEditions.id))
+    .where(and(eq(userCards.userId, userId), inArray(licensedEditions.bookId, bookIds)))
+  const acquisitions = [...rows.map((row: any) => ({ ...row, acquiredAt: row.acquiredAt })), ...cards]
+    .sort((a, b) => new Date(a.acquiredAt).getTime() - new Date(b.acquiredAt).getTime() || a.edition.id - b.edition.id)
+  for (const { edition } of acquisitions) {
     if (edition.workHash !== publicationWorkHash(edition.snapshot)) throw new Error("La edición adquirida no supera la verificación de integridad")
     if (!result.has(edition.bookId)) result.set(edition.bookId, edition)
   }

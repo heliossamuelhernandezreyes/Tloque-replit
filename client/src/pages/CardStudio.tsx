@@ -1,12 +1,11 @@
-import { accountFetch as fetch } from "@/lib/account-context"
-import { useQuery } from "@tanstack/react-query"
+import { useMyBooks } from "@/hooks/use-books"
+import QueryNotice from "@/components/QueryNotice"
 import { useLocation, useRoute } from "wouter"
 import { ArrowLeft, Frame, BookOpen } from "lucide-react"
 import CardsEditor from "@/components/CardsEditor"
 import { useAuth } from "@/hooks/useAuth"
 import { useSettings } from "@/context/SettingsContext"
 
-interface Book { id: number; title: string; authorId: number }
 
 const GC = { color: "#c9a84c", glow: "#c9a84c" }
 
@@ -20,15 +19,7 @@ export default function CardStudio() {
   const { user, isLoggedIn, isLoading } = useAuth()
   const { t } = useSettings()
 
-  const { data } = useQuery<Book[]>({
-    queryKey: ["/api/books"],
-    queryFn: async () => {
-      const res = await fetch("/api/books", { credentials: "include" })
-      if (!res.ok) return []
-      return res.json()
-    },
-    enabled: !!isLoggedIn,
-  })
+  const { data, isLoading: booksLoading, isError, refetch } = useMyBooks(isLoggedIn)
   const myBooks = (data || []).filter(b => b.authorId === user?.id)
   const focused = focusBookId ? myBooks.find(b => b.id === focusBookId) : null
   const assignTargets = myBooks.map(b => ({ id: b.id, title: b.title }))
@@ -72,6 +63,7 @@ export default function CardStudio() {
       </div>
 
       <div className="max-w-lg mx-auto px-4">
+        <QueryNotice loading={booksLoading} error={isError} onRetry={() => { void refetch() }} />
         {focused ? (
           /* Vista de UNA obra (llegando desde el editor) */
           <div className="pt-2">

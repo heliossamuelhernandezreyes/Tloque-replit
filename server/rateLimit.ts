@@ -50,15 +50,16 @@ async function distributedDecision(key: string, now: number, windowMs: number, m
   }
 }
 
-export function rateLimit(windowMs: number, max: number, scope?: string) {
+export function rateLimit(windowMs: number, max: number, scope?: string, identity: "ip" | "account" | "account-and-ip" = "account-and-ip") {
   return async (req: Request, res: Response, next: NextFunction) => {
     const now = Date.now()
     const route = scope || (typeof req.route?.path === "string" ? req.route.path : req.path)
-    // Separar cuentas detrás de la misma red evita que una persona agote el
-    // cupo de todos los usuarios de una escuela/café. La IP sigue formando
-    // parte de la clave para que una cuenta distribuida no ignore el límite.
     const userId = req.isAuthenticated?.() ? (req.user as any)?.id : null
-    const key = (req.ip ?? "unknown") + ":" + (userId ?? "anon") + ":" + req.method + ":" + route
+    const ip = req.ip ?? "unknown"
+    const subject = identity === "ip" ? ip
+      : identity === "account" ? (userId == null ? `ip:${ip}` : `user:${userId}`)
+      : `${ip}:${userId ?? "anon"}`
+    const key = subject + ":" + req.method + ":" + route
     let decision: { allowed: boolean; resetAt: number }
     if (!process.env.DATABASE_URL) {
       decision = localDecision(key, now, windowMs, max)

@@ -32,6 +32,8 @@ import { db } from "./db"
 import { hasCapability } from "./auth"
 import { rateLimit } from "./rateLimit"
 import { hasActiveSubscription } from "./subscription"
+import { isEditionRestricted } from "@shared/edition-access"
+import { readableEditionsFor } from "./bookAccess"
 import { analyzeSpeechWithGroq, speechOracleConfigured } from "./speechOracle"
 
 const projectBodySchema = z.object({
@@ -147,7 +149,7 @@ async function audiobookAccessReason(
   book: typeof books.$inferSelect,
   user: any,
 ): Promise<AudiobookAccessReason> {
-  if (!user) return null
+  if (!user || isEditionRestricted(book)) return null
   if (hasCapability(user, "manageAudioCatalog")) return "admin"
   if (book.authorId === user.id) return "author"
   if (hasActiveSubscription(user, "elevenlabs")) return "subscription"
@@ -164,6 +166,12 @@ async function audiobookAccessReason(
   if (unlocked) return "book"
   if (card) return "card"
   return null
+}
+
+async function resolveAudioEdition(book: typeof books.$inferSelect | undefined, user: any) {
+  if (!book || isEditionRestricted(book)) return undefined
+  if (user && hasCapability(user, "manageAudioCatalog")) return book as any
+  return (await readableEditionsFor(user, [book]))[0]
 }
 
 function workerAuthorized(req: Request): boolean {
@@ -505,9 +513,19 @@ export function registerSpeechRoutes(app: Express) {
     const index = chapterIndex(req.params.chapterIndex)
     if (!bookId || index === null) return res.status(400).json({ message: "Capítulo inválido" })
     try {
-      const book = await loadBook(bookId)
-      if (!book || book.status !== "published") return res.status(404).json({ message: "Libro no encontrado" })
+      const book = await resolveAudioEdition(await loadBook(bookId), req.isAuthenticated() ? req.user : null)
+      if (!book) return res.status(404).json({ message: "Libro no encontrado" })
       const content = chapterContent(book, index)
+      if (book.acquiredEditionId && content !== null) {
+        const [retained] = await db.select().from(audiobookCache).where(and(
+          eq(audiobookCache.bookId, bookId), eq(audiobookCache.chapterIndex, index),
+          eq(audiobookCache.contentHash, speechContentHash(content)), eq(audiobookCache.status, "ready"),
+        )).orderBy(sql`${audiobookCache.id} desc`).limit(1)
+        const accessReason = retained && req.isAuthenticated() ? await audiobookAccessReason(book, req.user) : null
+        if (retained && accessReason) return res.json({ authorReady: true, cached: true, generating: false,
+          estimatedPaper: null, canRequest: false, playbackAccess: true, accessReason,
+          playbackUrl: `/api/audiobooks/${retained.id}/stream` })
+      }
       const [profileRow] = await db.select().from(speechProfiles).where(and(
         eq(speechProfiles.bookId, bookId),
         eq(speechProfiles.chapterIndex, index),
@@ -664,8 +682,11 @@ export function registerSpeechRoutes(app: Express) {
     if (!id) return res.status(400).json({ message: "Audiolibro inválido" })
     const [cached] = await db.select().from(audiobookCache).where(and(eq(audiobookCache.id, id), eq(audiobookCache.status, "ready")))
     if (!cached) return res.status(404).json({ message: "Audiolibro no encontrado" })
-    const book = await loadBook(cached.bookId)
-    if (!book || !await audiobookAccessReason(book, req.user)) {
+    const book = await resolveAudioEdition(await loadBook(cached.bookId), req.user)
+    const access = book ? await audiobookAccessReason(book, req.user) : null
+    const text = book ? chapterContent(book, cached.chapterIndex) : null
+    if (!book || !access || (!['author', 'admin'].includes(access)
+      && (text === null || speechContentHash(text) !== cached.contentHash))) {
       return res.status(403).json({ message: "No tienes acceso a este audiolibro" })
     }
     res.setHeader("Cache-Control", "private, no-store")

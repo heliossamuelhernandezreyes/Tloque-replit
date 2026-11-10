@@ -7,6 +7,8 @@ import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/acc
 const STREAK_KEY = "novareads_streak"
 
 import { slimBook, saveOfflineContent, removeOfflineContent, migrateHeavySaved } from "./offline"
+import { createAccountStore } from "./account-store"
+import { pruneBookQueryCache } from "./book-cache"
 
 const LIBRARY_OPS_KEY = "tloque_library_ops_v1"
 const LIBRARY_MIGRATED_KEY = "tloque_library_ops_migrated_v1"
@@ -94,6 +96,7 @@ export function pushUnsaveBook(bookId: number) {
 
 // ── Juntar lo local con el servidor (al abrir la app logueado) ──
 export async function pullAndMerge(): Promise<void> {
+  await pruneBookQueryCache(createAccountStore("books"))
   // Adelgazar guardados viejos (contenido → IndexedDB) antes de fusionar
   await migrateHeavySaved()
 

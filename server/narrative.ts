@@ -29,6 +29,8 @@ import {
 } from "@shared/music-brain"
 import { paperChargeFor } from "@shared/paper"
 import { db } from "./db"
+import { readableEditionsFor } from "./bookAccess"
+import { isEditionRestricted } from "@shared/edition-access"
 import { hasCapability } from "./auth"
 import { rateLimit } from "./rateLimit"
 import { hasActiveSubscription } from "./subscription"
@@ -409,6 +411,7 @@ export function registerNarrativeRoutes(app: Express) {
         chapterIndex,
         revision: validProfile.revision,
         sourceProjectRevision: project.revision,
+        contentHash: contentHash(content),
         status: "draft",
         data: validProfile,
         compiledBy: (req.user as any).id,
@@ -417,6 +420,7 @@ export function registerNarrativeRoutes(app: Express) {
         set: {
           revision: validProfile.revision,
           sourceProjectRevision: project.revision,
+          contentHash: contentHash(content),
           status: "draft",
           data: validProfile,
           compiledBy: (req.user as any).id,
@@ -453,6 +457,7 @@ export function registerNarrativeRoutes(app: Express) {
         eq(experienceProfiles.chapterIndex, chapterIndex),
       ))
       if (!project || !currentProfile || content === null
+          || currentProfile.contentHash !== contentHash(content)
           || project.contentHash !== contentHash(content)
           || currentProfile.sourceProjectRevision !== project.revision
           || experienceProfileSchema.parse(currentProfile.data).paragraphCount !== paragraphCountFor(content)) {
@@ -480,7 +485,10 @@ export function registerNarrativeRoutes(app: Express) {
     const chapterIndex = parseChapterIndex(req.params.chapterIndex)
     if (!bookId || chapterIndex === null) return res.status(400).json({ message: "Capítulo inválido" })
     try {
-      const book = await loadBook(bookId)
+      const current = await loadBook(bookId)
+      if (!current || isEditionRestricted(current)) return res.status(404).json({ message: "Libro no encontrado" })
+      const user = req.isAuthenticated() ? req.user : null
+      const [book] = await readableEditionsFor(user, [current])
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
       const owner = req.isAuthenticated() && canEditBook(book, req.user)
       if (book.status !== "published" && !owner) return res.status(404).json({ message: "Libro no encontrado" })
@@ -490,7 +498,12 @@ export function registerNarrativeRoutes(app: Express) {
       ]
       if (!owner) conditions.push(eq(experienceProfiles.status, "approved"))
       const [profile] = await db.select().from(experienceProfiles).where(and(...conditions))
-      if (!profile) return res.json({ profile: null, musicBrain: null, audioLayers: [] })
+      const content = chapterContent(book, chapterIndex)
+      const expectedRevision = req.query.revision === undefined ? null : Number(req.query.revision)
+      if (!profile || content === null || profile.contentHash !== contentHash(content)
+        || (expectedRevision !== null && expectedRevision !== book.revision)) {
+        return res.json({ profile: null, musicBrain: null, audioLayers: [], status: "unavailable_for_edition", bookRevision: book.revision })
+      }
       const compactProfile = experienceProfileSchema.parse(profile.data)
       const [advanced] = await db.select().from(advancedDirectionProjects).where(and(
         eq(advancedDirectionProjects.bookId, bookId),
@@ -501,7 +514,7 @@ export function registerNarrativeRoutes(app: Express) {
       const musicBrain = advancedProject.success && advancedProject.data.musicProject.regions.length > 0
         ? musicBrainScoreForDirection(advancedProject.data)
         : compactProfile.regions.length > 0 ? musicBrainScoreForExperience(compactProfile) : null
-      res.json({ profile: compactProfile, musicBrain, audioLayers: await readerAudioLayers(musicBrain) })
+      res.json({ profile: compactProfile, musicBrain, audioLayers: await readerAudioLayers(musicBrain), bookRevision: book.revision, editionId: book.acquiredEditionId ?? null })
     } catch (error) {
       console.error("Experience profile read failed:", error)
       res.status(500).json({ message: "No se pudo cargar la experiencia narrativa" })

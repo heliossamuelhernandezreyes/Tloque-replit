@@ -47,6 +47,7 @@ export const api = {
       path: '/api/books/:id' as const,
       input: patchSchema(insertBookSchema).extend({
         expectedRevision: z.number().int().min(1),
+        expectedDraftRevision: z.number().int().min(0).optional(),
         legalAcceptance: publicationAcceptanceSchema.optional(),
       }),
       responses: {

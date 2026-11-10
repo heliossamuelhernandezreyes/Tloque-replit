@@ -17,6 +17,7 @@ import { pullAndMerge } from "@/lib/sync"
 import type { AdminCapability } from "@shared/admin-permissions"
 import { accountContext } from "@/lib/account-context"
 import OfflineLibrary from "@/components/OfflineLibrary"
+import WalletReturnNotice from "@/components/WalletReturnNotice"
 
 const NotFound = lazy(() => import("@/pages/not-found"))
 const Home = lazy(() => import("@/pages/home"))
@@ -98,6 +99,8 @@ function Router() {
         <Route path="/profile"                 component={ProfileHub} />
         <Route path="/inbox"                   component={Inbox} />
         <Route path="/editions"                component={Editions} />
+        <Route path="/author/id/:id" component={AuthorPage} />
+        <Route path="/author/classic/:name" component={AuthorPage} />
         <Route path="/author/:name"            component={AuthorPage} />
         <Route path="/claim/:folio"            component={ClaimPage} />
         <Route path="/sorteo"                  component={GachaScreen} />
@@ -238,6 +241,7 @@ function AppContent() {
         <Onboarding onComplete={() => setShowOnboarding(false)} />
       )}
       <ExperienceShell>
+        <WalletReturnNotice />
         <Router />
       </ExperienceShell>
     </>

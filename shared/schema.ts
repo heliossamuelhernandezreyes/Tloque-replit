@@ -588,6 +588,7 @@ export const userCards = pgTable("user_cards", {
   userId:    integer("user_id").references(() => users.id).notNull(),
   cardId:    integer("card_id").references(() => bookCards.id).notNull(),
   snapshot:  jsonb("snapshot").$type<Record<string, unknown>>(),
+  editionId: integer("edition_id").references(() => licensedEditions.id),
   source:    text("source").notNull().default("support"),     // "support" | "tinta"
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => ({
@@ -730,6 +731,7 @@ export const narrativeProjects = pgTable("narrative_projects", {
 }))
 
 export const experienceProfiles = pgTable("experience_profiles", {
+  contentHash: text("content_hash"),
   id:                    serial("id").primaryKey(),
   bookId:                integer("book_id").references(() => books.id, { onDelete: "cascade" }).notNull(),
   chapterIndex:          integer("chapter_index").notNull(),

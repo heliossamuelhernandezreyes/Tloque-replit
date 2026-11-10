@@ -1,8 +1,9 @@
 import { db } from "./db";
 import { isDeepStrictEqual } from "node:util"
-import { books, bookRevisions, comments, type CreateBookRequest, type UpdateBookRequest, type BookResponse, type Comment } from "@shared/schema";
-import { eq, and, desc, getTableColumns, inArray, sql } from "drizzle-orm";
+import { books, bookRevisions, bookDrafts, comments, type CreateBookRequest, type UpdateBookRequest, type BookResponse, type Comment } from "@shared/schema";
+import { eq, and, desc, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
 import type { PublicationAcceptance } from "@shared/legal"
+import { lockManuscript } from "./manuscriptLock"
 import { recordPublicationAcceptance } from "./legal"
 
 export type BookChangeType = "create" | "update" | "publish" | "unpublish" | "restore" | "delete"
@@ -15,6 +16,7 @@ export class BookRevisionConflictError extends Error {
 }
 
 type BookUpdateOptions = {
+  expectedDraftRevision?: number
   expectedRevision?: number
   changedBy?: number | null
   changeType?: BookChangeType
@@ -22,7 +24,7 @@ type BookUpdateOptions = {
 }
 
 export interface IStorage {
-  getBooks(options?: { before?: number; limit?: number; author?: string; search?: string }): Promise<any[]>;
+  getBooks(options?: { before?: number; limit?: number; author?: string; authorId?: number | null; search?: string }): Promise<any[]>;
   getBooksByAuthor(authorId: number): Promise<any[]>;
   getBook(id: number): Promise<BookResponse | undefined>;
   findBookByGutenbergId(gutenbergId: number): Promise<BookResponse | undefined>;
@@ -33,7 +35,7 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async getBooks(options: { before?: number; limit?: number; author?: string; search?: string } = {}): Promise<any[]> {
+  async getBooks(options: { before?: number; limit?: number; author?: string; authorId?: number | null; search?: string } = {}): Promise<any[]> {
     // El catálogo es una vista ligera: mandar el texto y todos los capítulos
     // de cada obra hacía crecer el primer arranque con toda la biblioteca.
     // El contenido completo se obtiene únicamente al abrir /api/books/:id.
@@ -48,6 +50,7 @@ export class DatabaseStorage implements IStorage {
     }).from(books).where(and(eq(books.status, "published"), eq(books.rightsHold, false),
       options.before ? sql`${books.id} < ${options.before}` : undefined,
       options.author ? sql`lower(${books.author}) = lower(${options.author})` : undefined,
+      options.authorId === null ? isNull(books.authorId) : options.authorId === undefined ? undefined : eq(books.authorId, options.authorId),
       options.search ? sql`(${books.title} ilike ${pattern} or ${books.author} ilike ${pattern} or ${books.genre} ilike ${pattern})` : undefined,
     )).orderBy(desc(books.id)).limit(Math.min(100, Math.max(1, Math.floor(options.limit || 50))))
   }
@@ -102,6 +105,7 @@ export class DatabaseStorage implements IStorage {
 
   async updateBook(id: number, updates: UpdateBookRequest, options: BookUpdateOptions = {}): Promise<BookResponse> {
     return db.transaction(async tx => {
+      await lockManuscript(tx, id)
       // revision y timestamps son propiedad del servidor, incluso para admin.
       const safeUpdates = { ...updates } as Record<string, unknown>
       delete safeUpdates.revision
@@ -113,7 +117,15 @@ export class DatabaseStorage implements IStorage {
         ? eq(books.id, id)
         : and(eq(books.id, id), eq(books.revision, options.expectedRevision))
       const [currentBook] = await tx.select().from(books).where(condition).for("update")
-      if (currentBook && !options.legalAcceptance && Object.entries(safeUpdates).every(([key, value]) => value === undefined || isDeepStrictEqual((currentBook as any)[key], value))) return currentBook
+      const clearAcknowledgedDraft = async () => {
+        if (!currentBook || options.expectedDraftRevision === undefined || !options.changedBy) return
+        await tx.delete(bookDrafts).where(and(eq(bookDrafts.bookId, id),
+          eq(bookDrafts.authorId, options.changedBy), eq(bookDrafts.baseRevision, currentBook.revision),
+          eq(bookDrafts.draftRevision, options.expectedDraftRevision)))
+      }
+      if (currentBook && !options.legalAcceptance && Object.entries(safeUpdates).every(([key, value]) => value === undefined || isDeepStrictEqual((currentBook as any)[key], value))) {
+        await clearAcknowledgedDraft(); return currentBook
+      }
       const [updated] = await tx.update(books)
         .set({
           ...safeUpdates,
@@ -137,6 +149,7 @@ export class DatabaseStorage implements IStorage {
         createdBy: options.changedBy ?? null,
       })
       await recordPublicationAcceptance(tx, updated, options.changedBy, options.legalAcceptance, currentBook)
+      await clearAcknowledgedDraft()
       return updated
     })
   }
@@ -146,11 +159,13 @@ export class DatabaseStorage implements IStorage {
     // conservan sus claves foráneas. La obra deja de ser pública sin destruir
     // el historial económico ni las colecciones de los lectores.
     await db.transaction(async tx => {
+      await lockManuscript(tx, id)
       const [updated] = await tx.update(books)
         .set({ status: "deleted", revision: sql`${books.revision} + 1`, updatedAt: new Date() })
         .where(eq(books.id, id))
         .returning()
       if (!updated) throw new Error("Book not found")
+      await tx.delete(bookDrafts).where(eq(bookDrafts.bookId, id))
       await tx.insert(bookRevisions).values({
         bookId: updated.id,
         revision: updated.revision,

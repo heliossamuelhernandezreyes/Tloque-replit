@@ -62,6 +62,7 @@ export const EXPECTED_TABLES = [
 ]
 
 export const EXPECTED_INDEXES = [
+  "user_cards_edition_idx",
   "commercial_agreements_author_idx",
   "commercial_approvals_book_idx", "copyright_cases_book_status_idx",
   "book_tokens_edition_idx",
@@ -118,6 +119,7 @@ export const EXPECTED_INDEXES = [
 ]
 
 export const EXPECTED_CONSTRAINTS = [
+  "experience_profiles_hash_check",
   "licensed_editions_contract_check",
   "admins_role_allowed",
   "audio_assets_kind_check",
@@ -361,6 +363,8 @@ export async function validateExpectedSchema(client) {
   }
 
   const requiredColumns = {
+    user_cards: ["edition_id"],
+    experience_profiles: ["content_hash"],
     commercial_agreements: ["book_id", "author_id", "acceptance_id", "work_hash", "terms_hash", "terms", "accepted_at"],
     licensed_editions: ["book_id", "book_revision", "acceptance_id", "work_hash", "snapshot", "rights"],
     commercial_approvals: ["book_id", "acceptance_id", "work_hash", "actor_id", "agreement_ref", "evidence_ref", "action", "commercial_agreement_id"],

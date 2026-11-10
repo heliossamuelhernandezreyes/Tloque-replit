@@ -730,6 +730,7 @@ export default function Editor() {
           id: localId,
           ...serverPayload,
           expectedRevision: Number(created?.revision ?? form.revision),
+          expectedDraftRevision: cloudDraftRevision.current,
         })
         serverId = localId
       } else {
@@ -825,6 +826,7 @@ export default function Editor() {
           id,
           status: "draft",
           expectedRevision: Number(form.revision),
+          expectedDraftRevision: cloudDraftRevision.current,
         }) as EditableBook
       }
       const book = { ...canonical, id, status: "draft" as const, localSavedAt: Date.now() }
