@@ -51,7 +51,9 @@ export function useMyBooks(enabled = true) {
     queryFn: async () => {
       const response = await fetch("/api/books/mine", { credentials: "include" })
       if (!response.ok) throw new Error("No se pudieron cargar tus obras")
-      return response.json() as Promise<any[]>
+      const data = await response.json()
+      if (!Array.isArray(data)) throw new Error("El catálogo de tus obras no es válido. Reintenta la carga.")
+      return data as any[]
     },
   })
 }

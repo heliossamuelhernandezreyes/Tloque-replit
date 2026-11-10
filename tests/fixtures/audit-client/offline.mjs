@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import TestRenderer, {act} from 'react-test-renderer';
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
-import {useBook} from '../../../client/src/hooks/use-books.ts';
+import {useBook,useMyBooks} from '../../../client/src/hooks/use-books.ts';
 import {saveOfflineContent,OfflinePermissionError} from '../../../client/src/lib/offline.ts';
 
 let online=true,authorized=false,result;
@@ -17,10 +17,10 @@ globalThis.auditFetch=async path=>{
   return Response.json(source);
 };
 function Harness(){result=useBook(777);return null;}
-async function readFresh(){
+async function readFresh(Component=Harness){
   const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   let view;
-  await act(async()=>{view=TestRenderer.create(React.createElement(QueryClientProvider,{client},React.createElement(Harness)));await new Promise(resolve=>setTimeout(resolve,60));});
+  await act(async()=>{view=TestRenderer.create(React.createElement(QueryClientProvider,{client},React.createElement(Component)));await new Promise(resolve=>setTimeout(resolve,60));});
   const value=result;
   await act(async()=>view.unmount());client.clear();
   return value;
@@ -42,3 +42,8 @@ await saveOfflineContent(777,source);
 online=false;
 const explicit=await readFresh();assert.equal(explicit.isError,false);assert.equal(explicit.data.content,'EDICION_AUTORIZADA');
 assert.equal(explicit.data.hasOfflineContent,true);
+function OwnWorks(){result=useMyBooks();return null;}
+globalThis.auditFetch=async()=>Response.json({message:'Malformed catalogue fixture'});
+const malformed=await readFresh(OwnWorks);assert.equal(malformed.isError,true);assert.equal(malformed.data,undefined);
+globalThis.auditFetch=async()=>Response.json([source]);
+const own=await readFresh(OwnWorks);assert.equal(own.isError,false);assert.equal(own.data[0].id,777);

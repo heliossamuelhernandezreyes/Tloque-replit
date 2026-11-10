@@ -91,7 +91,7 @@ async function setup({ mobile = false, essential = false, admin = true, strictAs
       if (!checked.ok) return route.fulfill({ status: 400, json: { message: checked.message } })
       savedCard = { ...checked.card, id: 301, owned: true }
       cards.splice(0, cards.length, savedCard); data = savedCard
-    } else if (url.pathname === "/api/books") data = []
+    } else if (url.pathname === "/api/books" || url.pathname === "/api/books/mine") data = []
     else if (url.pathname === "/api/wallet") data = { tinta: 300, papel: 0 }
     else if (url.pathname === "/api/sync/state") data = { library: [], progress: [], streak: null }
     else if (url.pathname.includes("notifications")) data = { notifications: [], unread: 0 }
