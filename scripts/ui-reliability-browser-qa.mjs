@@ -65,7 +65,10 @@ async function setup() {
     else if (url.pathname === "/api/wallet") data = { tinta: state.cardBuys.length ? 15 : 20, papel: 0 }
     else if (url.pathname === "/api/wallet/packs") data = { enabled: true, beta: false, commerceVersion: "fixture-commerce", packs: [{ id: "gota", tinta: 10, cents: 3000, label: "Gota", recommended: true }] }
     else if (url.pathname === "/api/wallet/orders/17") data = { id: 17, status: state.walletStatus, units: 10, packId: "gota", commerceVersion: "fixture-commerce", purchaseKey: "previous-fixture-key" }
-    else if (url.pathname === "/api/wallet/orders/lookup") return route.fulfill({ status: 404, json: { message: "No pending fixture order" } })
+    else if (url.pathname === "/api/wallet/orders/lookup") {
+      if (route.request().headers()["idempotency-key"] !== "previous-fixture-key") return route.fulfill({ status: 404, json: { message: "No pending fixture order" } })
+      data = { id: 17, status: state.walletStatus, units: 10, packId: "gota", commerceVersion: "fixture-commerce", purchaseKey: "previous-fixture-key" }
+    }
     else if (url.pathname === "/api/wallet/buy") {
       state.walletBuys.push({ key: route.request().headers()["idempotency-key"], body: route.request().postDataJSON() })
       data = { mode: "free_beta", credited: 10, orderId: 100 + state.walletBuys.length }
@@ -213,7 +216,11 @@ try {
 
   await scenario("wallet return verifies payment and two new recharges use distinct intentions", async () => {
     const wallet = await setup()
-    await wallet.context.addInitScript(() => localStorage.setItem("tloque.account.v1:599:local:wallet-purchase:fixture-commerce:gota", "previous-fixture-key"))
+    await wallet.context.addInitScript(() => {
+      if (sessionStorage.getItem("audit-wallet-seeded")) return
+      sessionStorage.setItem("audit-wallet-seeded", "1")
+      localStorage.setItem("tloque.account.v1:599:local:wallet-purchase:fixture-commerce:gota", "previous-fixture-key")
+    })
     await wallet.page.goto(origin + "/?tinta=17")
     await wallet.page.getByText(/Tu pago sigue pendiente de confirmación/).waitFor()
     assert.equal(await wallet.page.getByText(/Recarga confirmada:/).count(), 0)
@@ -231,7 +238,10 @@ try {
     }
     assert.equal(wallet.state.walletBuys.length, 2)
     assert.notEqual(wallet.state.walletBuys[0].key, wallet.state.walletBuys[1].key)
-    assert.ok(wallet.state.walletBuys.every(purchase => purchase.key !== "previous-fixture-key" && purchase.body.acceptance.accepted === true))
+    for (const purchase of wallet.state.walletBuys) {
+      assert.notEqual(purchase.key, "previous-fixture-key")
+      assert.equal(purchase.body.acceptance.accepted, true)
+    }
     await wallet.page.screenshot({ path: resolve(output, "wallet-recharge-mobile.png") })
   })
   if (failures.length) throw new AggregateError(failures, "UI reliability scenarios failed")
