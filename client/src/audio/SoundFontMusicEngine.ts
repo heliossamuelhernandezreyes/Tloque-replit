@@ -105,13 +105,15 @@ export class SoundFontMusicEngine {
       // Timers wake the planner; only the audio clock determines musical phase.
       this.bar = Math.max(this.bar, Math.floor(Math.max(0, context.currentTime - startAt) / barSeconds))
       while (startAt + this.bar * barSeconds < context.currentTime + .6) {
+        const nominalStart = startAt + this.bar * barSeconds
+        if (nominalStart < context.currentTime - .1) { this.bar += 1; continue }
         const degree = [0, 3, 5, 2][this.bar % 4] % scale.length
         const notes = [
           recipe.rootMidi + scale[degree],
           recipe.rootMidi + scale[(degree + 2) % scale.length] + (degree + 2 >= scale.length ? 12 : 0),
           recipe.rootMidi + scale[(degree + 4) % scale.length] + (degree + 4 >= scale.length ? 12 : 0),
         ]
-        const when = Math.max(context.currentTime + .01, startAt + this.bar * barSeconds)
+        const when = Math.max(context.currentTime + .01, nominalStart)
         for (const note of notes) {
           synth.noteOn(0, note, Math.round(38 + recipe.density * 28), {time: when})
           synth.noteOff(0, note, {time: when + barSeconds * .82})

@@ -81,7 +81,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, [settings.musicVolume])
 
   useEffect(() => {
-    if (!settings.musicEnabled) engineRef.current?.pause()
+    if (!settings.musicEnabled) {
+      generationRef.current += 1
+      engineRef.current?.pause()
+    }
   }, [settings.musicEnabled])
 
   useEffect(() => {

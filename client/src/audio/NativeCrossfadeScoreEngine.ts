@@ -49,10 +49,9 @@ export class NativeCrossfadeScoreEngine {
     const startDelay = await deck.play(cue, () => outgoing >= 0
       ? this.decks[outgoing].secondsUntilNextBar(Math.min(4, cue.crossfadeSeconds * 0.5))
       : 0)
-    if (token !== this.token) {
-      deck.fadeOutAndStop(0.08)
-      return
-    }
+    // The backend owns cancellation of its old context. This deck may now
+    // belong to a newer play; a late wrapper must never fade that new owner.
+    if (token !== this.token) return
     if (this.states[incoming] === "error") {
       this.pending = -1
       if (outgoing >= 0) this.listener("playing", this.cues[outgoing])

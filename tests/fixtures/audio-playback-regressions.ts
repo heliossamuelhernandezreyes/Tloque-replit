@@ -4,7 +4,9 @@ import { MusicEngine, type MusicCue } from '../../client/src/audio/MusicEngine'
 import { HybridMusicEngine } from '../../client/src/audio/HybridMusicEngine'
 import { AdaptiveLayerMusicEngine } from '../../client/src/audio/AdaptiveLayerMusicEngine'
 import { SoundFontMusicEngine } from '../../client/src/audio/SoundFontMusicEngine'
-import { DEFAULT_PROCEDURAL_RECIPE } from '../../shared/audio'
+import { NativeCrossfadeScoreEngine } from '../../client/src/audio/NativeCrossfadeScoreEngine'
+import { LinearScoreEngine } from '../../client/src/audio/LinearScoreEngine'
+import { compileTloqueScore, DEFAULT_PROCEDURAL_RECIPE } from '../../shared/audio'
 import { musicBrainScoreForProceduralRecipe } from '../../shared/music-brain'
 
 let now=0, sequence=0
@@ -133,6 +135,48 @@ await probe('A12-soundfont-pause-retains-audio-phase',async()=>{
     assert.equal(suspended,true);assert.equal(barWhilePaused,barBeforePause);assert.equal(notes.length,6)
     return {barBeforePause,barWhilePaused,audioClockSeconds:(engine as any).context.currentTime,audioSuspended:suspended,noteMessages:notes.length}
   }finally{engine.dispose();Object.assign((globalThis as any).window,saved)}
+})
+const compiled=compileTloqueScore(`TLOQUE_SCORE 2
+title "Module cancellation"
+tempo 120
+meter 4/4
+loop false
+seed 1
+humanize 0
+quality studio
+module builtin
+track solo synth=pad instrument=strings.violin program=40 role=melody gain=0.3
+section test form=custom bars=1 repeat=1 fade=0 tempo=120 rubato=0
+use solo
+1:1 E5 1 velocity=0.7 articulation=normal
+end`)
+assert.ok(compiled.ok)
+for(const Backend of [SoundFontMusicEngine,LinearScoreEngine])for(const action of ['stop','dispose'] as const)await probe('loading-'+Backend.name+'-'+action,async()=>{
+  let release!:()=>void,closed=false,entered=false
+  const gate=new Promise<void>(resolve=>release=resolve),states:string[]=[]
+  const previous=(globalThis as any).AudioContext
+  ;(globalThis as any).AudioContext=class{
+    audioWorklet={addModule:async()=>{entered=true;await gate}}
+    async close(){closed=true}
+  }
+  const engine=new Backend(state=>states.push(state))
+  try{
+    const pending=engine.play(cue(40,{sourceType:Backend===LinearScoreEngine?'score':'soundfont',packUrl:'/fixture.sf2',recipe:Backend===LinearScoreEngine&&compiled.ok?compiled.recipe:DEFAULT_PROCEDURAL_RECIPE}))
+    for(let i=0;i<10&&!entered;i++)await Promise.resolve()
+    assert.equal(entered,true);engine[action]();assert.equal(closed,true)
+    release();await pending;assert.equal(states.at(-1),'idle')
+    return {contextClosed:true,lastState:states.at(-1)}
+  }finally{release();engine.dispose();(globalThis as any).AudioContext=previous}
+})
+await probe('native-wrapper-stale-load-cannot-retire-new-deck',async()=>{
+  let release!:()=>void,calls=0,retirements=0
+  const gate=new Promise<void>(resolve=>release=resolve),engine=new NativeCrossfadeScoreEngine(()=>{})
+  const deck={setMasterVolume(){},setDucked(){},setNarrativeDirection(){},stop(){},pause(){},resume:async()=>{},secondsUntilNextBar(){return 0},fadeOutAndStop(){retirements++},play:async()=>{if(++calls===1)await gate;return 0}}
+  ;(engine as any).decks=[deck,deck]
+  try{
+    const older=engine.play(cue(50));engine.stop();await engine.play(cue(51));release();await older
+    assert.equal(retirements,0);return {newDeckPreserved:true}
+  }finally{release();engine.dispose()}
 })
 await writeFile(process.env.AUDIO_AUDIT_RESULTS||'.tloque_cache/audio-playback-regressions.json',JSON.stringify({regressionFor:'audio-audit-20261109',fixture:'actual engines with controlled media/clock/Tone primitives; no live providers',results},null,2))
 if(results.some(result=>!result.passed))process.exitCode=1
