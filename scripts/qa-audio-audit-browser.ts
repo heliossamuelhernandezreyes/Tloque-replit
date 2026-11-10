@@ -1,6 +1,7 @@
 import { MusicEngine, type MusicCue } from '../client/src/audio/MusicEngine'
 import { HybridMusicEngine } from '../client/src/audio/HybridMusicEngine'
 import { AdaptiveLayerMusicEngine } from '../client/src/audio/AdaptiveLayerMusicEngine'
+import { NativeSamplePackPlayer } from '../client/src/audio/NativeSamplePackEngine'
 import { DEFAULT_PROCEDURAL_RECIPE } from '../shared/audio'
 import * as Tone from 'tone'
 
@@ -128,6 +129,19 @@ document.querySelector('button')!.addEventListener('click', async () => {
         const afterSyncTimes = media.map(audio => audio.currentTime)
         return {times, startupOffsetSeconds, afterSyncOffsetSeconds: Math.abs(afterSyncTimes[0] - afterSyncTimes[1])}
       } finally { engine.dispose() }
+    })
+    await probe('A11-real-native-sample-decodes-despite-sha-mismatch', async () => {
+      const context = new AudioContext(), player = new NativeSamplePackPlayer(context)
+      try {
+        const url = '/api/audio/sample-packs/samples/' + 'a'.repeat(64) + '.wav'
+        const bytes = await (await fetch(url)).arrayBuffer()
+        const actualSha256 = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(n => n.toString(16).padStart(2, '0')).join('')
+        const declaredSha256 = 'a'.repeat(64)
+        check(actualSha256 !== declaredSha256, 'Fixture must have mismatched integrity')
+        const [buffer] = await player.preload([{sampleUrl: url, sha256: declaredSha256} as any])
+        check(buffer.duration > 0, 'Expected native loader to accept mismatched but valid WAV')
+        return {declaredSha256, actualSha256, decodedSeconds: buffer.duration}
+      } finally { await context.close() }
     })
     ;(window as any).auditResults = {userAgent: navigator.userAgent, fixture: 'real Chromium HTMLAudio and Tone; local sine WAVs; controlled Reverb preparation delay', results}
   } catch (error) { (window as any).auditResults = {fatal: String((error as Error).stack), results} }
