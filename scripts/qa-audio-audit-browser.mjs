@@ -10,7 +10,13 @@ const wave=seconds=>{const rate=32000,n=Math.floor(seconds*rate),buf=Buffer.allo
 const long=wave(8),short=wave(.5);
 const server=createServer(async(req,res)=>{
  const url=new URL(req.url,'http://localhost');
- if(url.pathname.endsWith('.wav')){if(url.pathname==='/delayed.wav')await new Promise(r=>setTimeout(r,600));res.writeHead(200,{'Content-Type':'audio/wav','Cache-Control':'no-store'});res.end(url.pathname==='/short.wav'?short:long);return;}
+ if(url.pathname.endsWith('.wav')){
+   if(url.pathname==='/delayed.wav')await new Promise(r=>setTimeout(r,600));
+   const bytes=url.pathname==='/short.wav'?short:long,range=/^bytes=(\d+)-(\d*)$/.exec(req.headers.range||'');
+   const start=range?Number(range[1]):0,end=range&&range[2]?Math.min(Number(range[2]),bytes.length-1):bytes.length-1;
+   res.writeHead(range?206:200,{'Content-Type':'audio/wav','Cache-Control':'no-store','Accept-Ranges':'bytes','Content-Length':end-start+1,...(range?{'Content-Range':`bytes ${start}-${end}/${bytes.length}`}:{})});
+   res.end(bytes.subarray(start,end+1));return;
+ }
  if(url.pathname==='/browser.js'){res.writeHead(200,{'Content-Type':'text/javascript'});res.end(await readFile(output+'/browser.js'));return;}
  res.writeHead(200,{'Content-Type':'text/html'});res.end('<!doctype html><html><head><meta charset="utf-8"><title>Audio audit</title></head><body><button>Run audit</button><script type="module" src="/browser.js"></script></body></html>');
 });

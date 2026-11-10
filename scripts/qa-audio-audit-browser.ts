@@ -69,6 +69,24 @@ document.querySelector('button')!.addEventListener('click', async () => {
         return {mediaEnded: audio.ended, lastPublicState: states.at(-1)}
       } finally { engine.dispose() }
     })
+    await probe('A10-real-tone-procedural-first-play-zero-ramp', async () => {
+      const states: string[] = [], engine = new HybridMusicEngine(state => states.push(state))
+      try {
+        await engine.play(cue(6, {sourceType: 'procedural', recipe: DEFAULT_PROCEDURAL_RECIPE}))
+        check(states.at(-1) === 'error', 'Expected actual procedural first-play error')
+        let zeroRampError = ''
+        try { Tone.getTransport().bpm.rampTo(60, 0) } catch (error) { zeroRampError = String(error) }
+        check(zeroRampError.includes('linearRampToValueAtTime'), 'Expected Tone zero-duration tempo ramp failure')
+        return {lastPublicState: states.at(-1), zeroRampError}
+      } finally { engine.dispose() }
+    })
+    // Isolate cancellation from A10: only zero-duration tempo assignment is
+    // replaced with its intended immediate value; real synthesis is retained.
+    const bpm = Tone.getTransport().bpm, originalRamp = bpm.rampTo
+    bpm.rampTo = function (value: any, seconds: any, start?: any) {
+      if (seconds === 0) { this.value = value; return this }
+      return originalRamp.call(this, value, seconds, start)
+    }
     for (const action of ['stop', 'pause', 'dispose'] as const) {
       await probe('A04-real-tone-late-start-after-' + action, async () => {
         let release!: () => void, entered = false
@@ -87,13 +105,14 @@ document.querySelector('button')!.addEventListener('click', async () => {
           release(); await pending
           check(states.at(-1) === 'playing', 'Expected engine late-start after user action')
           check(Tone.getTransport().state === 'started', 'Expected real Tone transport to restart')
-          return {action, stateAfterAction, lastPublicState: states.at(-1), transport: Tone.getTransport().state}
+          return {action, stateAfterAction, lastPublicState: states.at(-1), transport: Tone.getTransport().state, isolation: 'A10 zero-duration tempo ramp replaced by immediate value assignment'}
         } finally {
           release(); Tone.Reverb.prototype.generate = original
           ;(engine as any).procedural.stop(); engine.dispose()
         }
       })
     }
+    bpm.rampTo = originalRamp
     await probe('A07-real-adaptive-stems-startup-offset', async () => {
       const engine = new AdaptiveLayerMusicEngine(() => {})
       try {
