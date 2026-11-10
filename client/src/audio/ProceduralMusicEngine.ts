@@ -49,16 +49,23 @@ export class ProceduralMusicEngine {
   private activeRegionId: string | null = null
   private requestedRegionId: string | null = null
   private transitionSeconds = 8
+  private token = 0
+  private paused = false
+  private loading = false
 
   constructor(private readonly listener: Listener) {}
 
   async play(cue: MusicCue) {
+    const token = ++this.token
+    this.paused = false; this.loading = true; this.cue = cue
     this.setState("loading", cue)
     try {
       this.stopRuntime()
       const Tone = this.tone ?? await import("tone")
+      if (token !== this.token) return
       this.tone = Tone
       await Tone.start()
+      if (token !== this.token) return
       const recipe = proceduralRecipeFor(cue.recipe)
       this.recipe = recipe
       const output = new Tone.Gain(0)
@@ -85,11 +92,12 @@ export class ProceduralMusicEngine {
       })
       synth.chain(filter, chorus, reverb, compressor, output, Tone.getDestination())
       bell.chain(reverb, compressor, output)
-      await reverb.generate()
       this.output = output
       this.synth = synth
       this.bell = bell
       this.nodes = [filter, chorus, reverb, compressor, output]
+      await reverb.generate()
+      if (token !== this.token) return
       this.cue = cue
       this.compilation = compileMusicBrainScore(this.score ?? musicBrainScoreForProceduralRecipe(recipe))
       const transport = Tone.getTransport()
@@ -98,12 +106,15 @@ export class ProceduralMusicEngine {
       const firstRegion = this.compilation.plan.regions.find(region => region.regionId === this.requestedRegionId)
         ?? this.compilation.plan.regions[0]
       transport.bpm.value = firstRegion.bpm
-      transport.timeSignature = firstRegion.meter[0]
+      transport.timeSignature = [...firstRegion.meter]
       this.startRegion(firstRegion.regionId, true)
-      transport.start()
+      if (!this.paused) transport.start()
       output.gain.rampTo(this.targetVolume(), Math.max(0.35, cue.crossfadeSeconds))
-      this.setState("playing", cue)
+      this.loading = false
+      this.setState(this.paused ? "paused" : "playing", cue)
     } catch (error) {
+      if (token !== this.token) return
+      this.loading = false
       console.error("Procedural audio failed:", error)
       this.stopRuntime()
       this.setState("error", cue)
@@ -129,13 +140,24 @@ export class ProceduralMusicEngine {
     if (regionId) this.requestedRegionId = regionId
     if (regionId && regionId !== this.activeRegionId) this.startRegion(regionId, false)
   }
-  pause() { this.tone?.getTransport().pause(); this.setState("paused", this.cue) }
-  async resume() { if (!this.tone || !this.cue) return; await this.tone.start(); this.tone.getTransport().start(); this.setState("playing", this.cue) }
-  stop() { this.stopRuntime(); this.cue = null; this.setState("idle", null) }
+  pause() { this.paused = true; this.tone?.getTransport().pause(); this.setState("paused", this.cue) }
+  async resume() {
+    this.paused = false
+    if (this.loading || !this.tone || !this.cue) return
+    const token = this.token
+    await this.tone.start()
+    if (token !== this.token || this.paused) return
+    this.tone.getTransport().start(); this.setState("playing", this.cue)
+  }
+  stop() { ++this.token; this.loading = false; this.paused = false; this.stopRuntime(); this.cue = null; this.setState("idle", null) }
   dispose() { this.stop() }
 
   private targetVolume() { return Math.max(0, Math.min(1, this.master * (this.cue?.volume ?? 1) * this.duckFactor * this.narrativeGain)) }
-  private applyVolume() { this.output?.gain.rampTo(this.targetVolume(), 0.18) }
+  private applyVolume() {
+    if (!this.output) return
+    if (this.targetVolume() === 0) this.output.gain.value = 0
+    else this.output.gain.rampTo(this.targetVolume(), .18)
+  }
   private startRegion(regionId: string, immediate: boolean) {
     if (!this.tone || !this.compilation) return
     const region = this.compilation.plan.regions.find(candidate => candidate.regionId === regionId)
@@ -147,13 +169,14 @@ export class ProceduralMusicEngine {
       this.retiredParts.push(this.loop)
       this.loop = null
     }
-    transport.bpm.rampTo(region.bpm, immediate ? 0 : Math.max(1, this.transitionSeconds))
-    transport.timeSignature = region.meter[0]
+    if (immediate) transport.bpm.value = region.bpm
+    else transport.bpm.rampTo(region.bpm, Math.max(1, this.transitionSeconds))
+    transport.timeSignature = [...region.meter]
     this.activeRegionId = region.regionId
     if (region.silence) return
     const notes = notesForMusicBrainRegion(this.compilation.timeline, region.regionId)
     const relativeEvents: Array<[string, MusicBrainNoteEventV1]> = notes.map(event => [
-      transportPosition(event.beat - region.startBeat, region.meter[0]),
+      transportPosition(event.beat - region.startBeat, region.meter[0] * 4 / region.meter[1]),
       event,
     ])
     let firstLoopStartTick: number | null = null
@@ -171,7 +194,7 @@ export class ProceduralMusicEngine {
       instrument?.triggerAttackRelease(midiNoteToFrequency(adapted.midi), durationSeconds, time, adapted.velocity)
     }, relativeEvents)
     part.loop = true
-    part.loopEnd = transportPosition(region.durationBeats, region.meter[0])
+    part.loopEnd = transportPosition(region.durationBeats, region.meter[0] * 4 / region.meter[1])
     part.start(when)
     this.loop = part
   }

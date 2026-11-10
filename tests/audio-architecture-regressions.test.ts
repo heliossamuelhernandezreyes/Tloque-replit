@@ -87,7 +87,7 @@ test("el lector puede arrancar Music Brain sin soundtrack y muestra el tier real
   assert.match(menu, /playbackTier/)
   assert.match(menu, /cacheMusicBrainScoreResources/)
   assert.match(reader, /soundtrack \|\| experienceData\?\.musicBrain \|\| book\?\.spotifyLink/)
-  assert.match(reader, /music\.loadAdaptiveLayers/)
+  assert.match(reader, /music\.loadExperience/)
 })
 
 test("scoreId y layerIds resuelven stems publicados y el motor corrige drift", () => {

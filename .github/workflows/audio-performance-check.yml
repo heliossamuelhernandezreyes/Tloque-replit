@@ -3,6 +3,7 @@ name: Audio performance check
 on:
   pull_request:
     paths:
+      - 'scripts/check-audio-playback-browser.mjs'
       - 'client/src/audio/**'
       - 'client/src/lib/musicXmlImporter.ts'
       - 'client/src/lib/mxlArchive.ts'
@@ -45,6 +46,7 @@ on:
     branches:
       - main
     paths:
+      - 'scripts/check-audio-playback-browser.mjs'
       - 'client/src/audio/**'
       - 'client/src/lib/musicXmlImporter.ts'
       - 'client/src/lib/mxlArchive.ts'
@@ -119,3 +121,19 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Install browser test runtime
+        run: npm install --no-save --package-lock=false --ignore-scripts playwright@1.62.1
+
+      - name: Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Real audio playback controls
+        run: node scripts/check-audio-playback-browser.mjs
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: audio-playback-regressions
+          path: .tloque_cache/audio-playback/browser-results.json
+          retention-days: 30

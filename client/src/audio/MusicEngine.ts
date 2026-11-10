@@ -1,3 +1,4 @@
+import { AudioTransition } from "./AudioTransition"
 import { cachedObjectUrl } from "./AudioResourceCache"
 import type { MusicBrainAudioLayer } from "@shared/music-brain"
 
@@ -37,202 +38,107 @@ type Listener = (state: MusicState, cue: MusicCue | null) => void
 
 export class MusicEngine {
   private readonly decks: [HTMLAudioElement, HTMLAudioElement]
+  private readonly weights = [0, 0]
+  private readonly levels = [1, 1]
+  private readonly objectUrls: [string | null, string | null] = [null, null]
+  private readonly fade = new AudioTransition()
   private active = -1
   private cue: MusicCue | null = null
-  private state: MusicState = "idle"
-  private master = 0.35
+  private master = .35
   private duckFactor = 1
   private narrativeGain = 1
-  private token = 0
-  private raf = 0
   private gainRaf = 0
-  private readonly objectUrls: [string | null, string | null] = [null, null]
+  private token = 0
+  private paused = false
 
   constructor(private readonly listener: Listener) {
-    const create = () => {
+    this.decks = [0, 1].map(index => {
       const audio = new Audio()
-      audio.preload = "auto"
-      audio.crossOrigin = "anonymous"
-      audio.setAttribute("playsinline", "")
-      audio.addEventListener("error", () => this.setState("error"))
+      audio.preload = 'auto'; audio.crossOrigin = 'anonymous'; audio.setAttribute('playsinline', '')
+      audio.addEventListener('error', () => { if (index === this.active && audio.src) this.setState('error') })
+      audio.addEventListener('ended', () => {
+        if (index !== this.active || !this.cue || audio.loop) return
+        this.fade.stop(); this.decks.forEach(deck => deck.pause()); this.setState('paused')
+      })
       return audio
-    }
-    this.decks = [create(), create()]
+    }) as [HTMLAudioElement, HTMLAudioElement]
   }
-
-  setMasterVolume(value: number) {
-    this.master = Math.max(0, Math.min(1, value))
-    this.applyActiveVolume()
-  }
-
-  setDucked(ducked: boolean) {
-    this.duckFactor = ducked ? 0.16 : 1
-    this.applyActiveVolume()
-  }
-
-  setNarrativeDirection(intensity: number, silence: boolean, transitionSeconds: number, _regionId?: string) {
-    const normalized = Math.max(0, Math.min(0.8, intensity))
-    const target = silence ? 0 : 0.72 + normalized * 0.35
-    const start = this.narrativeGain
-    const duration = Math.max(2_000, Math.min(30_000, transitionSeconds * 1_000))
-    const started = performance.now()
+  setMasterVolume(value: number) { this.master = Math.max(0, Math.min(1, value)); this.applyVolume() }
+  setDucked(value: boolean) { this.duckFactor = value ? .16 : 1; this.applyVolume() }
+  setNarrativeDirection(intensity: number, silence: boolean, seconds: number, _regionId?: string) {
+    const start = this.narrativeGain, target = silence ? 0 : .72 + Math.max(0, Math.min(.8, intensity)) * .35
+    const began = performance.now(), duration = Math.max(250, Math.min(30_000, seconds * 1_000))
     cancelAnimationFrame(this.gainRaf)
     const frame = (now: number) => {
-      const progress = Math.min(1, (now - started) / duration)
-      const eased = progress * progress * (3 - 2 * progress)
-      this.narrativeGain = start + (target - start) * eased
-      if (this.state !== "crossfading") this.applyActiveVolume()
-      if (progress < 1) this.gainRaf = requestAnimationFrame(frame)
+      const p = Math.min(1, (now - began) / duration), eased = p * p * (3 - 2 * p)
+      this.narrativeGain = start + (target - start) * eased; this.applyVolume()
+      if (p < 1) this.gainRaf = requestAnimationFrame(frame)
     }
     this.gainRaf = requestAnimationFrame(frame)
   }
-
   async play(cue: MusicCue) {
-    if (!cue.url) {
-      this.cue = cue
-      this.setState("error")
-      return
+    if (!cue.url) { this.cue = cue; this.setState('error'); return }
+    if (this.cue?.id === cue.id && this.cue.url === cue.url && this.active >= 0) {
+      this.cue = cue; this.levels[this.active] = cue.volume; this.decks[this.active].loop = cue.loop
+      this.applyVolume(); await this.resume(); return
     }
-    const same = this.cue?.id === cue.id && this.cue?.url === cue.url && this.active >= 0
+    const token = ++this.token, outgoing = this.active, incoming = outgoing === 0 ? 1 : 0
     const previousCue = this.cue
-    const previousActive = this.active
-    this.cue = cue
-    if (same) {
-      const deck = this.decks[this.active]
-      deck.loop = cue.loop
-      this.applyActiveVolume()
-      try {
-        await deck.play()
-        this.setState("playing")
-      } catch {
-        this.setState("blocked")
-      }
-      return
-    }
-
-    const token = ++this.token
-    cancelAnimationFrame(this.raf)
-    const incomingIndex = this.active === 0 ? 1 : 0
-    const incoming = this.decks[incomingIndex]
-    const outgoing = this.active >= 0 ? this.decks[this.active] : null
-    this.setState("loading")
-
-    incoming.pause()
-    if (this.objectUrls[incomingIndex]) URL.revokeObjectURL(this.objectUrls[incomingIndex]!)
+    this.paused = false; this.fade.stop(); this.clearDeck(incoming); this.cue = cue; this.setState('loading')
     const localUrl = await cachedObjectUrl(cue.url)
-    this.objectUrls[incomingIndex] = localUrl
-    incoming.src = localUrl || cue.url
-    incoming.loop = cue.loop
-    incoming.currentTime = 0
-    incoming.volume = 0
-    incoming.load()
-
+    if (token !== this.token) { if (localUrl) URL.revokeObjectURL(localUrl); return }
+    const deck = this.decks[incoming]
+    this.objectUrls[incoming] = localUrl; deck.src = localUrl || cue.url; deck.loop = cue.loop
+    deck.volume = 0; deck.currentTime = 0; deck.load(); this.levels[incoming] = cue.volume
     try {
-      await incoming.play()
+      if (!this.paused) await deck.play()
     } catch {
-      if (token === this.token) {
-        if (outgoing) {
-          incoming.removeAttribute("src")
-          incoming.load()
-          this.cue = previousCue
-          this.active = previousActive
-          this.setState("playing")
-        } else {
-          this.active = incomingIndex
-          this.setState("blocked")
-        }
-      }
-      return
-    }
-    if (token !== this.token) {
-      incoming.pause()
-      incoming.removeAttribute("src")
-      incoming.load()
-      return
-    }
-    this.active = incomingIndex
-
-    const durationMs = Math.max(250, Math.min(20_000, cue.crossfadeSeconds * 1_000))
-    const started = performance.now()
-    const outgoingStart = outgoing?.volume ?? 0
-    this.setState(outgoing ? "crossfading" : "playing")
-
-    const frame = (now: number) => {
       if (token !== this.token) return
-      const progress = Math.min(1, (now - started) / durationMs)
-      const target = this.targetVolume()
-      incoming.volume = Math.max(0, Math.min(1, target * progress))
-      if (outgoing) outgoing.volume = Math.max(0, outgoingStart * (1 - progress))
-      if (progress < 1) {
-        this.raf = requestAnimationFrame(frame)
-      } else {
-        if (outgoing) {
-          outgoing.pause()
-          outgoing.currentTime = 0
-          outgoing.removeAttribute("src")
-          outgoing.load()
-          if (previousActive >= 0 && this.objectUrls[previousActive]) {
-            URL.revokeObjectURL(this.objectUrls[previousActive]!)
-            this.objectUrls[previousActive] = null
-          }
-        }
-        this.setState("playing")
-      }
+      if (outgoing >= 0) { this.clearDeck(incoming); this.cue = previousCue; this.setState(this.paused ? 'paused' : 'playing') }
+      else { this.active = incoming; this.weights[incoming] = 1; this.applyVolume(); this.setState('blocked') }
+      return
     }
-    this.raf = requestAnimationFrame(frame)
+    if (token !== this.token) return
+    if (this.paused) deck.pause()
+    this.active = incoming
+    const startWeight = outgoing >= 0 ? this.weights[outgoing] : 0
+    this.fade.start(Math.max(.25, Math.min(20, cue.crossfadeSeconds)), p => {
+      this.weights[incoming] = p
+      if (outgoing >= 0) this.weights[outgoing] = startWeight * (1 - p)
+      this.applyVolume()
+    }, () => {
+      if (token !== this.token) return
+      if (outgoing >= 0) this.clearDeck(outgoing)
+      this.setState(this.paused ? 'paused' : 'playing')
+    }, this.paused)
+    this.setState(this.paused ? 'paused' : outgoing >= 0 ? 'crossfading' : 'playing')
   }
-
-  pause() {
-    if (this.active < 0) return
-    this.decks[this.active].pause()
-    this.setState("paused")
-  }
-
+  pause() { this.paused = true; this.fade.pause(); this.decks.forEach(deck => deck.pause()); if (this.cue) this.setState('paused') }
   async resume() {
+    this.paused = false
+    const token = this.token
     if (this.active < 0 || !this.cue) return
     try {
-      await this.decks[this.active].play()
-      this.applyActiveVolume()
-      this.setState("playing")
-    } catch {
-      this.setState("blocked")
-    }
+      await Promise.all(this.decks.filter(deck => Boolean(deck.getAttribute('src'))).map(deck => deck.play()))
+      if (token !== this.token || this.paused) return
+      this.fade.resume(); this.applyVolume(); this.setState(this.fade.active ? 'crossfading' : 'playing')
+    } catch { if (token === this.token && !this.paused) this.setState('blocked') }
   }
-
   stop() {
-    ++this.token
-    cancelAnimationFrame(this.raf)
-    cancelAnimationFrame(this.gainRaf)
-    for (let index = 0; index < this.decks.length; index += 1) {
-      const deck = this.decks[index]
-      deck.pause()
-      deck.currentTime = 0
-      deck.volume = 0
-      deck.removeAttribute("src")
-      deck.load()
-      if (this.objectUrls[index]) URL.revokeObjectURL(this.objectUrls[index]!)
-      this.objectUrls[index] = null
-    }
-    this.active = -1
-    this.cue = null
-    this.narrativeGain = 1
-    this.setState("idle")
+    ++this.token; this.paused = false; this.fade.stop(); cancelAnimationFrame(this.gainRaf)
+    this.decks.forEach((_, index) => this.clearDeck(index)); this.active = -1; this.cue = null; this.narrativeGain = 1
+    this.setState('idle')
   }
-
-  dispose() {
-    this.stop()
+  dispose() { this.stop() }
+  private clearDeck(index: number) {
+    const deck = this.decks[index]; deck.pause(); deck.volume = 0; deck.removeAttribute('src'); deck.load()
+    this.weights[index] = 0
+    if (this.objectUrls[index]) URL.revokeObjectURL(this.objectUrls[index]!)
+    this.objectUrls[index] = null
   }
-
-  private targetVolume() {
-    return Math.max(0, Math.min(1, this.master * (this.cue?.volume ?? 1) * this.duckFactor * this.narrativeGain))
+  private applyVolume() {
+    const master = this.master * this.duckFactor * this.narrativeGain
+    this.decks.forEach((deck, index) => { deck.volume = Math.max(0, Math.min(1, master * this.levels[index] * this.weights[index])) })
   }
-
-  private applyActiveVolume() {
-    if (this.active >= 0) this.decks[this.active].volume = this.targetVolume()
-  }
-
-  private setState(state: MusicState) {
-    this.state = state
-    this.listener(this.state, this.cue)
-  }
+  private setState(state: MusicState) { this.listener(state, this.cue) }
 }

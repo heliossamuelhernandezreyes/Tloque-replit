@@ -1,3 +1,4 @@
+import { AudioTransition } from "./AudioTransition"
 import type { MusicCue, MusicState } from "./MusicEngine"
 import { NativeSampleScoreEngine } from "./NativeSampleScoreEngine"
 
@@ -15,7 +16,8 @@ export class NativeCrossfadeScoreEngine {
   private active = -1
   private pending = -1
   private token = 0
-  private stateTimer = 0
+  private readonly transition = new AudioTransition()
+  private paused = false
   private master = 0.35
   private ducked = false
   private direction = { intensity: 0, silence: false, seconds: 1 }
@@ -33,7 +35,8 @@ export class NativeCrossfadeScoreEngine {
 
   async play(cue: MusicCue) {
     const token = ++this.token
-    window.clearTimeout(this.stateTimer)
+    this.paused = false
+    this.transition.stop()
     if (this.pending >= 0) this.decks[this.pending].stop()
     const outgoing = this.active
     const incoming = outgoing === 0 ? 1 : 0
@@ -61,16 +64,16 @@ export class NativeCrossfadeScoreEngine {
     this.pending = -1
     const resolvedCue = this.cues[incoming] ?? cue
     if (outgoing < 0) {
-      this.listener("playing", resolvedCue)
+      this.listener(this.paused ? "paused" : "playing", resolvedCue)
       return
     }
 
     const seconds = Math.max(0.25, Math.min(20, cue.crossfadeSeconds))
-    this.listener("crossfading", resolvedCue)
+    this.listener(this.paused ? "paused" : "crossfading", resolvedCue)
     this.decks[outgoing].fadeOutAndStop(seconds, startDelay)
-    this.stateTimer = window.setTimeout(() => {
-      if (token === this.token && this.active === incoming) this.listener("playing", this.cues[incoming] ?? resolvedCue)
-    }, (startDelay + seconds) * 1_000)
+    this.transition.start(startDelay + seconds, () => {}, () => {
+      if (token === this.token && this.active === incoming && !this.paused) this.listener("playing", this.cues[incoming] ?? resolvedCue)
+    }, this.paused)
   }
 
   setMasterVolume(value: number) {
@@ -86,20 +89,23 @@ export class NativeCrossfadeScoreEngine {
     this.decks.forEach(deck => deck.setNarrativeDirection(intensity, silence, seconds))
   }
   pause() {
-    window.clearTimeout(this.stateTimer)
+    this.paused = true; this.transition.pause()
     this.decks.forEach((deck, index) => {
-      if (this.states[index] === "playing") deck.pause()
+      if (["playing", "loading", "paused"].includes(this.states[index])) deck.pause()
     })
     this.listener("paused", this.active >= 0 ? this.cues[this.active] : null)
   }
   async resume() {
-    if (this.active < 0) return
-    await this.decks[this.active].resume()
-    this.listener("playing", this.cues[this.active])
+    this.paused = false
+    const token = this.token
+    await Promise.all(this.decks.map((deck, index) => this.states[index] === "paused" ? deck.resume() : Promise.resolve()))
+    if (token !== this.token || this.paused) return
+    this.transition.resume()
+    if (this.active >= 0) this.listener(this.transition.active ? "crossfading" : "playing", this.cues[this.active])
   }
   stop() {
-    this.token += 1
-    window.clearTimeout(this.stateTimer)
+    this.token += 1; this.paused = false
+    this.transition.stop()
     this.decks.forEach(deck => deck.stop())
     this.active = -1
     this.pending = -1

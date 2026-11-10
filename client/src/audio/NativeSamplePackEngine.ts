@@ -160,19 +160,56 @@ export function nativeSampleAdaptiveEnvelope(
   return { fadeIn, fadeOut, overlapTail }
 }
 
+/** Shared by export modules: reserve decoded PCM before invoking the decoder. */
+export class NativeDecodeBudget {
+  private readonly reservations = new Map<string, number>()
+  private bytes = 0
+  constructor(private readonly maximum: number) {}
+  reserve(url: string, bytes: number) {
+    const next = this.bytes - (this.reservations.get(url) ?? 0) + bytes
+    if (!Number.isFinite(next) || bytes < 0 || next > this.maximum) throw new Error("Las muestras exceden la memoria segura; reduce instrumentos o exporta por movimientos")
+    this.reservations.set(url, bytes); this.bytes = next
+  }
+  release(url: string) { this.bytes -= this.reservations.get(url) ?? 0; this.reservations.delete(url) }
+}
+
+export function estimatedWavDecodeBytes(bytes: ArrayBuffer, targetRate: number): number {
+  const view = new DataView(bytes), tag = (offset: number) => String.fromCharCode(...new Uint8Array(bytes, offset, 4))
+  if (view.byteLength < 44 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') throw new Error('No se puede presupuestar una muestra sin cabecera WAV válida')
+  let channels = 0, rate = 0, block = 0, data = 0
+  for (let offset = 12; offset + 8 <= view.byteLength;) {
+    const size = view.getUint32(offset + 4, true), end = offset + 8 + size
+    if (end > view.byteLength) throw new Error('Muestra WAV truncada')
+    if (tag(offset) === 'fmt ' && size >= 16) {
+      const format = view.getUint16(offset + 8, true)
+      if (![1, 3, 65534].includes(format)) throw new Error('Formato WAV no presupuestable')
+      channels = view.getUint16(offset + 10, true); rate = view.getUint32(offset + 12, true); block = view.getUint16(offset + 20, true)
+    }
+    if (tag(offset) === 'data') data += size
+    offset = end + size % 2
+  }
+  if (!channels || channels > 8 || !rate || !block || !data) throw new Error('Cabecera WAV incompleta')
+  return Math.ceil(data / block * targetRate / rate + 1) * channels * 4
+}
+
 export class NativeSamplePackPlayer {
   private readonly buffers = new Map<string, Promise<AudioBuffer>>()
-  constructor(private readonly context: BaseAudioContext, preloaded?: ReadonlyMap<string, AudioBuffer>) {
+  constructor(private readonly context: BaseAudioContext, preloaded?: ReadonlyMap<string, AudioBuffer>, private readonly options: {signal?: AbortSignal; budget?: NativeDecodeBudget} = {}) {
     for (const [url, buffer] of preloaded ?? []) this.buffers.set(url, Promise.resolve(buffer))
   }
 
   async loadPack(url: string): Promise<TloqueSamplePack> {
     if (!url.startsWith("/api/audio/sample-packs/")) throw new Error("Paquete de muestras fuera del almacenamiento interno")
-    const response = await fetchAudioResource(url)
+    const response = await fetchAudioResource(url, {signal: this.options.signal})
     if (!response.ok) throw new Error(`Paquete de muestras ${response.status}`)
     return validateTloqueSamplePack(await response.json())
   }
-  preload(zones: readonly TloqueSampleZone[]) { return Promise.all(zones.map(zone => this.buffer(zone))) }
+  async preload(zones: readonly TloqueSampleZone[]) {
+    if (!this.options.budget) return Promise.all(zones.map(zone => this.buffer(zone)))
+    const result: AudioBuffer[] = []
+    for (const zone of zones) { this.options.signal?.throwIfAborted(); result.push(await this.buffer(zone)) }
+    return result
+  }
   /** Safe after the last scheduled source using this URL has already captured its AudioBuffer. */
   releaseSample(sampleUrl: string) { return this.buffers.delete(sampleUrl) }
   get retainedSampleCount() { return this.buffers.size }
@@ -266,12 +303,20 @@ export class NativeSamplePackPlayer {
   private buffer(zone: TloqueSampleZone): Promise<AudioBuffer> {
     const existing = this.buffers.get(zone.sampleUrl); if (existing) return existing
     let promise: Promise<AudioBuffer>
-    promise = fetchAudioResource(zone.sampleUrl)
+    promise = fetchAudioResource(zone.sampleUrl, {signal: this.options.signal, expectedSha256: zone.sha256})
       .then(response => { if (!response.ok) throw new Error(`Muestra ${response.status}`); return response.arrayBuffer() })
-      .then(bytes => this.context.decodeAudioData(bytes.slice(0)))
+      .then(async bytes => {
+        this.options.signal?.throwIfAborted()
+        this.options.budget?.reserve(zone.sampleUrl, estimatedWavDecodeBytes(bytes, this.context.sampleRate))
+        const buffer = await this.context.decodeAudioData(bytes.slice(0))
+        this.options.signal?.throwIfAborted()
+        this.options.budget?.reserve(zone.sampleUrl, buffer.length * buffer.numberOfChannels * 4)
+        return buffer
+      })
       .catch(error => {
         // A transient fetch/decode failure must not poison this URL forever.
         if (this.buffers.get(zone.sampleUrl) === promise) this.buffers.delete(zone.sampleUrl)
+        this.options.budget?.release(zone.sampleUrl)
         throw error
       })
     this.buffers.set(zone.sampleUrl, promise)

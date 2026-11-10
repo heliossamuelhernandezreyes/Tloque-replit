@@ -8,7 +8,7 @@ import { nativePhysicalModelByModuleId } from "@shared/native-acoustic-source"
 import { analyzeAudioBuffer } from "./AudioRenderAnalysis"
 import { scheduleHybridPhysicalOverlay } from "./HybridPhysicalOverlay"
 import { scheduleHybridBowedStringPhrase } from "./PhysicalBowedStringOverlay"
-import { NativeSamplePackPlayer } from "./NativeSamplePackEngine"
+import { NativeDecodeBudget, NativeSamplePackPlayer } from "./NativeSamplePackEngine"
 import { buildNativeSampleScorePlan, nativeSampleVoiceEnvelope, type NativeSampleScorePlan } from "./NativeSampleScorePlan"
 import { nativeModuleGroupsForRecipe, recipeForNativeModule, NATIVE_AUTO_MODULE_ID } from "./NativeAutoModule"
 import { buildNativeRecipeIndex, nativeTrackAtTime } from "./NativeRecipeIndex"
@@ -167,7 +167,8 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   const decisionByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, universalPerformance.decisionForEvent(eventIndex)] as const))
   const conductorByOriginal = new Map(recipe.plan.events.map((event, eventIndex) => [event, universalPerformance.decisionForEvent(eventIndex)?.conductor] as const))
   const decodeContext = new OfflineAudioContext(2, 1, profile.sampleRate)
-  const decodedByUrl = new Map<string, AudioBuffer>(), loaded: LoadedOfflinePlan[] = []
+  const decodedByUrl = new Map<string, AudioBuffer>()
+  const decodeBudget = new NativeDecodeBudget(MAX_OFFLINE_TOTAL_FLOAT_BYTES), loaded: LoadedOfflinePlan[] = []
   const groups = orchestralSynthesis ? [] : nativeModuleGroupsForRecipe(recipe)
   const physicalGroups = groups.filter(group => nativePhysicalModelByModuleId(group.moduleId))
   const sampleGroups = groups.filter(group => !nativePhysicalModelByModuleId(group.moduleId))
@@ -177,7 +178,7 @@ export async function renderTloqueScoreWithNativeSamplePackToWav(
   for (let index = 0; index < sampleGroups.length; index += 1) {
     const group = sampleGroups[index]
     if (unavailableModules.has(group.moduleId)) continue
-    const decodePlayer = new NativeSamplePackPlayer(decodeContext, decodedByUrl), url = modulePackUrlFor(recipe, group.moduleId, packUrl)
+    const decodePlayer = new NativeSamplePackPlayer(decodeContext, decodedByUrl, {signal: options.signal, budget: decodeBudget}), url = modulePackUrlFor(recipe, group.moduleId, packUrl)
     let pack
     try { pack = await decodePlayer.loadPack(url) }
     catch (error) {

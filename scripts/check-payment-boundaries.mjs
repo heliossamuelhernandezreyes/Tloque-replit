@@ -648,9 +648,16 @@ try {
     const workerHeaders = { Authorization: 'Bearer ' + workerToken };
     assert.equal((await request(`/api/internal/audiobook/jobs/${job.id}/complete`, { role: null, method: 'POST', headers: workerHeaders,
       body: { claimToken, storageKey: 'audiobooks/fixture/late.mp3', mimeType: 'audio/mpeg', durationSeconds: 20, actualCharacters: 4000 } })).status, 409);
-    const activeToken = key(), activeHash = 'b'.repeat(64);
+    const {compileSpeechProject,speechCacheMaterial} = await import('../shared/speech.ts');
+    const {createHash} = await import('node:crypto');
+    const {rows:[sourceBook]}=await client.query('select content,chapters from books where id=$1',[book.id]);
+    const content=sourceBook.chapters?.[0]?.content ?? sourceBook.content, contentHash=createHash('sha256').update(content).digest('hex');
+    const {rows:[voice]}=await client.query("insert into voice_profiles(label,provider_voice_id,license,status) values('Lease fixture','lease-fixture','synthetic','published') returning id");
+    const profile=compileSpeechProject({version:1,bookId:book.id,chapterIndex:0,revision:1,contentHash,narratorVoiceProfileId:voice.id,spans:[{id:'narration',paragraphIndex:0,startOffset:0,endOffset:content.length,kind:'narration',speakerId:'narrator'}]},content,contentHash,new Set([voice.id]));
+    await client.query("insert into speech_profiles(book_id,chapter_index,revision,source_project_revision,content_hash,status,character_count,data) values($1,0,1,1,$2,'approved',$3,$4)",[book.id,contentHash,profile.characterCount,JSON.stringify(profile)]);
+    const activeToken = key(), activeHash = createHash('sha256').update(speechCacheMaterial(profile,'fixture')).digest('hex');
     const { rows: [active] } = await client.query(`insert into audiobook_jobs(request_key,cache_key,user_id,book_id,chapter_index,speech_profile_revision,content_hash,model_id,status,estimated_paper,reserved_paper,expected_characters,claim_token,lease_expires_at,started_at)
-      values($1,$2,$3,$4,0,1,$2,'fixture','processing',4,4,4000,$5,now()+interval '1 minute',now()) returning id`, [key(), activeHash, userId, book.id, activeToken]);
+      values($1,$2,$3,$4,0,1,$6,'fixture','processing',4,4,4000,$5,now()+interval '1 minute',now()) returning id`, [key(), activeHash, userId, book.id, activeToken, contentHash]);
     const heartbeat = token => request(`/api/internal/audiobook/jobs/${active.id}/heartbeat`, { role: null, method: 'POST', headers: workerHeaders, body: { claimToken: token } });
     assert.equal((await heartbeat(key())).status, 409);
     const extended = await heartbeat(activeToken);

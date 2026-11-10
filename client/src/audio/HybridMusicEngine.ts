@@ -38,23 +38,31 @@ export class HybridMusicEngine {
   private playbackToken = 0
   private playbackQueue: Promise<void> = Promise.resolve()
   private silenceTimer = 0
+  private paused = false
+  private disposed = false
+  private deferredCue: MusicCue | null = null
+  private metadataRevision = 0
   private readonly listener: Listener
 
   constructor(listener: Listener) {
     this.listener = listener
-    const report: Listener = (state, cue) => {
-      this.state = state
-      this.listener(state, cue)
+    const report = (owner: () => Engine): Listener => (state, cue) => {
+      if (this.disposed || this.active !== owner()) return
+      this.state = this.paused && ["playing", "crossfading", "loading"].includes(state) ? "paused" : state
+      this.listener(this.state, cue)
     }
-    this.stream = new MusicEngine(report)
-    this.procedural = new ProceduralMusicEngine(report)
-    this.soundfont = new SoundFontMusicEngine(report)
-    this.score = new LinearScoreEngine(report)
-    this.nativeScore = new NativeCrossfadeScoreEngine(report)
-    this.adaptive = new AdaptiveLayerMusicEngine(report)
+    this.stream = new MusicEngine(report(() => this.stream))
+    this.procedural = new ProceduralMusicEngine(report(() => this.procedural))
+    this.soundfont = new SoundFontMusicEngine(report(() => this.soundfont))
+    this.score = new LinearScoreEngine(report(() => this.score))
+    this.nativeScore = new NativeCrossfadeScoreEngine(report(() => this.nativeScore))
+    this.adaptive = new AdaptiveLayerMusicEngine(report(() => this.adaptive))
   }
 
   async play(cue: MusicCue): Promise<void> {
+    if (this.disposed) return
+    this.paused = false; this.deferredCue = null
+    if (this.state === "loading") { this.active?.stop(); this.playbackQueue = Promise.resolve() }
     const token = ++this.playbackToken
     if (cue.sourceType === "procedural" && this.narrativeScore) {
       this.narrativeCue = cue
@@ -86,7 +94,8 @@ export class HybridMusicEngine {
   }
 
   private async playResolved(cue: MusicCue, token: number): Promise<void> {
-    if (token !== this.playbackToken) return
+    if (this.disposed || token !== this.playbackToken) return
+    if (this.paused) { this.deferredCue = cue; return }
     let resolvedCue = cue
     let nativeAuto = false
     let scoreRecipe: LinearScoreRecipe | null = null
@@ -139,12 +148,14 @@ export class HybridMusicEngine {
       : resolvedCue.sourceType === "soundfont" ? this.soundfont
         : resolvedCue.sourceType === "score" ? (useNativeAcoustic ? this.nativeScore : this.score)
           : this.stream
-    if (this.active && this.active !== next) this.active.stop()
+    const previous = this.active
     this.active = next
+    if (previous && previous !== next) previous.stop()
     next.setMasterVolume(this.master)
     next.setDucked(this.ducked)
     await next.play(resolvedCue)
-    if (token !== this.playbackToken) return
+    if (this.disposed || token !== this.playbackToken) return
+    if (this.paused) next.pause()
     next.setNarrativeDirection(
       this.direction.intensity,
       this.direction.silence,
@@ -154,20 +165,25 @@ export class HybridMusicEngine {
   }
   setMasterVolume(value: number) { this.master = value; this.active?.setMasterVolume(value) }
   setDucked(value: boolean) { this.ducked = value; this.active?.setDucked(value) }
-  setNarrativeScore(score: MusicBrainScoreV1 | null) {
-    this.narrativeScore = score
+  setExperience(score: MusicBrainScoreV1 | null, layers: readonly MusicBrainAudioLayer[]) {
+    this.narrativeScore = score; this.adaptiveLayers = layers
     this.procedural.setNarrativeScore(score)
-    if (!score) {
-      this.renderedRegionId = null
-      return
-    }
-    if (this.narrativeCue && (this.state === "playing" || this.state === "crossfading")) {
-      this.renderedRegionId = null
-      void this.playNarrativeRegion()
-    }
+    this.refreshMetadata()
   }
-  setAdaptiveLayers(layers: readonly MusicBrainAudioLayer[]) {
-    this.adaptiveLayers = layers
+  setNarrativeScore(score: MusicBrainScoreV1 | null) { this.setExperience(score, this.adaptiveLayers) }
+  setAdaptiveLayers(layers: readonly MusicBrainAudioLayer[]) { this.setExperience(this.narrativeScore, layers) }
+  private refreshMetadata() {
+    const revision = ++this.metadataRevision
+    this.renderedRegionId = null
+    if (!this.narrativeScore) return
+    // Legacy setters in the same turn also commit as one snapshot.
+    queueMicrotask(() => {
+      if (revision !== this.metadataRevision || this.disposed || this.paused || !this.narrativeCue) return
+      if (this.state === "playing" || this.state === "crossfading" || this.state === "loading") {
+        if (this.state === "loading") { this.active?.stop(); this.playbackQueue = Promise.resolve() }
+        this.renderedRegionId = null; void this.playNarrativeRegion()
+      }
+    })
   }
   setNarrativeDirection(intensity: number, silence: boolean, seconds: number, regionId?: string) {
     this.direction = { intensity, silence, seconds, regionId }
@@ -183,18 +199,25 @@ export class HybridMusicEngine {
     }
   }
   pause() {
+    this.paused = true
+    window.clearTimeout(this.silenceTimer)
     if (this.active) this.active.pause()
     else if (this.narrativeCue) { this.state = "paused"; this.listener("paused", this.narrativeCue) }
   }
   async resume() {
+    if (this.disposed) return
+    this.paused = false
+    if (this.deferredCue) { const cue = this.deferredCue; this.deferredCue = null; await this.enqueuePlayback(cue, this.playbackToken); return }
     await this.active?.resume()
+    if (this.direction.silence && this.direction.regionId && this.active) this.enterNarrativeSilence(this.direction.regionId, this.direction.seconds)
     if (!this.active && this.narrativeCue && this.direction.silence) { this.state = "playing"; this.listener("playing", this.narrativeCue) }
     if (!this.direction.silence && this.direction.regionId !== this.renderedRegionId && this.narrativeCue && this.narrativeScore) {
       await this.playNarrativeRegion()
     }
   }
   stop() {
-    this.playbackToken += 1
+    this.playbackToken += 1; this.metadataRevision += 1; this.deferredCue = null; this.paused = false
+    this.playbackQueue = Promise.resolve()
     window.clearTimeout(this.silenceTimer)
     this.active?.stop()
     this.active = null
@@ -202,6 +225,7 @@ export class HybridMusicEngine {
     this.renderedRegionId = null
   }
   dispose() {
+    this.stop(); this.disposed = true
     window.clearTimeout(this.silenceTimer)
     this.stream.dispose()
     this.procedural.dispose()
@@ -243,7 +267,7 @@ export class HybridMusicEngine {
     this.state = "crossfading"
     this.listener("crossfading", this.narrativeCue)
     this.silenceTimer = window.setTimeout(() => {
-      if (!this.direction.silence || this.renderedRegionId !== regionId || this.active !== retiring) return
+      if (this.paused || this.disposed || !this.direction.silence || this.renderedRegionId !== regionId || this.active !== retiring) return
       retiring.stop()
       this.active = null
       this.state = "playing"

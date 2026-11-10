@@ -34,6 +34,7 @@ import { rateLimit } from "./rateLimit"
 import { hasActiveSubscription } from "./subscription"
 import { isEditionRestricted } from "@shared/edition-access"
 import { readableEditionsFor } from "./bookAccess"
+import { hasBookRight } from "./legal"
 import { analyzeSpeechWithGroq, speechOracleConfigured } from "./speechOracle"
 
 const projectBodySchema = z.object({
@@ -186,26 +187,51 @@ export function audiobookJobExpired(job: { status: string; leaseExpiresAt: Date 
     : job.status === "queued" && now - job.createdAt.getTime() >= 24 * 60 * 60_000
 }
 
+type SpeechTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+async function refundJob(tx: SpeechTransaction, job: typeof audiobookJobs.$inferSelect, errorCode: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(${job.userId})`)
+  const [failed] = await tx.update(audiobookJobs).set({ status: "failed", errorCode, finishedAt: new Date() })
+    .where(and(eq(audiobookJobs.id, job.id), inArray(audiobookJobs.status, ["queued", "processing"]))).returning()
+  if (!failed) return false
+  if (failed.reservedPaper > 0) await tx.insert(walletLedger).values({
+    userId: failed.userId, currency: "papel", delta: failed.reservedPaper,
+    reason: "refund_ai", refType: "audiobook_job", refId: failed.id,
+  })
+  return true
+}
 async function refundFailedJob(job: typeof audiobookJobs.$inferSelect, errorCode: string, options: { claimToken?: string; expiredOnly?: boolean } = {}) {
   return db.transaction(async tx => {
     await tx.execute(sql`select pg_advisory_xact_lock(81733422, ${job.id})`)
-    await tx.execute(sql`select pg_advisory_xact_lock(${job.userId})`)
     const [current] = await tx.select().from(audiobookJobs).where(eq(audiobookJobs.id, job.id))
     if (!current || (current.status !== "queued" && current.status !== "processing")) return false
     if (options.claimToken && current.claimToken !== options.claimToken) return false
     if (options.expiredOnly && !audiobookJobExpired(current)) return false
-    await tx.update(audiobookJobs).set({ status: "failed", errorCode, finishedAt: new Date() })
-      .where(eq(audiobookJobs.id, job.id))
-    if (current.reservedPaper > 0) await tx.insert(walletLedger).values({
-      userId: current.userId,
-      currency: "papel",
-      delta: current.reservedPaper,
-      reason: "refund_ai",
-      refType: "audiobook_job",
-      refId: current.id,
-    })
-    return true
+    return refundJob(tx, current, errorCode)
   })
+}
+
+/** Serialize dispatch/completion with changes to the current work and profile. */
+async function authorizedAudiobookJob(tx: SpeechTransaction, job: typeof audiobookJobs.$inferSelect) {
+  const [book] = await tx.select().from(books).where(eq(books.id, job.bookId)).for("update")
+  if (!book || book.status !== "published" || isEditionRestricted(book)
+    || !await hasBookRight(book.id, book.revision, "audio", tx)) return { errorCode: "AUDIO_RIGHTS_CHANGED" } as const
+  const content = chapterContent(book, job.chapterIndex)
+  const [row] = await tx.select().from(speechProfiles).where(and(
+    eq(speechProfiles.bookId, job.bookId), eq(speechProfiles.chapterIndex, job.chapterIndex),
+    eq(speechProfiles.revision, job.speechProfileRevision), eq(speechProfiles.status, "approved"),
+  )).for("update")
+  const parsed = speechProfileSchema.safeParse(row?.data)
+  if (!row || content === null || speechContentHash(content) !== job.contentHash || row.contentHash !== job.contentHash
+    || !parsed.success) return { errorCode: "PROFILE_CHANGED" } as const
+  const profile = parsed.data
+  if (profile.bookId !== job.bookId || profile.chapterIndex !== job.chapterIndex || profile.revision !== job.speechProfileRevision
+    || profile.contentHash !== job.contentHash || cacheKeyFor(profile, job.modelId) !== job.cacheKey) return { errorCode: "PROFILE_CHANGED" } as const
+  const voiceIds = [...new Set(profile.segments.map(segment => segment.voiceProfileId))]
+  const voices = await tx.select({id: voiceProfiles.id, provider: voiceProfiles.provider, providerVoiceId: voiceProfiles.providerVoiceId})
+    .from(voiceProfiles).where(and(inArray(voiceProfiles.id, voiceIds), eq(voiceProfiles.status, "published")))
+  if (voices.length !== voiceIds.length) return { errorCode: "VOICE_MISSING" } as const
+  return { profile, voices } as const
 }
 
 export async function recoverExpiredAudiobookJobs(): Promise<void> {
@@ -581,23 +607,6 @@ export function registerSpeechRoutes(app: Express) {
     if (!bookId || index === null || !parsed.success) return res.status(400).json({ message: "Solicitud inválida" })
     const userId = (req.user as any).id as number
     try {
-      const [priorJob] = await db.select().from(audiobookJobs).where(eq(audiobookJobs.requestKey, parsed.data.requestKey))
-      if (priorJob) {
-        if (priorJob.userId !== userId) return res.status(409).json({ message: "La solicitud ya fue utilizada" })
-        const [priorCache] = priorJob.status === "ready"
-          ? await db.select().from(audiobookCache).where(and(
-            eq(audiobookCache.cacheKey, priorJob.cacheKey), eq(audiobookCache.status, "ready"),
-          ))
-          : [undefined]
-        return res.status(priorJob.status === "queued" || priorJob.status === "processing" ? 202 : 200).json({
-          cacheHit: Boolean(priorCache),
-          replayed: true,
-          jobId: priorJob.id,
-          status: priorJob.status,
-          paperReserved: 0,
-          playbackUrl: priorCache ? `/api/audiobooks/${priorCache.id}/stream` : null,
-        })
-      }
       const book = await loadBook(bookId)
       if (!book || book.status !== "published") return res.status(404).json({ message: "Libro no encontrado" })
       const content = chapterContent(book, index)
@@ -614,8 +623,15 @@ export function registerSpeechRoutes(app: Express) {
       const modelId = elevenModelId()
       const cacheKey = cacheKeyFor(profile, modelId)
       const estimatedPaper = audiobookPreflight(profile.characterCount, await paperBalance(userId)).estimatedPaper
-      let result: { kind: "cached"; cacheId: number } | { kind: "waiting"; jobId: number } | { kind: "queued"; jobId: number }
+      let result: { kind: "cached"; cacheId: number } | { kind: "waiting"; jobId: number } | { kind: "queued"; jobId: number } | { kind: "replay"; job: typeof audiobookJobs.$inferSelect; cacheId?: number }
       result = await db.transaction(async tx => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'audiobook-request:' + parsed.data.requestKey}))`)
+        const [prior] = await tx.select().from(audiobookJobs).where(eq(audiobookJobs.requestKey, parsed.data.requestKey))
+        if (prior) {
+          if (prior.userId !== userId || prior.bookId !== bookId || prior.chapterIndex !== index || prior.cacheKey !== cacheKey) throw new Error("AUDIOBOOK_INTENT_CHANGED")
+          const [cached] = prior.status === "ready" ? await tx.select().from(audiobookCache).where(and(eq(audiobookCache.cacheKey, prior.cacheKey), eq(audiobookCache.status, "ready"))) : []
+          return {kind: "replay" as const, job: prior, cacheId: cached?.id}
+        }
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${cacheKey}))`)
         await tx.execute(sql`select pg_advisory_xact_lock(${userId})`)
         const [cached] = await tx.select().from(audiobookCache).where(and(
@@ -653,12 +669,17 @@ export function registerSpeechRoutes(app: Express) {
         })
         return { kind: "queued" as const, jobId: job.id }
       })
+      if (result.kind === "replay") return res.status(["queued", "processing"].includes(result.job.status) ? 202 : 200).json({
+        cacheHit: Boolean(result.cacheId), replayed: true, jobId: result.job.id, status: result.job.status, paperReserved: 0,
+        playbackUrl: result.cacheId ? `/api/audiobooks/${result.cacheId}/stream` : null,
+      })
       if (result.kind === "cached") return res.json({ cacheHit: true, paperCharged: 0, playbackUrl: `/api/audiobooks/${result.cacheId}/stream` })
       res.status(result.kind === "queued" ? 202 : 200).json({ cacheHit: false, waiting: result.kind === "waiting", jobId: result.jobId, paperReserved: result.kind === "queued" ? estimatedPaper : 0 })
     } catch (error) {
       if (error instanceof Error && error.message === "INSUFFICIENT_PAPER") {
         return res.status(402).json({ message: "No tienes suficiente Papel para generar este capítulo" })
       }
+      if (error instanceof Error && error.message === "AUDIOBOOK_INTENT_CHANGED") return res.status(409).json({message: "La clave pertenece a otra solicitud de audio; recupera el intento original o inicia uno nuevo"})
       console.error("Audiobook request failed:", error)
       res.status(500).json({ message: "No se pudo solicitar el audiolibro" })
     }
@@ -727,33 +748,17 @@ export function registerSpeechRoutes(app: Express) {
         .orderBy(asc(audiobookJobs.createdAt)).limit(1)
       if (!job) return null
       await tx.execute(sql`select pg_advisory_xact_lock(81733422, ${job.id})`)
+      const authorization = await authorizedAudiobookJob(tx, job)
+      if ("errorCode" in authorization) {
+        await refundJob(tx, job, authorization.errorCode || "AUDIO_RIGHTS_CHANGED")
+        return { rejected: true, errorCode: authorization.errorCode } as const
+      }
       const [claimedJob] = await tx.update(audiobookJobs).set({ status: "processing", startedAt: new Date(), claimToken: randomUUID(), leaseExpiresAt: new Date(Date.now() + AUDIOBOOK_LEASE_MS) })
         .where(and(eq(audiobookJobs.id, job.id), eq(audiobookJobs.status, "queued"))).returning()
       if (!claimedJob) return null
-      const [profileRow] = await tx.select().from(speechProfiles).where(and(
-        eq(speechProfiles.bookId, job.bookId),
-        eq(speechProfiles.chapterIndex, job.chapterIndex),
-        eq(speechProfiles.revision, job.speechProfileRevision),
-        eq(speechProfiles.status, "approved"),
-      ))
-      if (!profileRow) {
-        return { failedJob: claimedJob }
-      }
-      const profile = speechProfileSchema.parse(profileRow.data)
-      const voiceIds = [...new Set(profile.segments.map(segment => segment.voiceProfileId))]
-      const voices = await tx.select({
-        id: voiceProfiles.id,
-        provider: voiceProfiles.provider,
-        providerVoiceId: voiceProfiles.providerVoiceId,
-      }).from(voiceProfiles).where(and(inArray(voiceProfiles.id, voiceIds), eq(voiceProfiles.status, "published")))
-      if (voices.length !== voiceIds.length) return { failedJob: claimedJob, errorCode: "VOICE_MISSING" }
-      return { job: claimedJob, profile, voices, modelId: job.modelId }
+      return {job: claimedJob, profile: authorization.profile, voices: authorization.voices, modelId: job.modelId}
     })
-    if (claimed && "failedJob" in claimed) {
-      const errorCode = claimed.errorCode || "PROFILE_MISSING"
-      if (claimed.failedJob) await refundFailedJob(claimed.failedJob, errorCode, { claimToken: claimed.failedJob.claimToken! })
-      return res.status(409).json({ message: errorCode === "VOICE_MISSING" ? "Una voz ya no está disponible" : "El perfil ya no está disponible" })
-    }
+    if (claimed && "rejected" in claimed) return res.status(409).json({message: claimed.errorCode})
     if (!claimed) return res.status(204).send()
     res.json(claimed)
   })
@@ -765,6 +770,10 @@ export function registerSpeechRoutes(app: Express) {
     if (!id || !token.success) return res.status(400).json({ message: "Lease inválido" })
     const updated = await db.transaction(async tx => {
       await tx.execute(sql`select pg_advisory_xact_lock(81733422, ${id})`)
+      const [job] = await tx.select().from(audiobookJobs).where(eq(audiobookJobs.id, id))
+      if (!job || job.status !== "processing" || job.claimToken !== token.data || audiobookJobExpired(job)) return []
+      const authorization = await authorizedAudiobookJob(tx, job)
+      if ("errorCode" in authorization) { await refundJob(tx, job, authorization.errorCode || "AUDIO_RIGHTS_CHANGED"); return [] }
       return tx.update(audiobookJobs).set({ leaseExpiresAt: new Date(Date.now() + AUDIOBOOK_LEASE_MS) })
         .where(and(eq(audiobookJobs.id, id), eq(audiobookJobs.status, "processing"), eq(audiobookJobs.claimToken, token.data), sql`${audiobookJobs.leaseExpiresAt} > now()`, sql`${audiobookJobs.startedAt} > now() - interval '2 hours'`))
         .returning({ leaseExpiresAt: audiobookJobs.leaseExpiresAt })
@@ -778,13 +787,15 @@ export function registerSpeechRoutes(app: Express) {
     const parsed = completeJobSchema.safeParse(req.body)
     if (!id || !parsed.success) return res.status(400).json({ message: "Resultado inválido" })
     try {
-      await db.transaction(async tx => {
+      const completed = await db.transaction(async tx => {
         await tx.execute(sql`select pg_advisory_xact_lock(81733422, ${id})`)
         const [job] = await tx.select().from(audiobookJobs).where(eq(audiobookJobs.id, id))
         if (!job) throw new Error("JOB_NOT_FOUND")
         if (job.claimToken !== parsed.data.claimToken) throw new Error("JOB_CLAIM_CHANGED")
-        if (job.status === "ready") return
+        if (job.status === "ready") return true
         if (job.status !== "processing" || audiobookJobExpired(job)) throw new Error("JOB_NOT_PROCESSING")
+        const authorization = await authorizedAudiobookJob(tx, job)
+        if ("errorCode" in authorization) { await refundJob(tx, job, authorization.errorCode || "AUDIO_RIGHTS_CHANGED"); return false }
         await tx.execute(sql`select pg_advisory_xact_lock(${job.userId})`)
         assertAudiobookCharacterCount(job.expectedCharacters, parsed.data.actualCharacters)
         const actualPaper = paperChargeFor("elevenlabs", parsed.data.actualCharacters)
@@ -831,7 +842,9 @@ export function registerSpeechRoutes(app: Express) {
           userId: job.userId, currency: "papel", delta: refund,
           reason: "refund_ai", refType: "audiobook_job", refId: job.id,
         })
+        return true
       })
+      if (!completed) return res.status(409).json({message: "La autorización de audio o el perfil cambió; la reserva fue devuelta"})
       res.json({ ok: true })
     } catch (error) {
       res.status(409).json({ message: error instanceof Error ? error.message : "No se pudo cerrar el trabajo" })
