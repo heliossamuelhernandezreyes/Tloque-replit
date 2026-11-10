@@ -4,6 +4,7 @@ import type { IStorage } from "./storage"
 import { GUTENBERG_TOPICS } from "../shared/gutenberg"
 import { browseGutenberg, fetchGutenbergBookById, normalizeGutenbergLanguage, processGutenbergBook, searchGutenberg,
   GutenbergSourceError } from "./gutenberg"
+import { withoutPremiumArt } from "@shared/edition-access"
 import { GutenbergBusyError } from "./gutenberg-cache"
 
 const catalogInput = z.object({
@@ -23,6 +24,7 @@ export const gutenbergImportSchema = z.object({
 }).strict()
 
 type Dependencies = {
+  projectPublicBook?: (req: Request, book: any) => Promise<any>
   storage: Pick<IStorage, "getGutenbergReferences" | "findBookByGutenbergId" | "getBook" | "createBook">
   requireAdmin: RequestHandler
   isAdmin: (user: unknown) => boolean
@@ -40,7 +42,7 @@ function sendError(res: Response, error: unknown) {
   return res.status(500).json({ message: "No se pudo procesar el libro. Inténtalo de nuevo.", code: "GUTENBERG_ERROR" })
 }
 
-export function registerGutenbergRoutes(app: Express, { storage, requireAdmin, isAdmin, rateLimit }: Dependencies) {
+export function registerGutenbergRoutes(app: Express, { storage, requireAdmin, isAdmin, rateLimit, projectPublicBook }: Dependencies) {
   const enrich = async <T extends { id: number }>(results: T[], admin: boolean) => {
     const rows = await storage.getGutenbergReferences(results.map(book => book.id), admin)
     const byId = new Map(rows.map(row => [row.gutenbergId, row]))
@@ -79,7 +81,12 @@ export function registerGutenbergRoutes(app: Express, { storage, requireAdmin, i
     try {
       if (!admin) {
         const [existing] = await storage.getGutenbergReferences([id])
-        if (existing) return res.json({ ...await storage.getBook(existing.id), existingBookId: existing.id, alreadyImported: true })
+        if (existing) {
+          const book = await storage.getBook(existing.id)
+          const presented = book ? projectPublicBook ? await projectPublicBook(req, book) : withoutPremiumArt(book, false) : null
+          if (!presented) return res.status(404).json({ message: "Libro no encontrado" })
+          return res.json({ ...presented, existingBookId: existing.id, alreadyImported: true })
+        }
       }
       const book = await fetchGutenbergBookById(id)
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })

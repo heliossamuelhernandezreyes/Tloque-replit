@@ -4,6 +4,7 @@ import { accountStorage as localStorage, accountFetch, accountContext } from "@/
 // (novareads_saved) para que las listas carguen síncronas e instantáneas.
 // El contenido (capítulos/texto) vive aquí, en IndexedDB, que tiene
 // espacio de sobra — así guardar clásicos enteros no revienta la cuota.
+import { bookMetadata } from "./book-cache"
 import { createAccountStore } from "@/lib/account-store"
 
 const store = createAccountStore("offline_content")
@@ -41,6 +42,7 @@ export async function saveOfflineContent(id: string | number, book: any): Promis
     content: edition?.content ?? null,
     revision: edition?.revision ?? null,
     savedAt: Date.now(),
+    metadata: bookMetadata(edition),
   })
   // Verificación posterior: algunos motores de almacenamiento pueden resolver
   // sin persistir cuando la cuota cambia durante la escritura.
@@ -52,7 +54,7 @@ export async function saveOfflineContent(id: string | number, book: any): Promis
   return { ...edition, hasOfflineContent: true }
 }
 
-export async function getOfflineContent(id: string | number): Promise<{ chapters: any; content: any } | null> {
+export async function getOfflineContent(id: string | number): Promise<{ chapters: any; content: any; metadata?: Record<string, any>; revision?: number } | null> {
   try {
     return (await store.getItem(key(id))) as any
   } catch { return null }

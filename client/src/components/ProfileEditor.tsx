@@ -103,7 +103,7 @@ export default function ProfileEditor({
     },
     onSuccess: () => {
       setSaved(true)
-      queryClient.invalidateQueries({ queryKey: [`/api/authors/${encodeURIComponent(authorName)}`] })
+      queryClient.invalidateQueries({ predicate: query => String(query.queryKey[0]).startsWith("/api/authors/") })
       queryClient.invalidateQueries({ queryKey: [`/api/authors/${encodeURIComponent(authorName)}/card`] })
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] })
       setTimeout(onClose, 900)

@@ -1,3 +1,4 @@
+import { authorPath } from "@shared/author-path"
 import { useMemo, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { BookOpen, Check, Layers3, Pencil, ShieldCheck, Sparkles } from "lucide-react"
@@ -74,7 +75,7 @@ export default function ProfileHub() {
             <button onClick={() => setLocation("/editions")} className="tloque-action-card">
               <Layers3 className="h-5 w-5" style={{ color: cfg.color }} /><span>{copy("manageEditions")}</span>
             </button>
-            {user.roles.author && <button onClick={() => setLocation(`/author/${encodeURIComponent(user.name)}`)} className="tloque-action-card"><Sparkles className="h-5 w-5" style={{ color: cfg.color }} /><span>{copy("profile")}</span></button>}
+            {user.roles.author && <button onClick={() => setLocation(authorPath({ authorId: user.id }))} className="tloque-action-card"><Sparkles className="h-5 w-5" style={{ color: cfg.color }} /><span>{copy("profile")}</span></button>}
             {isAdmin && <button onClick={() => setLocation("/admin")} className="tloque-action-card"><ShieldCheck className="h-5 w-5" style={{ color: cfg.color }} /><span>{copy("adminCenter")}</span></button>}
           </div>
         </div>

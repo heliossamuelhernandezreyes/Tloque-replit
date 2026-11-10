@@ -1,0 +1,42 @@
+name: Audit regressions
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tloque
+          POSTGRES_PASSWORD: audit_fixture
+          POSTGRES_DB: tloque_audit
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tloque -d tloque_audit"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://tloque:audit_fixture@localhost:5432/tloque_audit
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run db:migrate
+      - run: npm run build
+      - run: node scripts/check-audit-regressions.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tloque-audit-regressions
+          path: .tloque_cache/audit-regressions/results.json
+          retention-days: 30

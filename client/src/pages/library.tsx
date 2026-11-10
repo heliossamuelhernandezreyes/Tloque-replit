@@ -1,3 +1,4 @@
+import { authorPath } from "@shared/author-path"
 import QueryNotice from "@/components/QueryNotice"
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
@@ -247,7 +248,7 @@ export default function Library() {
             <div className="flex items-center gap-3 mt-1.5">
               {(profileName || user?.name) && (
                 <button
-                  onClick={() => setLocation(`/author/${encodeURIComponent(profileName || user?.name || "")}`)}
+                  onClick={() => setLocation(user ? authorPath({ authorId: user.id }) : "/profile")}
                   className="flex items-center gap-1 text-xs font-sans font-medium transition-colors"
                   style={{ color: cfg.color }}
                 >

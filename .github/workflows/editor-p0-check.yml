@@ -43,6 +43,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate required branch checks configuration
+        run: npm run check:main-protection
+
       - name: Rehearse database from empty PostgreSQL
         run: |
           npm run db:migrate

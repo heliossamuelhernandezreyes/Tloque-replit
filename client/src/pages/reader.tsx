@@ -62,6 +62,11 @@ function languageDirection(value: string): "ltr" | "rtl" {
 }
 
 export default function Reader() {
+  const { bookId } = useParams<{ bookId: string }>()
+  return <ReaderForBook key={bookId} />
+}
+
+function ReaderForBook() {
   const { bookId, chapterId } = useParams<{ bookId: string; chapterId: string }>()
   const [, setLocation] = useLocation()
   const { toast }       = useToast()
@@ -73,6 +78,10 @@ export default function Reader() {
   const { data: apiBook, isLoading: apiLoading, isError: bookError, refetch: retryBook } = useBook(numericBookId as number)
   const { data: allBooks } = useBooks()
   const [localBook,     setLocalBook]     = useState<any>(null)
+  const matchingLocalBook = localBook && String(localBook.id) === String(bookId) ? localBook : null
+  const book = apiBook || (numericBookId === null || apiBook !== null ? matchingLocalBook : null)
+  const availableChapterCount = Array.isArray(book?.chapters) && book.chapters.length
+    ? book.chapters.length : book?.content ? 1 : 0
   const [isSaved,       setIsSaved]       = useState(false)
   const [isMine,        setIsMine]        = useState(false)
   const [showLibraryFull, setShowLibraryFull] = useState(false)
@@ -104,12 +113,12 @@ export default function Reader() {
   const soundtrack = soundtrackData?.assignments.find(item => item.chapterIndex === activeChapter) || null
 
   const { data: experienceData } = useQuery<{ profile: ExperienceProfileV1 | null; musicBrain: MusicBrainScoreV1 | null; audioLayers: MusicBrainAudioLayer[] }>({
-    queryKey: ["/api/books", numericBookId, "experience", activeChapter],
+    queryKey: ["/api/books", numericBookId, "experience", activeChapter, book?.revision, book?.acquiredEditionId],
     queryFn: async () => {
-      const response = await fetch(`/api/books/${numericBookId}/experience/${activeChapter}`, { credentials: "include" })
+      const response = await fetch(`/api/books/${numericBookId}/experience/${activeChapter}?revision=${book?.revision ?? 0}`, { credentials: "include" })
       return response.ok ? response.json() : { profile: null, musicBrain: null, audioLayers: [] }
     },
-    enabled: numericBookId !== null,
+    enabled: numericBookId !== null && !!book?.revision,
   })
   const { containerRef: directedTextRef, attention } = useReadingAttention(`${numericBookId ?? bookId}:${activeChapter}`)
   const narrativeState = useRef<NarrativeRuntimeState>({ activeRegionId: null, lastProgress: 0 })
@@ -171,6 +180,8 @@ export default function Reader() {
 
   useEffect(() => {
     if (!bookId) return
+    let active = true
+    setLocalBook(null); setIsMine(false); setIsSaved(false)
     const authored = JSON.parse(localStorage.getItem("novareads_authored") || "[]")
     const drafts   = JSON.parse(localStorage.getItem("novareads_drafts")   || "[]")
     const saved    = JSON.parse(localStorage.getItem("novareads_saved")    || "[]")
@@ -185,13 +196,13 @@ export default function Reader() {
       // Guardado "ligero": su contenido vive en IndexedDB — hidratarlo
       if (!foundS.chapters && !foundS.content) {
         getOfflineContent(bookId).then(c => {
-          if (c && (c.chapters || c.content)) {
+          if (active && c && (c.chapters || c.content)) {
             setLocalBook({ ...foundS, chapters: c.chapters ?? undefined, content: c.content ?? undefined })
           }
         })
       }
     }
-
+    return () => { active = false }
   }, [bookId, apiBook])
 
   useEffect(() => {
@@ -212,7 +223,7 @@ export default function Reader() {
   }, [activeChapter])
 
   useEffect(() => {
-    if (!bookId) return
+    if (!bookId || !book || String(book.id) !== String(bookId)) return
     localStorage.setItem(`reading_chapter_${bookId}`, String(activeChapter))
     // Rastrear el capítulo más lejano alcanzado (para bloquear comentarios atrás)
     const storedMax = Number(localStorage.getItem(`reading_maxchapter_${bookId}`) || "0")
@@ -256,7 +267,7 @@ export default function Reader() {
         }
       }
     } catch {}
-  }, [activeChapter, bookId])
+  }, [activeChapter, bookId, book?.id])
 
   // ── BUSQUEDA EN WIKTIONARY ───────────────────────────
   const closeDictionary = useCallback(() => {
@@ -373,7 +384,7 @@ export default function Reader() {
   }
 
   async function toggleSave() {
-    const currentBook = apiBook || localBook
+    const currentBook = book
     if (!currentBook || isMine) return
     let saved = JSON.parse(localStorage.getItem("novareads_saved") || "[]")
     if (isSaved) {
@@ -409,10 +420,6 @@ export default function Reader() {
     }
   }
 
-  const book      = apiBook || localBook
-  const availableChapterCount = Array.isArray(book?.chapters) && book.chapters.length
-    ? book.chapters.length
-    : book?.content ? 1 : 0
 
   useEffect(() => {
     if (availableChapterCount <= 0) return
@@ -435,7 +442,7 @@ export default function Reader() {
       .slice(0, 2 - byAuthor.length)
     return [...byAuthor, ...byGenre].slice(0, 3)
   }, [book, allBooks, bookId])
-  const isLoading = apiLoading && !localBook
+  const isLoading = apiLoading && !book
   const gc        = GENRE_CONFIG[(book?.genre as Genre) || "todos"]
 
   // ── Valores desde settings ───────────────────────────
@@ -446,7 +453,7 @@ export default function Reader() {
   const fontSizePx   = FONT_SIZE_PX[settings.fontSize]
   const lineHeight   = LINE_SPACING_VALUE[settings.lineSpacing]
 
-  if (bookError && !localBook) return <main className="min-h-screen bg-zinc-950 p-5"><QueryNotice error onRetry={() => { void retryBook() }} /></main>
+  if (bookError && !book) return <main className="min-h-screen bg-zinc-950 p-5"><QueryNotice error onRetry={() => { void retryBook() }} /></main>
 
   if (isLoading) return (
     <div className="h-screen flex items-center justify-center" style={{ background: bgColor }}>

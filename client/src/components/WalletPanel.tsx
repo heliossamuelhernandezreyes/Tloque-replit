@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { X, Loader2, Sparkles, Droplets, ScrollText, BadgeCheck } from "lucide-react"
 import InfoDot from "@/components/InfoDot"
 import { LANGUAGE_META, useSettings } from "@/context/SettingsContext"
+import { reconcileWalletIntent, walletIntentKey, type WalletOrderStatus } from "@/lib/wallet-purchase"
 
 interface Pack {
   id: string
@@ -40,6 +41,7 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
   const legal = useQuery<{hash:string; documents:LegalDocument[]}>({ queryKey:["/api/legal/documents"], enabled:open, staleTime:0,
     queryFn: async()=>{ const response=await fetch("/api/legal/documents",{cache:"no-store"}); if(!response.ok) throw new Error("No se pudieron cargar las condiciones"); return response.json() } })
   const [credited, setCredited] = useState<number | null>(null)
+  const [previousConfirmed, setPreviousConfirmed] = useState(false)
 
   const { data: wallet, isPending: walletLoading, isError: walletError, refetch: retryWallet } = useQuery<{ tinta: number; papel: number }>({
     queryKey: ["/api/wallet"],
@@ -63,8 +65,27 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
   })
   const payOn = !!packsData?.enabled
   const betaOn = !!packsData?.beta
+  const intents = useQuery({
+    queryKey: ["wallet-intents", packsData?.commerceVersion], enabled: open && !!packsData?.commerceVersion,
+    staleTime: 0, refetchOnMount: "always",
+    queryFn: async () => {
+      for (const pack of packsData!.packs) {
+        const key = localStorage.getItem(walletIntentKey(packsData!.commerceVersion!, pack.id))
+        if (!key) continue
+        const response = await fetch("/api/wallet/orders/lookup", { headers: { "Idempotency-Key": key }, cache: "no-store" })
+        if (response.status === 404) continue
+        if (!response.ok) throw new Error("No se pudo verificar la recarga anterior")
+        const order: WalletOrderStatus = await response.json()
+        if (reconcileWalletIntent(localStorage, order) && order.status === "paid") {
+          setPreviousConfirmed(true)
+          void queryClient.invalidateQueries({ queryKey: ["/api/wallet"] })
+        }
+      }
+      return true
+    },
+  })
   const packKey = JSON.stringify([legal.data?.hash, packsData?.commerceVersion, packsData?.packs])
-  const canAcquire = (payOn || betaOn) && !!legal.data && !!packsData?.commerceVersion && acceptedPackKey === packKey
+  const canAcquire = (payOn || betaOn) && !!legal.data && !!packsData?.commerceVersion && acceptedPackKey === packKey && intents.isSuccess && !intents.isFetching
 
   const { data: paperCatalog } = useQuery<PaperCatalog>({
     queryKey: ["/api/paper/catalog"],
@@ -79,7 +100,8 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
 
   const buy = useMutation({
     mutationFn: async (packId: string) => {
-      const intent = `wallet-purchase:${packsData?.commerceVersion}:${packId}`
+      setCredited(null); setPreviousConfirmed(false)
+      const intent = walletIntentKey(packsData!.commerceVersion!, packId)
       let purchaseKey = localStorage.getItem(intent)
       if (!purchaseKey) {
         purchaseKey = crypto.randomUUID()
@@ -105,7 +127,8 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
         window.location.href = data.url
         return
       }
-      setCredited(data?.credited || 0)
+      if (data?.replayed) setPreviousConfirmed(true)
+      else setCredited(data?.credited || 0)
       queryClient.invalidateQueries({ queryKey: ["/api/wallet"] })
     },
   })
@@ -122,6 +145,8 @@ export default function WalletPanel({ open, onClose, accentColor, accentGlow }: 
 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5" data-testid="wallet-scroll">
 <QueryNotice loading={walletLoading} error={walletError} onRetry={() => { void retryWallet() }} />
 <QueryNotice loading={packsLoading} error={packsError} onRetry={() => { void retryPacks() }} />
+<QueryNotice loading={intents.isFetching} error={intents.isError} onRetry={() => { void intents.refetch() }} />
+{previousConfirmed && <p role="status" className="mb-3 text-sm text-green-200">Tu recarga anterior ya está confirmada. Puedes iniciar una nueva compra.</p>}
 
 
             {(wallet?.tinta ?? 0) < 0 && (

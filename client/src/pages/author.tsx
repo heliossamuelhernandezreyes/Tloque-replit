@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/useAuth"
 import SocialLinks from "@/components/SocialLinks"
 import ProfileEditor from "@/components/ProfileEditor"
 import UserAvatar from "@/components/UserAvatar"
+import QueryNotice from "@/components/QueryNotice"
 
 type AuthorProfile = {
   name:        string
@@ -24,6 +25,7 @@ type AuthorProfile = {
   authorId?:   number | null
   isClassicProfile?: boolean
   books:       any[]
+  candidates?: { authorId: number | null; name: string; path: string }[]
 }
 
 type PayoutState = {
@@ -46,12 +48,18 @@ type PayoutState = {
 
 export default function AuthorPage() {
   const [, params]      = useRoute("/author/:name")
+  const [, idParams] = useRoute("/author/id/:id")
+  const [, classicParams] = useRoute("/author/classic/:name")
   const [, setLocation] = useLocation()
   const { cfg }         = useGenre()
   const { t }           = useSettings()
 
-  const authorName = decodeURIComponent(params?.name || "")
   const { user, can } = useAuth()
+  const routeName = params?.name || classicParams?.name || ""
+  const authorId = idParams?.id || (routeName === "me" ? user?.id : undefined)
+  const profileUrl = authorId ? `/api/authors/id/${authorId}`
+    : classicParams ? `/api/authors/classic/${encodeURIComponent(routeName)}`
+    : `/api/authors/${encodeURIComponent(routeName)}`
   const isAdmin = can("manageCatalog")
   const [editing, setEditing] = useState(false)
   const [publicView, setPublicView] = useState(false)   // "cómo me ven los demás"
@@ -110,16 +118,18 @@ export default function AuthorPage() {
     enabled: !!user,
   })
 
-  const { data: profile, isLoading } = useQuery<AuthorProfile>({
-    queryKey:  [`/api/authors/${encodeURIComponent(authorName)}`],
+  const { data: profile, isLoading, isError, refetch } = useQuery<AuthorProfile>({
+    queryKey:  [profileUrl],
     queryFn:   async () => {
-      const res = await fetch(`/api/authors/${encodeURIComponent(authorName)}`)
+      const res = await fetch(profileUrl)
+      if (res.status === 409) return { ...(await res.json()), books: [] }
       if (!res.ok) throw new Error("Author not found")
       return res.json()
     },
-    enabled:   !!authorName,
+    enabled:   !!authorId || (!!routeName && routeName !== "me"),
     staleTime: 2 * 60 * 1000,
   })
+  const authorName = profile?.name || (routeName === "me" ? user?.name : routeName) || ""
 
   const authorBooks = profile?.books || []
 
@@ -157,6 +167,15 @@ export default function AuthorPage() {
       </Layout>
     )
   }
+
+  if (isError) return <Layout><QueryNotice error onRetry={() => { void refetch() }} /></Layout>
+  if (profile?.candidates) return <Layout><div className="mx-auto max-w-lg px-5 py-16">
+    <h1 className="mb-4 text-xl">Hay varios autores llamados {authorName}</h1>
+    <p className="mb-5 text-sm text-white/70">Cada cuenta conserva sus propias obras y su perfil.</p>
+    {profile.candidates.map(candidate => <button key={candidate.path} className="mb-3 block min-h-11 w-full rounded-xl border border-white/20 p-3 text-left" onClick={() => setLocation(candidate.path)}>
+      {candidate.name} · {candidate.authorId ? `perfil ${candidate.authorId}` : "autor clásico"}
+    </button>)}
+  </div></Layout>
 
   return (
     <Layout>

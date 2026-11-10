@@ -7,6 +7,18 @@ import { checkInvariants, poolCushion, TICKET } from "../shared/gacha"
 import { rateLimit } from "../server/rateLimit"
 import { securityHeaders } from "../server/security"
 
+test("account quota separates a shared IP and follows the same account across IPs",async()=>{
+  const previous=process.env.DATABASE_URL;delete process.env.DATABASE_URL
+  try {
+    const limiter=rateLimit(60_000,2,"accounts-"+randomUUID(),"account")
+    let allowed=0,denied=0
+    const response={setHeader(){},status(code:number){assert.equal(code,429);denied++;return this},json(){}} as any
+    const request=(id:number,ip="203.0.113.1")=>({ip,method:"GET",path:"/api/books",isAuthenticated:()=>true,user:{id}} as any)
+    for(const req of [request(1),request(1),request(2),request(1,"203.0.113.2"),request(2)]) await limiter(req,response,()=>{allowed++})
+    assert.equal(allowed,4);assert.equal(denied,1)
+  }finally{if(previous===undefined)delete process.env.DATABASE_URL;else process.env.DATABASE_URL=previous}
+})
+
 function responseHeaders(path: string, nodeEnv: "development" | "production") {
   const previous = process.env.NODE_ENV
   process.env.NODE_ENV = nodeEnv

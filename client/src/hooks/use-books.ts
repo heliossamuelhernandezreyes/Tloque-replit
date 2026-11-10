@@ -2,6 +2,8 @@ import { accountFetch as fetch } from "@/lib/account-context"
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type BookInput, type BookUpdateInput } from "@shared/routes";
 import { createAccountStore } from "@/lib/account-store";
+import { bookMetadata } from "@/lib/book-cache";
+import { getOfflineContent } from "@/lib/offline";
 import { AccountChangedError } from "@/lib/account-context"
 
 // Initialize offline storage
@@ -43,13 +45,15 @@ export function useBooks(search = "") {
   return { ...query, data: query.data?.pages.flatMap(page => page.books) }
 }
 
-export function useMyBooks() {
+export function useMyBooks(enabled = true) {
   return useQuery({
-    queryKey: ["/api/books/mine"],
+    queryKey: ["/api/books/mine"], enabled,
     queryFn: async () => {
       const response = await fetch("/api/books/mine", { credentials: "include" })
       if (!response.ok) throw new Error("No se pudieron cargar tus obras")
-      return response.json() as Promise<any[]>
+      const data = await response.json()
+      if (!Array.isArray(data)) throw new Error("El catálogo de tus obras no es válido. Reintenta la carga.")
+      return data as any[]
     },
   })
 }
@@ -65,12 +69,17 @@ export function useBook(id: number | null) {
         if ([401, 403, 404].includes(res.status)) return null;
         if (!res.ok) throw new Error("Failed to fetch book");
         const data = await res.json();
-        try { await store.setItem(`book_${id}`, data) }
+        try { await store.setItem(`book_${id}`, bookMetadata(data)) }
         catch (error) { if (error instanceof AccountChangedError) throw error }
         return data;
       } catch (error) {
-        const cached = await store.getItem(`book_${id}`);
-        if (cached) return cached as any;
+        if (error instanceof AccountChangedError) throw error
+        const cached = await store.getItem<any>(`book_${id}`)
+        // Legacy query caches may contain full text. They cannot authorize a download.
+        if (cached) await store.setItem(`book_${id}`, bookMetadata(cached))
+        const downloaded = await getOfflineContent(id)
+        const metadata = downloaded?.metadata ?? (cached ? bookMetadata(cached) : null)
+        if (downloaded && metadata) return { ...metadata, ...downloaded, id, hasOfflineContent: true }
         throw error;
       }
     },
@@ -129,7 +138,7 @@ export function useUpdateBook() {
 
       const updatedBook = await res.json();
       // Update local cache
-      try { await store.setItem(`book_${id}`, updatedBook) }
+      try { await store.setItem(`book_${id}`, bookMetadata(updatedBook)) }
       catch (error) { if (error instanceof AccountChangedError) throw error }
       return updatedBook;
     },

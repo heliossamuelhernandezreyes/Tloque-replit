@@ -1,3 +1,4 @@
+import { authorPath } from "@shared/author-path"
 import { accountStorage as localStorage, accountFetch as fetch } from "@/lib/account-context"
 import { useRoute, useLocation, useSearch } from "wouter"
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
@@ -449,7 +450,7 @@ export default function BookPage() {
             </h1>
             <motion.button
               whileTap={{ scale: 0.98 }}
-              onClick={() => setLocation(`/author/${encodeURIComponent(book.author)}`)}
+              onClick={() => setLocation(authorPath(book))}
               className="flex items-center gap-2.5 mt-2"
             >
               {/* Avatar del autor (foto real + marco) */}

@@ -3,7 +3,7 @@ import type { Express } from "express"
 import { and, desc, eq, lt, sql } from "drizzle-orm"
 import { z } from "zod"
 import { authorEarnings, books, tokenOrders } from "@shared/schema"
-import { COMMERCE_VERSION, COMMERCIAL_AUTHOR_CENTS, commercialText, settlementWindow } from "@shared/commerce"
+import { COMMERCE_VERSION, COMMERCIAL_AUTHOR_CENTS, CARD_AUTHOR_SHARE_BPS, commercialText, settlementWindow } from "@shared/commerce"
 import { bookAcceptance, LegalRequirementError, publicationWorkHash } from "./legal"
 import { legalConfiguration } from "./legalConfig"
 import { payoutHoldDays, payoutMinimumCents } from "./payouts"
@@ -26,6 +26,7 @@ export async function commercialOffer(book: typeof books.$inferSelect, tx: any) 
     supportMoneyCents: priceFor("support", book).cents, directAuthorShareBps: authorShareFor("support", book, "money") * 10_000,
     saleUnits: priceFor("sale", book).tinta, saleMoneyCents: priceFor("sale", book).cents, saleAuthorShareBps: authorShareFor("sale", book, "tinta") * 10_000, saleAuthorFixedCents: COMMERCIAL_AUTHOR_CENTS,
     holdDays: payoutHoldDays(), minimumCents: payoutMinimumCents(),
+    cardAuthorShareBps: CARD_AUTHOR_SHARE_BPS,
     rights: permission.choices,
   }
   const document = { ...terms, text: commercialText(terms) }

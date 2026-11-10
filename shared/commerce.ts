@@ -1,9 +1,10 @@
 import { displayTinta, planTintaDebit, proportionalCents, type TintaFunding } from "./tinta.ts"
 
 /** The economic policy is shared by quotes, receipts and the author agreement. */
-export const COMMERCE_VERSION = "2026-11-03.2"
+export const COMMERCE_VERSION = "2026-11-09.1"
 export const COMMERCIAL_AUTHOR_CENTS = 1800
-const FROZEN_SETTLEMENT_VERSIONS = ["2026-11-01.1", "2026-11-03.1", "2026-11-03.2"]
+export const CARD_AUTHOR_SHARE_BPS = 5000
+const FROZEN_SETTLEMENT_VERSIONS = ["2026-11-01.1", "2026-11-03.1", "2026-11-03.2", "2026-11-09.1"]
 export const TINTA_UNIT_CENTS = 200
 export const TINTA_ALLOCATION = "paid-proportional-legacy-cash-first-v2" as const
 
@@ -21,7 +22,7 @@ export function cashForTinta(backingCents: number, units: number) {
 
 export type EconomicQuote = {
   version: string; allocation: string; bookId: number; workHash: string
-  agreementId: number; agreementHash: string; kind: "support" | "sale"
+  agreementId: number; agreementHash: string; kind: "support" | "sale" | "card"
   provider: "stripe" | "tinta" | "beta"; currency: "mxn"; units: number
   nominalCents: number; chargedCents: number; cashBasisCents: number
   authorShareBps: number; authorCents: number; platformCents: number
@@ -69,7 +70,7 @@ export function settlementWindow(createdAt: Date | string, economics: Partial<Ec
 export function commercialText(input: {
   operator: { name: string; address: string; privacyEmail: string; phone: string }
   bookId: number; title: string; author: string; workHash: string; authorShareBps: number
-  supportUnits: number; supportMoneyCents?: number; directAuthorShareBps?: number; saleUnits?: number; saleMoneyCents?: number; saleAuthorShareBps?: number; saleAuthorFixedCents?: number; holdDays: number; minimumCents: number
+  supportUnits: number; supportMoneyCents?: number; directAuthorShareBps?: number; saleUnits?: number; saleMoneyCents?: number; saleAuthorShareBps?: number; saleAuthorFixedCents?: number; cardAuthorShareBps?: number; holdDays: number; minimumCents: number
 }) {
   const i = input, share = i.authorShareBps / 100
   return `Acuerdo comercial de edición · ${COMMERCE_VERSION}
@@ -87,6 +88,8 @@ Licencia comercial independiente: ${displayTinta(i.saleUnits ?? 12)} Tintas o ${
 El fabricante/vendedor cubre impresión, encuadernación, merma, embalaje, envío y su propio cobro e impuestos; esos gastos no se descuentan de la regalía pactada. Antes de vender deben identificarse editor e impresor, edición, formato, tirada autorizada, ISBN cuando proceda, créditos, precio público aplicable y responsable del depósito legal. La licencia no exime de esos requisitos ni autoriza desconocer el precio único; la revisión de la edición debe documentarlos. El precio de la licencia no es el precio del libro físico. Tloque solo cobra esta licencia salvo contrato distinto.
 
 Reparto del mecenazgo: con Tinta nueva pagada, ${share}% de la base editorial de ${money(i.supportUnits * TINTA_UNIT_CENTS)} corresponde al titular (${money(splitCents(i.supportUnits * TINTA_UNIT_CENTS, i.authorShareBps).authorCents)}). Con tarjeta: ${(i.directAuthorShareBps ?? i.authorShareBps) / 100}% del precio directo. Licencia comercial: regalía fija de ${money(i.saleAuthorFixedCents ?? COMMERCIAL_AUTHOR_CENTS)} por ejemplar con tarjeta o Tinta nueva pagada, independientemente del precio directo o del sobreprecio de recarga. No se calcula como el 75% del precio directo. La parte financiada con créditos históricos conserva ${(i.saleAuthorShareBps ?? 7500) / 100}% del efectivo atribuido a esa parte, incluso cero cuando no existe respaldo. Una operación mixta suma la fracción de regalía fija cubierta por Tinta nueva y la parte histórica, sin reducir silenciosamente una regalía prometida sobre efectivo nuevo. Este importe comercial se pacta por separado del mecenazgo. Cada desglose fija centavos exactos del titular y Tloque antes de pagar.
+
+Tarjetas de precio fijo: solo se venden con autorización de coleccionables, monetización, edición digital permanente y descarga. Incluyen la tarjeta y la edición digital identificada, sin folios de impresión adicionales. El titular fija el precio en Tintas; ${(i.cardAuthorShareBps ?? CARD_AUTHOR_SHARE_BPS) / 100}% del efectivo real atribuido al gasto corresponde al titular y el resto a Tloque. Esta base incluye el efectivo consumido de la recarga y conserva el reparto previo de tarjetas; no es el reparto editorial del mecenazgo. El comprador ve y acepta los importes exactos antes del débito.
 
 Tinta: la numeración visible es 20 veces las unidades internas históricas, sin modificar saldos, poder de compra ni comprobantes anteriores. Los nuevos paquetes son créditos pagados, sin bonos promocionales. Se gasta primero el saldo pagado nuevo y se atribuye proporcionalmente su efectivo real, incluido el sobreprecio del paquete; el último gasto consume el remanente exacto. El titular recibe su participación sobre la base editorial, no sobre ese sobreprecio; Tloque recibe el efectivo atribuido menos la regalía. No es el ${share}% del precio de la recarga. Los créditos históricos conservan su regla de respaldo primero: hasta $2.00 MXN por unidad interna (20 Tintas visibles), sin tomar respaldo de recargas nuevas. Una parte histórica sin respaldo no genera ingreso liquidable y se identifica en el desglose. Una operación mixta suma ambas bases. No se venden créditos nuevos sin respaldo ni se cuentan saldos sin gastar como beneficio. Papel cubre IA y voz y lleva un circuito separado.
 
