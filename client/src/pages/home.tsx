@@ -15,6 +15,7 @@ import { coverFor } from "@/lib/covers"
 import { useGenre, GENRE_CONFIG, type Genre } from "@/context/GenreContext"
 import { useSettings, LITERARY_QUOTES_I18N } from "@/context/SettingsContext"
 import BootExperience from "@/components/BootExperience"
+import QueryNotice from "@/components/QueryNotice"
 
 type Book = {
   id:              string | number
@@ -166,7 +167,7 @@ function OwnBookCard({ book }: { book: any }) {
 }
 
 export default function Home() {
-  const { data: apiBooks, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useBooks()
+  const { data: apiBooks, isLoading, isError, usingCachedBooks, refetch, hasNextPage, fetchNextPage, isFetchingNextPage } = useBooks()
   const { activeGenre, lobbyFilter, cfg, isFiltered } = useGenre()
   const { t, settings } = useSettings()
   const [, setLocation] = useLocation()
@@ -301,6 +302,9 @@ export default function Home() {
       </div>
 
       <div className="pt-4 sm:pt-8 pb-36 space-y-6 sm:space-y-10">
+        {(isError || usingCachedBooks) && <div className="px-4 sm:px-6">
+          <QueryNotice error={isError} cached={usingCachedBooks} onRetry={() => { void refetch() }} />
+        </div>}
 
         {/* ── INDICADOR DE FILTRO ACTIVO ── */}
         <AnimatePresence>
@@ -481,7 +485,7 @@ export default function Home() {
         )}
 
         {/* ── VACÍO ── */}
-        {isFiltered && filteredBooks.length === 0 && !isLoading && (
+        {isFiltered && filteredBooks.length === 0 && !isLoading && !isError && !usingCachedBooks && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="flex flex-col items-center justify-center py-24 gap-3 px-8 text-center"

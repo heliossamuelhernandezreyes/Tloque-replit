@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { useSettings } from "@/context/SettingsContext"
 import { useBooks, useMyBooks } from "@/hooks/use-books"
 import ImportPanel from "@/components/ImportPanel"
+import { gutenbergCopy } from "@/components/gutenberg-copy"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,13 +37,14 @@ export default function Library() {
   const { cfg }    = useGenre()
   const { user, logout, can } = useAuth()
   const { t, settings } = useSettings()
+  const classicsLabel = gutenbergCopy(settings.language).explore
   const isAdminActive = can("manageCatalog") && (settings?.adminMode ?? true)
   const { data: myServerBooks, refetch: refetchMyBooks, isError: myBooksError } = useMyBooks()
 
   const [, setLocation] = useLocation()
   const search = useSearch()
   const searchQuery = new URLSearchParams(search).get("search")?.toLowerCase().trim() || ""
-  const { data: serverBooks, refetch: refetchBooks, isError: booksError, isLoading: booksLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useBooks(searchQuery)
+  const { data: serverBooks, refetch: refetchBooks, isError: booksError, isLoading: booksLoading, usingCachedBooks, hasNextPage, fetchNextPage, isFetchingNextPage } = useBooks(searchQuery)
   const moreBooks = hasNextPage && <div className="py-4 text-center"><button className="min-h-11 rounded-full border border-white/20 px-6 py-2 text-sm text-white" disabled={isFetchingNextPage} onClick={() => { void fetchNextPage() }}>{isFetchingNextPage ? "Cargando…" : "Cargar más libros"}</button></div>
 
   const [drafts,        setDrafts]        = useState<any[]>([])
@@ -166,18 +168,21 @@ export default function Library() {
       <Layout>
         <div className="pt-16 px-4 pb-32 space-y-6 max-w-2xl mx-auto">
           <div className="flex items-center gap-3">
-            <button onClick={() => setLocation("/")} className="text-zinc-400 hover:text-white transition p-1">←</button>
+            <button onClick={() => setLocation("/")} aria-label={t("backToHome")} className="min-h-11 min-w-11 rounded-lg text-zinc-400 hover:text-white">←</button>
             <div>
               <p className="text-xs text-zinc-400 uppercase tracking-widest font-sans">{t("searching")}</p>
               <h1 className="text-base text-white font-semibold font-sans">"{searchQuery}"</h1>
             </div>
           </div>
-          <QueryNotice loading={booksLoading} error={booksError} onRetry={() => { void refetchBooks() }} />
-          {!booksError && !booksLoading && searchResults.length === 0 ? (
+          <button type="button" onClick={() => setShowImport(true)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-amber-200/25 px-4 text-sm text-amber-100 hover:bg-amber-100/10">
+            <Archive className="h-4 w-4" />{classicsLabel}
+          </button>
+          <QueryNotice loading={booksLoading} error={booksError} cached={usingCachedBooks} onRetry={() => { void refetchBooks() }} />
+          {!booksError && !usingCachedBooks && !booksLoading && searchResults.length === 0 ? (
             <div className="py-20 text-center space-y-2">
               <p className="text-zinc-400 text-sm font-sans">{t("noResults")}</p>
             </div>
-          ) : (
+          ) : searchResults.length > 0 && (
             <>
               <p className="text-zinc-400 text-xs font-sans">{t("searchResultCount").replace("{n}", String(searchResults.length))}</p>
               <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -187,6 +192,7 @@ export default function Library() {
           )}
           {moreBooks}
         </div>
+        <ImportPanel open={showImport} onClose={() => setShowImport(false)} initialQuery={searchQuery} />
       </Layout>
     )
   }
@@ -208,7 +214,7 @@ export default function Library() {
         {/* COVER */}
         <div className="relative h-44 sm:h-56 w-full">
           <div className="absolute inset-0 bg-zinc-950 overflow-hidden">
-            {coverImage && <img loading="lazy" src={coverImage} className="w-full h-full object-cover opacity-50" />}
+            {coverImage && <img loading="lazy" src={coverImage} alt="" className="w-full h-full object-cover opacity-50" />}
             <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black" />
           </div>
           <button
@@ -221,16 +227,16 @@ export default function Library() {
 
 
           <div className="absolute -bottom-10 left-4 sm:left-6">
-            <motion.div
+            <motion.button type="button" aria-label="Editar imagen de perfil"
               whileTap={{ scale: 0.96 }}
               className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-zinc-900 border-[3px] border-black overflow-hidden flex items-center justify-center cursor-pointer shadow-xl"
               onClick={() => setLocation("/profile?edit=1")}
             >
               {profileImage
-                ? <img loading="lazy" src={profileImage} className="w-full h-full object-cover" />
+                ? <img loading="lazy" src={profileImage} alt="" className="w-full h-full object-cover" />
                 : <User className="w-9 h-9 text-zinc-400" />
               }
-            </motion.div>
+            </motion.button>
 
           </div>
         </div>
@@ -301,10 +307,6 @@ export default function Library() {
                       <Shield className="h-3 w-3" />
                       Admin
                     </DropdownMenuLabel>
-                    <DropdownMenuItem onSelect={() => setShowImport(true)} className="rounded-xl px-3 py-2.5 focus:bg-white/[.07] focus:text-white">
-                      <Archive className="text-violet-200/70" />
-                      {t("importClassics")}
-                    </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setLocation("/admin/marcos")} className="rounded-xl px-3 py-2.5 focus:bg-white/[.07] focus:text-white">
                       <Hammer className="text-violet-200/70" />
                       {t("frameWorkshop")}
@@ -328,6 +330,12 @@ export default function Library() {
           </div>
         </div>
 
+        <div className="mt-4 px-4 sm:px-6">
+          <button type="button" onClick={() => setShowImport(true)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-amber-200/25 px-4 text-sm text-amber-100 hover:bg-amber-100/10">
+            <Archive className="h-4 w-4" />{classicsLabel}
+          </button>
+        </div>
+
         {/* TABS */}
         <div className="mt-7 px-4 sm:px-6 flex border-b overflow-x-auto hide-scrollbar"
           style={{ borderColor: "rgba(255,255,255,0.07)" }}>
@@ -335,8 +343,9 @@ export default function Library() {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className="relative flex items-center gap-1.5 px-3 sm:px-4 py-2.5 text-xs sm:text-sm transition-colors whitespace-nowrap shrink-0"
-              style={{ color: activeTab === tab.key ? "white" : "rgba(255,255,255,0.3)" }}
+              aria-pressed={activeTab === tab.key}
+              className="relative flex min-h-11 items-center gap-1.5 px-3 sm:px-4 py-2.5 text-xs sm:text-sm transition-colors whitespace-nowrap shrink-0"
+              style={{ color: activeTab === tab.key ? "white" : "#a1a1aa" }}
             >
               <tab.icon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               {tab.label}
@@ -400,6 +409,7 @@ export default function Library() {
               )}
               {activeTab === "catalog" && isAdminActive && (
                 <div className="space-y-6">
+                  <QueryNotice loading={booksLoading} error={booksError} cached={usingCachedBooks} onRetry={() => { void refetchBooks() }} />
 
                   {/* ── EN REVISIÓN — libros ocultos del catálogo público ── */}
                   {reviewBooks.length > 0 && (
@@ -420,7 +430,7 @@ export default function Library() {
 
                   {/* ── CATÁLOGO DE CLÁSICOS ── */}
                   {serverClassics.length === 0 && reviewBooks.length === 0 ? (
-                    <Empty
+                    !booksLoading && !booksError && !usingCachedBooks && <Empty
                       msg={t("noCatalog")} btn={t("importClassic2")} onClick={() => setShowImport(true)}
                     />
                   ) : (
@@ -520,9 +530,7 @@ export default function Library() {
       </AnimatePresence>
     </Layout>
 
-    {isAdminActive && (
-      <ImportPanel open={showImport} onClose={() => setShowImport(false)} />
-    )}
+    <ImportPanel open={showImport} onClose={() => setShowImport(false)} />
     </>
   )
 }

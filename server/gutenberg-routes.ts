@@ -1,10 +1,10 @@
 import type { Express, Request, RequestHandler, Response } from "express"
 import { z } from "zod"
 import type { IStorage } from "./storage"
-import { GUTENBERG_TOPICS } from "../shared/gutenberg"
+import { GUTENBERG_SAMPLE_LENGTH, GUTENBERG_TOPICS } from "../shared/gutenberg"
 import { browseGutenberg, fetchGutenbergBookById, normalizeGutenbergLanguage, processGutenbergBook, searchGutenberg,
   GutenbergSourceError } from "./gutenberg"
-import { withoutPremiumArt } from "@shared/edition-access"
+import { isEditionRestricted, withoutPremiumArt } from "@shared/edition-access"
 import { GutenbergBusyError } from "./gutenberg-cache"
 
 const catalogInput = z.object({
@@ -13,6 +13,7 @@ const catalogInput = z.object({
   page: z.coerce.number().int().min(1).max(5000).default(1),
   sort: z.enum(["popular", "descending", "ascending"]).default("popular"),
   topic: z.enum(GUTENBERG_TOPICS).default(""),
+  includeUnpublished: z.enum(["true", "false"]).optional(),
 })
 export const gutenbergImportSchema = z.object({
   gutenbergId: z.coerce.number().int().positive().max(999_999_999),
@@ -25,7 +26,7 @@ export const gutenbergImportSchema = z.object({
 
 type Dependencies = {
   projectPublicBook?: (req: Request, book: any) => Promise<any>
-  storage: Pick<IStorage, "getGutenbergReferences" | "findBookByGutenbergId" | "getBook" | "createBook">
+  storage: Pick<IStorage, "getGutenbergReferences" | "findBookByGutenbergId" | "createBook">
   requireAdmin: RequestHandler
   isAdmin: (user: unknown) => boolean
   rateLimit: (window: number, maximum: number) => RequestHandler
@@ -44,12 +45,14 @@ function sendError(res: Response, error: unknown) {
 
 export function registerGutenbergRoutes(app: Express, { storage, requireAdmin, isAdmin, rateLimit, projectPublicBook }: Dependencies) {
   const enrich = async <T extends { id: number }>(results: T[], admin: boolean) => {
-    const rows = await storage.getGutenbergReferences(results.map(book => book.id), admin)
+    const rows = await storage.getGutenbergReferences(results.map(book => book.id))
     const byId = new Map(rows.map(row => [row.gutenbergId, row]))
-    return results.map(book => {
-      const existing = byId.get(book.id)
-      return { ...book, alreadyImported: !!existing, existingBookId: existing?.id ?? null,
-        ...(admin && existing ? { existingStatus: existing.status } : {}) }
+    return results.flatMap(book => {
+      const reference = byId.get(book.id)
+      if (reference && !admin && isEditionRestricted(reference)) return []
+      const existing = admin || reference?.status === "published" ? reference : undefined
+      return [{ ...book, alreadyImported: !!existing, existingBookId: existing?.id ?? null,
+        ...(admin && existing ? { existingStatus: existing.status } : {}) }]
     })
   }
 
@@ -57,10 +60,10 @@ export function registerGutenbergRoutes(app: Express, { storage, requireAdmin, i
     const parsed = catalogInput.safeParse(req.query)
     if (!parsed.success) return res.status(400).json({ message: "Filtros de Gutenberg inválidos" })
     try {
-      const { q, ...options } = parsed.data
+      const { q, includeUnpublished, ...options } = parsed.data
       const result = await browseGutenberg({ ...options, query: q })
       res.setHeader("Cache-Control", "private, no-store") // Import status depends on role and database.
-      return res.json({ ...result, results: await enrich(result.results, isAdmin(req.user)) })
+      return res.json({ ...result, results: await enrich(result.results, isAdmin(req.user) && includeUnpublished !== "false") })
     } catch (error) { return sendError(res, error) }
   })
 
@@ -69,7 +72,8 @@ export function registerGutenbergRoutes(app: Express, { storage, requireAdmin, i
     if (!parsed.success || !parsed.data.q) return res.status(400).json({ message: "Falta el parámetro q" })
     try {
       const results = await searchGutenberg(parsed.data.q, parsed.data.lang)
-      return res.json(await enrich(results, req.path.startsWith("/api/admin/") && isAdmin(req.user)))
+      res.setHeader("Cache-Control", "private, no-store")
+      return res.json(await enrich(results, req.path.startsWith("/api/admin/") && isAdmin(req.user) && parsed.data.includeUnpublished !== "false"))
     } catch (error) { return sendError(res, error) }
   }
   app.get("/api/gutenberg/search", rateLimit(60_000, 20), search)
@@ -78,24 +82,28 @@ export function registerGutenbergRoutes(app: Express, { storage, requireAdmin, i
   async function preview(req: Request, res: Response, admin: boolean) {
     const id = Number(req.params.id)
     if (!Number.isSafeInteger(id) || id <= 0 || id > 999_999_999) return res.status(400).json({ message: "ID inválido" })
+    res.setHeader("Cache-Control", "private, no-store")
     try {
       if (!admin) {
-        const [existing] = await storage.getGutenbergReferences([id])
-        if (existing) {
-          const book = await storage.getBook(existing.id)
-          const presented = book ? projectPublicBook ? await projectPublicBook(req, book) : withoutPremiumArt(book, false) : null
+        const existing = await storage.findBookByGutenbergId(id)
+        if (existing && isEditionRestricted(existing)) return res.status(404).json({ message: "Libro no encontrado" })
+        if (existing?.status === "published") {
+          const presented = projectPublicBook ? await projectPublicBook(req, existing) : withoutPremiumArt(existing, false)
           if (!presented) return res.status(404).json({ message: "Libro no encontrado" })
-          return res.json({ ...presented, existingBookId: existing.id, alreadyImported: true })
+          return res.json({ ...presented, content: "", chapters: [], existingBookId: existing.id, alreadyImported: true })
         }
       }
       const book = await fetchGutenbergBookById(id)
       if (!book) return res.status(404).json({ message: "Libro no encontrado" })
       if (book.copyright !== false) return res.status(422).json({ message: "Esta edición no está habilitada para importar." })
       const processed = await processGutenbergBook(book, normalizeGutenbergLanguage(String(req.query.lang || "es")))
-      return res.json({ ...processed, chapterCount: processed.chapters.length,
-        previewText: (processed.chapters[0]?.content || "").slice(0, 1_600),
+      const { chapters, ...metadata } = processed
+      return res.json({ ...metadata, chapterCount: chapters.length,
+        previewText: (chapters[0]?.content || "").slice(0, 1_600),
         existingBookId: null, alreadyImported: false,
-        ...(admin ? { chapters: processed.chapters.map(chapter => ({ title: chapter.title, wordCount: chapter.content.split(/\s+/).length })) } : {}),
+        chapters: chapters.map(chapter => admin
+          ? { title: chapter.title, wordCount: chapter.content.split(/\s+/).length }
+          : { title: chapter.title, content: chapter.content.slice(0, GUTENBERG_SAMPLE_LENGTH) }),
       })
     } catch (error) { return sendError(res, error) }
   }
@@ -126,7 +134,9 @@ export function registerGutenbergRoutes(app: Express, { storage, requireAdmin, i
     } catch (error: any) {
       const databaseError = error?.cause || error
       if (databaseError?.code === "23505" && String(databaseError?.constraint || "").includes("gutenberg")) {
-        return res.status(409).json({ message: "Este libro ya está importado" })
+        const existing = await storage.findBookByGutenbergId(gutenbergId).catch(() => undefined)
+        return res.status(409).json({ message: "Este libro ya está importado",
+          existingBookId: existing?.id, existingStatus: existing?.status })
       }
       return sendError(res, error)
     }

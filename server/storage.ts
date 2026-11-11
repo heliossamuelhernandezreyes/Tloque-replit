@@ -28,7 +28,7 @@ export interface IStorage {
   getBooksByAuthor(authorId: number): Promise<any[]>;
   getBook(id: number): Promise<BookResponse | undefined>;
   findBookByGutenbergId(gutenbergId: number): Promise<BookResponse | undefined>;
-  getGutenbergReferences(ids: number[], includeUnpublished?: boolean): Promise<{ id: number; gutenbergId: number | null; status: string }[]>;
+  getGutenbergReferences(ids: number[]): Promise<Pick<BookResponse, "id" | "gutenbergId" | "status" | "rightsHold">[]>;
   createBook(book: CreateBookRequest, options?: BookUpdateOptions): Promise<BookResponse>;
   updateBook(id: number, updates: UpdateBookRequest, options?: BookUpdateOptions): Promise<BookResponse>;
   deleteBook(id: number, changedBy?: number | null): Promise<void>;
@@ -79,13 +79,10 @@ export class DatabaseStorage implements IStorage {
     return book;
   }
 
-  async getGutenbergReferences(ids: number[], includeUnpublished = false) {
+  async getGutenbergReferences(ids: number[]) {
     if (!ids.length) return []
-    return db.select({ id: books.id, gutenbergId: books.gutenbergId, status: books.status })
-      .from(books).where(and(
-        inArray(books.gutenbergId, ids.slice(0, 32)),
-        includeUnpublished ? undefined : eq(books.status, "published"),
-      ))
+    return db.select({ id: books.id, gutenbergId: books.gutenbergId, status: books.status, rightsHold: books.rightsHold })
+      .from(books).where(inArray(books.gutenbergId, ids.slice(0, 32)))
   }
 
   async createBook(insertBook: CreateBookRequest, options: BookUpdateOptions = {}): Promise<BookResponse> {

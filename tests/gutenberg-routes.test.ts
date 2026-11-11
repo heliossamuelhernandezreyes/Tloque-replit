@@ -4,15 +4,16 @@ import express from "express"
 import { registerGutenbergRoutes } from "../server/gutenberg-routes"
 import { insertBookSchema } from "../shared/schema"
 
-test("Gutenberg HTTP: filtros, estados privados, preview completo, importación y conflictos", async t => {
+test("Gutenberg HTTP: catálogo, muestras, importación y conflictos", async t => {
   const rows: any[] = [
-    { id: 10, gutenbergId: 100001, status: "published", title: "Public" },
+    { id: 10, gutenbergId: 100001, status: "published", title: "Public", content: "Manuscrito de Tloque", chapters: [{ title: "Uno", content: "Texto de Tloque" }] },
     { id: 11, gutenbergId: 100002, status: "draft", title: "Private" },
   ]
   let writes = 0, sourceCalls = 0, race = false, sourceDown = false
   let now = Date.now()
   t.mock.method(Date, "now", () => now)
-  const rawText = "PRÓLOGO\nUna página inicial.\n\nCAPÍTULO I\nUn principio.\n\nCAPÍTULO II\nUn final."
+  const tail = "FIN DEL CAPÍTULO COMPLETO"
+  const rawText = "PRÓLOGO\nUna página inicial.\n\nCAPÍTULO I\n" + "Un principio. ".repeat(400) + tail + "\n\nCAPÍTULO II\nUn final."
   const sourceBook = (id: number) => ({
     id, title: "Edición " + id, languages: ["es"], authors: [{ name: id === 100005 ? "Autora de nombre compuesto ".repeat(9) : "Autor", birth_year: null, death_year: null }],
     formats: { "text/plain": `https://www.gutenberg.org/files/${id}/${id}.txt` }, subjects: [], download_count: 50, copyright: false,
@@ -25,12 +26,14 @@ test("Gutenberg HTTP: filtros, estados privados, preview completo, importación 
     requireAdmin: (req, res, next) => (req.user as any)?.admin ? next() : res.status(403).json({ message: "Forbidden" }),
     rateLimit: () => (_req, _res, next) => next(),
     storage: {
-      getGutenbergReferences: async (ids, admin) => rows.filter(row => ids.includes(row.gutenbergId) && (admin || row.status === "published")),
-      getBook: async id => rows.find(row => row.id === id),
+      getGutenbergReferences: async ids => rows.filter(row => ids.includes(row.gutenbergId)),
       findBookByGutenbergId: async id => rows.find(row => row.gutenbergId === id),
       createBook: async input => {
         writes++
-        if (race) throw Object.assign(new Error("Query failed"), { cause: { code: "23505", constraint: "books_gutenberg_id_unique_idx" } })
+        if (race) {
+          rows.push({ id: 13, gutenbergId: input.gutenbergId, status: "draft" })
+          throw Object.assign(new Error("Query failed"), { cause: { code: "23505", constraint: "books_gutenberg_id_unique_idx" } })
+        }
         const book = { ...input, id: 12 }; rows.push(book); return book as any
       },
     },
@@ -64,6 +67,8 @@ test("Gutenberg HTTP: filtros, estados privados, preview completo, importación 
     assert.equal(res.headers.get("cache-control"), "private, no-store")
     res = await request("/api/gutenberg/catalog", true)
     assert.equal((await res.json()).results[1].existingStatus, "draft")
+    res = await request("/api/gutenberg/catalog?includeUnpublished=false", true)
+    assert.equal((await res.json()).results[1].existingBookId, null)
     now += 120_001; sourceDown = true
     rows[0].status = "draft"
     res = await request("/api/gutenberg/catalog")
@@ -74,6 +79,26 @@ test("Gutenberg HTTP: filtros, estados privados, preview completo, importación 
     assert.equal(recoveredPage.results[1].existingStatus, undefined, "admin status never leaks through stale results")
     assert.equal(res.headers.get("cache-control"), "private, no-store")
     rows[0].status = "published"; sourceDown = false
+    await t.test("la ficha de una edición publicada remite a Tloque sin devolver su manuscrito", async () => {
+      const response = await request("/api/gutenberg/preview/100001")
+      const body = await response.json()
+      assert.equal(response.status, 200)
+      assert.equal(body.existingBookId, 10)
+      assert.ok(!JSON.stringify(body).includes("Texto de Tloque"))
+      assert.ok(!JSON.stringify(body).includes("Manuscrito de Tloque"))
+    })
+    await t.test("una edición retenida no se vuelve a servir desde Gutenberg", async () => {
+      rows[0].status = "review"; rows[0].rightsHold = true
+      const before = sourceCalls
+      try {
+        assert.equal((await request("/api/gutenberg/preview/100001")).status, 404)
+        assert.equal(sourceCalls, before, "no consulta la fuente para eludir la retención")
+        const publicCatalogue = await (await request("/api/gutenberg/catalog")).json()
+        assert.ok(publicCatalogue.results.every((result: { id: number }) => result.id !== 100001))
+        const adminCatalogue = await (await request("/api/gutenberg/catalog", true)).json()
+        assert.equal(adminCatalogue.results[0].existingStatus, "review")
+      } finally { rows[0].status = "published"; rows[0].rightsHold = false }
+    })
     const callsBeforeBad = sourceCalls
     assert.equal((await request("/api/gutenberg/catalog?page=-1")).status, 400)
     assert.equal((await request("/api/gutenberg/catalog?topic=invalid")).status, 400)
@@ -88,6 +113,10 @@ test("Gutenberg HTTP: filtros, estados privados, preview completo, importación 
     const preview = await res.json()
     assert.equal(preview.chapterCount, 3)
     assert.equal(preview.chapters[2].content, "Un final.")
+    await t.test("una muestra extensa queda limitada en la respuesta HTTP", () => {
+      assert.equal(preview.chapters[1].content.length, 4_000)
+      assert.ok(!JSON.stringify(preview).includes(tail))
+    })
     assert.equal((await request("/api/admin/gutenberg/import", false, { gutenbergId: 100003 })).status, 403)
     assert.equal(writes, 0)
     assert.equal((await request("/api/admin/gutenberg/import", true, { gutenbergId: 100003, chapters: [] })).status, 400)
@@ -101,7 +130,8 @@ test("Gutenberg HTTP: filtros, estados privados, preview completo, importación 
     const imported = await res.json()
     assert.equal(imported.book.status, "draft")
     assert.equal(imported.book.title, "Curated")
-    assert.deepEqual(imported.book.chapters, preview.chapters)
+    assert.deepEqual(imported.book.chapters.map((chapter: { title: string }) => chapter.title), preview.chapters.map((chapter: { title: string }) => chapter.title))
+    assert.ok(imported.book.chapters[1].content.endsWith(tail), "el borrador conserva el capítulo completo")
     assert.equal(sourceCalls, callsBeforeImport, "preview text reused for import")
     assert.equal((await request("/api/admin/gutenberg/import", true, { gutenbergId: 100003 })).status, 409)
     assert.equal((await request("/api/admin/gutenberg/import", true, { gutenbergId: 100002 })).status, 409)
@@ -114,7 +144,9 @@ test("Gutenberg HTTP: filtros, estados privados, preview completo, importación 
     assert.equal(longAuthor.author.length, 160)
     assert.equal(insertBookSchema.safeParse(longAuthor).success, true, "import remains editable under the manuscript schema")
     race = true
-    assert.equal((await request("/api/admin/gutenberg/import", true, { gutenbergId: 100004 })).status, 409)
+    res = await request("/api/admin/gutenberg/import", true, { gutenbergId: 100004 })
+    assert.equal(res.status, 409)
+    assert.deepEqual(await res.json(), { message: "Este libro ya está importado", existingBookId: 13, existingStatus: "draft" })
   } finally {
     server.closeAllConnections()
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))

@@ -144,20 +144,22 @@ export function normalizeGutenbergLanguage(lang: string): string {
   return Object.prototype.hasOwnProperty.call(SUPPORTED_LANGUAGES, base) ? base : "es"
 }
 
-export function isGutenbergAssetUrl(value: string): boolean {
+export function isGutenbergAssetUrl(value: string, editionId?: number): boolean {
   try {
     const url = new URL(value)
-    return url.protocol === "https:" && ["gutenberg.org", "www.gutenberg.org"].includes(url.hostname)
-      && !url.username && !url.password && !url.port
-      && (/^\/(?:files|cache\/epub)\//.test(url.pathname)
-        || /^\/ebooks\/[1-9]\d{0,8}\.txt(?:\.utf-8)?$/.test(url.pathname))
+    if (url.protocol !== "https:" || !["gutenberg.org", "www.gutenberg.org"].includes(url.hostname)
+      || url.username || url.password || url.port) return false
+    const match = /^\/(?:files|cache\/epub)\/(\d{1,9})\//.exec(url.pathname)
+      ?? /^\/ebooks\/(\d{1,9})\.txt(?:\.utf-8)?$/.exec(url.pathname)
+    return !!match && Number(match[1]) > 0 && (editionId === undefined || Number(match[1]) === editionId)
   } catch { return false }
 }
 
 function plainTextSources(book: GutenbergBook): { url: string; mime: string }[] {
   const seen = new Set<string>()
   return Object.entries(book.formats)
-    .filter(([mime, url]) => /^text\/plain(?:\s*;|$)/i.test(mime) && isGutenbergAssetUrl(url))
+    .filter(([mime, url]) => /^text\/plain(?:\s*;|$)/i.test(mime) && isGutenbergAssetUrl(url, book.id)
+      && /\.txt(?:\.utf-8)?$/i.test(new URL(url).pathname))
     .sort(([a], [b]) => Number(/utf-8/i.test(b)) - Number(/utf-8/i.test(a)))
     .map(([mime, value]) => {
       const url = new URL(value)
@@ -172,8 +174,8 @@ function plainTextSources(book: GutenbergBook): { url: string; mime: string }[] 
 }
 
 export function gutenbergCover(book: GutenbergBook): string {
-  const cover = book.formats["image/jpeg"] || book.formats["image/png"] || ""
-  return isGutenbergAssetUrl(cover) ? cover : ""
+  return [book.formats["image/jpeg"], book.formats["image/png"]]
+    .find(cover => !!cover && isGutenbergAssetUrl(cover, book.id)) ?? ""
 }
 
 function classifyLanguage(book: GutenbergBook, requestedLanguage: string): GutenbergBook["languageMatch"] {

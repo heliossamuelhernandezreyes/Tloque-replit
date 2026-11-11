@@ -19,7 +19,7 @@ const chapter = "Un párrafo para verificar la lectura y conservar lo escrito. "
 const work = { id: 123, title: "Obra de prueba", author: user.name, authorId: user.id, status: "published", revision: 1, genre: "fantasia", type: "book", coverUrl: "", synopsis: "Una obra para probar navegación y escritura.", chapterCount: 2, chapters: [{ title: "Uno", content: chapter }, { title: "Dos", content: chapter }], updatedAt: "2026-11-01T12:00:00Z" }
 const errors = []
 async function setup() {
-  const state = { signedIn: true, failDelete: false, failInbox: false, bookDelay: 0, order: "pending", searches: [], cloud: [], claims: [], oauth: [], showCards: false, cardBuys: [], walletStatus: "pending", walletBuys: [] }
+  const state = { signedIn: true, failDelete: false, failInbox: false, catalogError: 0, bookDelay: 0, order: "pending", searches: [], cloud: [], claims: [], oauth: [], showCards: false, cardBuys: [], walletStatus: "pending", walletBuys: [] }
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: "es-MX", isMobile: true, hasTouch: true })
   context.setDefaultTimeout(20_000)
   await context.addInitScript(() => {
@@ -39,6 +39,7 @@ async function setup() {
       return route.fulfill({ status: 302, headers: { location: url.searchParams.get("returnTo") || "/" } })
     } else if (url.pathname === "/api/books") {
       const query = url.searchParams.get("search"); if (query) state.searches.push(query)
+      if (state.catalogError) return route.fulfill({ status: state.catalogError, json: { message: "Catálogo de prueba no disponible" } })
       data = query ? [{ ...work, id: query === "alpha" ? 456 : 789, authorId: 600, title: query === "alpha" ? "Alpha" : "Beta" }] : [work]
     } else if (url.pathname === "/api/books/mine") data = [work]
     else if (url.pathname === "/api/books/123/draft") {
@@ -243,6 +244,27 @@ try {
       assert.equal(purchase.body.acceptance.accepted, true)
     }
     await wallet.page.screenshot({ path: resolve(output, "wallet-recharge-mobile.png") })
+  })
+  await scenario("catalogue errors and cached search results stay distinguishable", async () => {
+    const catalogue = await setup()
+    catalogue.state.catalogError = 503
+    await catalogue.page.goto(origin + "/")
+    await catalogue.page.getByText(/No se pudo cargar la información/).waitFor()
+    catalogue.state.catalogError = 0
+    await catalogue.page.getByRole("button", { name: "Reintentar", exact: true }).click()
+    await catalogue.page.getByText(work.title, { exact: true }).first().waitFor()
+
+    catalogue.state.catalogError = 503
+    await catalogue.page.goto(origin + "/library?search=ausente")
+    const cached = catalogue.page.getByText(/Mostramos el catálogo guardado/)
+    await cached.waitFor()
+    assert.equal(await catalogue.page.getByText(/Sin resultados/).count(), 0)
+    catalogue.state.catalogError = 0
+    await catalogue.page.getByRole("button", { name: "Reintentar", exact: true }).click()
+    await cached.waitFor({ state: "hidden" })
+    await catalogue.page.getByText(/Sin resultados/).waitFor()
+    assert.ok(catalogue.state.searches.includes("ausente"))
+    await catalogue.context.close()
   })
   if (failures.length) throw new AggregateError(failures, "UI reliability scenarios failed")
   assert.deepEqual(errors, [])

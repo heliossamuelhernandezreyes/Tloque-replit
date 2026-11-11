@@ -23,26 +23,28 @@ export function useBooks(search = "") {
   const query = useInfiniteQuery({
     queryKey: [api.books.list.path, "pages", search],
     initialPageParam: "",
-    getNextPageParam: (page: { books: any[]; next: string }) => page.next || undefined,
-    queryFn: async ({ pageParam }) => {
+    getNextPageParam: (page: { books: any[]; next: string; cached: boolean }) => page.next || undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      let response: Response | undefined
       try {
-        const res = await fetch(`${api.books.list.path}?limit=50${search ? `&search=${encodeURIComponent(search)}` : ""}${pageParam ? `&before=${encodeURIComponent(pageParam)}` : ""}`, { credentials: "include" });
-        if (!res.ok) throw new Error("Failed to fetch books");
-        const data = await res.json();
+        response = await fetch(`${api.books.list.path}?limit=50${search ? `&search=${encodeURIComponent(search)}` : ""}${pageParam ? `&before=${encodeURIComponent(pageParam)}` : ""}`, { credentials: "include", signal });
+        if (!response.ok) throw new Error("Failed to fetch books");
+        const data = await response.json();
+        if (!Array.isArray(data)) throw new Error("Invalid book catalogue")
 
         // Cache for offline
         try { if (!pageParam && !search) await store.setItem("books_list", data) }
         catch (error) { if (error instanceof AccountChangedError) throw error }
-        return { books: data as any[], next: res.headers.get("X-Next-Cursor") || "" };
+        return { books: data, next: response.headers.get("X-Next-Cursor") || "", cached: false };
       } catch (error) {
-        console.warn("Network fetch failed, attempting offline cache for list...");
+        if (signal.aborted || error instanceof AccountChangedError || pageParam || response?.status === 401 || response?.status === 403) throw error
         const cached = await store.getItem("books_list");
-        if (cached && !pageParam) return { books: cached as any[], next: "" };
+        if (Array.isArray(cached)) return { books: cached, next: "", cached: true };
         throw error;
       }
     },
   });
-  return { ...query, data: query.data?.pages.flatMap(page => page.books) }
+  return { ...query, data: query.data?.pages.flatMap(page => page.books), usingCachedBooks: query.data?.pages.some(page => page.cached) ?? false }
 }
 
 export function useMyBooks(enabled = true) {
