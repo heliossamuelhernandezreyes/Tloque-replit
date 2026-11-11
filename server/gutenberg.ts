@@ -1,4 +1,4 @@
-import { GUTENBERG_LANGUAGES, GUTENBERG_TOPICS, gutenbergIdFromQuery,
+import { GUTENBERG_LANGUAGES, GUTENBERG_TOPICS, gutenbergAuthorKey, gutenbergAuthorName, gutenbergIdFromQuery,
   type GutenbergBook, type GutenbergCatalogPage, type GutenbergSort, type GutenbergTopic,
   type ProcessedGutenbergBook } from "../shared/gutenberg"
 import { GutenbergCache, GutenbergBusyError } from "./gutenberg-cache"
@@ -189,16 +189,17 @@ function parseMetadata(bytes: Uint8Array): any {
 }
 
 export async function browseGutenberg(options: {
-  query?: string; lang?: string; page?: number; sort?: GutenbergSort; topic?: GutenbergTopic
+  query?: string; author?: string; lang?: string; page?: number; sort?: GutenbergSort; topic?: GutenbergTopic
 } = {}): Promise<GutenbergCatalogPage> {
   const query = String(options.query || "").trim().replace(/\s+/g, " ").slice(0, 120)
+  const author = gutenbergAuthorKey(options.author || "")
   const language = options.lang === "all" ? "all" : normalizeGutenbergLanguage(options.lang || "es")
   const page = options.page ?? 1
   if (!Number.isInteger(page) || page < 1 || page > 5000) throw new Error("Página inválida")
   const sort: GutenbergSort = options.sort || "popular"
   const topic: GutenbergTopic = options.topic ?? ""
   if (!["popular", "ascending", "descending"].includes(sort) || !GUTENBERG_TOPICS.includes(topic)) throw new Error("Filtros inválidos")
-  const key = JSON.stringify([query, language, page, sort, topic])
+  const key = JSON.stringify([query, author, language, page, sort, topic])
   const cached = await catalogCache.getWithStatus(key, async () => {
     const base = { query, language, page, sort, topic, previousPage: page > 1 ? page - 1 : null }
     const id = gutenbergIdFromQuery(query)
@@ -208,7 +209,8 @@ export async function browseGutenberg(options: {
       books = book ? [book] : []; count = books.length
     } else {
       const url = new URL("https://gutendex.com/books/")
-      if (query) url.searchParams.set("search", query)
+      const search = [author, query].filter(Boolean).join(" ")
+      if (search) url.searchParams.set("search", search)
       if (language !== "all") url.searchParams.set("languages", language)
       if (topic) url.searchParams.set("topic", topic)
       url.searchParams.set("mime_type", "text/plain")
@@ -240,7 +242,8 @@ export async function browseGutenberg(options: {
     const seen = new Set<number>()
     const results = books.filter(book => {
       if (seen.has(book.id) || book.copyright !== false || !plainTextSources(book).length
-        || language !== "all" && !book.languages.includes(language)) return false
+        || language !== "all" && !book.languages.includes(language)
+        || author && !book.authors.some(person => gutenbergAuthorKey(person.name) === author)) return false
       seen.add(book.id); return true
     }).map(book => ({ ...book, coverUrl: gutenbergCover(book),
       requestedLanguage: language, languageMatch: classifyLanguage(book, language) }))
@@ -450,7 +453,7 @@ function synopsisFor(book: GutenbergBook): Pick<ProcessedBook, "synopsis" | "syn
   const synopsis = book.summaries?.find(summary => summary.trim())
   if (synopsis) return { synopsis: synopsis.trim().slice(0, 8_000), synopsisSource: "gutendex", synopsisLanguage: null }
   return {
-    synopsis: [book.title, book.authors.map(person => normalizeAuthorName(person.name)).join(" · "),
+    synopsis: [book.title, book.authors.map(person => gutenbergAuthorName(person.name) || "Anónimo").join(" · "),
       book.subjects.slice(0, 4).join(" · ")].filter(Boolean).join("\n"),
     synopsisSource: "metadata", synopsisLanguage: null,
   }
@@ -500,15 +503,6 @@ export async function translateText(
 // subjects describe settings/periods, not necessarily publication.
 export function detectPublicationYear(_book: GutenbergBook): number | null { return null }
 
-// ── NORMALIZAR NOMBRE DE AUTOR ────────────────────────────
-function normalizeAuthorName(raw: string): string {
-  if (!raw) return "Anónimo"
-  if (raw.includes(",")) {
-    return raw.split(",").map(p => p.trim()).reverse().join(" ")
-  }
-  return raw
-}
-
 export function countGutenbergWords(text: string): number {
   // Whitespace alone reports one word for entire Chinese/Japanese paragraphs.
   const spaced = text.replace(/([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}])/gu, " $1 ")
@@ -533,10 +527,15 @@ export async function processGutenbergBook(book: GutenbergBook, _userLang = "es"
     const wordCount = countGutenbergWords(cleanText)
     return {
       gutenbergId: book.id, title: book.title,
-      author: book.authors.map(person => normalizeAuthorName(person.name)).join(" · ") || "—",
+      author: book.authors.map(person => gutenbergAuthorName(person.name) || "Anónimo").join(" · ") || "—",
+      authors: book.authors.map(person => ({
+        name: person.name,
+        birth_year: Number.isSafeInteger(person.birth_year) ? person.birth_year : null,
+        death_year: Number.isSafeInteger(person.death_year) ? person.death_year : null,
+      })),
       ...synopsisFor(book), coverUrl: gutenbergCover(book),
       originalLanguage: bookLang, languages: book.languages,
-      translators: (book.translators || []).map(person => normalizeAuthorName(person.name)),
+      translators: (book.translators || []).map(person => gutenbergAuthorName(person.name) || "Anónimo"),
       publicationYear: null, chapters, detectedGenre: detectGenre(book), wordCount,
       readingMinutes: Math.max(1, Math.ceil(wordCount / 230)),
       chapterStrategy: detected.length > 1 ? "headings" : "full-text",

@@ -14,8 +14,10 @@ test("Gutenberg HTTP: catálogo, muestras, importación y conflictos", async t =
   t.mock.method(Date, "now", () => now)
   const tail = "FIN DEL CAPÍTULO COMPLETO"
   const rawText = "PRÓLOGO\nUna página inicial.\n\nCAPÍTULO I\n" + "Un principio. ".repeat(400) + tail + "\n\nCAPÍTULO II\nUn final."
+  const sourceAuthor = { name: "Verne, Jules", birth_year: 1828, death_year: 1905 }
   const sourceBook = (id: number) => ({
-    id, title: "Edición " + id, languages: ["es"], authors: [{ name: id === 100005 ? "Autora de nombre compuesto ".repeat(9) : "Autor", birth_year: null, death_year: null }],
+    id, title: "Edición " + id, languages: ["es"],
+    authors: [id === 100005 ? { name: "Autora de nombre compuesto ".repeat(9), birth_year: null, death_year: null } : sourceAuthor],
     formats: { "text/plain": `https://www.gutenberg.org/files/${id}/${id}.txt` }, subjects: [], download_count: 50, copyright: false,
   })
   const app = express()
@@ -130,6 +132,9 @@ test("Gutenberg HTTP: catálogo, muestras, importación y conflictos", async t =
     const imported = await res.json()
     assert.equal(imported.book.status, "draft")
     assert.equal(imported.book.title, "Curated")
+    assert.equal(imported.book.author, "Jules Verne")
+    assert.deepEqual(preview.authors, [sourceAuthor])
+    assert.deepEqual(imported.book.sourceMetadata.authors, [sourceAuthor])
     assert.deepEqual(imported.book.chapters.map((chapter: { title: string }) => chapter.title), preview.chapters.map((chapter: { title: string }) => chapter.title))
     assert.ok(imported.book.chapters[1].content.endsWith(tail), "el borrador conserva el capítulo completo")
     assert.equal(sourceCalls, callsBeforeImport, "preview text reused for import")

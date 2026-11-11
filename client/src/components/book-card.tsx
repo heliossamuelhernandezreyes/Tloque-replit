@@ -5,7 +5,7 @@ import { Link } from "wouter"
 import { motion } from "framer-motion"
 import { BookOpen } from "lucide-react"
 import { useState, useEffect } from "react"
-import { GENRE_CONFIG, type Genre } from "@/context/GenreContext"
+import { genreConfigFor } from "@/context/GenreContext"
 import { useSettings } from "@/context/SettingsContext"
 
 interface BookCardProps {
@@ -21,17 +21,15 @@ interface BookCardProps {
   chapters?: unknown[]
   publicationYear?: number
   type?:           string
+  showAuthor?:     boolean
 }
 
-// Color neutro para libros sin género asignado
-const NEUTRAL_CFG = GENRE_CONFIG["todos"]
-
-export function BookCard({ id, title, author, authorId, coverUrl, genre, isClassic, type, chapterCount, chapters }: BookCardProps) {
+export function BookCard({ id, title, author, authorId, coverUrl, genre, isClassic, type, chapterCount, chapters, showAuthor = true }: BookCardProps) {
   const [imgFailed,     setImgFailed]     = useState(false)
   const [readProgress,  setReadProgress]  = useState<number | null>(null)
   const [readingChapter, setReadingChapter] = useState<number | null>(null)
 
-  const gc     = genre ? (GENRE_CONFIG[genre as Genre] || NEUTRAL_CFG) : NEUTRAL_CFG
+  const gc     = genreConfigFor(genre)
   const { t, settings }  = useSettings()
   const hasImg = !!coverUrl && !imgFailed
 
@@ -182,11 +180,11 @@ export function BookCard({ id, title, author, authorId, coverUrl, genre, isClass
             {title}
           </h3>
           </Link>
-          <Link href={authorPath({ authorId, author })}
+          {showAuthor && <Link href={authorPath({ authorId, author })}
             className="block text-xs leading-6 text-zinc-400 hover:text-zinc-200 line-clamp-1 font-sans text-left transition-colors duration-200 w-full focus-visible:outline focus-visible:outline-1 focus-visible:outline-amber-200"
           >
             {author}
-          </Link>
+          </Link>}
         </div>
       </motion.div>
   )
