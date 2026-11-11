@@ -16,11 +16,16 @@ const errors = [], requests = [], imports = []
 const screenshot = (page, name) => page.screenshot({ path: output + "/" + name + ".png", animations: "disabled", timeout: 45_000 })
 let failNext = false, staleNext = false
 const titles = { 2000: "Don Quijote de la Mancha", 2001: "Rimas y leyendas", 2002: "La vida es sueño", 2003: "Viaje al centro de la Tierra" }
-const book = (id, language = "es") => ({ id, title: titles[id], authors: [{ name: id === 2000 ? "Cervantes Saavedra, Miguel de" : "Autor de prueba" }], languages: [language], formats: {}, subjects: ["Fiction"], download_count: 25000, copyright: false, coverUrl: "", alreadyImported: false, existingBookId: null })
-const preview = id => ({ gutenbergId: id, title: titles[id], author: "Miguel de Cervantes Saavedra", synopsis: "Una edición para recorrer sus capítulos, descubrir sus primeras páginas y conservar una copia completa en la biblioteca.", synopsisSource: "gutendex", synopsisLanguage: null,
+const classicName = "Miguel de Cervantes Saavedra"
+const cervantes = { name: "Cervantes Saavedra, Miguel de", birth_year: 1547, death_year: 1616 }
+const authors = id => id === 2000 ? [cervantes] : [{ name: "Autor de prueba" }]
+const book = (id, language = "es") => ({ id, title: titles[id], authors: authors(id), languages: [language], formats: {}, subjects: ["Fiction"], download_count: 25000, copyright: false, coverUrl: "", alreadyImported: false, existingBookId: null })
+const preview = id => ({ gutenbergId: id, title: titles[id], author: id === 2000 ? classicName : "Autor de prueba", authors: authors(id), synopsis: "Una edición para recorrer sus capítulos, descubrir sus primeras páginas y conservar una copia completa en la biblioteca.", synopsisSource: "gutendex", synopsisLanguage: null,
   coverUrl: "", originalLanguage: "es", languages: ["es"], translators: [], publicationYear: null,
   detectedGenre: "fantasia", wordCount: 380000, readingMinutes: 1653, chapterStrategy: "headings", type: "book", sourceUrl: "https://www.gutenberg.org/ebooks/" + id,
   chapterCount: 3, previewText: "Al lector.", chapters: [{ title: "Páginas iniciales", content: "Al lector. Una dedicatoria que debemos conservar." }, { title: "CAPÍTULO I", content: "En un lugar de la Mancha, de cuyo nombre no quiero acordarme." }, { title: "CAPÍTULO II", content: "Sancho escuchaba mientras se abría el camino ante ellos." }] })
+const classicWork = { ...preview(2000), id: 60, isClassic: true, genre: "Literatura del Siglo de Oro", status: "published",
+  sourceMetadata: { provider: "gutenberg", authors: [cervantes] } }
 
 async function setup({ mobile = false, admin = true, adminMode = true } = {}) {
   const state = { latePreview: null, duplicateImport: false }
@@ -41,11 +46,15 @@ async function setup({ mobile = false, admin = true, adminMode = true } = {}) {
     else if (url.pathname === "/api/gutenberg/catalog") {
       requests.push(Object.fromEntries(url.searchParams))
       if (failNext) { failNext = false; return route.fulfill({ status: 503, json: { message: "Gutenberg unavailable" } }) }
-      const query = url.searchParams.get("q"), language = url.searchParams.get("lang"), page = Number(url.searchParams.get("page"))
+      const query = url.searchParams.get("q"), author = url.searchParams.get("author")
+      const language = url.searchParams.get("lang"), page = Number(url.searchParams.get("page"))
       if (language === "fr") await new Promise(resolve => setTimeout(resolve, 350))
-      const results = query === "vacío" && language !== "all" ? [] : page === 2 ? [book(2003, language)] : [book(2000, language), book(2001, language), book(2002, language)]
+      const directId = Number(query?.match(/\/ebooks\/(\d+)$/)?.[1])
+      const results = directId === 2001 ? [book(2001, "en")]
+        : author ? [book(2000, "es")]
+        : query === "vacío" && language !== "all" ? [] : page === 2 ? [book(2003, language)] : [book(2000, language), book(2001, language), book(2002, language)]
       data = { query, language, page, sort: url.searchParams.get("sort"), topic: url.searchParams.get("topic"), count: results.length ? 35 : 0,
-        nextPage: page === 1 && results.length ? 2 : null, previousPage: page === 2 ? 1 : null, results,
+        nextPage: page === 1 && results.length && !author && !directId ? 2 : null, previousPage: page === 2 ? 1 : null, results,
         cacheStatus: staleNext ? "stale" : "fresh", fetchedAt: Date.now() - (staleNext ? 180_000 : 0) }
       staleNext = false
     } else if (url.pathname.startsWith("/api/gutenberg/preview/")) {
@@ -62,6 +71,11 @@ async function setup({ mobile = false, admin = true, adminMode = true } = {}) {
       if (state.duplicateImport) return route.fulfill({ status: 409, json: { message: "Este libro ya está importado", existingBookId: 50, existingStatus: "draft" } })
       data = { book: { ...preview(input.gutenbergId), id: 50, status: input.status, title: input.overrideTitle } }
     } else if (url.pathname === "/api/books/50") data = { ...preview(2000), id: 50, title: imports.at(-1)?.overrideTitle || titles[2000], status: "draft", revision: 1, isClassic: true }
+    else if (url.pathname === "/api/books/60") data = classicWork
+    else if (url.pathname === "/api/authors/classic/" + encodeURIComponent(classicName)) data = {
+      name: classicName, classicName, isClassicProfile: true, authorId: null, avatar: null,
+      bio: "Perfil clásico de prueba.", books: [classicWork], nextCursor: null,
+    }
     else if (url.pathname.includes("notifications")) data = { notifications: [], unread: 0 }
     else if (url.pathname === "/api/frames") data = { frames: [] }
     else if (url.pathname === "/api/sync/state") data = { library: [], progress: [], streak: null }
@@ -160,7 +174,13 @@ try {
   assert.ok(await mobile.page.getByRole("button", { name: "Volver a resultados", exact: true }).isVisible())
   assert.equal(await mobile.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   await screenshot(mobile.page, "edition-mobile")
-  await mobile.page.getByRole("button", { name: "Volver a resultados", exact: true }).click()
+  await mobile.page.getByRole("button", { name: "Más obras de " + classicName }).click()
+  await mobile.page.getByRole("button", { name: titles[2000], exact: true }).waitFor()
+  assert.equal(requests.at(-1).author, classicName)
+  assert.equal(requests.at(-1).lang, "all")
+  assert.equal(await mobile.page.getByRole("button", { name: titles[2001], exact: true }).count(), 0)
+  await mobile.page.getByRole("button", { name: "Quitar filtro de autor" }).click()
+  await mobile.page.getByRole("button", { name: titles[2001], exact: true }).waitFor()
   let releasePreview
   const release = new Promise(resolve => { releasePreview = resolve })
   mobile.state.latePreview = { id: 2001, release }
@@ -187,6 +207,25 @@ try {
   await mobile.page.keyboard.press("Escape")
   await mobile.page.getByRole("dialog", { name: "Explorar los clásicos" }).waitFor({ state: "hidden" })
   await mobile.page.waitForFunction(button => document.activeElement === button, await explore.elementHandle())
+
+  console.log("Gutenberg QA: classic profile and direct edition links")
+  await mobile.page.goto("http://127.0.0.1:4183/book/60")
+  await mobile.page.getByRole("button", { name: /Miguel de Cervantes Saavedra/ }).click()
+  await mobile.page.getByRole("heading", { name: classicName, exact: true }).waitFor()
+  await mobile.page.getByText("1547–1616", { exact: true }).waitFor()
+  assert.equal(await mobile.page.getByRole("link", { name: "Español · Gutenberg #2000" }).getAttribute("href"), "https://www.gutenberg.org/ebooks/2000")
+  await screenshot(mobile.page, "classic-author-mobile")
+  await mobile.page.getByRole("button", { name: "Más ediciones en Gutenberg" }).click()
+  await mobile.page.getByRole("button", { name: titles[2000], exact: true }).waitFor()
+  assert.equal(requests.at(-1).author, classicName)
+  assert.equal(requests.at(-1).lang, "all")
+  await mobile.page.getByLabel("Idioma de la edición").selectOption("es")
+  const directSearch = mobile.page.getByPlaceholder("Título, autor, número o enlace de Gutenberg")
+  await directSearch.fill("https://www.gutenberg.org/ebooks/2001")
+  await directSearch.press("Enter")
+  await mobile.page.getByRole("button", { name: titles[2001], exact: true }).waitFor()
+  assert.equal(requests.at(-1).lang, "all")
+  assert.equal(requests.at(-1).author, "")
   await mobile.context.close()
 
   console.log("Gutenberg QA: administrator browsing in reader mode")

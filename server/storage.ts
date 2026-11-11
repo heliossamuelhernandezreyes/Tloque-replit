@@ -23,8 +23,17 @@ type BookUpdateOptions = {
   legalAcceptance?: PublicationAcceptance
 }
 
+type CatalogOptions = {
+  before?: number
+  limit?: number
+  author?: string
+  authorId?: number | null
+  search?: string
+  title?: string
+}
+
 export interface IStorage {
-  getBooks(options?: { before?: number; limit?: number; author?: string; authorId?: number | null; search?: string }): Promise<any[]>;
+  getBooks(options?: CatalogOptions): Promise<any[]>;
   getBooksByAuthor(authorId: number): Promise<any[]>;
   getBook(id: number): Promise<BookResponse | undefined>;
   findBookByGutenbergId(gutenbergId: number): Promise<BookResponse | undefined>;
@@ -35,12 +44,12 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async getBooks(options: { before?: number; limit?: number; author?: string; authorId?: number | null; search?: string } = {}): Promise<any[]> {
+  async getBooks(options: CatalogOptions = {}): Promise<any[]> {
     // El catálogo es una vista ligera: mandar el texto y todos los capítulos
     // de cada obra hacía crecer el primer arranque con toda la biblioteca.
     // El contenido completo se obtiene únicamente al abrir /api/books/:id.
     const { content: _content, chapters: _chapters, clientDraftId: _draftId, ...summaryColumns } = getTableColumns(books)
-    const pattern = `%${(options.search || "").replace(/[\\%_]/g, "\\$&")}%`
+    const pattern = `%${(options.title || options.search || "").replace(/[\\%_]/g, "\\$&")}%`
     return await db.select({
       ...summaryColumns,
       chapterCount: sql<number>`case
@@ -51,7 +60,8 @@ export class DatabaseStorage implements IStorage {
       options.before ? sql`${books.id} < ${options.before}` : undefined,
       options.author ? sql`lower(${books.author}) = lower(${options.author})` : undefined,
       options.authorId === null ? isNull(books.authorId) : options.authorId === undefined ? undefined : eq(books.authorId, options.authorId),
-      options.search ? sql`(${books.title} ilike ${pattern} or ${books.author} ilike ${pattern} or ${books.genre} ilike ${pattern})` : undefined,
+      options.title ? sql`${books.title} ilike ${pattern}`
+        : options.search ? sql`(${books.title} ilike ${pattern} or ${books.author} ilike ${pattern} or ${books.genre} ilike ${pattern})` : undefined,
     )).orderBy(desc(books.id)).limit(Math.min(100, Math.max(1, Math.floor(options.limit || 50))))
   }
 

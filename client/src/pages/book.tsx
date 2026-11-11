@@ -12,7 +12,7 @@ import QueryNotice from "@/components/QueryNotice"
 import UserAvatar from "@/components/UserAvatar"
 import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/hooks/use-toast"
-import { GENRE_CONFIG, type Genre } from "@/context/GenreContext"
+import { genreConfigFor } from "@/context/GenreContext"
 import { useSettings } from "@/context/SettingsContext"
 import BookmarkBurst from "@/components/BookmarkBurst"
 import { useSoundFX } from "@/hooks/useSoundFX"
@@ -88,7 +88,7 @@ export default function BookPage() {
   }, [id])
 
   const book      = apiBook || localBook
-  const gc        = GENRE_CONFIG[(book?.genre as Genre) || "todos"]
+  const gc        = genreConfigFor(book?.genre)
   const { t, settings } = useSettings()
   const { can, user } = useAuth()
   const isAdmin = can("manageCatalog")
@@ -437,7 +437,7 @@ export default function BookPage() {
                   backdropFilter: "blur(8px)",
                 }}
               >
-                {t(gc.tKey)}
+                {gc.tKey === "genreTodos" && book.genre !== "todos" ? book.genre : t(gc.tKey)}
               </span>
             )}
           </div>
@@ -451,7 +451,7 @@ export default function BookPage() {
             <motion.button
               whileTap={{ scale: 0.98 }}
               onClick={() => setLocation(authorPath(book))}
-              className="flex items-center gap-2.5 mt-2"
+              className="mt-2 flex min-h-11 items-center gap-2.5 rounded-lg focus-visible:outline focus-visible:outline-amber-200"
             >
               {/* Avatar del autor (foto real + marco) */}
               <UserAvatar

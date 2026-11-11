@@ -9,6 +9,7 @@ import { GutenbergBusyError } from "./gutenberg-cache"
 
 const catalogInput = z.object({
   q: z.string().trim().max(120).default(""),
+  author: z.string().trim().max(300).optional(),
   lang: z.string().max(12).default("es"),
   page: z.coerce.number().int().min(1).max(5000).default(1),
   sort: z.enum(["popular", "descending", "ascending"]).default("popular"),
@@ -127,7 +128,8 @@ export function registerGutenbergRoutes(app: Express, { storage, requireAdmin, i
         synopsis: overrideSynopsis || processed.synopsis, coverUrl: processed.coverUrl,
         genre: genre || processed.detectedGenre, type: processed.type, status, isClassic: true,
         publicationYear: processed.publicationYear, originalLanguage: processed.originalLanguage,
-        sourceMetadata: { provider: "gutenberg", sourceUrl: processed.sourceUrl, translators: processed.translators, languages: processed.languages, importedAt: new Date().toISOString() },
+        sourceMetadata: { provider: "gutenberg", sourceUrl: processed.sourceUrl, authors: processed.authors,
+          translators: processed.translators, languages: processed.languages, importedAt: new Date().toISOString() },
         gutenbergId, chapters: processed.chapters, content: "", isSaved: false, isAuthored: false,
       })
       return res.status(201).json({ book, stats: { chapters: processed.chapters.length, wordCount: processed.wordCount, genre: processed.detectedGenre } })

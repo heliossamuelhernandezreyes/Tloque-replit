@@ -30,6 +30,7 @@ interface Props {
   initialBanner?: string
   initialFrame?: string
   isClassic?:    boolean        // true = autor clásico (admin edita vía endpoint admin)
+  classicName?:  string
   isAdmin?:      boolean        // admins tienen todos los marcos
   accentColor:   string
   accentGlow:    string
@@ -38,7 +39,7 @@ interface Props {
 
 export default function ProfileEditor({
   authorName, initialBio, initialLinks, initialAvatar = "", initialFrame = "", initialBanner = "",
-  isClassic = false, isAdmin = false,
+  isClassic = false, classicName = authorName, isAdmin = false,
   accentColor, accentGlow, onClose,
 }: Props) {
   const queryClient = useQueryClient()
@@ -88,7 +89,7 @@ export default function ProfileEditor({
   const save = useMutation({
     mutationFn: async () => {
       const url  = isClassic
-        ? `/api/admin/authors/${encodeURIComponent(authorName)}`
+        ? `/api/admin/authors/${encodeURIComponent(classicName)}`
         : "/api/profile"
       // Tanto el autor (su cuenta) como el clásico (admin) guardan foto y marco.
       const body: any = { bio, socialLinks: links, avatar, banner, frame }
@@ -104,7 +105,6 @@ export default function ProfileEditor({
     onSuccess: () => {
       setSaved(true)
       queryClient.invalidateQueries({ predicate: query => String(query.queryKey[0]).startsWith("/api/authors/") })
-      queryClient.invalidateQueries({ queryKey: [`/api/authors/${encodeURIComponent(authorName)}/card`] })
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] })
       setTimeout(onClose, 900)
     },

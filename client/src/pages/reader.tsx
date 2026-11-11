@@ -10,7 +10,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useToast } from "@/hooks/use-toast"
 import { motion, AnimatePresence } from "framer-motion"
-import { GENRE_CONFIG, type Genre } from "@/context/GenreContext"
+import { genreConfigFor } from "@/context/GenreContext"
 import { useSoundFX } from "@/hooks/useSoundFX"
 import CommentsSection from "@/components/CommentsSection"
 import SupportInvite from "@/components/SupportInvite"
@@ -444,7 +444,7 @@ function ReaderForBook() {
     return [...byAuthor, ...byGenre].slice(0, 3)
   }, [book, allBooks, bookId])
   const isLoading = apiLoading && !book
-  const gc        = GENRE_CONFIG[(book?.genre as Genre) || "todos"]
+  const gc        = genreConfigFor(book?.genre)
 
   // ── Valores desde settings ───────────────────────────
   const bgColor      = READING_MODE_BG[settings.readingMode]
@@ -1017,7 +1017,7 @@ function ReaderForBook() {
                     {t("explore")}
                   </p>
                   {endSuggestions.map((s: any) => {
-                    const sg = GENRE_CONFIG[(s.genre as Genre) || "todos"]
+                    const sg = genreConfigFor(s.genre)
                     return (
                       <motion.button
                         key={s.id}

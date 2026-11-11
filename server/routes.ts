@@ -1,4 +1,5 @@
 import { registerAuthorRoutes } from "./authorRoutes"
+import { isValidAuthorName } from "@shared/author-path"
 import { preparePrintCopy, printCopySummary, PrintPreparationError } from "./printPreparation"
 import type { Express } from "express";
 import type { Server } from "http";
@@ -884,7 +885,8 @@ export async function registerRoutes(
   // ── ADMIN: editar el perfil de un autor CLÁSICO (sin cuenta) ──
   app.patch("/api/admin/authors/:name", requireAdmin, rateLimit(60_000, 12), async (req, res) => {
     try {
-      const name    = decodeURIComponent(String(req.params.name))
+      const name    = String(req.params.name)
+      if (!isValidAuthorName(name)) return res.status(400).json({ message: "Autor inválido" })
       const nameKey = name.toLowerCase()
 
       const ALLOWED = ["instagram", "x", "telegram", "youtube", "tiktok", "wikipedia", "website", "patreon", "kofi"]
@@ -904,20 +906,10 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Imagen no permitida" })
       }
 
-      // Upsert por nameKey
-      const [existing] = await db.select().from(authorProfiles).where(eq(authorProfiles.nameKey, nameKey))
-      if (existing) {
-        const [updated] = await db.update(authorProfiles)
-          .set({ displayName: name, bio, avatar, banner, frame, socialLinks: clean, updatedAt: new Date() })
-          .where(eq(authorProfiles.nameKey, nameKey))
-          .returning()
-        res.json(updated)
-      } else {
-        const [created] = await db.insert(authorProfiles)
-          .values({ nameKey, displayName: name, bio, avatar, banner, frame, socialLinks: clean })
-          .returning()
-        res.json(created)
-      }
+      const fields = { bio, avatar, banner, frame, socialLinks: clean, updatedAt: new Date() }
+      const [profile] = await db.insert(authorProfiles).values({ nameKey, displayName: name, ...fields })
+        .onConflictDoUpdate({ target: authorProfiles.nameKey, set: fields }).returning()
+      res.json(profile)
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Error guardando perfil del clásico" })
     }

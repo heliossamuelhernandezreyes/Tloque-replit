@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/useAuth"
 import { useSettings } from "@/context/SettingsContext"
 import { useGenre } from "@/context/GenreContext"
-import { GUTENBERG_LANGUAGES, GUTENBERG_SAMPLE_LENGTH, GUTENBERG_TOPICS, gutenbergLanguageName,
+import { GUTENBERG_LANGUAGES, GUTENBERG_SAMPLE_LENGTH, GUTENBERG_TOPICS, gutenbergAuthorName, gutenbergIdFromQuery, gutenbergLanguageName,
   type GutenbergBook, type GutenbergCatalogPage, type GutenbergPreview, type GutenbergSort, type GutenbergTopic } from "@shared/gutenberg"
 import { gutenbergCopy } from "./gutenberg-copy"
 
@@ -37,7 +37,9 @@ async function readJson<T>(url: string, signal?: AbortSignal, init?: RequestInit
   return data as T
 }
 
-export default function ImportPanel({ open, onClose, initialQuery = "" }: { open: boolean; onClose: () => void; initialQuery?: string }) {
+export default function ImportPanel({ open, onClose, initialQuery = "", initialAuthor = "" }: {
+  open: boolean; onClose: () => void; initialQuery?: string; initialAuthor?: string
+}) {
   const content = useRef<HTMLDivElement>(null)
   const opener = useRef<HTMLElement | null>(null)
   const wasOpen = useRef(false)
@@ -49,13 +51,13 @@ export default function ImportPanel({ open, onClose, initialQuery = "" }: { open
       <Dialog.Content ref={content} onOpenAutoFocus={event => { event.preventDefault(); content.current?.focus() }}
         onCloseAutoFocus={event => { if (opener.current?.isConnected) { event.preventDefault(); opener.current.focus() } }}
         className="fixed inset-x-2 bottom-2 top-2 z-[300] mx-auto flex max-w-6xl flex-col overflow-hidden rounded-3xl border border-amber-100/15 bg-[#0b0d11] shadow-2xl outline-none sm:inset-x-5 sm:bottom-5 sm:top-5">
-        <GutenbergExplorer onClose={onClose} initialQuery={initialQuery.trim().slice(0, 120)} />
+        <GutenbergExplorer onClose={onClose} initialQuery={initialQuery.trim().slice(0, 120)} initialAuthor={initialAuthor.trim().slice(0, 300)} />
       </Dialog.Content>
     </Dialog.Portal>}
   </Dialog.Root>
 }
 
-function GutenbergExplorer({ onClose, initialQuery }: { onClose: () => void; initialQuery: string }) {
+function GutenbergExplorer({ onClose, initialQuery, initialAuthor }: { onClose: () => void; initialQuery: string; initialAuthor: string }) {
   const [, navigate] = useLocation()
   const { toast } = useToast()
   const { can } = useAuth()
@@ -65,7 +67,10 @@ function GutenbergExplorer({ onClose, initialQuery }: { onClose: () => void; ini
   const copy = gutenbergCopy(settings.language)
   const queryClient = useQueryClient()
   const [query, setQuery] = useState(initialQuery)
-  const [filters, setFilters] = useState({ query: initialQuery, lang: String(settings.language), topic: "" as GutenbergTopic, sort: "popular" as GutenbergSort, page: 1 })
+  const [filters, setFilters] = useState({
+    query: initialQuery, author: initialAuthor, lang: initialAuthor || gutenbergIdFromQuery(initialQuery) ? "all" : String(settings.language),
+    topic: "" as GutenbergTopic, sort: "popular" as GutenbergSort, page: 1,
+  })
   const [selected, setSelected] = useState<GutenbergPreview | null>(null)
   const [requested, setRequested] = useState<GutenbergBook | null>(null)
   const [showDetail, setShowDetail] = useState(false)
@@ -80,6 +85,7 @@ function GutenbergExplorer({ onClose, initialQuery }: { onClose: () => void; ini
   const previewRequest = useRef<AbortController | null>(null)
   const mounted = useRef(true)
   const resultsPane = useRef<HTMLDivElement>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
   const detailPane = useRef<HTMLDivElement>(null)
   const detailHeading = useRef<HTMLHeadingElement>(null)
   const lastResult = useRef<HTMLButtonElement | null>(null)
@@ -92,7 +98,7 @@ function GutenbergExplorer({ onClose, initialQuery }: { onClose: () => void; ini
   const catalog = useQuery({
     queryKey: ["gutenberg-catalog", filters, isAdmin],
     queryFn: ({ signal }) => readJson<GutenbergCatalogPage>("/api/gutenberg/catalog?" + new URLSearchParams({
-      q: filters.query, lang: filters.lang, topic: filters.topic, sort: filters.sort, page: String(filters.page),
+      q: filters.query, author: filters.author, lang: filters.lang, topic: filters.topic, sort: filters.sort, page: String(filters.page),
       includeUnpublished: String(isAdmin),
     }), signal), staleTime: 120_000, gcTime: 180_000, retry: false, refetchOnWindowFocus: false,
   })
@@ -113,6 +119,11 @@ function GutenbergExplorer({ onClose, initialQuery }: { onClose: () => void; ini
     closeDetails()
     setFilters(current => ({ ...current, ...patch, page: patch.page ?? 1 }))
     resultsPane.current?.scrollTo({ top: 0 })
+  }
+  const browseAuthor = (author: string) => {
+    setQuery("")
+    editFilters({ author, query: "", lang: "all", topic: "" })
+    requestAnimationFrame(() => searchInput.current?.focus())
   }
   const openExisting = (bookId: number, status?: string) => {
     navigate(status && status !== "published" ? "/editor?id=" + bookId + "&source=server&status=" + encodeURIComponent(status) : "/book/" + bookId)
@@ -178,6 +189,8 @@ function GutenbergExplorer({ onClose, initialQuery }: { onClose: () => void; ini
 
   const currentChapter = selected?.chapters[chapter]
   const existingImport = saveError?.existing
+  const sourceAuthors = [...new Set((selected?.authors || requested?.authors || [])
+    .map(person => gutenbergAuthorName(person.name)).filter(Boolean))]
   const accent = { backgroundColor: cfg.color, color: "#0b0d11" }
   return <div className="flex min-h-0 flex-1 flex-col" dir={settings.language === "ar" ? "rtl" : "ltr"}>
     <header className="relative shrink-0 border-b border-white/10 bg-gradient-to-r from-amber-100/[.06] to-transparent px-4 py-4 sm:px-6 sm:py-5">
@@ -195,14 +208,21 @@ function GutenbergExplorer({ onClose, initialQuery }: { onClose: () => void; ini
         <form onSubmit={event => {
           event.preventDefault()
           if (saving) return
-          if (query.trim() === filters.query && filters.page === 1) void catalog.refetch()
-          else editFilters({ query: query.trim() })
+          const value = query.trim()
+          const isEdition = !!gutenbergIdFromQuery(value)
+          const scoped = filters.lang !== "all" || !!filters.author || !!filters.topic
+          if (isEdition && scoped) editFilters({ query: value, author: "", lang: "all", topic: "" })
+          else if (value === filters.query && filters.page === 1) void catalog.refetch()
+          else editFilters({ query: value })
         }} className="space-y-3">
           <fieldset disabled={saving} className="min-w-0 space-y-3">
             <div className="flex gap-2"><label className="relative min-w-0 flex-1"><span className="sr-only">{copy.search}</span>
               <Search className="pointer-events-none absolute start-3 top-3 h-4 w-4 text-zinc-400" />
-              <input value={query} onChange={event => setQuery(event.target.value)} maxLength={120} placeholder={copy.search} className={field + " ps-9"} />
+              <input ref={searchInput} value={query} onChange={event => setQuery(event.target.value)} maxLength={120} placeholder={copy.search} className={field + " ps-9"} />
             </label><button type="submit" className={button + " shrink-0 border-transparent px-4"} style={accent} aria-label={t("search")}><Search className="h-4 w-4" /></button></div>
+            {filters.author && <button type="button" onClick={() => editFilters({ author: "" })} aria-label={copy.clearAuthor} className={button + " max-w-full text-start"}>
+              <span className="break-words">{filters.author}</span><X className="h-4 w-4 shrink-0" />
+            </button>}
             <div className="grid grid-cols-2 gap-2">
               <label className="min-w-0 space-y-1 text-xs text-zinc-400">{copy.language}
                 <select aria-label={copy.language} className={field} value={filters.lang} onChange={event => editFilters({ lang: event.target.value })}>
@@ -221,7 +241,7 @@ function GutenbergExplorer({ onClose, initialQuery }: { onClose: () => void; ini
         </form>
 
         <div className="my-4 flex min-h-5 items-center justify-between gap-2 text-xs text-zinc-400" role="status" aria-live="polite">
-          <span>{catalog.isFetching ? t("searching") : catalog.data && !catalog.isError ? copy.results.replace("{n}", catalog.data.count.toLocaleString(settings.language)) : ""}</span>
+          <span>{catalog.isFetching ? t("searching") : catalog.data && !catalog.isError && !filters.author ? copy.results.replace("{n}", catalog.data.count.toLocaleString(settings.language)) : ""}</span>
           {catalog.data && <span>{copy.page} {catalog.data.page}</span>}
         </div>
         {catalog.isError && <div role="alert" className="mb-4 rounded-2xl border border-amber-100/20 bg-amber-100/5 p-4"><p className="text-sm text-zinc-300">{copy.error}</p><button disabled={catalog.isFetching} onClick={() => void catalog.refetch()} className={button + " mt-3"}>{copy.retry}</button></div>}
@@ -239,7 +259,7 @@ function GutenbergExplorer({ onClose, initialQuery }: { onClose: () => void; ini
             <Cover url={book.coverUrl} title={book.title} />
             <div className="min-w-0 flex-1 py-1"><p className="mb-1 text-xs uppercase tracking-widest text-amber-100/50">#{book.id} · {book.languages.map(gutenbergLanguageName).join(" / ")}</p>
               <h3 className="line-clamp-2 break-words font-display text-base leading-snug text-zinc-100">{book.title}</h3>
-              <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{book.authors.map(author => author.name).join(" · ")}</p>
+              <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{book.authors.map(author => gutenbergAuthorName(author.name)).join(" · ")}</p>
               {book.alreadyImported ? <p className="mt-2 flex items-center gap-1 text-xs text-amber-100/80"><Check className="h-3 w-3" />{copy.existing}{book.existingStatus === "draft" ? " · " + t("drafts") : ""}</p>
                 : <p className="mt-2 text-xs text-zinc-400">{Number(book.download_count || 0).toLocaleString(settings.language)} {t("downloads")}</p>}
             </div>
@@ -265,7 +285,13 @@ function GutenbergExplorer({ onClose, initialQuery }: { onClose: () => void; ini
         {selected && <div className="space-y-5">
           <div className="flex items-start gap-4"><Cover url={selected.coverUrl} title={selected.title} large /><div className="min-w-0 pt-1">
             <p className="text-xs uppercase tracking-widest text-amber-100/60">{selected.languages.map(gutenbergLanguageName).join(" / ")}</p>
-            <h3 className="mt-2 break-words font-display text-xl leading-tight text-amber-50 sm:text-2xl">{selected.title}</h3><p className="mt-2 text-sm text-zinc-400">{selected.author}</p>
+            <h3 className="mt-2 break-words font-display text-xl leading-tight text-amber-50 sm:text-2xl">{selected.title}</h3>
+            {sourceAuthors.length ? <div className="mt-2 space-y-1">{sourceAuthors.map(name => <button
+              key={name} type="button" disabled={saving} onClick={() => browseAuthor(name)} title={copy.byAuthor.replace("{name}", name)}
+              aria-label={copy.byAuthor.replace("{name}", name)}
+              className="flex min-h-11 w-full items-center gap-2 rounded-lg text-start text-sm text-amber-100 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-amber-200"
+            ><span className="min-w-0 break-words">{name}</span><Search className="h-3.5 w-3.5 shrink-0" /></button>)}</div>
+              : <p className="mt-2 text-sm text-zinc-400">{selected.author}</p>}
             {selected.translators.length > 0 && <p className="mt-2 text-xs text-zinc-400">{copy.translators}: {selected.translators.join(" · ")}</p>}
             <a href={selected.sourceUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-amber-100/75 underline underline-offset-4">Gutenberg #{selected.gutenbergId}<ExternalLink className="h-3 w-3" /></a>
           </div></div>

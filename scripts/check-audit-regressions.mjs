@@ -104,7 +104,40 @@ try {
     assert.ok(first.data.books.every(work=>work.authorId===users.author.id));
     assert.ok(other.data.books.every(work=>work.authorId===users.author2.id));
     assert.ok(other.data.books.some(work=>work.id===second.id));
-    return {legacyConflict:true,profilesSeparated:true};
+    const name=encodeURIComponent(users.author.name);
+    const {rows:classics}=await client.query(
+      "insert into books(title,author,status,is_classic,rights_hold) values ('Crónica antigua',$1,'published',true,false),('Otra crónica',$1,'published',true,false),('Crónica retenida',$1,'published',true,true),('Crónica privada',$1,'draft',true,false) returning id,title",
+      [users.author.name],
+    );
+    const classicRoute='/api/authors/classic/'+name;
+    const firstClassic=await request(classicRoute+'?limit=1',{role:null});
+    assert.equal(firstClassic.status,200);
+    assert.equal(firstClassic.data.isClassicProfile,true);
+    assert.deepEqual(firstClassic.data.books.map(work=>work.id),[classics[1].id]);
+    assert.equal(firstClassic.data.nextCursor,classics[1].id);
+    const nextClassic=await request(classicRoute+'/books?limit=1&before='+firstClassic.data.nextCursor,{role:null});
+    assert.equal(nextClassic.status,200);
+    assert.deepEqual(nextClassic.data.books.map(work=>work.id),[classics[0].id]);
+    assert.equal(nextClassic.data.nextCursor,null);
+    const found=await request(classicRoute+'/books?q='+encodeURIComponent('crónica antigua'),{role:null});
+    assert.deepEqual(found.data.books.map(work=>work.id),[classics[0].id]);
+    const hidden=await request(classicRoute+'/books?q='+encodeURIComponent('crónica retenida'),{role:null});
+    assert.deepEqual(hidden.data.books,[]);
+    const collision=await request('/api/authors/'+name,{role:null});
+    assert.equal(collision.status,409);
+    assert.equal(collision.data.candidates.length,3);
+    assert.ok(collision.data.candidates.some(candidate=>candidate.path.startsWith('/author/classic/') && candidate.exampleTitle===classics[1].title));
+    assert.equal((await request('/api/authors/classic/perfil-inexistente',{role:null})).status,404);
+
+    const specialName='Autora 50% / Firma';
+    const specialPath=encodeURIComponent(specialName);
+    const edit=await request('/api/admin/authors/'+specialPath,{role:'admin',method:'PATCH',body:{bio:'Perfil clásico curado.'}});
+    assert.equal(edit.status,200);
+    const special=await request('/api/authors/classic/'+specialPath,{role:null});
+    assert.equal(special.status,200);
+    assert.equal(special.data.name,specialName);
+    assert.equal(special.data.bio,'Perfil clásico curado.');
+    return {legacyConflict:true,profilesSeparated:true,classicPagination:true,hiddenTitlesExcluded:true,encodedNameEditable:true};
   });
   await probe('F05-paid-wallet-key-replay',async()=>{
     const packs=(await request('/api/wallet/packs')).data,pack=packs.packs[0],key=randomUUID();

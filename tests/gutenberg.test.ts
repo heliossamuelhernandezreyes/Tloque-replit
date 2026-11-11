@@ -196,6 +196,28 @@ test("catálogo explorable muestra las 32 ediciones y conserva la continuación"
   assert.equal(page.query, "")
 })
 
+test("el filtro de autor conserva la paginación y descarta coincidencias solo en el título o la traducción", async t => {
+  const person = { name: "Verne, Jules", birth_year: 1828, death_year: 1905 }
+  const authored = { ...searchBook(3301, "fr"), authors: [person] }
+  const mentioned = { ...searchBook(3302, "es"), title: "Viajes de Jules Verne", translators: [person] }
+  const requestUrls: URL[] = []
+  t.mock.method(globalThis, "fetch", async (input: string) => {
+    const url = new URL(input)
+    requestUrls.push(url)
+    if (url.pathname === "/books/3302/") return Response.json(mentioned)
+    return Response.json({ count: 35, next: "https://gutendex.com/books/?page=2", results: [mentioned, authored] })
+  })
+  const page = await browseGutenberg({ author: "Jules Verne", query: "viajes", lang: "all" })
+  assert.deepEqual(page.results.map(book => book.id), [3301])
+  assert.equal(page.nextPage, 2)
+  assert.equal(requestUrls[0].searchParams.get("search"), "jules verne viajes")
+  assert.equal(requestUrls[0].searchParams.has("languages"), false)
+  const general = await browseGutenberg({ query: "viajes", lang: "all" })
+  assert.equal(general.results.length, 2, "author scope cannot reuse a general catalogue entry")
+  const exact = await browseGutenberg({ query: "3302", author: "Verne, Jules", lang: "all" })
+  assert.deepEqual(exact.results, [])
+})
+
 test("idioma sin resultados no dispara búsquedas en otro idioma", async t => {
   let calls = 0
   t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json({ count: 0, next: null, results: [] }) })

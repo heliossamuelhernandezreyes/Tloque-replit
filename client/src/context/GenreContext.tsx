@@ -25,6 +25,11 @@ export const GENRE_CONFIG: Record<Genre, GenreConfig> = {
   romance:     { color: "#ffaadd", glow: "#dd2288", label: "Romance",     tKey: "genreRomance",     bg: "rgba(221,34,136,0.15)",  particle: "#ff66bb" },
 }
 
+export function genreConfigFor(genre: unknown): GenreConfig {
+  return typeof genre === "string" && Object.hasOwn(GENRE_CONFIG, genre)
+    ? GENRE_CONFIG[genre as Genre] : GENRE_CONFIG.todos
+}
+
 // Géneros reales (sin "todos") — para el ciclo del orbe izquierdo
 // El ciclo va: todos → melancolico → terror → fantasia → misterio → romance → todos
 export const GENRES: Genre[] = [

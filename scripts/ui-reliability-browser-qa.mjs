@@ -17,9 +17,12 @@ const origin = "http://127.0.0.1:4188"
 const user = { id: 599, email: "ui@fixture.test", name: "Titular de prueba", avatar: "", banner: "", bio: "", socialLinks: {}, frame: "", roles: { reader: true, author: true, admin: false }, capabilities: { createBooks: true, manageOwnBooks: true }, persona: "author", isAdmin: false, subscription: { plan: "reader", status: "active", expiresAt: null } }
 const chapter = "Un párrafo para verificar la lectura y conservar lo escrito. ".repeat(35)
 const work = { id: 123, title: "Obra de prueba", author: user.name, authorId: user.id, status: "published", revision: 1, genre: "fantasia", type: "book", coverUrl: "", synopsis: "Una obra para probar navegación y escritura.", chapterCount: 2, chapters: [{ title: "Uno", content: chapter }, { title: "Dos", content: chapter }], updatedAt: "2026-11-01T12:00:00Z" }
+const publicAuthor = { name: "Autora 50% / Firma", authorId: 600, avatar: null, bio: "Un perfil con obras de varios géneros." }
+const firstWork = { ...work, id: 601, title: "La obra más reciente", author: publicAuthor.name, authorId: 600, genre: "Ciencia ficción" }
+const olderWork = { ...firstWork, id: 602, title: "Una obra anterior" }
 const errors = []
 async function setup() {
-  const state = { signedIn: true, failDelete: false, failInbox: false, catalogError: 0, bookDelay: 0, order: "pending", searches: [], cloud: [], claims: [], oauth: [], showCards: false, cardBuys: [], walletStatus: "pending", walletBuys: [] }
+  const state = { signedIn: true, failDelete: false, failInbox: false, catalogError: 0, bookDelay: 0, order: "pending", searches: [], cloud: [], claims: [], oauth: [], showCards: false, cardBuys: [], walletStatus: "pending", walletBuys: [], profilePages: [], privateProfileRequests: [] }
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: "es-MX", isMobile: true, hasTouch: true })
   context.setDefaultTimeout(20_000)
   await context.addInitScript(() => {
@@ -41,7 +44,24 @@ async function setup() {
       const query = url.searchParams.get("search"); if (query) state.searches.push(query)
       if (state.catalogError) return route.fulfill({ status: state.catalogError, json: { message: "Catálogo de prueba no disponible" } })
       data = query ? [{ ...work, id: query === "alpha" ? 456 : 789, authorId: 600, title: query === "alpha" ? "Alpha" : "Beta" }] : [work]
-    } else if (url.pathname === "/api/books/mine") data = [work]
+    } else if (url.pathname === "/api/authors/id/600") data = { ...publicAuthor, books: [firstWork], nextCursor: firstWork.id }
+    else if (url.pathname === "/api/authors/id/600/books") {
+      state.profilePages.push(Object.fromEntries(url.searchParams))
+      const match = url.searchParams.get("q")
+      data = { books: !match || match === "obra anterior" ? [olderWork] : [], nextCursor: null }
+    } else if (url.pathname === "/api/authors/id/599") data = { ...user, authorId: user.id, books: [work], nextCursor: null }
+    else if (url.pathname === "/api/authors/classic/" + encodeURIComponent(publicAuthor.name)) data = {
+      name: publicAuthor.name, classicName: publicAuthor.name, isClassicProfile: true, authorId: null,
+      avatar: null, books: [], nextCursor: null,
+    }
+    else if (url.pathname === "/api/author/stats") {
+      state.privateProfileRequests.push(url.pathname)
+      data = { totalHearts: 7, totalSupports: 1, totalReaders: 4, perBook: [{ id: work.id }] }
+    } else if (url.pathname === "/api/payouts/mine") {
+      state.privateProfileRequests.push(url.pathname)
+      data = { enabled: false, availableCents: 0, heldCents: 0, payouts: [] }
+    }
+    else if (url.pathname === "/api/books/mine") data = [work]
     else if (url.pathname === "/api/books/123/draft") {
       if (method === "PUT") { const payload = route.request().postDataJSON(); state.cloud.push(payload.data); data = { draft: { draftRevision: state.cloud.length } } }
       else data = { draft: null }
@@ -266,7 +286,38 @@ try {
     assert.ok(catalogue.state.searches.includes("ausente"))
     await catalogue.context.close()
   })
+  await scenario("author profiles paginate works and keep owner controls private", async () => {
+    const { page, context, state } = await setup()
+    await page.goto(origin + "/author/id/600")
+    await page.getByRole("heading", { name: publicAuthor.name }).waitFor()
+    await page.getByText("Ciencia ficción", { exact: true }).first().waitFor()
+    await page.getByRole("link", { name: firstWork.title, exact: true }).first().waitFor()
+    await page.getByRole("button", { name: "Cargar más obras" }).click()
+    await page.getByRole("link", { name: olderWork.title, exact: true }).first().waitFor()
+    assert.deepEqual(state.profilePages[0], { before: String(firstWork.id) })
+    const search = page.getByRole("searchbox", { name: "Buscar una obra por título" })
+    await search.fill("obra anterior")
+    await search.press("Enter")
+    await page.getByRole("link", { name: firstWork.title, exact: true }).first().waitFor({ state: "hidden" })
+    await page.getByRole("link", { name: olderWork.title, exact: true }).first().waitFor()
+    assert.deepEqual(state.profilePages.at(-1), { q: "obra anterior" })
+    assert.deepEqual(state.privateProfileRequests, [])
+    await page.screenshot({ path: resolve(output, "author-profile-mobile.png") })
+
+    await navigate(page, "/author/classic/" + encodeURIComponent(publicAuthor.name))
+    await page.getByText("Autor clásico", { exact: true }).waitFor()
+    await page.getByRole("heading", { name: publicAuthor.name }).waitFor()
+    await navigate(page, "/author/id/599")
+    await page.getByText("Solo para ti", { exact: true }).waitFor()
+    assert.ok(state.privateProfileRequests.includes("/api/payouts/mine"))
+    await page.getByRole("button", { name: "Cómo me ven" }).click()
+    assert.equal(await page.getByText("Solo para ti", { exact: true }).count(), 0)
+    assert.equal(await page.getByRole("button", { name: "Editar perfil" }).count(), 0)
+    await page.getByRole("button", { name: "Volver a mi vista" }).click()
+    await page.getByRole("button", { name: "Editar perfil" }).waitFor()
+    await context.close()
+  })
   if (failures.length) throw new AggregateError(failures, "UI reliability scenarios failed")
   assert.deepEqual(errors, [])
-  console.log("UI reliability gate passed: OAuth/QR, drafts, searches, errors, reader, card consent and wallet payment states; no live services.")
+  console.log("UI reliability gate passed: OAuth/QR, drafts, searches, errors, reader, author profiles, card consent and wallet payment states; no live services.")
 } finally { await browser.close(); await vite.close() }

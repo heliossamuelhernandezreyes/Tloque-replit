@@ -19,6 +19,7 @@ const es = {
   reviewNotice: "La edición completa estará disponible en Tloque tras su revisión y publicación. La descarga requiere autorización.",
   draftNotice: "Se importará como borrador. Revisa la edición, la traducción y los permisos en el editor antes de publicarla.",
   emptyPage: "No hay ediciones disponibles en esta página.",
+  byAuthor: "Más obras de {name}", clearAuthor: "Quitar filtro de autor",
   stale: "Gutenberg no responde. Mostramos resultados guardados de esta búsqueda; pueden haber cambiado.",
 }
 type Copy = { [K in keyof typeof es]: typeof es[K] }
@@ -36,6 +37,7 @@ const en: Copy = {
   reviewNotice: "The complete edition becomes available in Tloque after review and publication. Downloads require permission.",
   draftNotice: "The edition will be imported as a draft. Review the edition, translation and permissions in the editor before publishing.",
   emptyPage: "No editions are available on this page.",
+  byAuthor: "More works by {name}", clearAuthor: "Remove author filter",
   stale: "Gutenberg is unavailable. These are saved results for this search; they may have changed.",
 }
 const copies: Record<AppLanguage, Copy> = {
@@ -46,6 +48,7 @@ const copies: Record<AppLanguage, Copy> = {
     reviewNotice: "L’édition complète sera disponible dans Tloque après vérification et publication. Le téléchargement nécessite une autorisation.",
     draftNotice: "L’édition sera importée comme brouillon. Vérifiez l’édition, la traduction et les autorisations dans l’éditeur avant de publier.",
     emptyPage: "Aucune édition disponible sur cette page.",
+    byAuthor: "Autres œuvres de {name}", clearAuthor: "Retirer le filtre d’auteur",
   },
   de: {
     stale: "Gutenberg antwortet nicht. Dies sind gespeicherte Ergebnisse dieser Suche; sie können sich geändert haben.",
@@ -53,6 +56,7 @@ const copies: Record<AppLanguage, Copy> = {
     reviewNotice: "Die vollständige Ausgabe ist nach Prüfung und Veröffentlichung in Tloque verfügbar. Für Downloads ist eine Erlaubnis erforderlich.",
     draftNotice: "Die Ausgabe wird als Entwurf importiert. Prüfe Ausgabe, Übersetzung und Berechtigungen im Editor vor der Veröffentlichung.",
     emptyPage: "Auf dieser Seite sind keine Ausgaben verfügbar.",
+    byAuthor: "Weitere Werke von {name}", clearAuthor: "Autorenfilter entfernen",
   },
   it: {
     stale: "Gutenberg non risponde. Mostriamo i risultati salvati di questa ricerca; potrebbero essere cambiati.",
@@ -60,6 +64,7 @@ const copies: Record<AppLanguage, Copy> = {
     reviewNotice: "L’edizione completa sarà disponibile su Tloque dopo la revisione e la pubblicazione. Il download richiede un’autorizzazione.",
     draftNotice: "L’edizione verrà importata come bozza. Verifica edizione, traduzione e autorizzazioni nell’editor prima di pubblicare.",
     emptyPage: "Nessuna edizione disponibile in questa pagina.",
+    byAuthor: "Altre opere di {name}", clearAuthor: "Rimuovi il filtro per autore",
   },
   pt: {
     stale: "O Gutenberg não responde. Mostramos resultados guardados desta pesquisa; podem ter mudado.",
@@ -67,6 +72,7 @@ const copies: Record<AppLanguage, Copy> = {
     reviewNotice: "A edição completa fica disponível no Tloque após revisão e publicação. O download requer autorização.",
     draftNotice: "A edição será importada como rascunho. Revê a edição, a tradução e as permissões no editor antes de publicar.",
     emptyPage: "Não há edições disponíveis nesta página.",
+    byAuthor: "Mais obras de {name}", clearAuthor: "Remover filtro de autor",
   },
   ja: {
     stale: "Gutenbergに接続できません。この検索の保存済みの結果を表示しています。現在の情報とは異なる場合があります。",
@@ -74,6 +80,7 @@ const copies: Record<AppLanguage, Copy> = {
     reviewNotice: "確認と公開を経て、Tloqueで全文を読めるようになります。ダウンロードには許可が必要です。",
     draftNotice: "下書きとして取り込みます。公開前にエディターで版、翻訳、利用許可を確認してください。",
     emptyPage: "このページには閲覧できる版がありません。",
+    byAuthor: "{name}の他の作品", clearAuthor: "著者フィルターを解除",
   },
   zh: {
     stale: "Gutenberg 暂时无法连接。当前显示此搜索已保存的结果，信息可能已有变化。",
@@ -81,6 +88,7 @@ const copies: Record<AppLanguage, Copy> = {
     reviewNotice: "版本经审核并发布后，即可在 Tloque 阅读全文。下载需要授权。",
     draftNotice: "此版本将作为草稿导入。发布前请在编辑器中核对版本、译本和权限。",
     emptyPage: "此页没有可用版本。",
+    byAuthor: "查找{name}的其他作品", clearAuthor: "清除作者筛选",
   },
   ar: {
     stale: "لا يستجيب Gutenberg. نعرض نتائج محفوظة لهذا البحث؛ قد تكون تغيّرت.",
@@ -88,6 +96,7 @@ const copies: Record<AppLanguage, Copy> = {
     reviewNotice: "تتوفر الطبعة الكاملة في Tloque بعد مراجعتها ونشرها. يتطلب التنزيل إذنًا.",
     draftNotice: "ستُستورد الطبعة كمسودة. راجع الطبعة والترجمة والأذونات في المحرر قبل النشر.",
     emptyPage: "لا تتوفر طبعات في هذه الصفحة.",
+    byAuthor: "مزيد من أعمال {name}", clearAuthor: "إزالة عامل تصفية المؤلف",
   },
 }
 export const gutenbergCopy = (language: AppLanguage) => copies[language] || es

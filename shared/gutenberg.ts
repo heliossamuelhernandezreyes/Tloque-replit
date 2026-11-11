@@ -48,6 +48,7 @@ export interface ProcessedGutenbergBook {
   gutenbergId: number
   title: string
   author: string
+  authors: GutenbergPerson[]
   synopsis: string
   synopsisSource: "gutendex" | "metadata"
   synopsisLanguage: string | null
@@ -90,4 +91,12 @@ export function gutenbergIdFromQuery(query: string): number | null {
 
 export function gutenbergLanguageName(code: string): string {
   return GUTENBERG_LANGUAGES.find(([value]) => value === code)?.[1] || code.toUpperCase()
+}
+
+export function gutenbergAuthorName(name: string): string {
+  return name.split(",").map(part => part.trim()).filter(Boolean).reverse().join(" ")
+}
+
+export function gutenbergAuthorKey(name: string): string {
+  return gutenbergAuthorName(name).normalize("NFC").toLowerCase().replace(/\s+/g, " ")
 }

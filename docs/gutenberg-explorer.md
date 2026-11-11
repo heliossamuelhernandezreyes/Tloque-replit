@@ -1,6 +1,6 @@
 # Gutenberg: exploración, revisión e importación
 
-Actualización del 10 de noviembre de 2026.
+Actualización del 11 de noviembre de 2026.
 
 Abre **Explorar los clásicos** desde Biblioteca o sus resultados de búsqueda. Los administradores también pueden abrirlo desde **Administración → Catálogo y Gutenberg**.
 
@@ -12,6 +12,10 @@ Abre **Explorar los clásicos** desde Biblioteca o sus resultados de búsqueda. 
 4. Abrir una edición: idioma real, autores, traductores disponibles, portada de la misma edición, procedencia del resumen, tamaño y tiempo de lectura aproximado.
 5. Cambiar de capítulo para leer una muestra de hasta 4.000 caracteres o seguir el enlace a la ficha de origen.
 6. Abrir en Tloque las ediciones publicadas. En modo administrador, revisar título, género y sinopsis e importar el texto completo como **borrador**. La publicación se tramita desde el editor después de la revisión de derechos.
+
+Selecciona el nombre de un autor en una muestra para ver sus ediciones en todos los idiomas. La búsqueda por título y los filtros siguen disponibles dentro del catálogo de ese autor. Al buscar por número o enlace oficial, el explorador busca la edición concreta en todos los idiomas.
+
+Desde una obra publicada se puede abrir su perfil de autor. Los perfiles clásicos enlazan a las ediciones de Gutenberg y muestran las fechas biográficas cuando figuran en los metadatos de la obra. El catálogo de cada perfil permite buscar títulos y cargar más obras.
 
 Los borradores importados se abren con `source=server`, conservando en el editor su autoría, identidad Gutenberg y estado editorial. El campo de autor guardado respeta los 160 caracteres del editor. La vista previa conserva la atribución completa que entrega la fuente.
 
