@@ -23,4 +23,14 @@ const writes=globalThis.progressWrites.filter(row=>row.bookId===202);assert.ok(w
 globalThis.readerBooks.set(202,null);
 await act(async()=>{view.update(React.createElement(Reader));});
 const absent=JSON.stringify(view.toJSON());assert.ok(!absent.includes('TEXTO_LIBRO_A'));assert.ok(!absent.includes('TEXTO_LIBRO_B'));
+// A shared URL and a legacy saved maximum must not persist a chapter the edition lacks.
+globalThis.readerBooks.set(303,{...source,id:303});
+values.set('reading_maxchapter_303','NaN');
+globalThis.readerRoute={bookId:'303',chapterId:'999'};window.location.pathname='/read/303/999';
+await act(async()=>{view.update(React.createElement(Reader));});
+assert.ok(JSON.stringify(view.toJSON()).includes('CAPITULO_DOS_A'));
+const bounded=globalThis.progressWrites.filter(row=>row.bookId===303);
+assert.ok(bounded.length);
+assert.ok(bounded.every(row=>row.chapter===1&&row.maxChapter===1),JSON.stringify(bounded));
+assert.equal(values.get('reading_maxchapter_303'),'1');
 await act(async()=>view.unmount());

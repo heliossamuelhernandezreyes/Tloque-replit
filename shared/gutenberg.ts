@@ -7,6 +7,7 @@ export const GUTENBERG_LANGUAGES = [
 ] as const
 
 export const GUTENBERG_TOPICS = ["", "fiction", "adventure", "mystery", "fantasy", "poetry", "philosophy", "children"] as const
+export const GUTENBERG_SAMPLE_LENGTH = 4_000
 export type GutenbergTopic = typeof GUTENBERG_TOPICS[number]
 export type GutenbergSort = "popular" | "descending" | "ascending"
 export type GutenbergPerson = { name: string; birth_year: number | null; death_year: number | null }
@@ -68,6 +69,7 @@ export type GutenbergPreview = ProcessedGutenbergBook & {
   previewText: string
   existingBookId?: number | null
   alreadyImported?: boolean
+  existingStatus?: string
 }
 
 export function gutenbergIdFromQuery(query: string): number | null {

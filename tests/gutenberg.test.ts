@@ -10,6 +10,7 @@ import {
   cleanGutenbergText,
   countGutenbergWords,
   fetchGutenbergBookById,
+  gutenbergCover,
   processGutenbergBook,
   isGutenbergAssetUrl,
   fitGutenbergChapters,
@@ -20,7 +21,7 @@ import { gutenbergIdFromQuery } from "../shared/gutenberg"
 
 function stubBook(textUrl: string): GutenbergBook {
   return {
-    id: 1,
+    id: gutenbergIdFromQuery(textUrl) ?? 1,
     title: "Prueba",
     authors: [],
     languages: ["es"],
@@ -31,6 +32,19 @@ function stubBook(textUrl: string): GutenbergBook {
     copyright: false,
   }
 }
+
+test("Gutenberg descarta archivos de texto y portadas de otra edición", async t => {
+  const book = searchBook(900001, "es", {
+    "text/plain": "https://www.gutenberg.org/cache/epub/900002/pg900002.txt",
+    "image/jpeg": "https://www.gutenberg.org/cache/epub/900002/pg900002.cover.medium.jpg",
+    "image/png": "https://www.gutenberg.org/cache/epub/900001/cover.png",
+  })
+  let requests = 0
+  t.mock.method(globalThis, "fetch", async () => { requests++; return new Response("Texto de otra edición") })
+  await assert.rejects(downloadBookText(book), /edición|fuente/)
+  assert.equal(requests, 0)
+  assert.equal(gutenbergCover(book), book.formats["image/png"])
+})
 
 function searchBook(id: number, language: string, formats: Record<string, string> = {
   "text/plain; charset=utf-8": `https://www.gutenberg.org/files/${id}/${id}-0.txt`,

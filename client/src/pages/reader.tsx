@@ -61,6 +61,11 @@ function languageDirection(value: string): "ltr" | "rtl" {
   return baseLanguage(value) === "ar" ? "rtl" : "ltr"
 }
 
+function storedChapter(key: string): number {
+  const value = Number(localStorage.getItem(key) || 0)
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0
+}
+
 export default function Reader() {
   const { bookId } = useParams<{ bookId: string }>()
   return <ReaderForBook key={bookId} />
@@ -86,8 +91,11 @@ function ReaderForBook() {
   const [isMine,        setIsMine]        = useState(false)
   const [showLibraryFull, setShowLibraryFull] = useState(false)
   const { user, isAdmin } = useAuth()
-  const requestedChapter = /^\d+$/.test(String(chapterId)) ? Math.max(0, Number(chapterId) - 1) : null
-  const [activeChapter, setActiveChapter] = useState(() => requestedChapter ?? 0)
+  const chapterNumber = Number(chapterId)
+  const requestedChapter = /^\d+$/.test(String(chapterId)) && Number.isSafeInteger(chapterNumber)
+    ? Math.max(0, chapterNumber - 1) : null
+  const [chapterIndex, setChapterIndex] = useState(() => requestedChapter ?? storedChapter(`reading_chapter_${bookId}`))
+  const activeChapter = Math.min(Math.max(0, chapterIndex), Math.max(0, availableChapterCount - 1))
   const [maxChapter,     setMaxChapter]     = useState(0)
   const [streakCelebration, setStreakCelebration] = useState<number | null>(null)
   const bookLangRef = useRef("es")
@@ -206,9 +214,8 @@ function ReaderForBook() {
 
   useEffect(() => {
     if (!bookId) return
-    const savedCap = Number(localStorage.getItem(`reading_chapter_${bookId}`) || 0)
-    setActiveChapter(requestedChapter ?? Math.max(0, savedCap))
-  }, [bookId, chapterId])
+    setChapterIndex(requestedChapter ?? storedChapter(`reading_chapter_${bookId}`))
+  }, [bookId, requestedChapter])
 
   // Detener voz al desmontar o cambiar capítulo
   useEffect(() => {
@@ -222,12 +229,12 @@ function ReaderForBook() {
   }, [activeChapter])
 
   useEffect(() => {
-    if (!bookId || !book || String(book.id) !== String(bookId)) return
+    if (!bookId || !book || String(book.id) !== String(bookId) || availableChapterCount <= 0) return
     localStorage.setItem(`reading_chapter_${bookId}`, String(activeChapter))
     // Rastrear el capítulo más lejano alcanzado (para bloquear comentarios atrás)
-    const storedMax = Number(localStorage.getItem(`reading_maxchapter_${bookId}`) || "0")
-    const nextMax   = Math.max(maxChapter, storedMax, activeChapter)
-    if (nextMax !== storedMax) localStorage.setItem(`reading_maxchapter_${bookId}`, String(nextMax))
+    const maxChapterKey = `reading_maxchapter_${bookId}`
+    const nextMax = Math.min(availableChapterCount - 1, Math.max(maxChapter, storedChapter(maxChapterKey), activeChapter))
+    if (localStorage.getItem(maxChapterKey) !== String(nextMax)) localStorage.setItem(maxChapterKey, String(nextMax))
     setMaxChapter(nextMax)
     // Respaldar el progreso en la nube (solo libros del servidor)
     if (numericBookId !== null) pushProgress(numericBookId, activeChapter, nextMax)
@@ -266,7 +273,7 @@ function ReaderForBook() {
         }
       }
     } catch {}
-  }, [activeChapter, bookId, book?.id])
+  }, [activeChapter, bookId, book?.id, availableChapterCount])
 
   // ── BUSQUEDA EN WIKTIONARY ───────────────────────────
   const closeDictionary = useCallback(() => {
@@ -339,7 +346,7 @@ function ReaderForBook() {
     play("page_turn")
     scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
     setTimeout(() => {
-      setActiveChapter(newIndex)
+      setChapterIndex(newIndex)
       setTransitioning(false)
     }, 320)
   }
@@ -419,11 +426,6 @@ function ReaderForBook() {
     }
   }
 
-
-  useEffect(() => {
-    if (availableChapterCount <= 0) return
-    setActiveChapter(index => Math.min(Math.max(0, index), availableChapterCount - 1))
-  }, [book?.id, availableChapterCount])
 
   // Mantener el idioma del libro actualizado para el diccionario
   useEffect(() => {

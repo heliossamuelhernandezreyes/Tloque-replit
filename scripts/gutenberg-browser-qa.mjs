@@ -22,20 +22,21 @@ const preview = id => ({ gutenbergId: id, title: titles[id], author: "Miguel de 
   detectedGenre: "fantasia", wordCount: 380000, readingMinutes: 1653, chapterStrategy: "headings", type: "book", sourceUrl: "https://www.gutenberg.org/ebooks/" + id,
   chapterCount: 3, previewText: "Al lector.", chapters: [{ title: "Páginas iniciales", content: "Al lector. Una dedicatoria que debemos conservar." }, { title: "CAPÍTULO I", content: "En un lugar de la Mancha, de cuyo nombre no quiero acordarme." }, { title: "CAPÍTULO II", content: "Sancho escuchaba mientras se abría el camino ante ellos." }] })
 
-async function setup({ mobile = false } = {}) {
+async function setup({ mobile = false, admin = true, adminMode = true } = {}) {
+  const state = { latePreview: null, duplicateImport: false }
   const context = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1 })
   context.setDefaultTimeout(20_000)
-  await context.addInitScript(() => {
+  await context.addInitScript(({ adminMode }) => {
     localStorage.setItem("novareads_onboarding_done", "1")
     sessionStorage.setItem("tloque_boot_seen_v1", "1")
-    localStorage.setItem("tloque_settings_v2", JSON.stringify({ visualQuality: "essential", reduceMotion: true, orbSounds: false, musicEnabled: false, language: "es" }))
-  })
+    localStorage.setItem("tloque_settings_v2", JSON.stringify({ visualQuality: "essential", reduceMotion: true, orbSounds: false, musicEnabled: false, language: "es", adminMode }))
+  }, { adminMode })
   await context.route("**/*", async route => {
     const url = new URL(route.request().url())
     if (url.hostname !== "127.0.0.1") return route.abort()
     if (!url.pathname.startsWith("/api/")) return route.continue()
     let data = {}
-    if (url.pathname === "/api/auth/me") data = { id: 99, email: "fixture@example.test", name: "Gutenberg QA", avatar: "", isAdmin: true, capabilities: { manageCatalog: true, manageFrames: true, manageAudioCatalog: true, manageFinance: true, manageAdmins: true, runDiagnostics: true }, persona: "admin" }
+    if (url.pathname === "/api/auth/me") data = { id: 99, email: "fixture@example.test", name: "Gutenberg QA", avatar: "", isAdmin: admin, capabilities: admin ? { manageCatalog: true, manageFrames: true, manageAudioCatalog: true, manageFinance: true, manageAdmins: true, runDiagnostics: true } : {}, persona: admin ? "admin" : "reader" }
     else if (url.pathname === "/api/books") data = []
     else if (url.pathname === "/api/gutenberg/catalog") {
       requests.push(Object.fromEntries(url.searchParams))
@@ -48,9 +49,17 @@ async function setup({ mobile = false } = {}) {
         cacheStatus: staleNext ? "stale" : "fresh", fetchedAt: Date.now() - (staleNext ? 180_000 : 0) }
       staleNext = false
     } else if (url.pathname.startsWith("/api/gutenberg/preview/")) {
-      data = preview(Number(url.pathname.split("/").pop()))
+      const id = Number(url.pathname.split("/").pop())
+      if (state.latePreview?.id === id) {
+        const pending = state.latePreview
+        state.latePreview = null
+        await pending.release
+        return route.fulfill({ json: { existingBookId: 50, alreadyImported: true } }).catch(() => {})
+      }
+      data = preview(id)
     } else if (url.pathname === "/api/admin/gutenberg/import") {
       const input = route.request().postDataJSON(); imports.push(input)
+      if (state.duplicateImport) return route.fulfill({ status: 409, json: { message: "Este libro ya está importado", existingBookId: 50, existingStatus: "draft" } })
       data = { book: { ...preview(input.gutenbergId), id: 50, status: input.status, title: input.overrideTitle } }
     } else if (url.pathname === "/api/books/50") data = { ...preview(2000), id: 50, title: imports.at(-1)?.overrideTitle || titles[2000], status: "draft", revision: 1, isClassic: true }
     else if (url.pathname.includes("notifications")) data = { notifications: [], unread: 0 }
@@ -60,7 +69,7 @@ async function setup({ mobile = false } = {}) {
   })
   const page = await context.newPage()
   page.on("pageerror", error => errors.push(error.message))
-  return { context, page }
+  return { context, page, state }
 }
 const open = async page => {
   await page.goto("http://127.0.0.1:4183/admin")
@@ -71,8 +80,9 @@ const open = async page => {
 
 try {
   console.log("Gutenberg QA: desktop catalogue, filters and errors")
-  const { context, page } = await setup()
+  const { context, page, state } = await setup()
   await open(page)
+  assert.equal(requests[0].includeUnpublished, "true")
   assert.equal(requests[0].q, ""); assert.equal(requests[0].lang, "es")
   await screenshot(page, "catalog-desktop")
   await page.getByRole("button", { name: "Siguiente", exact: true }).click()
@@ -124,11 +134,25 @@ try {
   await author.waitFor()
   assert.equal(await author.inputValue(), "Miguel de Cervantes Saavedra")
   assert.equal(await author.getAttribute("readonly"), null, "server draft keeps its original author and editorial identity")
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await open(page)
+  await page.getByRole("button", { name: titles[2000], exact: true }).click()
+  state.duplicateImport = true
+  await page.getByRole("button", { name: "Guardar borrador", exact: true }).click()
+  await page.getByRole("alert").filter({ hasText: "Este libro ya está importado" }).waitFor()
+  await page.getByRole("button", { name: "Ver edición importada", exact: true }).click()
+  await page.waitForURL("**/editor?id=50&source=server&status=draft")
   await context.close()
 
-  console.log("Gutenberg QA: mobile detail, navigation and unreviewed download rejection")
-  const mobile = await setup({ mobile: true })
-  await open(mobile.page)
+  console.log("Gutenberg QA: reader entry, mobile samples and cancelled navigation")
+  const mobile = await setup({ mobile: true, admin: false })
+  await mobile.page.goto("http://127.0.0.1:4183/library?search=quijote")
+  const explore = mobile.page.getByRole("button", { name: "Explorar los clásicos", exact: true })
+  await explore.click()
+  await mobile.page.getByRole("dialog", { name: "Explorar los clásicos" }).waitFor()
+  await mobile.page.getByRole("button", { name: titles[2000], exact: true }).waitFor()
+  assert.equal(requests.at(-1).q, "quijote")
+  assert.equal(requests.at(-1).includeUnpublished, "false")
   await screenshot(mobile.page, "catalog-mobile")
   await mobile.page.getByRole("button", { name: titles[2000], exact: true }).click()
   await mobile.page.getByTestId("gutenberg-sample").waitFor()
@@ -137,13 +161,43 @@ try {
   assert.equal(await mobile.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   await screenshot(mobile.page, "edition-mobile")
   await mobile.page.getByRole("button", { name: "Volver a resultados", exact: true }).click()
+  let releasePreview
+  const release = new Promise(resolve => { releasePreview = resolve })
+  mobile.state.latePreview = { id: 2001, release }
+  const isDelayedPreview = request => new URL(request.url()).pathname === "/api/gutenberg/preview/2001"
+  try {
+    await Promise.all([
+      mobile.page.waitForRequest(isDelayedPreview),
+      mobile.page.getByRole("button", { name: titles[2001], exact: true }).click(),
+    ])
+    await Promise.all([
+      mobile.page.waitForEvent("requestfailed", { predicate: isDelayedPreview }),
+      mobile.page.getByRole("button", { name: "Volver a resultados", exact: true }).click(),
+    ])
+  } finally { releasePreview() }
+  assert.ok(mobile.page.url().includes("/library?search=quijote"), "a late preview cannot navigate after going back")
+  assert.ok(await mobile.page.getByRole("dialog", { name: "Explorar los clásicos" }).isVisible())
   await mobile.page.getByRole("button", { name: titles[2001], exact: true }).click()
   await mobile.page.getByTestId("gutenberg-sample").waitFor()
-  await mobile.page.getByRole("button", { name: "Guardar en biblioteca", exact: true }).click()
-  await mobile.page.getByRole("alert").getByText(/requiere revisar sus derechos territoriales/).waitFor()
+  await mobile.page.getByText(/La edición completa estará disponible en Tloque/).waitFor()
+  assert.equal(await mobile.page.getByRole("button", { name: "Guardar en biblioteca", exact: true }).count(), 0)
+  assert.equal(await mobile.page.getByRole("button", { name: "Guardar borrador", exact: true }).count(), 0)
   assert.equal(await mobile.page.evaluate(() => localStorage.getItem("tloque.account.v1:99:local:novareads_saved")), null)
   assert.ok(!mobile.page.url().includes("/book/gutenberg-2001"))
+  await mobile.page.keyboard.press("Escape")
+  await mobile.page.getByRole("dialog", { name: "Explorar los clásicos" }).waitFor({ state: "hidden" })
+  await mobile.page.waitForFunction(button => document.activeElement === button, await explore.elementHandle())
   await mobile.context.close()
+
+  console.log("Gutenberg QA: administrator browsing in reader mode")
+  const readerMode = await setup({ adminMode: false })
+  await readerMode.page.goto("http://127.0.0.1:4183/library")
+  await readerMode.page.getByRole("button", { name: "Explorar los clásicos", exact: true }).click()
+  await readerMode.page.getByRole("button", { name: titles[2000], exact: true }).click()
+  await readerMode.page.getByTestId("gutenberg-sample").waitFor()
+  assert.equal(requests.at(-1).includeUnpublished, "false")
+  assert.equal(await readerMode.page.getByRole("button", { name: "Guardar borrador", exact: true }).count(), 0)
+  await readerMode.context.close()
   assert.deepEqual(errors, [])
   console.log("Gutenberg browser QA passed")
 } finally { await browser.close(); await vite.close() }
