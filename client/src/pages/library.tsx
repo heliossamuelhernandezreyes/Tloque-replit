@@ -530,9 +530,7 @@ export default function Library() {
       </AnimatePresence>
     </Layout>
 
-    {isAdminActive && (
-      <ImportPanel open={showImport} onClose={() => setShowImport(false)} />
-    )}
+    <ImportPanel open={showImport} onClose={() => setShowImport(false)} />
     </>
   )
 }
